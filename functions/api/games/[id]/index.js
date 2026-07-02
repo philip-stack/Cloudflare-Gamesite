@@ -1,40 +1,44 @@
+import { json, loadGame } from "../../_util.js";
+
+// GET /api/games/:id – vollständiger Spielstand
 export async function onRequestGet({ env, params }) {
-  const id = Number(params.id);
-  const game = await env.DB.prepare(
-    "SELECT id, name, status, scoring, created_at FROM games WHERE id = ?"
-  ).bind(id).first();
-  if (!game) return Response.json({ error: "Spiel nicht gefunden" }, { status: 404 });
-
-  const players = (await env.DB.prepare(
-    "SELECT id, name, seat_order FROM players WHERE game_id = ? ORDER BY seat_order"
-  ).bind(id).all()).results;
-
-  const rounds = (await env.DB.prepare(
-    "SELECT id, round_no, winner_player_id, hand, points, created_at FROM rounds WHERE game_id = ? ORDER BY round_no"
-  ).bind(id).all()).results;
-
-  const totals = {};
-  for (const p of players) totals[p.id] = 0;
-  for (const r of rounds) totals[r.winner_player_id] += r.points;
-
-  const lastRound = rounds[rounds.length - 1] || null;
-
-  return Response.json({
-    ...game,
-    scoring: JSON.parse(game.scoring),
-    players,
-    rounds,
-    totals,
-    next_starter_player_id: lastRound ? lastRound.winner_player_id : null
-  });
+  const game = await loadGame(env, Number(params.id));
+  if (!game) return json({ error: "Spiel nicht gefunden" }, 404);
+  return json(game);
 }
 
+// PATCH /api/games/:id – Status / Startspieler / aktueller Zug setzen
+// body: { status?, starter_index?, turn_index? }
 export async function onRequestPatch({ request, env, params }) {
   const id = Number(params.id);
   const body = await request.json();
-  if (body.status !== "active" && body.status !== "finished") {
-    return Response.json({ error: "status muss 'active' oder 'finished' sein" }, { status: 400 });
+
+  const sets = [];
+  const vals = [];
+  if (body.status !== undefined) {
+    if (!["starter", "active", "finished"].includes(body.status)) {
+      return json({ error: "Ungültiger status" }, 400);
+    }
+    sets.push("status = ?"); vals.push(body.status);
   }
-  await env.DB.prepare("UPDATE games SET status = ? WHERE id = ?").bind(body.status, id).run();
-  return Response.json({ ok: true });
+  if (body.starter_index !== undefined) { sets.push("starter_index = ?"); vals.push(body.starter_index); }
+  if (body.turn_index !== undefined) { sets.push("turn_index = ?"); vals.push(body.turn_index); }
+  if (!sets.length) return json({ error: "Nichts zu ändern" }, 400);
+
+  vals.push(id);
+  const res = await env.DB.prepare(`UPDATE games SET ${sets.join(", ")} WHERE id = ?`).bind(...vals).run();
+  if (!res.meta.changes) return json({ error: "Spiel nicht gefunden" }, 404);
+  return json({ ok: true });
+}
+
+// DELETE /api/games/:id – Spiel samt Spielern und Zellen löschen
+export async function onRequestDelete({ env, params }) {
+  const id = Number(params.id);
+  // Kind-Datensätze explizit entfernen (D1 erzwingt FK-Cascade nicht sicher)
+  await env.DB.batch([
+    env.DB.prepare("DELETE FROM cells WHERE game_id = ?").bind(id),
+    env.DB.prepare("DELETE FROM players WHERE game_id = ?").bind(id),
+    env.DB.prepare("DELETE FROM games WHERE id = ?").bind(id),
+  ]);
+  return json({ ok: true });
 }

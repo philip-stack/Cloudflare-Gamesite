@@ -1,73 +1,64 @@
-# Würfelpoker – Stack (Cloudflare Pages + Functions + D1)
+# Würfelpoker – Escalero-Verrechnungsblatt (Cloudflare Pages)
 
-Kostenlos, kein Sleep, Daten bleiben persistent in D1 (SQLite bei Cloudflare).
+Digitale Nachbildung des Piatnik **Eskalero-Würfelpoker-Verrechnungsblatts**.
+Läuft komplett im Browser – die App würfelt nur am Anfang aus, wer beginnt.
+Gespielt wird mit echten Würfeln am Tisch, die App ist das Punkteblatt.
+
+Alle Spielstände liegen lokal im Browser (`localStorage`) – kein Backend nötig,
+kein Login, keine Datenbank.
 
 ## Struktur
 
 ```
 wuerfelpoker/
-├── wrangler.toml              Pages-Config + D1-Binding
-├── schema.sql                 Tabellen: games, players, rounds
-├── public/index.html          Platzhalter-Frontend (wird durch die App ersetzt)
-└── functions/api/
-    ├── health.js              GET  /api/health
-    ├── games/index.js         GET/POST  /api/games
-    └── games/[id]/
-        ├── index.js           GET/PATCH /api/games/:id
-        └── rounds.js          POST/DELETE /api/games/:id/rounds
+├── wrangler.toml              Pages-Config
+├── public/
+│   ├── _redirects            /  →  /wuerfelpoker/
+│   └── wuerfelpoker/
+│       ├── index.html
+│       ├── app.js            Spiel-Logik + Verrechnungsblatt (clientseitig)
+│       └── style.css
+└── functions/                (ungenutzt – altes D1-Backend, kann bleiben oder weg)
 ```
 
-## Deploy (einmalig)
+## Spielregeln (Escalero / Würfelpoker)
+
+Gespielt mit **5 Poker-Würfeln** (Bilder: 9, 10, B, D, K, A). Pro Zug bis zu
+**3×** würfeln – Würfel liegen lassen und nachwerfen.
+
+- Am Anfang würfelt jeder einmal: **höchste Zahl beginnt.** Danach reihum im Kreis.
+- Nach dem Zug trägt man das Ergebnis in **ein freies Feld der eigenen Spalte** ein.
+- Passt nichts (oder man will nicht), muss man **ein freies Feld streichen** = 0 Punkte.
+- Das Spiel endet, wenn **alle 10 Felder** jedes Spielers gefüllt sind.
+- Höchste Gesamtsumme gewinnt.
+- Nächste Runde: **Sieger beginnt** – oder im Kreis der nächste Spieler.
+
+### Punkte
+
+| Zeile | Bedeutung | Punkte |
+|---|---|---|
+| 9 / 10 / B / D / K / A | Anzahl Würfel × Wert (9=1, 10=2, B=3, D=4, K=5, A=6) | z. B. 3 Könige = 3×5 = 15 |
+| S | Straße | 20 (serviert 25) |
+| F | Full House | 30 (serviert 35) |
+| P | Poker (Vierling) | 40 (serviert 45) |
+| G | Grande (Fünfling) | 50 (serviert 80) |
+
+**Serviert** = die Kombination gleich im 1. Wurf, ohne Nachwerfen.
+
+## Lokal ansehen
+
+Einfach `public/wuerfelpoker/index.html` im Browser öffnen, oder:
+
+```
+npx wrangler pages dev ./public
+```
+
+## Deploy (Cloudflare Pages)
 
 ```
 npm install -g wrangler
 wrangler login
-wrangler d1 create wuerfelpoker
-```
-
-Die ausgegebene `database_id` in `wrangler.toml` eintragen, dann:
-
-```
-wrangler d1 execute wuerfelpoker --remote --file=./schema.sql
-wrangler pages project create philip-stack --production-branch=main
 wrangler pages deploy ./public --project-name=philip-stack
 ```
 
-Danach: https://philip-stack.pages.dev/api/health
-
-## Lokal entwickeln
-
-```
-wrangler pages dev
-```
-
-Nutzt eine lokale D1-Kopie. Schema lokal einspielen:
-
-```
-wrangler d1 execute wuerfelpoker --local --file=./schema.sql
-```
-
-## API
-
-| Methode | Pfad | Zweck |
-|---|---|---|
-| GET | /api/health | DB-Check |
-| POST | /api/games | Spiel anlegen `{name?, players: ["A","B"], scoring?}` |
-| GET | /api/games | Letzte 50 Spiele |
-| GET | /api/games/:id | Spielstand: Spieler, Runden, Punktesummen, `next_starter_player_id` |
-| PATCH | /api/games/:id | `{status: "finished"}` Spiel beenden |
-| POST | /api/games/:id/rounds | Runde eintragen `{winner_player_id, hand, points?}` |
-| DELETE | /api/games/:id/rounds | Letzte Runde rückgängig |
-
-## Punkteschema (Default, pro Spiel überschreibbar)
-
-| Hand | Punkte |
-|---|---|
-| Hoher Wurf | 1 |
-| Straße / serviert | 2 / 4 |
-| Full / serviert | 3 / 6 |
-| Poker / serviert | 4 / 8 |
-| Grande / serviert | 5 / 10 |
-
-Beim Anlegen eines Spiels kann ein eigenes `scoring`-Objekt mitgegeben werden
-(`{"Poker serviert": 12, ...}`) – Hausregeln pro Runde also anpassbar.
+Danach erreichbar unter https://philip-stack.pages.dev/

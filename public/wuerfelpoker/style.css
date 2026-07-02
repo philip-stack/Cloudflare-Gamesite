@@ -115,6 +115,21 @@ input:focus { outline: 2px solid var(--gold); border-color: transparent; }
 .stack { display: flex; flex-direction: column; gap: 10px; }
 
 /* Spieleliste */
+.game-row {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+.game-row .game-list-item { flex: 1; }
+.game-del {
+  flex-shrink: 0;
+  background: var(--card);
+  color: var(--red);
+  padding: 0 16px;
+  font-size: 1.2rem;
+  border: 1px solid transparent;
+}
+.game-del:active { background: var(--card-hi); border-color: var(--red); }
 .game-list-item {
   display: block;
   width: 100%;
@@ -253,7 +268,163 @@ input:focus { outline: 2px solid var(--gold); border-color: transparent; }
   padding: 12px 20px;
   border-radius: 999px;
   box-shadow: 0 4px 16px rgba(0,0,0,0.4);
-  z-index: 10;
+  z-index: 30;
   max-width: 90vw;
 }
 .toast.err { color: var(--red); }
+
+/* ---------- Diverse ---------- */
+.hidden { display: none !important; }
+.hint { color: var(--muted); font-size: 0.9rem; margin: 10px 0 14px; line-height: 1.4; }
+.btn-link {
+  background: transparent;
+  color: var(--muted);
+  padding: 14px;
+  width: 100%;
+  margin-top: 12px;
+  text-decoration: underline;
+}
+.btn-icon {
+  background: var(--card);
+  color: var(--text);
+  padding: 10px 12px;
+  font-size: 1.1rem;
+  flex-shrink: 0;
+}
+
+/* ---------- Startspieler auswürfeln ---------- */
+.dice-roll-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+.dice-roll-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--card);
+  border: 2px solid transparent;
+  border-radius: var(--radius);
+  padding: 12px 16px;
+}
+.dice-roll-row.win { border-color: var(--gold); background: var(--card-hi); }
+.drr-name { font-size: 1.05rem; font-weight: 600; }
+.drr-die {
+  font-size: 1.5rem;
+  font-weight: 800;
+  min-width: 44px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.dice-roll-row.win .drr-die { color: var(--gold); }
+
+/* ---------- Verrechnungsblatt ---------- */
+.sheet-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border-radius: var(--radius);
+  border: 1px solid var(--card-hi);
+  margin-bottom: 8px;
+}
+.sheet {
+  border-collapse: collapse;
+  width: 100%;
+  min-width: max-content;
+  font-variant-numeric: tabular-nums;
+}
+.sheet th, .sheet td {
+  border: 1px solid var(--card-hi);
+  text-align: center;
+  padding: 0;
+}
+.sheet .corner, .sheet .p-head {
+  background: var(--card);
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 700;
+  padding: 10px 8px;
+  white-space: nowrap;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+.sheet .corner { left: 0; z-index: 3; }
+.sheet .p-head.turn { color: var(--gold); background: var(--card-hi); }
+
+.sheet .row-label {
+  background: var(--card);
+  color: var(--text);
+  font-weight: 700;
+  padding: 0 12px;
+  text-align: left;
+  white-space: nowrap;
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  min-width: 58px;
+}
+.sheet .rl-main { font-size: 1.05rem; }
+.sheet .rl-sub { color: var(--muted); font-size: 0.7rem; margin-left: 2px; }
+
+.sheet .cell {
+  min-width: 54px;
+  height: 44px;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--text);
+}
+.sheet .cell.in-turn { background: rgba(201,162,39,0.07); }
+.sheet .cell.editable {
+  cursor: pointer;
+  background: rgba(201,162,39,0.16);
+  outline: 1px dashed var(--gold-dark);
+  outline-offset: -3px;
+}
+.sheet .cell.editable:active { background: rgba(201,162,39,0.3); }
+.sheet .cell.filled { color: var(--text); }
+.sheet .cell.filled.serviert { color: var(--gold); }
+.sheet .cell.struck { color: var(--muted); }
+.sheet .cell.total { color: var(--gold); font-weight: 800; font-size: 1.1rem; }
+
+.sheet .combo-start th, .sheet .combo-start td { border-top: 3px solid var(--muted); }
+.sheet .total-row th, .sheet .total-row td { border-top: 3px solid var(--muted); background: var(--card); }
+.sheet.readonly .cell { cursor: default; }
+
+/* ---------- Eingabe-Overlay ---------- */
+.sheet-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  z-index: 20;
+  padding: 0;
+}
+.sheet-modal {
+  background: var(--bg);
+  border-top-left-radius: 20px;
+  border-top-right-radius: 20px;
+  padding: 20px 16px calc(20px + env(safe-area-inset-bottom));
+  width: 100%;
+  max-width: 560px;
+  max-height: 85vh;
+  overflow-y: auto;
+}
+.sm-title { font-size: 1.15rem; font-weight: 800; margin-bottom: 14px; text-align: center; }
+.sm-options { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+.sm-opt {
+  background: var(--card);
+  color: var(--text);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 16px;
+  text-align: left;
+}
+.sm-opt .smo-label { font-weight: 700; }
+.sm-opt .smo-note { color: var(--muted); font-size: 0.9rem; }
+.sm-opt.strike { background: transparent; border: 1px solid var(--red); }
+.sm-opt.strike .smo-label { color: var(--red); }
+
+.sheet-modal.rules .rules-body { line-height: 1.5; font-size: 0.95rem; }
+.sheet-modal.rules .rules-body p { margin-bottom: 10px; }
+.sheet-modal.rules .rules-body ul { margin: 0 0 10px 18px; }
+.sheet-modal.rules .rules-body li { margin-bottom: 6px; }
+.sheet-modal.rules .rules-body strong { color: var(--gold); }
