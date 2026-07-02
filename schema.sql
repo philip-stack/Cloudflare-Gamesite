@@ -1,0 +1,27 @@
+CREATE TABLE IF NOT EXISTS games (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT,
+  status TEXT NOT NULL DEFAULT 'active',
+  scoring TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS players (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  game_id INTEGER NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  seat_order INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS rounds (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  game_id INTEGER NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+  round_no INTEGER NOT NULL,
+  winner_player_id INTEGER NOT NULL REFERENCES players(id),
+  hand TEXT NOT NULL,
+  points INTEGER NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_players_game ON players(game_id);
+CREATE INDEX IF NOT EXISTS idx_rounds_game ON rounds(game_id);
