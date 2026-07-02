@@ -1,13 +1,12 @@
-import { json, CAT_KEYS, CAT_COUNT, cellCount } from "../../_util.js";
+import { json, CAT_KEYS, CAT_COUNT, cellCount, authGame } from "../../_util.js";
 
-// PUT /api/games/:id/cells – ein Feld eintragen und Zug weiterschalten
+// PUT /api/games/:id/cells?code=XXXXXX – ein Feld eintragen und Zug weiterschalten
 // body: { player_id, cat_key, kind, value, serviert?, turn_index }
 export async function onRequestPut({ request, env, params }) {
-  const gameId = Number(params.id);
+  const auth = await authGame(env, params.id, request);
+  if (!auth) return json({ error: "Spiel nicht gefunden oder Code falsch" }, 404);
+  const gameId = auth.id;
   const b = await request.json();
-
-  const game = await env.DB.prepare("SELECT status FROM games WHERE id = ?").bind(gameId).first();
-  if (!game) return json({ error: "Spiel nicht gefunden" }, 404);
 
   if (!CAT_KEYS.includes(b.cat_key)) return json({ error: "Unbekanntes Feld" }, 400);
   if (!["score", "strike"].includes(b.kind)) return json({ error: "Ungültige Art" }, 400);
@@ -42,9 +41,11 @@ export async function onRequestPut({ request, env, params }) {
   return json({ ok: true, finished }, 201);
 }
 
-// DELETE /api/games/:id/cells – letzten Eintrag rückgängig machen
-export async function onRequestDelete({ env, params }) {
-  const gameId = Number(params.id);
+// DELETE /api/games/:id/cells?code=XXXXXX – letzten Eintrag rückgängig machen
+export async function onRequestDelete({ request, env, params }) {
+  const auth = await authGame(env, params.id, request);
+  if (!auth) return json({ error: "Spiel nicht gefunden oder Code falsch" }, 404);
+  const gameId = auth.id;
   const last = await env.DB.prepare(
     "SELECT c.seq, c.player_id, p.seat_order FROM cells c JOIN players p ON p.id = c.player_id " +
     "WHERE c.game_id = ? ORDER BY c.seq DESC LIMIT 1"

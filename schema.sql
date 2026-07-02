@@ -12,8 +12,11 @@ CREATE TABLE games (
   status        TEXT NOT NULL DEFAULT 'starter',  -- starter | active | finished
   starter_index INTEGER,                          -- Sitzplatz-Index des Startspielers
   turn_index    INTEGER,                          -- Sitzplatz-Index des aktuellen Spielers
+  code          TEXT,                             -- Beitritts-Code (geteilte Spiele)
   created_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE UNIQUE INDEX idx_games_code ON games(code);
 
 CREATE TABLE players (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,

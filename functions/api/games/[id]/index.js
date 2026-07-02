@@ -1,16 +1,19 @@
-import { json, loadGame } from "../../_util.js";
+import { json, loadGame, authGame } from "../../_util.js";
 
-// GET /api/games/:id – vollständiger Spielstand
-export async function onRequestGet({ env, params }) {
-  const game = await loadGame(env, Number(params.id));
-  if (!game) return json({ error: "Spiel nicht gefunden" }, 404);
-  return json(game);
+// Alle Zugriffe auf ein Spiel erfordern den passenden Beitritts-Code (?code=).
+
+// GET /api/games/:id?code=XXXXXX – vollständiger Spielstand
+export async function onRequestGet({ request, env, params }) {
+  const auth = await authGame(env, params.id, request);
+  if (!auth) return json({ error: "Spiel nicht gefunden oder Code falsch" }, 404);
+  return json(await loadGame(env, auth.id));
 }
 
-// PATCH /api/games/:id – Status / Startspieler / aktueller Zug setzen
+// PATCH /api/games/:id?code=XXXXXX – Status / Startspieler / aktueller Zug setzen
 // body: { status?, starter_index?, turn_index? }
 export async function onRequestPatch({ request, env, params }) {
-  const id = Number(params.id);
+  const auth = await authGame(env, params.id, request);
+  if (!auth) return json({ error: "Spiel nicht gefunden oder Code falsch" }, 404);
   const body = await request.json();
 
   const sets = [];
@@ -25,20 +28,20 @@ export async function onRequestPatch({ request, env, params }) {
   if (body.turn_index !== undefined) { sets.push("turn_index = ?"); vals.push(body.turn_index); }
   if (!sets.length) return json({ error: "Nichts zu ändern" }, 400);
 
-  vals.push(id);
-  const res = await env.DB.prepare(`UPDATE games SET ${sets.join(", ")} WHERE id = ?`).bind(...vals).run();
-  if (!res.meta.changes) return json({ error: "Spiel nicht gefunden" }, 404);
+  vals.push(auth.id);
+  await env.DB.prepare(`UPDATE games SET ${sets.join(", ")} WHERE id = ?`).bind(...vals).run();
   return json({ ok: true });
 }
 
-// DELETE /api/games/:id – Spiel samt Spielern und Zellen löschen
-export async function onRequestDelete({ env, params }) {
-  const id = Number(params.id);
+// DELETE /api/games/:id?code=XXXXXX – Spiel samt Spielern und Zellen löschen
+export async function onRequestDelete({ request, env, params }) {
+  const auth = await authGame(env, params.id, request);
+  if (!auth) return json({ error: "Spiel nicht gefunden oder Code falsch" }, 404);
   // Kind-Datensätze explizit entfernen (D1 erzwingt FK-Cascade nicht sicher)
   await env.DB.batch([
-    env.DB.prepare("DELETE FROM cells WHERE game_id = ?").bind(id),
-    env.DB.prepare("DELETE FROM players WHERE game_id = ?").bind(id),
-    env.DB.prepare("DELETE FROM games WHERE id = ?").bind(id),
+    env.DB.prepare("DELETE FROM cells WHERE game_id = ?").bind(auth.id),
+    env.DB.prepare("DELETE FROM players WHERE game_id = ?").bind(auth.id),
+    env.DB.prepare("DELETE FROM games WHERE id = ?").bind(auth.id),
   ]);
   return json({ ok: true });
 }
