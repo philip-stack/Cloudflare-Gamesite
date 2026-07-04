@@ -384,7 +384,7 @@ body.skin-papier .blk::after { display: none; }
   font-size: 1.5rem;
   color: var(--gold);
   text-shadow: 0 2px 12px rgba(0,0,0,0.6), 0 0 20px var(--gold-glow);
-  animation: float-up 0.9s ease-out forwards;
+  animation: float-up 1.3s ease-out forwards;
   white-space: nowrap;
 }
 .float-text.big {
@@ -398,8 +398,18 @@ body.skin-papier .blk::after { display: none; }
 }
 @keyframes float-up {
   0% { opacity: 0; transform: translate(-50%, -30%) scale(0.6); }
-  20% { opacity: 1; transform: translate(-50%, -50%) scale(1.1); }
+  15% { opacity: 1; transform: translate(-50%, -50%) scale(1.1); }
+  75% { opacity: 1; }
   100% { opacity: 0; transform: translate(-50%, -160%) scale(1); }
+}
+/* Zentrale Meldungen (Lob, Combo, Board Clear): länger sichtbar mit Halte-Phase */
+.float-text.hold { animation: float-hold 2.4s ease-out forwards; }
+@keyframes float-hold {
+  0% { opacity: 0; transform: translate(-50%, -30%) scale(0.6); }
+  7% { opacity: 1; transform: translate(-50%, -50%) scale(1.14); }
+  11% { transform: translate(-50%, -50%) scale(1); }
+  78% { opacity: 1; transform: translate(-50%, -58%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -110%) scale(1); }
 }
 
 /* ---------- Tray ---------- */

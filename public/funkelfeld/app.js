@@ -311,16 +311,20 @@ function floatText(text, r, c, big = false) {
   el.style.left = rect.left - wrap.left + (c + 1) * (rect.width / SIZE) + "px";
   el.style.top = rect.top - wrap.top + r * (rect.height / SIZE) + "px";
   fxEl.appendChild(el);
-  setTimeout(() => el.remove(), 950);
+  setTimeout(() => el.remove(), 1350);
 }
+
+// Zentrale Meldungen stapeln sich, statt sich zu überdecken
+let centerSlots = 0;
 function floatCenter(text, big = false) {
+  const slot = centerSlots++;
   const el = document.createElement("div");
-  el.className = "float-text" + (big ? " big" : "");
+  el.className = "float-text hold" + (big ? " big" : "");
   el.textContent = text;
   el.style.left = "50%";
-  el.style.top = "45%";
+  el.style.top = `calc(40% + ${slot * 48}px)`;
   fxEl.appendChild(el);
-  setTimeout(() => el.remove(), 950);
+  setTimeout(() => { el.remove(); centerSlots = Math.max(0, centerSlots - 1); }, 2450);
 }
 function shake() {
   const w = $("#board-wrap");
