@@ -38,3 +38,13 @@ CREATE TABLE cells (
 
 CREATE INDEX idx_players_game ON players(game_id);
 CREATE INDEX idx_cells_game   ON cells(game_id);
+
+-- Block Blast – globale Bestenliste
+CREATE TABLE IF NOT EXISTS blockblast_scores (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  name       TEXT NOT NULL,
+  score      INTEGER NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_bb_score ON blockblast_scores(score);
