@@ -373,6 +373,7 @@ function startDrag(slot, e) {
     offX: gw / 2,
     offY: touch ? gh + 46 : gh / 2,
     lastValid: null,
+    lastKey: null,
   };
 
   document.querySelector(`.slot[data-slot="${slot}"] .piece`)?.classList.add("dragging");
@@ -380,17 +381,33 @@ function startDrag(slot, e) {
   moveDrag(e);
 }
 
+let rafPending = false;
+let lastPointer = null;
+
 function moveDrag(e) {
   if (!drag) return;
-  const x = e.clientX - drag.offX;
-  const y = e.clientY - drag.offY;
-  drag.ghost.style.left = x + "px";
-  drag.ghost.style.top = y + "px";
+  lastPointer = { x: e.clientX, y: e.clientY };
+  if (rafPending) return;
+  rafPending = true;
+  requestAnimationFrame(applyDrag);
+}
+
+function applyDrag() {
+  rafPending = false;
+  if (!drag || !lastPointer) return;
+  const x = lastPointer.x - drag.offX;
+  const y = lastPointer.y - drag.offY;
+  drag.ghost.style.transform = `translate(${x}px, ${y}px)`;
 
   const rect = boardEl.getBoundingClientRect();
   const pad = 8;
   const col = Math.round((x - rect.left - pad) / drag.step);
   const row = Math.round((y - rect.top - pad) / drag.step);
+
+  // Nur neu zeichnen, wenn sich die Zielzelle geändert hat
+  const key = row + "," + col;
+  if (key === drag.lastKey) return;
+  drag.lastKey = key;
 
   clearPreview();
   if (row >= 0 && col >= 0 && row + drag.sh.h <= SIZE && col + drag.sh.w <= SIZE && canPlace(drag.sh, row, col)) {
@@ -426,13 +443,21 @@ function endDrag() {
   if (lastValid) placePiece(slot, lastValid[0], lastValid[1]);
 }
 
-// Der GANZE Slot ist Grab-Zone – deutlich zuverlässiger als nur das Teil selbst
+// Die GANZE Tray-Leiste ist Grab-Zone: es zählt die horizontale Position
+// des Fingers (Drittel), nicht ob man das Teil exakt trifft.
 document.addEventListener("pointerdown", e => {
+  const trayEl = e.target.closest(".tray");
+  if (!trayEl) return;
+  e.preventDefault();
   const slotEl = e.target.closest(".slot");
+  let slot;
   if (slotEl) {
-    e.preventDefault();
-    startDrag(Number(slotEl.dataset.slot), e);
+    slot = Number(slotEl.dataset.slot);
+  } else {
+    const rect = trayEl.getBoundingClientRect();
+    slot = Math.min(2, Math.max(0, Math.floor(((e.clientX - rect.left) / rect.width) * 3)));
   }
+  startDrag(slot, e);
 });
 document.addEventListener("pointermove", e => { if (drag) { e.preventDefault(); moveDrag(e); } }, { passive: false });
 document.addEventListener("pointerup", endDrag);
@@ -451,11 +476,18 @@ async function submitScore() {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Fehler");
-    return data.rank;
+    return data; // { ok, rank, best }
   } catch {
     submitted = false;
     return null;
   }
+}
+
+function rankHtml(resp, name) {
+  if (!resp) return "Score konnte nicht übertragen werden";
+  let s = `Weltweit <b>Platz ${resp.rank}</b> als ${escHtml(name)}`;
+  if (resp.best > score) s += ` · dein Rekord: ${resp.best}`;
+  return s;
 }
 
 async function gameOver() {
@@ -497,15 +529,11 @@ async function gameOver() {
       updateNameLabel();
       nameArea.innerHTML = "";
       rankEl.textContent = "Übertrage …";
-      const rank = await submitScore();
-      rankEl.innerHTML = rank ? `Weltweit <b>Platz ${rank}</b> als ${escHtml(v)}` : "Konnte nicht übertragen werden";
+      rankEl.innerHTML = rankHtml(await submitScore(), v);
     };
   } else if (score > 0) {
     rankEl.textContent = "Übertrage …";
-    const rank = await submitScore();
-    rankEl.innerHTML = rank
-      ? `Weltweit <b>Platz ${rank}</b> als ${escHtml(getName())}`
-      : "Score konnte nicht übertragen werden";
+    rankEl.innerHTML = rankHtml(await submitScore(), getName());
   }
 }
 

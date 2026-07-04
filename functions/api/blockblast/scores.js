@@ -1,9 +1,10 @@
 import { json } from "../_util.js";
 
-// GET /api/blockblast/scores – Top 50 der globalen Bestenliste
+// GET /api/blockblast/scores – Top 50, pro Name nur der Highscore
+// (SQLite garantiert bei MAX(): "name" stammt aus der Zeile mit dem Maximum)
 export async function onRequestGet({ env }) {
   const rows = (await env.DB.prepare(
-    "SELECT name, score, created_at FROM blockblast_scores ORDER BY score DESC, created_at ASC LIMIT 50"
+    "SELECT name, MAX(score) AS score FROM blockblast_scores GROUP BY LOWER(name) ORDER BY score DESC LIMIT 50"
   ).all()).results;
   return json({ top: rows });
 }
@@ -25,9 +26,14 @@ export async function onRequestPost({ request, env }) {
     "INSERT INTO blockblast_scores (name, score) VALUES (?, ?)"
   ).bind(name, score).run();
 
-  const rank = (await env.DB.prepare(
-    "SELECT COUNT(*) + 1 AS r FROM blockblast_scores WHERE score > ?"
-  ).bind(score).first()).r;
+  // Rang des Spielers = Anzahl der Namen mit höherem Highscore + 1
+  const myBest = (await env.DB.prepare(
+    "SELECT MAX(score) AS m FROM blockblast_scores WHERE LOWER(name) = LOWER(?)"
+  ).bind(name).first()).m;
 
-  return json({ ok: true, rank }, 201);
+  const rank = (await env.DB.prepare(
+    "SELECT COUNT(*) + 1 AS r FROM (SELECT MAX(score) AS m FROM blockblast_scores GROUP BY LOWER(name)) WHERE m > ?"
+  ).bind(myBest).first()).r;
+
+  return json({ ok: true, rank, best: myBest }, 201);
 }
