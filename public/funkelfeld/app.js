@@ -90,6 +90,51 @@ function loadState() {
   } catch { return false; }
 }
 
+// ---------- Skins: jedes komplett geleerte Brett schaltet den Look weiter ----------
+const SKINS = [
+  { cls: "",             name: "Candy" },
+  { cls: "skin-neon",    name: "Neon" },
+  { cls: "skin-glas",    name: "Glas" },
+  { cls: "skin-pixel",   name: "Pixel" },
+  { cls: "skin-holz",    name: "Holz" },
+  { cls: "skin-metall",  name: "Metall" },
+  { cls: "skin-pastell", name: "Pastell" },
+  { cls: "skin-magma",   name: "Magma" },
+  { cls: "skin-eis",     name: "Eis" },
+  { cls: "skin-papier",  name: "Papier" },
+];
+let skinIdx = (Number(localStorage.getItem("bb_skin")) || 0) % SKINS.length;
+
+function applySkin() {
+  SKINS.forEach(s => s.cls && document.body.classList.remove(s.cls));
+  const s = SKINS[skinIdx];
+  if (s.cls) document.body.classList.add(s.cls);
+}
+function advanceSkin() {
+  skinIdx = (skinIdx + 1) % SKINS.length;
+  localStorage.setItem("bb_skin", skinIdx);
+  applySkin();
+  return SKINS[skinIdx].name;
+}
+
+// ---------- Lob-Meldungen, gestaffelt nach Räum-Stärke ----------
+const PRAISE = {
+  2: ["Super!", "Stark!", "Sauber!", "Läuft bei dir!", "Doppelt hält besser!", "Schön!"],
+  3: ["Fantastisch!", "Mega!", "Wahnsinn!", "Dreifach räumt gut!", "Was ein Zug!", "Brillant!"],
+  4: ["LEGENDÄR!", "GIGANTISCH!", "EPISCH!", "NICHT ZU FASSEN!", "MONSTER-ZUG!", "WELTKLASSE!"],
+};
+const PRAISE_COMBO = ["Combo-Maschine!", "In Flammen! 🔥", "Unaufhaltsam!", "Serie läuft!", "Heißgelaufen!", "Kettenreaktion!"];
+
+function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
+function praiseFor(n, comboNow) {
+  if (n >= 4) return pick(PRAISE[4]);
+  if (n === 3) return pick(PRAISE[3]);
+  if (n === 2) return pick(PRAISE[2]);
+  if (comboNow >= 3) return pick(PRAISE_COMBO);
+  return null;
+}
+
 function newGame() {
   board = Array.from({ length: SIZE }, () => Array(SIZE).fill(0));
   tray = [randomPiece(), randomPiece(), randomPiece()];
@@ -157,7 +202,9 @@ function placePiece(slot, r0, c0) {
     if (navigator.vibrate) navigator.vibrate(n >= 2 ? [30, 40, 50] : 25);
     if (n >= 2) shake();
     floatText(`+${lineGain}`, r0, c0, n >= 2 || combo >= 2);
-    if (combo >= 2) setTimeout(() => floatCenter(`🔥 Combo x${combo}`), 240);
+    const praise = praiseFor(n, combo);
+    if (praise) setTimeout(() => floatCenter(praise, n >= 3), 160);
+    if (combo >= 2) setTimeout(() => floatCenter(`🔥 Combo x${combo}`), praise ? 520 : 240);
   } else {
     combo = 0;
     sound.place();
@@ -166,10 +213,12 @@ function placePiece(slot, r0, c0) {
 
   score += gained;
 
-  // Board komplett leer geräumt → Bonus
+  // Board komplett leer geräumt → Bonus + neuer Block-Look
   if (n > 0 && board.every(row => row.every(v => v === 0))) {
     score += 300;
+    const skinName = advanceSkin();
     setTimeout(() => { floatCenter("✨ BOARD CLEAR! +300", true); sound.fanfare(); }, 380);
+    setTimeout(() => floatCenter(`🎨 Neuer Look: ${skinName}`, true), 1250);
   }
 
   if (tray.every(p => !p)) tray = [randomPiece(), randomPiece(), randomPiece()];
@@ -629,6 +678,7 @@ soundBtn.textContent = sound.muted ? "🔇" : "🔊";
 soundBtn.onclick = () => { soundBtn.textContent = sound.toggle() ? "🔇" : "🔊"; };
 
 // ---------- Start ----------
+applySkin();
 updateNameLabel();
 if (loadState()) {
   renderAll();

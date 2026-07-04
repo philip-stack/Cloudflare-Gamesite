@@ -232,11 +232,22 @@ button:active { transform: scale(0.94); }
   position: relative;
 }
 
-/* Gem-Block (Board, Tray und Ghost gemeinsam) — "Candy"-Look:
-   3D-Bevel über Innen-Schatten, glossy Highlight oben links */
+/* Gem-Block (Board, Tray und Ghost gemeinsam).
+   Jeder Block trägt seine Farbtöne als Variablen (--b/--bl/--bd),
+   die Skins (body.skin-…) stylen darauf aufbauend um. */
+.blk.c1 { --b: var(--c1); --bl: var(--c1l); --bd: var(--c1d); }
+.blk.c2 { --b: var(--c2); --bl: var(--c2l); --bd: var(--c2d); }
+.blk.c3 { --b: var(--c3); --bl: var(--c3l); --bd: var(--c3d); }
+.blk.c4 { --b: var(--c4); --bl: var(--c4l); --bd: var(--c4d); }
+.blk.c5 { --b: var(--c5); --bl: var(--c5l); --bd: var(--c5d); }
+.blk.c6 { --b: var(--c6); --bl: var(--c6l); --bd: var(--c6d); }
+.blk.c7 { --b: var(--c7); --bl: var(--c7l); --bd: var(--c7d); }
+
+/* ---- Skin 1 "Candy" (Standard): glossy Gems mit 3D-Bevel ---- */
 .blk {
   border-radius: 24%;
   position: relative;
+  background: radial-gradient(130% 130% at 28% 22%, var(--bl), var(--b) 52%, var(--bd));
   box-shadow:
     inset 0 2px 2px rgba(255, 255, 255, 0.5),
     inset 0 -3px 4px rgba(0, 0, 0, 0.38),
@@ -252,13 +263,95 @@ button:active { transform: scale(0.94); }
   transform: rotate(-8deg);
   pointer-events: none;
 }
-.blk.c1 { background: radial-gradient(130% 130% at 28% 22%, var(--c1l), var(--c1) 52%, var(--c1d)); }
-.blk.c2 { background: radial-gradient(130% 130% at 28% 22%, var(--c2l), var(--c2) 52%, var(--c2d)); }
-.blk.c3 { background: radial-gradient(130% 130% at 28% 22%, var(--c3l), var(--c3) 52%, var(--c3d)); }
-.blk.c4 { background: radial-gradient(130% 130% at 28% 22%, var(--c4l), var(--c4) 52%, var(--c4d)); }
-.blk.c5 { background: radial-gradient(130% 130% at 28% 22%, var(--c5l), var(--c5) 52%, var(--c5d)); }
-.blk.c6 { background: radial-gradient(130% 130% at 28% 22%, var(--c6l), var(--c6) 52%, var(--c6d)); }
-.blk.c7 { background: radial-gradient(130% 130% at 28% 22%, var(--c7l), var(--c7) 52%, var(--c7d)); }
+
+/* ---- Skin 2 "Neon": dunkle Kerne mit leuchtenden Kanten ---- */
+body.skin-neon .blk {
+  border-radius: 18%;
+  background: color-mix(in srgb, var(--b) 20%, #0b0f0c);
+  box-shadow: inset 0 0 0 2px var(--b), inset 0 0 10px color-mix(in srgb, var(--b) 60%, transparent), 0 0 10px -2px var(--b);
+}
+body.skin-neon .blk::after { display: none; }
+
+/* ---- Skin 3 "Glas": transluzente Eiswürfel-Optik ---- */
+body.skin-glas .blk {
+  border-radius: 22%;
+  background: linear-gradient(160deg, color-mix(in srgb, var(--bl) 70%, transparent), color-mix(in srgb, var(--b) 45%, transparent));
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.35), inset 0 -4px 8px rgba(0,0,0,0.25), 0 2px 5px rgba(0,0,0,0.3);
+}
+body.skin-glas .blk::after {
+  left: 10%; top: 8%; width: 34%; height: 34%;
+  background: linear-gradient(rgba(255,255,255,0.6), rgba(255,255,255,0));
+  transform: rotate(0deg);
+}
+
+/* ---- Skin 4 "Pixel": Retro-8-Bit, harte Kanten ---- */
+body.skin-pixel .blk {
+  border-radius: 0;
+  background: var(--b);
+  box-shadow: inset -4px -4px 0 var(--bd), inset 4px 4px 0 var(--bl);
+}
+body.skin-pixel .blk::after { display: none; }
+body.skin-pixel .cell { border-radius: 2px; }
+
+/* ---- Skin 5 "Holz": eingefärbte Holzklötze mit Maserung ---- */
+body.skin-holz .blk {
+  border-radius: 12%;
+  background:
+    repeating-linear-gradient(100deg, rgba(0,0,0,0.14) 0 2px, transparent 2px 7px),
+    linear-gradient(100deg, var(--bd), var(--b) 35%, var(--bd) 60%, var(--b) 85%);
+  box-shadow: inset 0 2px 2px rgba(255,255,255,0.25), inset 0 -2px 3px rgba(0,0,0,0.35), 0 2px 4px rgba(0,0,0,0.4);
+}
+body.skin-holz .blk::after { display: none; }
+
+/* ---- Skin 6 "Metall": gebürstetes Edelmetall mit Lichtstreifen ---- */
+body.skin-metall .blk {
+  border-radius: 16%;
+  background: linear-gradient(135deg, var(--bd) 0%, var(--bl) 38%, var(--b) 52%, var(--bd) 100%);
+  box-shadow: inset 0 1px 1px rgba(255,255,255,0.55), inset 0 -2px 3px rgba(0,0,0,0.45), 0 2px 4px rgba(0,0,0,0.4);
+}
+body.skin-metall .blk::after {
+  left: 8%; top: 0; width: 22%; height: 100%;
+  border-radius: 0;
+  background: linear-gradient(105deg, transparent, rgba(255,255,255,0.5), transparent);
+  transform: skewX(-18deg);
+}
+
+/* ---- Skin 7 "Pastell": mattes Soft-Design, fast Squircle ---- */
+body.skin-pastell .blk {
+  border-radius: 34%;
+  background: color-mix(in srgb, var(--b) 62%, #f4efe2);
+  box-shadow: inset 0 -3px 0 color-mix(in srgb, var(--bd) 55%, transparent), 0 3px 6px -2px rgba(0,0,0,0.35);
+}
+body.skin-pastell .blk::after { display: none; }
+
+/* ---- Skin 8 "Magma": dunkler Fels mit glühendem Kern ---- */
+body.skin-magma .blk {
+  border-radius: 14%;
+  background: radial-gradient(65% 65% at 50% 58%, var(--bl) 0%, var(--b) 45%, #1a120c 100%);
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.5), inset 0 0 12px color-mix(in srgb, var(--b) 55%, transparent), 0 2px 5px rgba(0,0,0,0.5);
+}
+body.skin-magma .blk::after { display: none; }
+
+/* ---- Skin 9 "Eis": frostige Kristalle mit Facette ---- */
+body.skin-eis .blk {
+  border-radius: 16%;
+  background: linear-gradient(160deg, rgba(255,255,255,0.85) 0%, color-mix(in srgb, var(--b) 55%, #dff5ff) 42%, color-mix(in srgb, var(--bd) 80%, #29506b) 100%);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.4), inset 0 -3px 6px rgba(30,80,120,0.35), 0 2px 4px rgba(0,0,0,0.35);
+}
+body.skin-eis .blk::after {
+  left: 52%; top: 12%; width: 30%; height: 30%;
+  border-radius: 2px;
+  background: linear-gradient(45deg, rgba(255,255,255,0.7) 0 50%, transparent 50%);
+  transform: rotate(20deg);
+}
+
+/* ---- Skin 10 "Papier": flaches Origami mit Falz-Diagonale ---- */
+body.skin-papier .blk {
+  border-radius: 8%;
+  background: linear-gradient(135deg, var(--bl) 0% 50%, var(--b) 50% 100%);
+  box-shadow: inset -1px -2px 0 color-mix(in srgb, var(--bd) 60%, transparent), 0 2px 3px rgba(0,0,0,0.35);
+}
+body.skin-papier .blk::after { display: none; }
 
 .cell.pop { animation: pop-in 0.22s var(--ease-spring); }
 @keyframes pop-in {
