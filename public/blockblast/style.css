@@ -24,13 +24,13 @@
   --ease-spring: cubic-bezier(0.34, 1.4, 0.5, 1);
 
   /* Gem-Farben (Basis / hell / dunkel) */
-  --c1: #e2685a; --c1l: #f2988d; --c1d: #a53f34;
-  --c2: #e8955a; --c2l: #f5bd93; --c2d: #b06430;
-  --c3: #e8c15a; --c3l: #f7e0a0; --c3d: #a5851f;
-  --c4: #79c793; --c4l: #a8e3bc; --c4d: #47905f;
-  --c5: #5ec4c9; --c5l: #99e2e6; --c5d: #348c91;
-  --c6: #6a9de0; --c6l: #a3c4f0; --c6d: #3d69a8;
-  --c7: #b08ade; --c7l: #d3bcf0; --c7d: #7c56a8;
+  --c1: #ff6b5e; --c1l: #ffa89e; --c1d: #c23b30;
+  --c2: #ff9f4d; --c2l: #ffc894; --c2d: #cc6f1e;
+  --c3: #ffd257; --c3l: #ffe9a8; --c3d: #cc9a1f;
+  --c4: #5ad07f; --c4l: #9fe8b6; --c4d: #2f9c55;
+  --c5: #45cfd6; --c5l: #96e8ec; --c5d: #23989e;
+  --c6: #5b9cff; --c6l: #a3c8ff; --c6d: #2f6cc9;
+  --c7: #b678ff; --c7l: #d7b5ff; --c7d: #8447d1;
 }
 
 html { -webkit-text-size-adjust: 100%; }
@@ -232,27 +232,36 @@ button:active { transform: scale(0.94); }
   position: relative;
 }
 
-/* Gem-Block (Board, Tray und Ghost gemeinsam) */
+/* Gem-Block (Board, Tray und Ghost gemeinsam) — "Candy"-Look:
+   3D-Bevel über Innen-Schatten, glossy Highlight oben links */
 .blk {
-  border-radius: 6px;
+  border-radius: 24%;
   position: relative;
-  box-shadow: 0 0 0 1px rgba(0,0,0,0.25) inset, 0 2px 5px rgba(0,0,0,0.4);
+  box-shadow:
+    inset 0 2px 2px rgba(255, 255, 255, 0.5),
+    inset 2px 0 2px rgba(255, 255, 255, 0.18),
+    inset 0 -3px 4px rgba(0, 0, 0, 0.38),
+    inset -2px 0 3px rgba(0, 0, 0, 0.2),
+    0 3px 7px rgba(0, 0, 0, 0.45);
 }
 .blk::after {
   content: "";
   position: absolute;
-  inset: 8% 12% 55% 12%;
-  border-radius: inherit;
-  background: linear-gradient(rgba(255,255,255,0.4), rgba(255,255,255,0.02));
+  left: 14%; top: 9%;
+  width: 42%; height: 24%;
+  border-radius: 999px;
+  background: linear-gradient(rgba(255,255,255,0.75), rgba(255,255,255,0.08));
+  filter: blur(0.5px);
+  transform: rotate(-8deg);
   pointer-events: none;
 }
-.blk.c1 { background: linear-gradient(160deg, var(--c1l), var(--c1) 45%, var(--c1d)); }
-.blk.c2 { background: linear-gradient(160deg, var(--c2l), var(--c2) 45%, var(--c2d)); }
-.blk.c3 { background: linear-gradient(160deg, var(--c3l), var(--c3) 45%, var(--c3d)); }
-.blk.c4 { background: linear-gradient(160deg, var(--c4l), var(--c4) 45%, var(--c4d)); }
-.blk.c5 { background: linear-gradient(160deg, var(--c5l), var(--c5) 45%, var(--c5d)); }
-.blk.c6 { background: linear-gradient(160deg, var(--c6l), var(--c6) 45%, var(--c6d)); }
-.blk.c7 { background: linear-gradient(160deg, var(--c7l), var(--c7) 45%, var(--c7d)); }
+.blk.c1 { background: radial-gradient(130% 130% at 28% 22%, var(--c1l), var(--c1) 52%, var(--c1d)); }
+.blk.c2 { background: radial-gradient(130% 130% at 28% 22%, var(--c2l), var(--c2) 52%, var(--c2d)); }
+.blk.c3 { background: radial-gradient(130% 130% at 28% 22%, var(--c3l), var(--c3) 52%, var(--c3d)); }
+.blk.c4 { background: radial-gradient(130% 130% at 28% 22%, var(--c4l), var(--c4) 52%, var(--c4d)); }
+.blk.c5 { background: radial-gradient(130% 130% at 28% 22%, var(--c5l), var(--c5) 52%, var(--c5d)); }
+.blk.c6 { background: radial-gradient(130% 130% at 28% 22%, var(--c6l), var(--c6) 52%, var(--c6d)); }
+.blk.c7 { background: radial-gradient(130% 130% at 28% 22%, var(--c7l), var(--c7) 52%, var(--c7d)); }
 
 .cell.pop { animation: pop-in 0.22s var(--ease-spring); }
 @keyframes pop-in {
@@ -318,9 +327,13 @@ button:active { transform: scale(0.94); }
   border-radius: var(--radius);
   padding: 10px;
   box-shadow: 0 0 0 1px var(--edge-soft) inset;
-  min-height: 96px;
+  min-height: 108px;
   touch-action: none;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
 }
+.slot:active { cursor: grabbing; }
 .slot .piece {
   display: grid;
   gap: 3px;

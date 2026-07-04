@@ -226,7 +226,7 @@ function renderTray() {
     const sh = SHAPES[piece.s];
     const el = document.createElement("div");
     el.className = "piece";
-    const mini = Math.min(20, Math.floor(84 / Math.max(sh.w, sh.h)));
+    const mini = Math.min(23, Math.floor(96 / Math.max(sh.w, sh.h)));
     el.style.setProperty("--mini", mini + "px");
     el.style.gridTemplateColumns = `repeat(${sh.w}, ${mini}px)`;
     const grid = Array.from({ length: sh.h }, () => Array(sh.w).fill(false));
@@ -426,11 +426,12 @@ function endDrag() {
   if (lastValid) placePiece(slot, lastValid[0], lastValid[1]);
 }
 
+// Der GANZE Slot ist Grab-Zone – deutlich zuverlässiger als nur das Teil selbst
 document.addEventListener("pointerdown", e => {
-  const pieceEl = e.target.closest(".slot .piece");
-  if (pieceEl) {
+  const slotEl = e.target.closest(".slot");
+  if (slotEl) {
     e.preventDefault();
-    startDrag(Number(pieceEl.dataset.slot), e);
+    startDrag(Number(slotEl.dataset.slot), e);
   }
 });
 document.addEventListener("pointermove", e => { if (drag) { e.preventDefault(); moveDrag(e); } }, { passive: false });
@@ -555,16 +556,19 @@ function updateNameLabel() {
   $("#name-label").textContent = getName() || "Name";
 }
 
-function showNameDialog() {
+function showNameDialog(intro = false) {
+  if (document.querySelector(".overlay")) return;
   const overlay = document.createElement("div");
   overlay.className = "overlay";
   overlay.innerHTML = `
     <div class="panel">
-      <h2>Dein Name</h2>
-      <p class="sub">Wird auf diesem Gerät gespeichert und für die globale Bestenliste verwendet.</p>
+      <h2>${intro ? "Wie heißt du?" : "Dein Name"}</h2>
+      <p class="sub">${intro
+        ? "Dein Name wird auf diesem Gerät gespeichert und für die globale Bestenliste verwendet. Du kannst ihn jederzeit unten über ✏️ ändern."
+        : "Wird auf diesem Gerät gespeichert und für die globale Bestenliste verwendet."}</p>
       <input type="text" id="nm-input" maxlength="16" placeholder="Dein Name" autocomplete="off" value="${escHtml(getName())}">
-      <button class="btn-primary" id="nm-save">Speichern</button>
-      <button class="btn-secondary" id="nm-cancel">Abbrechen</button>
+      <button class="btn-primary" id="nm-save">${intro ? "Los geht's!" : "Speichern"}</button>
+      <button class="btn-secondary" id="nm-cancel">${intro ? "Später" : "Abbrechen"}</button>
     </div>`;
   document.body.appendChild(overlay);
   const input = overlay.querySelector("#nm-input");
@@ -590,6 +594,7 @@ $("#btn-name").onclick = () => showNameDialog();
 $("#btn-restart").onclick = () => {
   if (score > 0 && !over && !confirm("Laufendes Spiel wirklich verwerfen?")) return;
   newGame();
+  if (!getName()) showNameDialog(true);
 };
 const soundBtn = $("#btn-sound");
 soundBtn.textContent = sound.muted ? "🔇" : "🔊";
@@ -603,3 +608,5 @@ if (loadState()) {
 } else {
   newGame();
 }
+// Beim Spielstart einmalig nach dem Namen fragen, falls noch keiner gesetzt ist
+if (!getName() && !over) showNameDialog(true);
