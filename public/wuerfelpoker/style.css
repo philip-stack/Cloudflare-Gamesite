@@ -132,6 +132,16 @@ h2::after {
   50% { background-position: 100% 50%; }
 }
 
+.home-link {
+  display: inline-block;
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 0.85rem;
+  letter-spacing: 0.04em;
+  padding: 6px 2px;
+}
+.home-link:hover { color: var(--gold); }
+
 /* Hero (Home) */
 .hero { text-align: center; margin: 20px 0 26px; }
 .hero .overline {
