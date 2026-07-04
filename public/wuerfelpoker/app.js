@@ -307,7 +307,7 @@ async function renderHome() {
   const localHtml = localGames.map(g => item(g, { id: g.id, code: null }, idx++)).join("");
 
   app.innerHTML = `
-    <a class="home-link" href="/">← Philip Stack</a>
+    <a class="home-link" href="/">← Alle Apps</a>
     <header class="hero">
       <span class="overline">Escalero</span>
       <h1><span class="foil">Würfelpoker</span></h1>
