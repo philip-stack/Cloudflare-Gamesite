@@ -189,6 +189,11 @@ button:active { transform: scale(0.94); }
   font-variant-numeric: tabular-nums;
 }
 .hud-best span { color: var(--ink); font-weight: 700; }
+.hud-rank {
+  color: var(--muted);
+  font-size: 0.78rem;
+  letter-spacing: 0.03em;
+}
 .hud-combo {
   background: rgba(232, 193, 90, 0.14);
   color: var(--gold);
@@ -352,6 +357,36 @@ body.skin-papier .blk {
   box-shadow: inset -1px -2px 0 color-mix(in srgb, var(--bd) 60%, transparent), 0 2px 3px rgba(0,0,0,0.35);
 }
 body.skin-papier .blk::after { display: none; }
+
+/* ---------- Funkelstein: glitzernder Stern auf dem Block ---------- */
+.blk.gem::before {
+  content: "✦";
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 0.85em;
+  color: #fff;
+  text-shadow: 0 0 6px rgba(255,255,255,0.9), 0 0 14px var(--gold-glow);
+  animation: gem-twinkle 1.6s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 1;
+}
+@keyframes gem-twinkle {
+  0%, 100% { opacity: 0.75; transform: scale(0.9) rotate(0deg); }
+  50% { opacity: 1; transform: scale(1.15) rotate(20deg); }
+}
+.slot .piece .blk.gem::before { font-size: 0.7em; }
+
+/* ---------- Combo-Fieber: ab x3 glüht das Brett ---------- */
+.board-wrap.fever #board {
+  box-shadow: 0 0 0 2px var(--gold) inset, 0 0 34px -6px var(--gold-glow), 0 14px 40px -18px rgba(0,0,0,0.8);
+  animation: fever-pulse 1.2s ease-in-out infinite;
+}
+@keyframes fever-pulse {
+  0%, 100% { box-shadow: 0 0 0 2px var(--gold) inset, 0 0 26px -8px var(--gold-glow), 0 14px 40px -18px rgba(0,0,0,0.8); }
+  50% { box-shadow: 0 0 0 2px var(--gold) inset, 0 0 44px -4px var(--gold-glow), 0 14px 40px -18px rgba(0,0,0,0.8); }
+}
 
 .cell.pop { animation: pop-in 0.22s var(--ease-spring); }
 @keyframes pop-in {
@@ -546,6 +581,21 @@ body.skin-papier .blk::after { display: none; }
 }
 .go-rank { color: var(--muted); font-size: 0.95rem; margin-bottom: 16px; min-height: 1.3em; }
 .go-rank b { color: var(--gold); }
+.go-stats {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px 14px;
+  color: var(--muted);
+  font-size: 0.88rem;
+  margin: 8px 0 6px;
+}
+.go-karat {
+  color: var(--gold);
+  font-size: 0.85rem;
+  margin-bottom: 10px;
+}
+.btn-ghost.used { opacity: 0.35; text-decoration: line-through; }
 
 .btn-primary {
   position: relative;

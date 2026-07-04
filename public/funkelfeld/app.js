@@ -55,17 +55,24 @@ function randomShapeIdx() {
   return 0;
 }
 function randomPiece() {
-  return { s: randomShapeIdx(), color: 1 + Math.floor(Math.random() * 7) };
+  const s = randomShapeIdx();
+  // ~22 % der Teile tragen einen Funkelstein auf einer zufälligen Zelle
+  const gem = Math.random() < 0.22 ? Math.floor(Math.random() * SHAPES[s].cells.length) : -1;
+  return { s, color: 1 + Math.floor(Math.random() * 7), gem };
 }
 
 // ---------- Zustand ----------
 let board = [];          // SIZE×SIZE, 0 = leer, 1..7 = Farbe
+let gems = [];           // SIZE×SIZE, true = Funkelstein auf dieser Zelle
 let tray = [null, null, null];
 let score = 0;
 let combo = 0;           // Combo-Streak (aufeinanderfolgende Räum-Züge)
 let best = Number(localStorage.getItem("bb_best") || 0);
 let over = false;
 let submitted = false;
+let undoLeft = 1;        // 1 gratis "Zug zurück" pro Spiel
+let snapshot = null;     // Zustand vor dem letzten Zug
+let run = { lines: 0, bestCombo: 0, gems: 0, clears: 0 }; // Statistik der Runde
 
 const $ = sel => document.querySelector(sel);
 const boardEl = $("#board");
@@ -73,19 +80,54 @@ const fxEl = $("#fx-layer");
 
 function getName() { return (localStorage.getItem("bb_name") || "").trim(); }
 
+// ---------- Karat & Ränge (Lebenszeit-Fortschritt) ----------
+const RANKS = ["Kiesel", "Quarz", "Amethyst", "Topas", "Smaragd", "Rubin", "Saphir", "Opal", "Brillant", "Diamant"];
+let karat = Number(localStorage.getItem("bb_karat") || 0);
+
+function levelInfo(k) {
+  let lvl = 0, base = 0, need = 800;
+  while (k >= base + need && lvl < 98) {
+    base += need;
+    lvl++;
+    need = Math.round(800 * Math.pow(1.32, lvl));
+  }
+  return { lvl, cur: k - base, need, rank: RANKS[Math.min(Math.floor(lvl / 3), RANKS.length - 1)] };
+}
+
+function addKarat(points) {
+  if (points <= 0) return;
+  const before = levelInfo(karat).lvl;
+  karat += points;
+  localStorage.setItem("bb_karat", karat);
+  const info = levelInfo(karat);
+  if (info.lvl > before) {
+    setTimeout(() => {
+      floatCenter(`⬆ Level ${info.lvl} — ${info.rank}!`, true);
+      sound.fanfare();
+      confetti();
+    }, 600);
+  }
+  updateHud();
+}
+
 // ---------- Persistenz (laufendes Spiel überlebt Reload) ----------
 function saveState() {
-  localStorage.setItem("bb_state", JSON.stringify({ board, tray, score, combo }));
+  localStorage.setItem("bb_state", JSON.stringify({ board, gems, tray, score, combo, undoLeft, run }));
 }
 function loadState() {
   try {
     const s = JSON.parse(localStorage.getItem("bb_state") || "null");
     if (!s || !Array.isArray(s.board) || s.board.length !== SIZE) return false;
     board = s.board;
-    tray = s.tray.map(p => (p && SHAPES[p.s] ? p : null));
+    gems = Array.isArray(s.gems) && s.gems.length === SIZE
+      ? s.gems
+      : Array.from({ length: SIZE }, () => Array(SIZE).fill(false));
+    tray = s.tray.map(p => (p && SHAPES[p.s] ? { gem: -1, ...p } : null));
     if (tray.every(p => !p)) tray = [randomPiece(), randomPiece(), randomPiece()];
     score = Number(s.score) || 0;
     combo = Number(s.combo) || 0;
+    undoLeft = s.undoLeft === 0 ? 0 : 1;
+    run = { lines: 0, bestCombo: 0, gems: 0, clears: 0, ...(s.run || {}) };
     return true;
   } catch { return false; }
 }
@@ -137,11 +179,16 @@ function praiseFor(n, comboNow) {
 
 function newGame() {
   board = Array.from({ length: SIZE }, () => Array(SIZE).fill(0));
+  gems = Array.from({ length: SIZE }, () => Array(SIZE).fill(false));
   tray = [randomPiece(), randomPiece(), randomPiece()];
   score = 0;
   combo = 0;
   over = false;
   submitted = false;
+  undoLeft = 1;
+  snapshot = null;
+  run = { lines: 0, bestCombo: 0, gems: 0, clears: 0 };
+  $("#board-wrap").classList.remove("fever");
   saveState();
   renderAll();
 }
@@ -182,7 +229,19 @@ function previewClears(sh, r0, c0) {
 function placePiece(slot, r0, c0) {
   const piece = tray[slot];
   const sh = SHAPES[piece.s];
-  sh.cells.forEach(([r, c]) => { board[r0 + r][c0 + c] = piece.color; });
+
+  // Zustand für "Zug zurück" sichern
+  snapshot = {
+    board: board.map(row => [...row]),
+    gems: gems.map(row => [...row]),
+    tray: tray.map(p => (p ? { ...p } : null)),
+    score, combo, run: { ...run },
+  };
+
+  sh.cells.forEach(([r, c], i) => {
+    board[r0 + r][c0 + c] = piece.color;
+    if (piece.gem === i) gems[r0 + r][c0 + c] = true;
+  });
   tray[slot] = null;
 
   let gained = sh.cells.length;
@@ -194,10 +253,20 @@ function placePiece(slot, r0, c0) {
 
   if (n > 0) {
     combo += 1;
+    run.lines += n;
+    run.bestCombo = Math.max(run.bestCombo, combo);
     const base = 10 * n * (n + 1) / 2;
     const lineGain = base * combo;
     gained += lineGain;
-    blastLines(rows, cols);
+
+    // Funkelsteine in den geräumten Linien: +25 pro Stein
+    const gemGain = blastLines(rows, cols);
+    if (gemGain > 0) {
+      run.gems += gemGain;
+      gained += gemGain * 25;
+      setTimeout(() => { floatCenter(`✦ Funkelstein${gemGain > 1 ? "e" : ""} +${gemGain * 25}`); sound.gem(); }, 300);
+    }
+
     sound.clear(Math.min(combo, 6));
     if (navigator.vibrate) navigator.vibrate(n >= 2 ? [30, 40, 50] : 25);
     if (n >= 2) shake();
@@ -211,20 +280,28 @@ function placePiece(slot, r0, c0) {
     if (navigator.vibrate) navigator.vibrate(10);
   }
 
+  // Combo-Fieber: ab x3 glüht das Brett golden
+  $("#board-wrap").classList.toggle("fever", combo >= 3);
+
   score += gained;
 
   // Board komplett leer geräumt → Bonus + neuer Block-Look
   if (n > 0 && board.every(row => row.every(v => v === 0))) {
     score += 300;
+    gained += 300;
+    run.clears += 1;
     const skinName = advanceSkin();
     setTimeout(() => { floatCenter("✨ BOARD CLEAR! +300", true); sound.fanfare(); }, 380);
     setTimeout(() => floatCenter(`🎨 Neuer Look: ${skinName}`, true), 1250);
   }
 
+  addKarat(gained);
+
   if (tray.every(p => !p)) tray = [randomPiece(), randomPiece(), randomPiece()];
 
   updateHud();
   renderTray();
+  updateUndoBtn();
   saveState();
 
   if (!movesLeft()) {
@@ -233,12 +310,18 @@ function placePiece(slot, r0, c0) {
   }
 }
 
+// Räumt Linien, gibt die Anzahl der dabei eingesammelten Funkelsteine zurück
 function blastLines(rows, cols) {
   const doomed = new Set();
   rows.forEach(r => { for (let c = 0; c < SIZE; c++) doomed.add(r * SIZE + c); });
   cols.forEach(c => { for (let r = 0; r < SIZE; r++) doomed.add(r * SIZE + c); });
+  let gemCount = 0;
   // Board-Array sofort leeren (Logik), nur die Optik verzögert räumen
-  doomed.forEach(idx => { board[Math.floor(idx / SIZE)][idx % SIZE] = 0; });
+  doomed.forEach(idx => {
+    const r = Math.floor(idx / SIZE), c = idx % SIZE;
+    if (gems[r][c]) { gemCount++; gems[r][c] = false; }
+    board[r][c] = 0;
+  });
   doomed.forEach(idx => {
     const r = Math.floor(idx / SIZE), c = idx % SIZE;
     const el = cellEl(r, c);
@@ -246,6 +329,36 @@ function blastLines(rows, cols) {
     el.classList.add("blast");
   });
   setTimeout(() => { renderBoard(); }, 340 + 14 * 18);
+  return gemCount;
+}
+
+// ---------- Zug zurück (1× pro Spiel gratis) ----------
+function undoMove() {
+  if (!undoLeft || !snapshot || over) return;
+  board = snapshot.board;
+  gems = snapshot.gems;
+  tray = snapshot.tray;
+  score = snapshot.score;
+  combo = snapshot.combo;
+  run = snapshot.run;
+  snapshot = null;
+  undoLeft = 0;
+  $("#board-wrap").classList.toggle("fever", combo >= 3);
+  renderAll();
+  updateUndoBtn();
+  saveState();
+  toast("Zug zurückgenommen");
+}
+
+function updateUndoBtn() {
+  const btn = $("#btn-undo");
+  if (!btn) return;
+  btn.disabled = !undoLeft || !snapshot || over;
+  btn.classList.toggle("used", !undoLeft);
+}
+
+function toast(msg) {
+  floatCenter(msg);
 }
 
 // ---------- Rendering ----------
@@ -261,7 +374,7 @@ function renderBoard() {
     for (let c = 0; c < SIZE; c++) {
       const el = cellEl(r, c);
       const v = board[r][c];
-      el.className = "cell" + (v ? ` blk c${v}` : "");
+      el.className = "cell" + (v ? ` blk c${v}` : "") + (v && gems[r][c] ? " gem" : "");
       el.style.animationDelay = "";
     }
   }
@@ -278,11 +391,11 @@ function renderTray() {
     const mini = Math.min(23, Math.floor(96 / Math.max(sh.w, sh.h)));
     el.style.setProperty("--mini", mini + "px");
     el.style.gridTemplateColumns = `repeat(${sh.w}, ${mini}px)`;
-    const grid = Array.from({ length: sh.h }, () => Array(sh.w).fill(false));
-    sh.cells.forEach(([r, c]) => { grid[r][c] = true; });
-    grid.forEach(row => row.forEach(filled => {
+    const grid = Array.from({ length: sh.h }, () => Array(sh.w).fill(-1));
+    sh.cells.forEach(([r, c], k) => { grid[r][c] = k; });
+    grid.forEach(row => row.forEach(k => {
       const d = document.createElement("div");
-      d.className = filled ? `blk c${piece.color}` : "void";
+      d.className = k >= 0 ? `blk c${piece.color}` + (piece.gem === k ? " gem" : "") : "void";
       el.appendChild(d);
     }));
     el.dataset.slot = i;
@@ -297,6 +410,9 @@ function updateHud() {
   const chip = $("#combo-chip");
   if (combo >= 2) { chip.classList.remove("hidden"); $("#combo-n").textContent = "x" + combo; }
   else chip.classList.add("hidden");
+  const info = levelInfo(karat);
+  const rankEl = $("#rank-chip");
+  if (rankEl) rankEl.textContent = `💎 ${info.rank} · Lvl ${info.lvl}`;
 }
 
 function renderAll() { renderBoard(); renderTray(); updateHud(); }
@@ -379,6 +495,7 @@ const sound = (() => {
         .forEach((f, i) => tone(f, 0.14, "triangle", 0.11, i * 0.06));
     },
     fanfare() { [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.22, "sine", 0.12, i * 0.09)); },
+    gem() { [1568, 2093, 2637].forEach((f, i) => tone(f, 0.12, "sine", 0.08, i * 0.05)); },
     dead() { tone(220, 0.3, "sawtooth", 0.06); tone(165, 0.4, "sawtooth", 0.06, 0.12); },
     toggle() {
       muted = !muted;
@@ -407,11 +524,11 @@ function startDrag(slot, e) {
   ghost.id = "ghost";
   ghost.style.gridTemplateColumns = `repeat(${sh.w}, ${cellPx}px)`;
   ghost.style.gap = gapPx + "px";
-  const grid = Array.from({ length: sh.h }, () => Array(sh.w).fill(false));
-  sh.cells.forEach(([r, c]) => { grid[r][c] = true; });
-  grid.forEach(row => row.forEach(filled => {
+  const grid = Array.from({ length: sh.h }, () => Array(sh.w).fill(-1));
+  sh.cells.forEach(([r, c], k) => { grid[r][c] = k; });
+  grid.forEach(row => row.forEach(k => {
     const d = document.createElement("div");
-    d.className = filled ? `blk c${piece.color}` : "void";
+    d.className = k >= 0 ? `blk c${piece.color}` + (piece.gem === k ? " gem" : "") : "void";
     d.style.width = cellPx + "px";
     d.style.height = cellPx + "px";
     ghost.appendChild(d);
@@ -556,6 +673,13 @@ async function gameOver() {
       <h2>${isRecord ? "Neuer Rekord!" : "Game Over"}</h2>
       <div class="go-score">${score}</div>
       ${isRecord ? `<div class="go-best-badge">👑 Persönliche Bestleistung</div>` : `<div class="sub">Bestleistung: ${best}</div>`}
+      <div class="go-stats">
+        <span>📏 ${run.lines} Linien</span>
+        <span>🔥 Combo x${run.bestCombo}</span>
+        <span>✦ ${run.gems} Steine</span>
+        ${run.clears ? `<span>✨ ${run.clears}× leergeräumt</span>` : ""}
+      </div>
+      <div class="go-karat">${(() => { const i = levelInfo(karat); return `💎 ${i.rank} · Level ${i.lvl} · noch ${i.need - i.cur} Karat bis Level ${i.lvl + 1}`; })()}</div>
       <div class="go-rank" id="go-rank"></div>
       <div id="go-name-area"></div>
       <button class="btn-primary" id="go-again">Nochmal spielen</button>
@@ -672,6 +796,7 @@ function showNameDialog(intro = false) {
 // ---------- UI-Verdrahtung ----------
 $("#btn-top").onclick = () => showLeaderboard();
 $("#btn-name").onclick = () => showNameDialog();
+$("#btn-undo").onclick = () => undoMove();
 $("#btn-restart").onclick = () => {
   if (score > 0 && !over && !confirm("Laufendes Spiel wirklich verwerfen?")) return;
   newGame();
@@ -690,5 +815,6 @@ if (loadState()) {
 } else {
   newGame();
 }
+updateUndoBtn();
 // Beim Spielstart einmalig nach dem Namen fragen, falls noch keiner gesetzt ist
 if (!getName() && !over) showNameDialog(true);
