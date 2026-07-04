@@ -39,7 +39,7 @@ CREATE TABLE cells (
 CREATE INDEX idx_players_game ON players(game_id);
 CREATE INDEX idx_cells_game   ON cells(game_id);
 
--- Block Blast – globale Bestenliste
+-- Funkelfeld – globale Bestenliste (Tabellenname historisch "blockblast_scores")
 CREATE TABLE IF NOT EXISTS blockblast_scores (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
   name       TEXT NOT NULL,

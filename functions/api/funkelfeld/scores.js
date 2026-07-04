@@ -1,6 +1,6 @@
 import { json } from "../_util.js";
 
-// GET /api/blockblast/scores – Top 50, pro Name nur der Highscore
+// GET /api/funkelfeld/scores – Top 50, pro Name nur der Highscore
 // (SQLite garantiert bei MAX(): "name" stammt aus der Zeile mit dem Maximum)
 export async function onRequestGet({ env }) {
   const rows = (await env.DB.prepare(
@@ -9,7 +9,7 @@ export async function onRequestGet({ env }) {
   return json({ top: rows });
 }
 
-// POST /api/blockblast/scores – Score eintragen
+// POST /api/funkelfeld/scores – Score eintragen
 // body: { name, score }  →  { ok, rank }
 export async function onRequestPost({ request, env }) {
   const b = await request.json().catch(() => ({}));

@@ -1,5 +1,5 @@
 // ====================================================================
-// BLOCK BLAST — 8×8-Block-Puzzle mit globaler Bestenliste (D1)
+// FUNKELFELD — 8×8-Block-Puzzle mit globaler Bestenliste (D1)
 //
 // Regeln: 3 Teile pro Runde, per Drag & Drop aufs Brett. Volle Reihen
 // UND Spalten werden gleichzeitig geräumt. Aufeinanderfolgende Räum-
@@ -469,7 +469,7 @@ async function submitScore() {
   if (!name || score <= 0 || submitted) return null;
   submitted = true;
   try {
-    const res = await fetch("/api/blockblast/scores", {
+    const res = await fetch("/api/funkelfeld/scores", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, score }),
@@ -549,7 +549,7 @@ async function showLeaderboard() {
   overlay.innerHTML = `
     <div class="panel">
       <h2><span class="foil">Bestenliste</span></h2>
-      <p class="sub">Die 50 besten Blast-Runden weltweit</p>
+      <p class="sub">Die 50 besten Runden weltweit</p>
       <div id="lb-content"><p class="lb-empty">Lade …</p></div>
       <button class="btn-secondary" id="lb-close">Schließen</button>
     </div>`;
@@ -559,7 +559,7 @@ async function showLeaderboard() {
   overlay.querySelector("#lb-close").onclick = close;
 
   try {
-    const res = await fetch("/api/blockblast/scores");
+    const res = await fetch("/api/funkelfeld/scores");
     const data = await res.json();
     const me = getName().toLowerCase();
     const medals = ["🥇", "🥈", "🥉"];
