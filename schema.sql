@@ -48,3 +48,13 @@ CREATE TABLE IF NOT EXISTS blockblast_scores (
 );
 
 CREATE INDEX IF NOT EXISTS idx_bb_score ON blockblast_scores(score);
+
+-- Komet – globale Bestenliste
+CREATE TABLE IF NOT EXISTS komet_scores (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  name       TEXT NOT NULL,
+  score      INTEGER NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_komet_score ON komet_scores(score);

@@ -1,0 +1,297 @@
+/* ==================================================================
+   KOMET — One-Touch-Schwung-Arcade ("Midnight Felt", 2026)
+   Halten = Lichtseil zum Stern, Loslassen = fliegen.
+   ================================================================== */
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg0: #0a0e0b;
+  --felt: #0e1410;
+  --card: rgba(255, 252, 240, 0.045);
+  --card-hi: rgba(255, 252, 240, 0.09);
+  --edge: rgba(232, 193, 90, 0.14);
+  --edge-soft: rgba(255, 252, 240, 0.08);
+  --ink: #f4efe2;
+  --muted: #93a396;
+  --gold: #e8c15a;
+  --gold-glow: rgba(232, 193, 90, 0.35);
+  --foil: linear-gradient(115deg, #8a6a1c 0%, #e8c15a 25%, #fff3c4 50%, #e8c15a 75%, #8a6a1c 100%);
+  --red: #e2685a;
+  --font-display: "Fraunces", Georgia, serif;
+  --font-ui: "Outfit", system-ui, -apple-system, sans-serif;
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.5, 1);
+}
+
+html, body { height: 100%; }
+
+body {
+  font-family: var(--font-ui);
+  background: radial-gradient(120% 90% at 50% -10%, #14202a 0%, #0c1218 45%, #07090c 100%);
+  color: var(--ink);
+  overflow: hidden;
+  overscroll-behavior: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+#app {
+  height: 100vh;
+  height: 100dvh;
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 12px 12px calc(10px + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---------- Topbar / HUD ---------- */
+.topbar { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.topbar h1 {
+  flex: 1;
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 800;
+  font-size: 1.6rem;
+}
+.foil {
+  background: var(--foil);
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: foil-sheen 5.5s ease-in-out infinite;
+}
+@keyframes foil-sheen {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+.btn-back {
+  display: grid; place-items: center;
+  width: 42px; height: 42px;
+  border-radius: 12px;
+  background: var(--card);
+  color: var(--ink);
+  text-decoration: none;
+  font-size: 1.15rem;
+  box-shadow: 0 0 0 1px var(--edge-soft) inset;
+  flex-shrink: 0;
+}
+button {
+  font-family: inherit;
+  border: 0;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition: transform 0.15s var(--ease-spring);
+}
+button:active { transform: scale(0.94); }
+.btn-icon {
+  width: 42px; height: 42px;
+  border-radius: 12px;
+  background: var(--card);
+  color: var(--ink);
+  font-size: 1.05rem;
+  box-shadow: 0 0 0 1px var(--edge-soft) inset;
+  flex-shrink: 0;
+}
+
+.hud {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.hud-item {
+  flex: 1;
+  background: linear-gradient(175deg, var(--card-hi), var(--card));
+  border-radius: 12px;
+  padding: 7px 10px;
+  text-align: center;
+  box-shadow: 0 0 0 1px var(--edge-soft) inset;
+}
+.hud-item span {
+  display: block;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 1.25rem;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+.hud-item label {
+  color: var(--muted);
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+}
+
+/* ---------- Bühne ---------- */
+#stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  border-radius: 18px;
+  overflow: hidden;
+  box-shadow: 0 0 0 1px var(--edge) inset, 0 14px 40px -18px rgba(0,0,0,0.8);
+  background: linear-gradient(180deg, #0b1524 0%, #0d1a2b 55%, #16233a 100%);
+  touch-action: none;
+}
+#game { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+
+#hint {
+  position: absolute;
+  left: 50%; bottom: 18px;
+  transform: translateX(-50%);
+  color: var(--muted);
+  font-size: 0.78rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.hint-pulse { animation: hint-pulse 2s ease-in-out infinite; }
+@keyframes hint-pulse { 0%, 100% { opacity: 0.45; } 50% { opacity: 1; } }
+
+/* ---------- Overlays / Panels (Design wie Funkelfeld) ---------- */
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(5, 8, 6, 0.6);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 40;
+  padding: 18px;
+  animation: overlay-in 0.25s ease;
+}
+@keyframes overlay-in { from { opacity: 0; } to { opacity: 1; } }
+.panel {
+  background: linear-gradient(180deg, #17202a, #101822);
+  border-radius: 22px;
+  box-shadow: 0 0 0 1px var(--edge) inset, 0 24px 70px -24px rgba(0,0,0,0.9);
+  padding: 26px 20px calc(20px + env(safe-area-inset-bottom));
+  width: 100%;
+  max-width: 420px;
+  max-height: 86vh;
+  overflow-y: auto;
+  animation: panel-up 0.4s var(--ease-spring);
+  text-align: center;
+}
+@keyframes panel-up {
+  from { transform: translateY(46px) scale(0.96); opacity: 0; }
+  to { transform: translateY(0) scale(1); opacity: 1; }
+}
+.panel h2 {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 800;
+  font-size: 1.7rem;
+  margin-bottom: 6px;
+}
+.panel .sub { color: var(--muted); font-size: 0.92rem; margin-bottom: 16px; line-height: 1.5; }
+.panel .sub b { color: var(--gold); font-weight: 600; }
+
+.go-score {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 3.2rem;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  background: var(--foil);
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: foil-sheen 5.5s ease-in-out infinite;
+  margin: 6px 0 2px;
+}
+.go-best-badge {
+  display: inline-block;
+  background: rgba(232, 193, 90, 0.14);
+  color: var(--gold);
+  font-weight: 700;
+  font-size: 0.85rem;
+  padding: 5px 14px;
+  border-radius: 999px;
+  box-shadow: 0 0 0 1px rgba(232,193,90,0.3) inset;
+  margin-bottom: 10px;
+}
+.go-stats {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px 14px;
+  color: var(--muted);
+  font-size: 0.88rem;
+  margin: 8px 0 10px;
+}
+.go-rank { color: var(--muted); font-size: 0.95rem; margin-bottom: 16px; min-height: 1.3em; }
+.go-rank b { color: var(--gold); }
+
+.btn-primary {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(160deg, #f0cd6e 0%, var(--gold) 40%, #c39a30 100%);
+  color: #1a1508;
+  font-weight: 700;
+  font-size: 1.05rem;
+  padding: 15px;
+  width: 100%;
+  border-radius: 14px;
+  box-shadow: 0 0 0 1px rgba(255, 230, 160, 0.35) inset, 0 10px 30px -10px var(--gold-glow);
+  margin-bottom: 10px;
+}
+.btn-secondary {
+  background: var(--card-hi);
+  color: var(--ink);
+  font-size: 1rem;
+  padding: 13px;
+  width: 100%;
+  border-radius: 14px;
+  box-shadow: 0 0 0 1px var(--edge-soft) inset;
+}
+.panel input[type="text"] {
+  font-family: inherit;
+  font-size: 1.15rem;
+  text-align: center;
+  width: 100%;
+  padding: 14px;
+  border: 1px solid var(--edge-soft);
+  border-radius: 14px;
+  background: var(--card);
+  color: var(--ink);
+  margin-bottom: 14px;
+}
+.panel input:focus {
+  outline: none;
+  border-color: var(--gold);
+  box-shadow: 0 0 0 3px rgba(232, 193, 90, 0.18);
+}
+
+.lb-list { list-style: none; text-align: left; margin: 6px 0 16px; }
+.lb-list li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 8px;
+  border-bottom: 1px solid var(--edge-soft);
+  font-size: 0.98rem;
+}
+.lb-list li:last-child { border-bottom: 0; }
+.lb-rank { width: 34px; flex-shrink: 0; text-align: center; color: var(--muted); font-weight: 700; font-variant-numeric: tabular-nums; }
+.lb-list li:nth-child(-n+3) .lb-rank { font-size: 1.15rem; }
+.lb-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lb-list li.me .lb-name { color: var(--gold); font-weight: 700; }
+.lb-score { font-weight: 700; font-variant-numeric: tabular-nums; }
+.lb-empty { color: var(--muted); padding: 18px 0; }
+
+.hidden { display: none !important; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001s !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001s !important;
+  }
+}
