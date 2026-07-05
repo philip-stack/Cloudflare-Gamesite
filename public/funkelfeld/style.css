@@ -204,6 +204,8 @@ button:active { transform: scale(0.94); }
   box-shadow: 0 0 0 1px rgba(232,193,90,0.3) inset;
   animation: combo-pulse 0.9s ease-in-out infinite;
 }
+/* Reserviert seinen Platz auch unsichtbar → Layout springt nicht */
+.hud-combo.off { visibility: hidden; animation: none; }
 @keyframes combo-pulse {
   0%, 100% { transform: scale(1); }
   50% { transform: scale(1.07); }

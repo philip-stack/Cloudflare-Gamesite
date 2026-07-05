@@ -408,8 +408,8 @@ function updateHud() {
   if (score > best) { best = score; localStorage.setItem("bb_best", best); }
   $("#best").textContent = best;
   const chip = $("#combo-chip");
-  if (combo >= 2) { chip.classList.remove("hidden"); $("#combo-n").textContent = "x" + combo; }
-  else chip.classList.add("hidden");
+  if (combo >= 2) { chip.classList.remove("off"); $("#combo-n").textContent = "x" + combo; }
+  else chip.classList.add("off");
   const info = levelInfo(karat);
   const rankEl = $("#rank-chip");
   if (rankEl) rankEl.textContent = `💎 ${info.rank} · Lvl ${info.lvl}`;
