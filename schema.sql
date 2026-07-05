@@ -58,3 +58,13 @@ CREATE TABLE IF NOT EXISTS komet_scores (
 );
 
 CREATE INDEX IF NOT EXISTS idx_komet_score ON komet_scores(score);
+
+-- Lichtwerk – globale Bestenliste (Sterne)
+CREATE TABLE IF NOT EXISTS lichtwerk_scores (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  name       TEXT NOT NULL,
+  score      INTEGER NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_lichtwerk_score ON lichtwerk_scores(score);

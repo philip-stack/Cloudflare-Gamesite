@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#0a0e0b">
+  <title>Lichtwerk</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..900;1,9..144,400..900&family=Outfit:wght@300..800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css?v=1">
+</head>
+<body>
+  <div class="ambience" aria-hidden="true">
+    <div class="aurora aurora-a"></div>
+    <div class="aurora aurora-b"></div>
+    <div class="grain"></div>
+  </div>
+
+  <main id="app">
+    <!-- Level-Auswahl -->
+    <section id="screen-select">
+      <div class="topbar">
+        <a class="btn-back" href="/" aria-label="Zurück zur Übersicht">←</a>
+        <h1><span class="foil">Lichtwerk</span></h1>
+        <button class="btn-icon" id="btn-top" title="Bestenliste">🏆</button>
+      </div>
+      <p class="intro">Drehe die <b>Spiegel</b> und führe jeden Lichtstrahl in seinen <b>Kristall</b>.
+        Gold + Cyan = <b>Weiß</b>. Weniger Züge = mehr Sterne.</p>
+      <div class="star-total" id="star-total"></div>
+      <div id="level-grid" class="level-grid"></div>
+    </section>
+
+    <!-- Spielansicht -->
+    <section id="screen-game" class="hidden">
+      <div class="topbar">
+        <button class="btn-back" id="btn-levels">←</button>
+        <div class="lvl-title">
+          <h1 id="lvl-name">Level</h1>
+          <span class="lvl-sub" id="lvl-sub"></span>
+        </div>
+        <button class="btn-icon" id="btn-reset" title="Level zurücksetzen">↺</button>
+      </div>
+      <div id="board-holder">
+        <canvas id="board"></canvas>
+      </div>
+    </section>
+  </main>
+
+  <script src="levels.js?v=1"></script>
+  <script src="app.js?v=1"></script>
+</body>
+</html>
