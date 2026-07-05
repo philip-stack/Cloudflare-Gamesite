@@ -54,8 +54,21 @@ function randomShapeIdx() {
   }
   return 0;
 }
-function randomPiece() {
-  const s = randomShapeIdx();
+// Kleine Teile (≤3 Blöcke) — zum gezielten Leerräumen
+const SMALL_IDXS = SHAPES.map((sh, i) => (sh.cells.length <= 3 ? i : -1)).filter(i => i >= 0);
+const SMALL_WEIGHT = SMALL_IDXS.reduce((s, i) => s + SHAPES[i].weight, 0);
+
+function randomShapeIdxSmall() {
+  let r = Math.random() * SMALL_WEIGHT;
+  for (const i of SMALL_IDXS) {
+    r -= SHAPES[i].weight;
+    if (r <= 0) return i;
+  }
+  return SMALL_IDXS[0];
+}
+
+function randomPiece(smallOnly = false) {
+  const s = smallOnly ? randomShapeIdxSmall() : randomShapeIdx();
   // ~22 % der Teile tragen einen Funkelstein auf einer zufälligen Zelle
   const gem = Math.random() < 0.22 ? Math.floor(Math.random() * SHAPES[s].cells.length) : -1;
   return { s, color: 1 + Math.floor(Math.random() * 7), gem };
@@ -123,7 +136,7 @@ function loadState() {
       ? s.gems
       : Array.from({ length: SIZE }, () => Array(SIZE).fill(false));
     tray = s.tray.map(p => (p && SHAPES[p.s] ? { gem: -1, ...p } : null));
-    if (tray.every(p => !p)) tray = [randomPiece(), randomPiece(), randomPiece()];
+    if (tray.every(p => !p)) refillTray();
     score = Number(s.score) || 0;
     combo = Number(s.combo) || 0;
     undoLeft = s.undoLeft === 0 ? 0 : 1;
@@ -208,6 +221,20 @@ function anyPlacement(sh) {
 }
 function movesLeft() {
   return tray.some(p => p && anyPlacement(SHAPES[p.s]));
+}
+
+// Neue Teile ausgeben — mit "Finisher-Logik" wie im Original:
+// Ist das Brett schon fast leer, kommen bevorzugt kleine Teile,
+// damit ein komplettes Leerräumen planbar wird. Außerdem wird
+// nachgewürfelt, wenn kein einziges Teil aufs Brett passen würde.
+function refillTray() {
+  const filled = board.flat().filter(v => v !== 0).length;
+  const finisher = filled > 0 && filled <= 14;
+  const gen = () => randomPiece(finisher && Math.random() < 0.65);
+  for (let attempt = 0; attempt < 6; attempt++) {
+    tray = [gen(), gen(), gen()];
+    if (tray.some(p => anyPlacement(SHAPES[p.s]))) return;
+  }
 }
 function fullLines() {
   const rows = [], cols = [];
@@ -297,7 +324,7 @@ function placePiece(slot, r0, c0) {
 
   addKarat(gained);
 
-  if (tray.every(p => !p)) tray = [randomPiece(), randomPiece(), randomPiece()];
+  if (tray.every(p => !p)) refillTray();
 
   updateHud();
   renderTray();
