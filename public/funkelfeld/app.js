@@ -223,17 +223,69 @@ function movesLeft() {
   return tray.some(p => p && anyPlacement(SHAPES[p.s]));
 }
 
-// Neue Teile ausgeben — mit "Finisher-Logik" wie im Original:
-// Ist das Brett schon fast leer, kommen bevorzugt kleine Teile,
-// damit ein komplettes Leerräumen planbar wird. Außerdem wird
-// nachgewürfelt, wenn kein einziges Teil aufs Brett passen würde.
+// Wie viele Blöcke blieben übrig, wenn Form sh bei (r,c) läge
+// und volle Linien geräumt würden?
+function simLeftover(sh, r, c) {
+  const b = board.map(row => [...row]);
+  sh.cells.forEach(([dr, dc]) => { b[r + dr][c + dc] = 1; });
+  const rows = [], cols = [];
+  for (let i = 0; i < SIZE; i++) if (b[i].every(v => v !== 0)) rows.push(i);
+  for (let j = 0; j < SIZE; j++) if (b.every(row => row[j] !== 0)) cols.push(j);
+  rows.forEach(i => { for (let j = 0; j < SIZE; j++) b[i][j] = 0; });
+  cols.forEach(j => { for (let i = 0; i < SIZE; i++) b[i][j] = 0; });
+  return b.flat().filter(v => v !== 0).length;
+}
+
+// Zufällig durchmischte Suche nach einer Form, deren beste Platzierung
+// das Kriterium erfüllt (z. B. "Brett danach leer")
+function findShape(pred) {
+  const order = [...SHAPES.keys()];
+  for (let i = order.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [order[i], order[j]] = [order[j], order[i]];
+  }
+  for (const si of order) {
+    const sh = SHAPES[si];
+    for (let r = 0; r <= SIZE - sh.h; r++)
+      for (let c = 0; c <= SIZE - sh.w; c++)
+        if (canPlace(sh, r, c) && pred(simLeftover(sh, r, c))) return si;
+  }
+  return -1;
+}
+
+function pieceOf(si) {
+  return {
+    s: si,
+    color: 1 + Math.floor(Math.random() * 7),
+    gem: Math.random() < 0.22 ? Math.floor(Math.random() * SHAPES[si].cells.length) : -1,
+  };
+}
+
+// Neue Teile ausgeben — großzügig wie das Original:
+//  1) Brett fast leer: kleine Teile bevorzugt, und wenn IRGENDEINE Form
+//     das Brett komplett leeren könnte, liegt sie garantiert im Set.
+//  2) Sonst: mit 60 % liegt ein Teil dabei, das sofort stark räumen kann.
+//  3) Re-Roll, wenn kein Teil des Sets passen würde.
 function refillTray() {
   const filled = board.flat().filter(v => v !== 0).length;
-  const finisher = filled > 0 && filled <= 14;
-  const gen = () => randomPiece(finisher && Math.random() < 0.65);
+  const finisher = filled > 0 && filled <= 16;
+  const gen = () => randomPiece(finisher && Math.random() < 0.6);
+
   for (let attempt = 0; attempt < 6; attempt++) {
     tray = [gen(), gen(), gen()];
-    if (tray.some(p => anyPlacement(SHAPES[p.s]))) return;
+    if (tray.some(p => anyPlacement(SHAPES[p.s]))) break;
+  }
+
+  if (finisher) {
+    const si = findShape(left => left === 0);
+    if (si >= 0 && !tray.some(p => p.s === si)) {
+      tray[Math.floor(Math.random() * 3)] = pieceOf(si);
+    }
+  } else if (Math.random() < 0.6) {
+    const si = findShape(left => left < filled);
+    if (si >= 0 && !tray.some(p => p.s === si)) {
+      tray[Math.floor(Math.random() * 3)] = pieceOf(si);
+    }
   }
 }
 function fullLines() {
