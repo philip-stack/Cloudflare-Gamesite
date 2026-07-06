@@ -31,17 +31,20 @@ const RAINBOW = ["#ff6b6b", "#ffa14d", "#ffe066", "#69d98a", "#56d5e8", "#b678ff
 // ==================== Projektion ====================
 // Pseudo-3D: t = NEAR/z ∈ (0..1], t=1 ist die Unterkante der Bühne.
 // Der Weg schlängelt sich sanft (sway), das gibt Kurven-Gefühl.
-const NEAR = 1, SPAWN_Z = 24, PLAYER_T = 0.7;
+const NEAR = 1, SPAWN_Z = 24, PLAYER_T = 0.78;
 const PLAYER_Z = NEAR / PLAYER_T;
+// Größenfaktoren: Läufer:in, Hindernisse und Items füllen die Bühne
+// wie bei Temple Run — Kamera tief, Weg breit.
+const RS = 1.45, OBS = 1.45, ITEMS = 1.3;
 let sway = 0;
 
-function horizonY() { return H * 0.30; }
+function horizonY() { return H * 0.34; }
 function tOf(z) { return NEAR / Math.max(z, 0.55); }
 function groundY(t) { return horizonY() + (H * 1.08 - horizonY()) * t; }
 function centerX(t) { const d = 1 - Math.min(t, 1); return W / 2 + sway * d * d; }
-function laneW() { return W * 0.30; }
+function laneW() { return W * 0.36; }
 function laneX(lane, t) { return centerX(t) + (lane - 1) * laneW() * t; }
-function roadHalf(t) { return W * 0.52 * t; }
+function roadHalf(t) { return W * 0.62 * t; }
 
 // ==================== Sprite-Werkstatt ====================
 // Wiederkehrende Objekte werden EINMAL hochauflösend vorgerendert
@@ -285,6 +288,54 @@ SPR.lantern = makeSprite(40, 120, g => {
   g.shadowBlur = 0;
 });
 
+// --- Bordstein-Kristalle (säumen den Weg) ---
+SPR.edgeA = makeSprite(26, 30, g => {
+  g.shadowColor = VIOLET; g.shadowBlur = 8;
+  const gr = g.createLinearGradient(0, -26, 0, 0);
+  gr.addColorStop(0, "#e8d9ff"); gr.addColorStop(0.5, VIOLET); gr.addColorStop(1, "#2b1440");
+  g.fillStyle = gr;
+  g.beginPath();
+  g.moveTo(0, -26); g.lineTo(9, -8); g.lineTo(6, 0); g.lineTo(-6, 0); g.lineTo(-9, -10);
+  g.closePath(); g.fill();
+  g.shadowBlur = 0;
+});
+SPR.edgeB = makeSprite(26, 24, g => {
+  g.shadowColor = PINK; g.shadowBlur = 8;
+  const gr = g.createLinearGradient(0, -20, 0, 0);
+  gr.addColorStop(0, "#ffe0f0"); gr.addColorStop(0.5, PINK); gr.addColorStop(1, "#3a1030");
+  g.fillStyle = gr;
+  g.beginPath();
+  g.moveTo(-2, -20); g.lineTo(8, -6); g.lineTo(5, 0); g.lineTo(-7, 0); g.lineTo(-9, -8);
+  g.closePath(); g.fill();
+  g.shadowBlur = 0;
+});
+
+// --- Weiche Wolke ---
+SPR.cloud = makeSprite(180, 70, g => {
+  g.translate(0, -35);
+  g.fillStyle = "rgba(255, 250, 255, 0.85)";
+  for (const [cx2, cy2, r] of [[-52, 8, 22], [-18, -6, 30], [22, 0, 26], [54, 10, 18], [0, 12, 34]]) {
+    g.beginPath(); g.arc(cx2, cy2, r, 0, Math.PI * 2); g.fill();
+  }
+});
+
+// Ambient: Wolken + Glühwürmchen für Tiefe
+const clouds = [
+  { y: 0.18, sc: 1.3, sp: 5, x0: 0.15 },
+  { y: 0.42, sc: 0.9, sp: 9, x0: 0.6 },
+  { y: 0.3, sc: 0.65, sp: 13, x0: 0.9 },
+];
+const flies = [];
+for (let i = 0; i < 16; i++) {
+  flies.push({
+    x0: Math.random(), y0: 0.42 + Math.random() * 0.4,
+    ph: Math.random() * Math.PI * 2,
+    r: 1.2 + Math.random() * 1.8,
+    col: i % 3 === 0 ? MINT : i % 3 === 1 ? GOLD : "#ffd9ec",
+    sp: 20 + Math.random() * 40,
+  });
+}
+
 // ==================== Zonen / Farbwelten ====================
 const ZONES = [
   {
@@ -466,7 +517,7 @@ function spawnCoinArc(wz, lane) {
     entities.push({
       type: "coin", kind: "coin", lane, lanePos: lane,
       wz: wz - 1.2 + u * 2.4,
-      h: 26 + Math.sin(u * Math.PI) * 62, taken: false,
+      h: 26 + Math.sin(u * Math.PI) * 56, taken: false,
     });
   }
 }
@@ -801,6 +852,13 @@ function render(now) {
   if (shake > 0) {
     ctx.translate((Math.random() - 0.5) * shake * 14, (Math.random() - 0.5) * shake * 14);
   }
+  // Kamera: läuft mit (Kopf-Wippen) und lehnt sich in den Spurwechsel
+  if (mode === "run" || mode === "catch") {
+    const camBob = jumpH > 2 ? 0 : Math.abs(Math.sin(runPhase)) * 3;
+    ctx.translate(W / 2, H / 2);
+    ctx.rotate((laneTarget - laneCur) * 0.022);
+    ctx.translate(-W / 2, -H / 2 + camBob);
+  }
 
   // --- Himmel ---
   const sky = ctx.createLinearGradient(0, 0, 0, hY * 1.25);
@@ -834,6 +892,20 @@ function render(now) {
   };
   moon(W * 0.78, hY * 0.34, 26, "#e8d9b0", "rgba(232,217,176,0.8)");
   moon(W * 0.66, hY * 0.58, 9, "#d9b8e8", "rgba(217,184,232,0.8)");
+
+  // Wolken ziehen vorbei (Parallax)
+  for (const c of clouds) {
+    const span = W + 260;
+    const x = ((c.x0 * span - o * c.sp) % span + span) % span - 130;
+    blitFoot(SPR.cloud, x, hY * c.y + 35 * c.sc, c.sc, 0.16);
+  }
+
+  // Glühen am Horizont — Tiefe & Licht
+  const hg2 = ctx.createRadialGradient(W / 2, hY, 10, W / 2, hY, W * 0.75);
+  hg2.addColorStop(0, pal.sky[2].replace("rgb", "rgba").replace(")", ",0.5)"));
+  hg2.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = hg2;
+  ctx.fillRect(0, hY - W * 0.3, W, W * 0.6);
 
   // --- Bergrücken (Parallax) ---
   for (const ridge of ridges) {
@@ -887,7 +959,7 @@ function render(now) {
   for (let i = 0; i <= steps; i++) {
     const z = NEAR * 0.7 + (SPAWN_Z - NEAR * 0.7) * Math.pow(i / steps, 2.2);
     const t = tOf(z);
-    edge.push([centerX(t) - roadHalf(t), centerX(t) + roadHalf(t), Math.min(H + 4, groundY(t))]);
+    edge.push([centerX(t) - roadHalf(t), centerX(t) + roadHalf(t), Math.min(H + 4, groundY(t)), t]);
   }
   ctx.moveTo(edge[0][0], edge[0][2]);
   for (let i = 1; i <= steps; i++) ctx.lineTo(edge[i][0], edge[i][2]);
@@ -895,17 +967,77 @@ function render(now) {
   ctx.closePath();
   ctx.fill();
 
-  // Wegränder mit Glow
-  ctx.strokeStyle = "rgba(232, 193, 90, 0.45)";
-  ctx.lineWidth = 2;
-  ctx.shadowColor = GOLD; ctx.shadowBlur = 6;
+  // Steinplatten-Fugen quer über den Weg
+  ctx.strokeStyle = "rgba(10, 5, 20, 0.22)";
+  const SLAB = 1.15;
+  const sMin = Math.floor((o + NEAR * 0.7) / SLAB);
+  const sMax = Math.ceil((o + SPAWN_Z) / SLAB);
+  for (let k = sMin; k <= sMax; k++) {
+    const z = k * SLAB - o;
+    if (z < NEAR * 0.7 || z > SPAWN_Z) continue;
+    const t = tOf(z);
+    const y = groundY(t);
+    if (y > H + 4) continue;
+    ctx.lineWidth = Math.max(1, 2.6 * t);
+    ctx.beginPath();
+    ctx.moveTo(centerX(t) - roadHalf(t), y);
+    ctx.lineTo(centerX(t) + roadHalf(t), y);
+    ctx.stroke();
+    // Lichtkante der Platte
+    ctx.strokeStyle = "rgba(255, 245, 255, 0.06)";
+    ctx.beginPath();
+    ctx.moveTo(centerX(t) - roadHalf(t), y + Math.max(1, 2.6 * t));
+    ctx.lineTo(centerX(t) + roadHalf(t), y + Math.max(1, 2.6 * t));
+    ctx.stroke();
+    ctx.strokeStyle = "rgba(10, 5, 20, 0.22)";
+  }
+
+  // Erhöhte Bordsteine links & rechts (wie die Tempelmauern)
   for (const side of [0, 1]) {
+    const sgn = side === 0 ? -1 : 1;
+    const wall = ctx.createLinearGradient(0, groundY(tOf(SPAWN_Z)), 0, H);
+    wall.addColorStop(0, pal.ridge);
+    wall.addColorStop(1, pal.road[0]);
+    ctx.fillStyle = wall;
     ctx.beginPath();
     ctx.moveTo(edge[0][side], edge[0][2]);
     for (let i = 1; i <= steps; i++) ctx.lineTo(edge[i][side], edge[i][2]);
+    for (let i = steps; i >= 0; i--) {
+      const t = edge[i][3];
+      ctx.lineTo(edge[i][side] + sgn * 34 * t, edge[i][2] - 20 * t);
+    }
+    ctx.closePath();
+    ctx.fill();
+    // Goldene Glow-Kante obenauf
+    ctx.strokeStyle = "rgba(232, 193, 90, 0.5)";
+    ctx.lineWidth = 2;
+    ctx.shadowColor = GOLD; ctx.shadowBlur = 7;
+    ctx.beginPath();
+    for (let i = 0; i <= steps; i++) {
+      const t = edge[i][3];
+      const x = edge[i][side] + sgn * 34 * t, y = edge[i][2] - 20 * t;
+      i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+    }
     ctx.stroke();
+    ctx.shadowBlur = 0;
   }
-  ctx.shadowBlur = 0;
+
+  // Kristalle auf den Bordsteinen
+  const EDGE_STEP = 1.35;
+  const eMin = Math.floor((o + NEAR * 0.75) / EDGE_STEP);
+  const eMax = Math.ceil((o + SPAWN_Z) / EDGE_STEP);
+  for (let k = eMin; k <= eMax; k++) {
+    const z = k * EDGE_STEP - o;
+    if (z < NEAR * 0.75 || z > SPAWN_Z) continue;
+    const t = tOf(z);
+    const y = groundY(t) - 20 * t;
+    if (y > H + 10) continue;
+    const sp = (k % 2 === 0) ? SPR.edgeA : SPR.edgeB;
+    const alpha = Math.min(1, t * 6);
+    for (const sgn of [-1, 1]) {
+      blitFoot(sp, centerX(t) + sgn * (roadHalf(t) + 17 * t), y, t / PLAYER_T * 1.25, alpha);
+    }
+  }
 
   // Spur-Trennstriche
   ctx.strokeStyle = "rgba(246, 238, 252, 0.28)";
@@ -946,8 +1078,8 @@ function render(now) {
     const alpha = Math.min(1, t * 6);
     const e = d.e;
     if (d.kind === "scen") {
-      const x = centerX(t) + e.side * (roadHalf(t) + e.off * t);
-      blitFoot(SPR[e.kind], x, groundY(t), t / PLAYER_T * e.sc * 1.15, alpha);
+      const x = centerX(t) + e.side * (roadHalf(t) + (34 + e.off) * t);
+      blitFoot(SPR[e.kind], x, groundY(t), t / PLAYER_T * e.sc * 1.5, alpha);
     } else if (d.kind === "ob") {
       const lanes = e.lane === -1 ? [0, 1, 2] : [e.lane];
       for (const l of lanes) {
@@ -957,24 +1089,41 @@ function render(now) {
         ctx.globalAlpha = alpha * 0.35;
         ctx.fillStyle = "#0a0512";
         ctx.beginPath();
-        ctx.ellipse(x, y, 46 * t / PLAYER_T, 8 * t / PLAYER_T, 0, 0, Math.PI * 2);
+        ctx.ellipse(x, y, 46 * t / PLAYER_T * OBS, 8 * t / PLAYER_T * OBS, 0, 0, Math.PI * 2);
         ctx.fill();
         ctx.globalAlpha = 1;
-        blitFoot(SPR[e.kind], x, y, t / PLAYER_T, alpha);
+        blitFoot(SPR[e.kind], x, y, t / PLAYER_T * OBS, alpha);
       }
     } else if (d.kind === "coin") {
       const x = laneX(e.lanePos, t);
       const bob = Math.sin(now * 0.005 + e.wz * 2) * 4;
       const y = groundY(t) - (e.h + bob) * t / PLAYER_T;
-      const sc = t / PLAYER_T * (0.85 + 0.15 * Math.sin(now * 0.006 + e.wz * 3));
+      const sc = t / PLAYER_T * ITEMS * (0.85 + 0.15 * Math.sin(now * 0.006 + e.wz * 3));
       blitFoot(SPR[e.kind], x, y + 17 * sc, sc, alpha);
     } else if (d.kind === "pow") {
       const x = laneX(e.lane, t);
       const bob = Math.sin(now * 0.004 + e.wz) * 6;
       const y = groundY(t) - (e.h + bob) * t / PLAYER_T;
-      blitFoot(SPR[e.kind], x, y + 23 * t / PLAYER_T, t / PLAYER_T * (1 + 0.08 * Math.sin(now * 0.005)), alpha);
+      const sc = t / PLAYER_T * ITEMS * (1 + 0.08 * Math.sin(now * 0.005));
+      blitFoot(SPR[e.kind], x, y + 23 * sc, sc, alpha);
     }
   }
+
+  // Glühwürmchen schweben durch die Szene
+  for (const f of flies) {
+    const span = W + 60;
+    const fx = ((f.x0 * span - o * f.sp) % span + span) % span - 30;
+    const fy = f.y0 * H + Math.sin(now * 0.0012 + f.ph) * 16;
+    const a = 0.35 + 0.45 * Math.abs(Math.sin(now * 0.002 + f.ph));
+    ctx.globalAlpha = a;
+    ctx.shadowColor = f.col; ctx.shadowBlur = 8;
+    ctx.fillStyle = f.col;
+    ctx.beginPath();
+    ctx.arc(fx, fy, f.r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+  ctx.globalAlpha = 1;
 
   // --- Läufer:in ---
   if (mode !== "menu") drawRunner(now);
@@ -1039,13 +1188,14 @@ function drawRunner(now) {
   ctx.globalAlpha = Math.max(0.12, 0.4 - jumpH * 0.002);
   ctx.fillStyle = "#0a0512";
   ctx.beginPath();
-  ctx.ellipse(x, yG + 2, 26 - jumpH * 0.06, 7, 0, 0, Math.PI * 2);
+  ctx.ellipse(x, yG + 2, (26 - jumpH * 0.06) * RS, 7 * RS, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.globalAlpha = 1;
 
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(lean * 0.35);
+  ctx.scale(RS, RS);
   if (duck) { ctx.translate(0, 10); ctx.scale(1.15, 0.62); }
 
   const bob = inAir ? 0 : Math.abs(Math.sin(ph)) * 4;
@@ -1138,7 +1288,7 @@ function drawRunner(now) {
     ctx.lineWidth = 2.5;
     ctx.shadowColor = MINT; ctx.shadowBlur = 12;
     ctx.beginPath();
-    ctx.ellipse(x, y - 36, 34, 46, 0, 0, Math.PI * 2);
+    ctx.ellipse(x, y - 36 * RS, 34 * RS, 46 * RS, 0, 0, Math.PI * 2);
     ctx.stroke();
     ctx.shadowBlur = 0;
   }
@@ -1148,7 +1298,7 @@ function drawRunner(now) {
 function drawUnicorn(now) {
   let p = chase;
   if (mode === "catch") p = Math.min(1.55, 1 + catchT * 0.8);
-  const s = 0.5 + p * 0.95; // Größe
+  const s = 0.62 + p * 1.15; // Größe
   const gallopF = 6 + p * 5;
   const bob = Math.abs(Math.sin(now * 0.001 * gallopF)) * 14 * s;
   // Folgt der Spur mit Verzögerung

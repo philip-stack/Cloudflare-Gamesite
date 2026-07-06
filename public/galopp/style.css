@@ -41,7 +41,7 @@ body {
 #app {
   height: 100vh;
   height: 100dvh;
-  max-width: 560px;
+  max-width: 620px;
   margin: 0 auto;
   padding: 12px 12px calc(10px + env(safe-area-inset-bottom));
   display: flex;
@@ -99,12 +99,21 @@ button:active { transform: scale(0.94); }
   flex-shrink: 0;
 }
 
-.hud { display: flex; gap: 8px; margin-bottom: 8px; }
+/* HUD liegt AUF der Bühne — maximale Spielfläche */
+.hud {
+  position: absolute;
+  left: 12px; right: 12px; top: 10px;
+  display: flex;
+  gap: 8px;
+  z-index: 5;
+  pointer-events: none;
+}
 .hud-item {
   flex: 1;
-  background: linear-gradient(175deg, var(--card-hi), var(--card));
+  background: rgba(18, 8, 30, 0.55);
+  backdrop-filter: blur(8px);
   border-radius: 12px;
-  padding: 6px 10px;
+  padding: 5px 10px;
   text-align: center;
   box-shadow: 0 0 0 1px var(--edge-soft) inset;
 }
@@ -140,7 +149,7 @@ button:active { transform: scale(0.94); }
 /* ---------- Einhorn-Abstandsleiste ---------- */
 #chase-ui {
   position: absolute;
-  left: 12px; right: 12px; top: 10px;
+  left: 12px; right: 12px; top: 68px;
   display: flex;
   align-items: center;
   gap: 8px;
