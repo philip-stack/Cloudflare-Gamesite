@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#160a1e">
+  <title>Galopp</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..900;1,9..144,400..900&family=Outfit:wght@300..800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css?v=1">
+</head>
+<body>
+  <main id="app">
+    <div class="topbar">
+      <a class="btn-back" href="/" aria-label="Zurück zur Übersicht">←</a>
+      <h1><span class="foil">Galopp</span></h1>
+      <button class="btn-icon" id="btn-sound" title="Ton an/aus">🔊</button>
+      <button class="btn-icon" id="btn-top" title="Bestenliste">🏆</button>
+    </div>
+
+    <div class="hud">
+      <div class="hud-item"><span id="hud-score">0</span><label>Punkte</label></div>
+      <div class="hud-item"><span id="hud-dist">0 m</span><label>Strecke</label></div>
+      <div class="hud-item"><span id="hud-coins">0</span><label>Taler</label></div>
+    </div>
+
+    <div id="stage">
+      <canvas id="game"></canvas>
+      <div id="chase-ui">
+        <span class="chase-label">🏃</span>
+        <div id="chase-bar"><div id="chase-fill"></div><span id="chase-horse">🦄</span></div>
+      </div>
+      <div id="power-pills"></div>
+      <div id="zone-banner" class="hidden"></div>
+    </div>
+  </main>
+
+  <script src="app.js?v=1"></script>
+</body>
+</html>

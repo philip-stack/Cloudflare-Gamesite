@@ -68,3 +68,13 @@ CREATE TABLE IF NOT EXISTS sternensturm_scores (
 );
 
 CREATE INDEX IF NOT EXISTS idx_sturm_score ON sternensturm_scores(score);
+
+-- Galopp – globale Bestenliste
+CREATE TABLE IF NOT EXISTS galopp_scores (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  name       TEXT NOT NULL,
+  score      INTEGER NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_galopp_score ON galopp_scores(score);
