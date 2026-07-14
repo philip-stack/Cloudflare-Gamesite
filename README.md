@@ -51,45 +51,14 @@ auf Canvas (Komet, Sternensturm, Galopp) bzw. DOM (Würfelpoker, Funkelfeld)
 und teilen sich das „Midnight Felt“-Design-System (Fraunces + Outfit,
 Gold-Folie, dunkle Karten-Optik).
 
-## API
-
-Bestenlisten (Funkelfeld, Komet, Sternensturm, Galopp):
-
-- `GET /api/<spiel>/scores` → `{ top: [{ name, score }] }` — Top 50, pro Name nur der Highscore
-- `POST /api/<spiel>/scores` mit `{ name, score }` → `{ ok, rank, best }`
-
-Würfelpoker (geteilte Spiele, Zugriff nur mit Beitritts-Code `?code=XXXXXX`):
-
-- `POST /api/games` — Spiel anlegen, liefert Beitritts-Code
-- `GET /api/games/:id?code=…` — Spielstand laden
-- `POST /api/games/:id/cells?code=…` — Zelle eintragen / streichen
-
 ## Ein neues Spiel hinzufügen
 
 1. Ordner `public/<name>/` mit `index.html`, `app.js`, `style.css` anlegen
    (bestehendes Spiel als Vorlage kopieren).
 2. App-Karte in `public/index.html` ergänzen (`--i` hochzählen).
 3. Für eine Bestenliste: Tabelle `<name>_scores` in `schema.sql` ergänzen,
-   `functions/api/<name>/scores.js` von einem bestehenden Spiel kopieren,
-   Tabelle remote anlegen (siehe unten).
-
-## Lokal entwickeln
-
-```
-npx wrangler pages dev ./public
-```
-
-## Deploy
-
-```
-npx wrangler pages deploy ./public --project-name=philip-stack
-```
-
-Neue D1-Tabellen einmalig remote anlegen, z. B.:
-
-```
-npx wrangler d1 execute wuerfelpoker --remote --command "CREATE TABLE IF NOT EXISTS ..."
-```
+   `functions/api/<name>/scores.js` von einem bestehenden Spiel kopieren
+   und die Tabelle einmalig in der D1-Datenbank anlegen.
 
 ## Würfelpoker: Spielregeln (Escalero)
 
