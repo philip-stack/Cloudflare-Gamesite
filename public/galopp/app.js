@@ -404,7 +404,8 @@ let shake = 0, flash = 0;
 let magnetT = 0, boostT = 0, shieldOn = false;
 let coinCombo = 0, comboT = 0;
 let zoneShown = -1;
-let nextSpawnW = 0, nextScenW = 0, nextPowM = 0;
+let whip = null, swayKick = 0, turnCount = 0; // Abbiege-Zustand
+let nextSpawnW = 0, nextScenW = 0, nextPowM = 0, nextTurnM = 0;
 let entities = [], sceneries = [], particles = [];
 let submitted = false;
 let stars = [];
@@ -426,7 +427,9 @@ function newRun() {
   chase = 0.5; catchT = 0; shake = 0; flash = 0;
   magnetT = 0; boostT = 0; shieldOn = false;
   coinCombo = 0; comboT = 0; zoneShown = -1;
+  whip = null; swayKick = 0; turnCount = 0;
   nextSpawnW = 18; nextScenW = 2; nextPowM = 180 + Math.random() * 120;
+  nextTurnM = 160 + Math.random() * 100;
   entities = []; sceneries = []; particles = [];
   submitted = false;
   buildStars();
@@ -582,8 +585,33 @@ function doSlide() {
 }
 function doLane(dir) {
   if (mode !== "run") return;
+  // Steht eine Abzweigung an? Dann zählt der Wisch als Abbiegen.
+  const turn = activeTurn();
+  if (turn && dir === turn.dir) { executeTurn(turn); return; }
   const nl = Math.max(0, Math.min(2, laneTarget + dir));
   if (nl !== laneTarget) { laneTarget = nl; sound.whoosh(); }
+}
+
+// Abzweigung im Reaktionsfenster vor der Läuferin
+function activeTurn() {
+  for (const e of entities) {
+    if (e.kind !== "turn" || e.passed || e.taken) continue;
+    const z = e.wz - o;
+    if (z > PLAYER_Z - 0.05 && z < PLAYER_Z + 2.6) return e;
+  }
+  return null;
+}
+
+function executeTurn(e) {
+  if (e.taken) return;
+  e.taken = true;
+  e.passed = true;
+  turnCount++;
+  whip = { dir: e.dir, t: 0 };          // Kamera-Schwenk
+  swayKick = e.dir * W * 0.55;          // Weg biegt sichtbar ab
+  shake = Math.max(shake, 0.18);
+  sound.turn();
+  puff(laneX(laneCur, PLAYER_T), groundY(PLAYER_T) - 30, CREAM, 10, 200, 60);
 }
 
 let touchStart = null;
@@ -634,6 +662,27 @@ function togglePause(force) {
 // ==================== Treffer-Logik ====================
 function hitObstacle(e) {
   const px = laneX(laneCur, PLAYER_T), py = groundY(PLAYER_T);
+  if (e.kind === "turn") {
+    // Verpasste Abzweigung: Schild/Boost lenken automatisch, sonst
+    // knallt man frontal in die Balustrade — das Einhorn ist fast da.
+    if (boostT > 0 || shieldOn) {
+      if (boostT <= 0) { shieldOn = false; updatePills(); sound.shieldPop(); }
+      executeTurn(e);
+      return;
+    }
+    e.taken = true;
+    chase = Math.min(1, chase + 0.75);
+    speed *= 0.4;
+    invuln = 1.6;
+    stumbleT = 0.7;
+    shake = 0.9;
+    flash = 0.5;
+    coinCombo = 0;
+    sound.stumble();
+    puff(px, py - 40, VIOLET, 22, 240, 130);
+    if (chase >= 1) startCatch();
+    return;
+  }
   if (boostT > 0 || shieldOn) {
     // Durchbrechen!
     if (boostT <= 0) { shieldOn = false; updatePills(); sound.shieldPop(); }
@@ -682,7 +731,9 @@ function update(dt) {
   o += speed * dt;
   meters += speed * dt * 2.2;
   runPhase += speed * dt * 1.55;
-  sway = Math.sin(o * 0.085) * W * 0.09 + Math.sin(o * 0.021) * W * 0.05;
+  swayKick *= Math.exp(-dt * 2.0);
+  sway = Math.sin(o * 0.085) * W * 0.09 + Math.sin(o * 0.021) * W * 0.05 + swayKick;
+  if (whip) { whip.t += dt; if (whip.t > 0.55) whip = null; }
 
   // Zonen-Banner
   const zi = Math.floor(meters / ZONE_LEN);
@@ -735,6 +786,13 @@ function update(dt) {
   }
 
   // Spawnen
+  if (meters > nextTurnM) {
+    // Abzweigung! Der Weg endet an einer Balustrade — wisch in Pfeilrichtung.
+    const dir = Math.random() < 0.5 ? -1 : 1;
+    entities.push({ type: "ob", kind: "turn", dir, lane: -1, wz: o + SPAWN_Z, passed: false, taken: false });
+    nextTurnM = meters + 240 + Math.random() * 200;
+    nextSpawnW = Math.max(nextSpawnW, o + SPAWN_Z + 6.5); // Luft nach der Kurve
+  }
   while (nextSpawnW < o + SPAWN_Z) {
     spawnEvent(nextSpawnW);
     nextSpawnW += 5.4 - d * 1.6 + Math.random() * 1.8;
@@ -857,9 +915,16 @@ function render(now) {
   // Kamera: läuft mit (Kopf-Wippen) und lehnt sich in den Spurwechsel
   if (mode === "run" || mode === "catch") {
     const camBob = jumpH > 2 ? 0 : Math.abs(Math.sin(runPhase)) * 4;
+    // Abbiege-Schwenk: die Welt saust zur Seite vorbei
+    let whipRot = 0, whipX = 0;
+    if (whip) {
+      const k = Math.sin(Math.PI * Math.min(1, whip.t / 0.55));
+      whipRot = whip.dir * 0.13 * k;
+      whipX = -whip.dir * W * 0.22 * k;
+    }
     ctx.translate(W / 2, H / 2);
-    ctx.rotate((laneTarget - laneCur) * 0.022);
-    ctx.translate(-W / 2, -H / 2 + camBob);
+    ctx.rotate((laneTarget - laneCur) * 0.022 + whipRot);
+    ctx.translate(-W / 2 + whipX, -H / 2 + camBob);
   }
 
   // --- Himmel ---
@@ -1082,6 +1147,8 @@ function render(now) {
     if (d.kind === "scen") {
       const x = centerX(t) + e.side * (roadHalf(t) + (34 + e.off) * t);
       blitFoot(SPR[e.kind], x, groundY(t), t / PLAYER_T * e.sc * 1.5, alpha);
+    } else if (d.kind === "ob" && e.kind === "turn") {
+      drawTurnWall(e, t, alpha, now, pal);
     } else if (d.kind === "ob") {
       const lanes = e.lane === -1 ? [0, 1, 2] : [e.lane];
       for (const l of lanes) {
@@ -1171,6 +1238,106 @@ function render(now) {
   }
 
   ctx.drawImage(vignette, 0, 0);
+}
+
+// --- Abzweigung: Balustrade quer über den Weg, Seitenpfad + Pfeile ---
+function drawTurnWall(e, t, alpha, now, pal) {
+  const y = Math.min(H + 30, groundY(t));
+  const cx = centerX(t), half = roadHalf(t);
+  const k = t / PLAYER_T;
+  const hWall = 78 * k;
+
+  ctx.save();
+  ctx.globalAlpha = alpha;
+
+  // Seitenpfad: der Weg knickt sichtbar in Pfeilrichtung ab
+  const stripH = 30 * k;
+  ctx.fillStyle = pal.road[0];
+  ctx.beginPath();
+  if (e.dir < 0) ctx.rect(0, y - stripH, cx, stripH);
+  else ctx.rect(cx, y - stripH, W - cx, stripH);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(232, 193, 90, 0.4)";
+  ctx.lineWidth = Math.max(1, 2 * k);
+  ctx.beginPath();
+  ctx.moveTo(e.dir < 0 ? 0 : cx, y - stripH);
+  ctx.lineTo(e.dir < 0 ? cx : W, y - stripH);
+  ctx.stroke();
+
+  // Balustrade (Steinmauer mit Kristallkante)
+  const wg = ctx.createLinearGradient(0, y - hWall, 0, y);
+  wg.addColorStop(0, "#4a2668");
+  wg.addColorStop(0.25, "#331a4a");
+  wg.addColorStop(1, "#1c0d2e");
+  ctx.fillStyle = wg;
+  ctx.fillRect(cx - half, y - hWall, half * 2, hWall);
+  // Mauerkrone
+  ctx.fillStyle = "#5e3a8f";
+  ctx.fillRect(cx - half, y - hWall, half * 2, 7 * k);
+  ctx.strokeStyle = "rgba(232, 193, 90, 0.55)";
+  ctx.lineWidth = Math.max(1, 2 * k);
+  ctx.shadowColor = GOLD; ctx.shadowBlur = 8;
+  ctx.beginPath();
+  ctx.moveTo(cx - half, y - hWall);
+  ctx.lineTo(cx + half, y - hWall);
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+  // Fugen
+  ctx.strokeStyle = "rgba(10, 5, 20, 0.4)";
+  ctx.lineWidth = Math.max(0.5, 1.4 * k);
+  for (let i = 1; i < 4; i++) {
+    const yy = y - hWall + (hWall / 4) * i;
+    ctx.beginPath(); ctx.moveTo(cx - half, yy); ctx.lineTo(cx + half, yy); ctx.stroke();
+  }
+  // Kristalle auf der Krone
+  for (let i = 0; i < 5; i++) {
+    const xx = cx - half + (half * 2) * (0.12 + 0.19 * i);
+    blitFoot(i % 2 ? SPR.edgeA : SPR.edgeB, xx, y - hWall + 2 * k, k * 1.1, alpha);
+  }
+
+  // Pulsierende Richtungspfeile (Chevrons) auf der Mauer
+  const pulse = 0.55 + 0.45 * Math.sin(now * 0.008);
+  ctx.strokeStyle = `rgba(255, 224, 102, ${pulse})`;
+  ctx.lineWidth = Math.max(2, 7 * k);
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.shadowColor = GOLD; ctx.shadowBlur = 14 * pulse;
+  const ay = y - hWall * 0.5;
+  const chW = 15 * k, chH = 20 * k;
+  for (let i = 0; i < 3; i++) {
+    const off = (i - 1) * 30 * k * e.dir + Math.sin(now * 0.006) * 4 * k * e.dir;
+    const axx = cx + off;
+    ctx.beginPath();
+    ctx.moveTo(axx - e.dir * chW * 0.5, ay - chH * 0.5);
+    ctx.lineTo(axx + e.dir * chW * 0.5, ay);
+    ctx.lineTo(axx - e.dir * chW * 0.5, ay + chH * 0.5);
+    ctx.stroke();
+  }
+  ctx.shadowBlur = 0;
+
+  // Schwebender Hinweispfeil überm Weg, wenn's ernst wird
+  const z = e.wz - o;
+  if (z < PLAYER_Z + 7) {
+    const bob2 = Math.sin(now * 0.006) * 6 * k;
+    const py2 = y - hWall - 44 * k + bob2;
+    ctx.globalAlpha = alpha * (0.7 + 0.3 * pulse);
+    ctx.fillStyle = GOLD;
+    ctx.shadowColor = GOLD; ctx.shadowBlur = 16;
+    ctx.beginPath();
+    const aw = 30 * k, ah = 20 * k;
+    ctx.moveTo(cx + e.dir * aw, py2);
+    ctx.lineTo(cx, py2 - ah * 0.7);
+    ctx.lineTo(cx, py2 - ah * 0.25);
+    ctx.lineTo(cx - e.dir * aw * 0.7, py2 - ah * 0.25);
+    ctx.lineTo(cx - e.dir * aw * 0.7, py2 + ah * 0.25);
+    ctx.lineTo(cx, py2 + ah * 0.25);
+    ctx.lineTo(cx, py2 + ah * 0.7);
+    ctx.closePath();
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+
+  ctx.restore();
 }
 
 // --- Die Diebin: kleine Kobold-Läuferin mit dem Zuckerkristall ---
@@ -1490,6 +1657,7 @@ const sound = (() => {
     jump() { tone(280, 640, 0.18, "sine", 0.07); },
     slide() { tone(300, 110, 0.16, "triangle", 0.06); },
     whoosh() { tone(500, 260, 0.09, "sine", 0.045); },
+    turn() { tone(240, 880, 0.28, "sawtooth", 0.06); tone(700, 180, 0.32, "sine", 0.07, 0.02); },
     coin(combo) { tone(660 + combo * 55, 880 + combo * 55, 0.09, "square", 0.045); },
     stumble() { tone(170, 55, 0.3, "sawtooth", 0.13); tone(90, 40, 0.25, "square", 0.09, 0.03); },
     power() { [660, 880, 1320].forEach((f, i) => tone(f, f * 1.1, 0.14, "sine", 0.07, i * 0.07)); },
@@ -1534,7 +1702,7 @@ function showMenu() {
         <div class="ctrl"><b>⬅️➡️</b>Wischen: Spur wechseln</div>
         <div class="ctrl"><b>⬆️</b>Hoch / Tipp: springen</div>
         <div class="ctrl"><b>⬇️</b>Runter: ducken</div>
-        <div class="ctrl"><b>🧲🛡️⚡</b>Power-ups schnappen</div>
+        <div class="ctrl"><b>↩️</b>An der Mauer: in Pfeilrichtung wischen!</div>
       </div>
       <button class="btn-primary" id="m-go">🏃 Lauf los!</button>
       <button class="btn-secondary" id="m-top">🏆 Bestenliste</button>
@@ -1582,6 +1750,7 @@ async function gameOver() {
       <div class="go-stats">
         <span>📏 ${Math.floor(meters)} m</span>
         <span>🪙 ${coins} Taler</span>
+        <span>↩️ ${turnCount} Kurven</span>
         <span>🗺️ ${ZONES[zoneShown % ZONES.length]?.name || "Zuckerwiese"}</span>
       </div>
       <div class="go-rank" id="go-rank"></div>
@@ -1672,9 +1841,12 @@ const params = new URLSearchParams(location.search);
 const AUTO = params.has("auto");
 function autoPilot() {
   if (mode !== "run") return;
+  // Abzweigung nehmen
+  const turn = activeTurn();
+  if (turn && turn.wz - o < PLAYER_Z + 1.6) { doLane(turn.dir); return; }
   let nearest = null;
   for (const e of entities) {
-    if (e.type !== "ob" || e.passed) continue;
+    if (e.type !== "ob" || e.passed || e.kind === "turn") continue;
     const z = e.wz - o;
     if (z < PLAYER_Z || z > PLAYER_Z + 3.5) continue;
     if (!nearest || z < nearest.z) nearest = { e, z };
