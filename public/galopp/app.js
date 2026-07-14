@@ -31,11 +31,11 @@ const RAINBOW = ["#ff6b6b", "#ffa14d", "#ffe066", "#69d98a", "#56d5e8", "#b678ff
 // ==================== Projektion ====================
 // Pseudo-3D: t = NEAR/z ∈ (0..1], t=1 ist die Unterkante der Bühne.
 // Der Weg schlängelt sich sanft (sway), das gibt Kurven-Gefühl.
-const NEAR = 1, SPAWN_Z = 24, PLAYER_T = 0.78;
+const NEAR = 1, SPAWN_Z = 26, PLAYER_T = 0.8;
 const PLAYER_Z = NEAR / PLAYER_T;
-// Größenfaktoren: Läufer:in, Hindernisse und Items füllen die Bühne
-// wie bei Temple Run — Kamera tief, Weg breit.
-const RS = 1.45, OBS = 1.45, ITEMS = 1.3;
+// Größenfaktoren: Kamera dicht hinter der Läuferin wie bei Temple Run —
+// die Figur ist groß im unteren Bilddrittel, der Weg füllt die Bühne.
+const RS = 2.0, OBS = 1.55, ITEMS = 1.45;
 let sway = 0;
 
 function horizonY() { return H * 0.34; }
@@ -409,9 +409,11 @@ let entities = [], sceneries = [], particles = [];
 let submitted = false;
 let stars = [];
 
-const BASE_SPEED = 6.4, MAX_SPEED = 13.5;
-const JUMP_V = 500, GRAV = 1400;
-const SLIDE_DUR = 0.58;
+// Ruhiger Einstieg, sanfte Steigerung — Tempo-Gefühl kommt aus der
+// Kameranähe, nicht aus hektischem Scrolling.
+const BASE_SPEED = 4.6, MAX_SPEED = 9.5;
+const JUMP_V = 560, GRAV = 1400;
+const SLIDE_DUR = 0.65;
 
 function getName() { return (localStorage.getItem("bb_name") || "").trim(); }
 let best = Number(localStorage.getItem("galopp_best") || 0);
@@ -424,7 +426,7 @@ function newRun() {
   chase = 0.5; catchT = 0; shake = 0; flash = 0;
   magnetT = 0; boostT = 0; shieldOn = false;
   coinCombo = 0; comboT = 0; zoneShown = -1;
-  nextSpawnW = 14; nextScenW = 2; nextPowM = 180 + Math.random() * 120;
+  nextSpawnW = 18; nextScenW = 2; nextPowM = 180 + Math.random() * 120;
   entities = []; sceneries = []; particles = [];
   submitted = false;
   buildStars();
@@ -458,7 +460,7 @@ function buildRidges() {
 buildRidges();
 
 // ==================== Spawner ====================
-function difficulty() { return Math.min(1, meters / 1400); }
+function difficulty() { return Math.min(1, meters / 2000); }
 
 function spawnEvent(wz) {
   const d = difficulty();
@@ -675,10 +677,10 @@ function update(dt) {
 
   const d = difficulty();
   // Tempo
-  const targetSpeed = (BASE_SPEED + (MAX_SPEED - BASE_SPEED) * d) * (boostT > 0 ? 1.75 : 1);
+  const targetSpeed = (BASE_SPEED + (MAX_SPEED - BASE_SPEED) * d) * (boostT > 0 ? 1.6 : 1);
   speed += (targetSpeed - speed) * Math.min(1, dt * (stumbleT > 0 ? 0.8 : 1.6));
   o += speed * dt;
-  meters += speed * dt * 3;
+  meters += speed * dt * 2.2;
   runPhase += speed * dt * 1.55;
   sway = Math.sin(o * 0.085) * W * 0.09 + Math.sin(o * 0.021) * W * 0.05;
 
@@ -735,7 +737,7 @@ function update(dt) {
   // Spawnen
   while (nextSpawnW < o + SPAWN_Z) {
     spawnEvent(nextSpawnW);
-    nextSpawnW += 4.6 - d * 1.7 + Math.random() * 1.6;
+    nextSpawnW += 5.4 - d * 1.6 + Math.random() * 1.8;
   }
   while (nextScenW < o + SPAWN_Z) {
     spawnScenery(nextScenW);
@@ -783,7 +785,7 @@ function update(dt) {
         if (inLane) {
           e.passed = true;
           const cleared =
-            (e.kind === "hurdle" && jumpH > 30) ||
+            (e.kind === "hurdle" && jumpH > 38) ||
             (e.kind === "arch" && sliding > 0);
           if (!cleared) hitObstacle(e);
         }
@@ -854,7 +856,7 @@ function render(now) {
   }
   // Kamera: läuft mit (Kopf-Wippen) und lehnt sich in den Spurwechsel
   if (mode === "run" || mode === "catch") {
-    const camBob = jumpH > 2 ? 0 : Math.abs(Math.sin(runPhase)) * 3;
+    const camBob = jumpH > 2 ? 0 : Math.abs(Math.sin(runPhase)) * 4;
     ctx.translate(W / 2, H / 2);
     ctx.rotate((laneTarget - laneCur) * 0.022);
     ctx.translate(-W / 2, -H / 2 + camBob);
@@ -930,7 +932,7 @@ function render(now) {
   }
 
   // --- Boden: Streifen scrollen auf die Kamera zu ---
-  const STRIPE = 2.4;
+  const STRIPE = 3.4;
   ctx.fillStyle = pal.ground[1];
   ctx.fillRect(0, hY, W, H - hY);
   const kMin = Math.floor((o + NEAR * 0.7) / STRIPE);
@@ -969,7 +971,7 @@ function render(now) {
 
   // Steinplatten-Fugen quer über den Weg
   ctx.strokeStyle = "rgba(10, 5, 20, 0.22)";
-  const SLAB = 1.15;
+  const SLAB = 1.7;
   const sMin = Math.floor((o + NEAR * 0.7) / SLAB);
   const sMax = Math.ceil((o + SPAWN_Z) / SLAB);
   for (let k = sMin; k <= sMax; k++) {
@@ -1023,7 +1025,7 @@ function render(now) {
   }
 
   // Kristalle auf den Bordsteinen
-  const EDGE_STEP = 1.35;
+  const EDGE_STEP = 1.8;
   const eMin = Math.floor((o + NEAR * 0.75) / EDGE_STEP);
   const eMax = Math.ceil((o + SPAWN_Z) / EDGE_STEP);
   for (let k = eMin; k <= eMax; k++) {
@@ -1041,7 +1043,7 @@ function render(now) {
 
   // Spur-Trennstriche
   ctx.strokeStyle = "rgba(246, 238, 252, 0.28)";
-  const DASH = 1.9;
+  const DASH = 2.6;
   const dMin = Math.floor((o + NEAR * 0.7) / DASH);
   const dMax = Math.ceil((o + SPAWN_Z) / DASH);
   for (let k = dMin; k <= dMax; k++) {
@@ -1201,84 +1203,118 @@ function drawRunner(now) {
   const bob = inAir ? 0 : Math.abs(Math.sin(ph)) * 4;
   ctx.translate(0, -bob);
 
-  // Umhang (flattert)
-  ctx.fillStyle = "#5e3a8f";
-  ctx.beginPath();
+  // ---- RÜCKENANSICHT wie bei Temple Run: wir laufen ihr hinterher ----
   const flut = Math.sin(ph * 2) * 5;
-  ctx.moveTo(-8, -52);
-  ctx.quadraticCurveTo(-22 - flut, -30, -16 - flut * 1.4, -8);
-  ctx.quadraticCurveTo(-6, -18, -4, -30);
-  ctx.closePath();
-  ctx.fill();
+  const legA = inAir ? 0.35 : Math.sin(ph);
 
-  // Beine
-  const legA = inAir ? 0.9 : Math.sin(ph);
-  ctx.strokeStyle = "#3a2456";
-  ctx.lineWidth = 7;
-  ctx.lineCap = "round";
-  ctx.beginPath();
-  ctx.moveTo(-3, -22);
-  ctx.lineTo(-3 + legA * 10, -6 + Math.abs(legA) * -2);
-  ctx.moveTo(3, -22);
-  ctx.lineTo(3 - legA * 10, -6 + Math.abs(legA) * -2);
-  ctx.stroke();
-  // Schuhe
-  ctx.fillStyle = GOLD;
-  ctx.beginPath(); ctx.arc(-3 + legA * 10, -5, 4, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.arc(3 - legA * 10, -5, 4, 0, Math.PI * 2); ctx.fill();
+  // Beine: von hinten sieht man abwechselnd die hochschnellende Sohle
+  const foot = (side, phase) => {
+    const kick = inAir ? 10 : Math.max(0, phase) * 16; // Ferse schnellt hoch
+    const fx = side * 5 + side * (inAir ? 0 : Math.abs(phase)) * 2;
+    const fy = -6 - kick;
+    ctx.strokeStyle = "#3a2456";
+    ctx.lineWidth = 8;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(side * 5, -26);
+    ctx.quadraticCurveTo(side * 6, -16, fx, fy);
+    ctx.stroke();
+    // Goldener Stiefel — bei hochgeschnellter Ferse sieht man die Sohle
+    ctx.fillStyle = GOLD;
+    ctx.beginPath();
+    ctx.ellipse(fx, fy, 5, 3.5 + kick * 0.12, 0, 0, Math.PI * 2);
+    ctx.fill();
+  };
+  foot(-1, legA);
+  foot(1, -legA);
 
-  // Körper
-  const bg = ctx.createLinearGradient(0, -52, 0, -18);
+  // Rumpf (Rücken): Tunika mit Kapuzenumhang darüber
+  const bg = ctx.createLinearGradient(0, -58, 0, -22);
   bg.addColorStop(0, "#8a5cc7"); bg.addColorStop(1, "#4d2e78");
   ctx.fillStyle = bg;
   ctx.beginPath();
-  ctx.roundRect(-11, -52, 22, 32, 10);
+  ctx.roundRect(-13, -58, 26, 36, 11);
   ctx.fill();
-  // Gürtel
-  ctx.fillStyle = GOLD;
-  ctx.fillRect(-11, -32, 22, 3.5);
 
-  // Arme — einer pumpt, einer hält den Kristall
-  const armA = inAir ? -0.7 : Math.sin(ph + Math.PI);
-  ctx.strokeStyle = "#6d47a3";
-  ctx.lineWidth = 6;
+  // Umhang liegt auf dem Rücken und flattert nach unten aus
+  const cg2 = ctx.createLinearGradient(0, -56, 0, -14);
+  cg2.addColorStop(0, "#6d47a3"); cg2.addColorStop(1, "#452a66");
+  ctx.fillStyle = cg2;
   ctx.beginPath();
-  ctx.moveTo(-9, -46);
-  ctx.lineTo(-13 + armA * 7, -34);
-  ctx.stroke();
-  // Kristall-Arm (nach vorn gestreckt)
+  ctx.moveTo(-12, -56);
+  ctx.lineTo(12, -56);
+  ctx.quadraticCurveTo(15 + flut, -36, 10 - flut, -14 + Math.abs(flut));
+  ctx.quadraticCurveTo(0, -20 - flut * 0.6, -10 + flut, -16 - Math.abs(flut) * 0.5);
+  ctx.quadraticCurveTo(-15 - flut, -36, -12, -56);
+  ctx.closePath();
+  ctx.fill();
+  // Goldsaum
+  ctx.strokeStyle = "rgba(232, 193, 90, 0.7)";
+  ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.moveTo(9, -46);
-  ctx.lineTo(16, -40);
+  ctx.moveTo(10 - flut, -14 + Math.abs(flut));
+  ctx.quadraticCurveTo(0, -20 - flut * 0.6, -10 + flut, -16 - Math.abs(flut) * 0.5);
   ctx.stroke();
-  // DER Zuckerkristall
+
+  // DER Zuckerkristall — geschultert, lugt über die Schulter (Glow!)
   const crysGlow = 0.7 + 0.3 * Math.sin(now * 0.006);
-  ctx.shadowColor = PINK; ctx.shadowBlur = 16 * crysGlow;
-  const cg = ctx.createLinearGradient(16, -48, 16, -32);
+  ctx.shadowColor = PINK; ctx.shadowBlur = 18 * crysGlow;
+  const cg = ctx.createLinearGradient(13, -76, 13, -52);
   cg.addColorStop(0, "#ffe0f0"); cg.addColorStop(0.5, PINK); cg.addColorStop(1, "#b03a78");
   ctx.fillStyle = cg;
   ctx.beginPath();
-  ctx.moveTo(16, -50); ctx.lineTo(22, -42); ctx.lineTo(16, -32); ctx.lineTo(10, -42);
+  ctx.moveTo(13, -78); ctx.lineTo(20, -66); ctx.lineTo(13, -52); ctx.lineTo(6, -66);
   ctx.closePath(); ctx.fill();
   ctx.shadowBlur = 0;
+  // Gurt, der den Kristall hält
+  ctx.strokeStyle = "#8a6a1c";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(11, -56); ctx.lineTo(-9, -30);
+  ctx.stroke();
 
-  // Kopf mit Kapuze
-  ctx.fillStyle = "#f2d9c4";
-  ctx.beginPath(); ctx.arc(0, -60, 9, 0, Math.PI * 2); ctx.fill();
+  // Arme pumpen seitlich (von hinten sichtbar)
+  const armA = inAir ? -0.6 : Math.sin(ph + Math.PI);
+  ctx.strokeStyle = "#6d47a3";
+  ctx.lineWidth = 6.5;
+  ctx.lineCap = "round";
+  for (const side of [-1, 1]) {
+    const sw = side === -1 ? armA : -armA;
+    ctx.beginPath();
+    ctx.moveTo(side * 12, -52);
+    ctx.quadraticCurveTo(side * 17, -44, side * 15, -36 + sw * 7);
+    ctx.stroke();
+    // Faust
+    ctx.fillStyle = "#f2d9c4";
+    ctx.beginPath();
+    ctx.arc(side * 15, -35 + sw * 7, 3.2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Kopf von hinten: nur die Kapuze mit wehendem Zipfel
   ctx.fillStyle = "#5e3a8f";
   ctx.beginPath();
-  ctx.arc(0, -62, 10.5, Math.PI * 0.85, Math.PI * 2.15);
-  ctx.quadraticCurveTo(-14, -56, -10, -50);
-  ctx.closePath(); ctx.fill();
-  // Zipfel
+  ctx.arc(0, -66, 11, 0, Math.PI * 2);
+  ctx.fill();
+  // Kapuzen-Falte
+  ctx.strokeStyle = "rgba(20, 10, 34, 0.35)";
+  ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.moveTo(-8, -68);
-  ctx.quadraticCurveTo(-18, -72 - flut, -22, -64 - flut);
-  ctx.quadraticCurveTo(-14, -64, -9, -62);
-  ctx.closePath(); ctx.fill();
-  // Auge (schaut ängstlich zurück? nein — nach vorn!)
-  ctx.fillStyle = "#241238";
-  ctx.beginPath(); ctx.arc(4, -60, 1.6, 0, Math.PI * 2); ctx.fill();
+  ctx.arc(0, -66, 7.5, Math.PI * 0.25, Math.PI * 0.75);
+  ctx.stroke();
+  // Zipfel weht im Fahrtwind Richtung Kamera
+  ctx.fillStyle = "#5e3a8f";
+  ctx.beginPath();
+  ctx.moveTo(-3, -75);
+  ctx.quadraticCurveTo(-6 - flut, -62, -4 - flut * 1.6, -50);
+  ctx.quadraticCurveTo(1, -58, 3, -72);
+  ctx.closePath();
+  ctx.fill();
+  // Ein Büschel Haar lugt unter der Kapuze hervor
+  ctx.fillStyle = "#e8a25e";
+  ctx.beginPath();
+  ctx.ellipse(0, -56, 6, 3, 0, 0, Math.PI);
+  ctx.fill();
 
   ctx.restore();
 
@@ -1298,7 +1334,7 @@ function drawRunner(now) {
 function drawUnicorn(now) {
   let p = chase;
   if (mode === "catch") p = Math.min(1.55, 1 + catchT * 0.8);
-  const s = 0.62 + p * 1.15; // Größe
+  const s = 0.72 + p * 1.3; // Größe
   const gallopF = 6 + p * 5;
   const bob = Math.abs(Math.sin(now * 0.001 * gallopF)) * 14 * s;
   // Folgt der Spur mit Verzögerung
