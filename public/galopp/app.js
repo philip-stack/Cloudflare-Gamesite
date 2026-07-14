@@ -55,7 +55,9 @@ function makeSprite(w, h, fn) {
   c.width = w * s; c.height = h * s;
   const g = c.getContext("2d");
   g.scale(s, s);
-  g.translate(w / 2, h / 2);
+  // Ursprung UNTEN-Mitte: alle Sprites zeichnen in y ∈ [-h, 0] und
+  // stehen mit dem Fußpunkt auf 0 — passend zu blitFoot.
+  g.translate(w / 2, h);
   fn(g, w, h);
   return { c, w, h };
 }
@@ -109,33 +111,38 @@ SPR.hurdle = makeSprite(120, 64, g => {
   rail(-14); rail(6);
 });
 
-// --- Rainbow-Girlande (ducken!) — hängt in Kopfhöhe ---
-SPR.arch = makeSprite(130, 88, g => {
-  g.translate(0, -88);
-  // Seil
-  g.strokeStyle = "#d9c9a0";
-  g.lineWidth = 3;
-  g.beginPath();
-  g.moveTo(-62, 4); g.quadraticCurveTo(0, 22, 62, 4);
-  g.stroke();
-  // Wimpel
+// --- Regenbogen-Balken (ducken!) — schwebt auf Kopfhöhe ---
+SPR.arch = makeSprite(140, 100, g => {
+  // Halteseile nach oben (aus dem Bild hinaus)
+  g.strokeStyle = "rgba(217, 201, 160, 0.85)";
+  g.lineWidth = 2.5;
+  for (const x of [-56, 56]) {
+    g.beginPath(); g.moveTo(x, -100); g.lineTo(x, -84); g.stroke();
+  }
+  // Massiver leuchtender Regenbogen-Balken
+  const bg = g.createLinearGradient(-62, 0, 62, 0);
+  RAINBOW.forEach((c, i) => bg.addColorStop(i / 5, c));
+  g.shadowColor = "#fff"; g.shadowBlur = 14;
+  g.fillStyle = bg;
+  g.beginPath(); g.roundRect(-64, -88, 128, 14, 7); g.fill();
+  g.shadowBlur = 0;
+  // Lichtkante
+  g.fillStyle = "rgba(255,255,255,0.5)";
+  g.beginPath(); g.roundRect(-60, -86, 120, 4, 2); g.fill();
+  // Wimpel hängen herab — klares Signal: DRUNTER DURCH!
   for (let i = 0; i < 6; i++) {
-    const u = i / 5;
-    const x = -52 + u * 104;
-    const y = 6 + Math.sin(u * Math.PI) * 15;
+    const x = -52 + i * 20.8;
     g.fillStyle = RAINBOW[i];
-    g.shadowColor = RAINBOW[i]; g.shadowBlur = 7;
+    g.shadowColor = RAINBOW[i]; g.shadowBlur = 8;
     g.beginPath();
-    g.moveTo(x - 8, y); g.lineTo(x + 8, y); g.lineTo(x, y + 18);
+    g.moveTo(x - 8, -74); g.lineTo(x + 8, -74); g.lineTo(x, -54);
     g.closePath(); g.fill();
     g.shadowBlur = 0;
   }
-  // Laternen an den Enden
-  for (const x of [-62, 62]) {
-    g.fillStyle = CREAM;
-    g.shadowColor = GOLD; g.shadowBlur = 10;
-    g.beginPath(); g.arc(x, 4, 5.5, 0, Math.PI * 2); g.fill();
-    g.shadowBlur = 0;
+  // Funkel-Punkte auf dem Balken
+  g.fillStyle = "rgba(255,255,255,0.9)";
+  for (const [px, py] of [[-38, -81], [4, -84], [40, -80]]) {
+    g.beginPath(); g.arc(px, py, 1.8, 0, Math.PI * 2); g.fill();
   }
 });
 
@@ -250,7 +257,7 @@ SPR.tree = makeSprite(90, 150, g => {
 });
 
 // --- Kulisse: Riesen-Zuckerpilz ---
-SPR.mushroom = makeSprite(80, 90, g => {
+SPR.mushroom = makeSprite(80, 100, g => {
   // Stiel
   const sg = g.createLinearGradient(-8, 0, 10, 0);
   sg.addColorStop(0, "#fff6ea"); sg.addColorStop(1, "#d9bfa0");
@@ -311,8 +318,8 @@ SPR.edgeB = makeSprite(26, 24, g => {
 });
 
 // --- Weiche Wolke ---
-SPR.cloud = makeSprite(180, 70, g => {
-  g.translate(0, -35);
+SPR.cloud = makeSprite(180, 90, g => {
+  g.translate(0, -48);
   g.fillStyle = "rgba(255, 250, 255, 0.85)";
   for (const [cx2, cy2, r] of [[-52, 8, 22], [-18, -6, 30], [22, 0, 26], [54, 10, 18], [0, 12, 34]]) {
     g.beginPath(); g.arc(cx2, cy2, r, 0, Math.PI * 2); g.fill();
@@ -597,9 +604,20 @@ function activeTurn() {
   for (const e of entities) {
     if (e.kind !== "turn" || e.passed || e.taken) continue;
     const z = e.wz - o;
-    if (z > PLAYER_Z - 0.05 && z < PLAYER_Z + 2.6) return e;
+    if (z > PLAYER_Z - 0.05 && z < PLAYER_Z + 4.0) return e;
   }
   return null;
+}
+
+// Nächste Abzweigung in Sichtweite (für Warnhinweis)
+function upcomingTurn() {
+  let best2 = null;
+  for (const e of entities) {
+    if (e.kind !== "turn" || e.passed || e.taken) continue;
+    const z = e.wz - o;
+    if (z > PLAYER_Z && z < 16 && (!best2 || z < best2.z)) best2 = { e, z };
+  }
+  return best2;
 }
 
 function executeTurn(e) {
@@ -810,6 +828,11 @@ function update(dt) {
   const px = laneX(laneCur, PLAYER_T);
   for (const e of entities) {
     const z = e.wz - o;
+    // Warn-Glöckchen, wenn eine Abzweigung in Sichtweite kommt
+    if (e.kind === "turn" && !e.warned && !e.passed && z < 13) {
+      e.warned = true;
+      sound.turnWarn();
+    }
     if (e.type === "coin" && !e.taken) {
       // Magnet zieht Taler heran
       if (magnetT > 0 && z < PLAYER_Z + 5 && z > PLAYER_Z - 0.5) {
@@ -1226,6 +1249,41 @@ function render(now) {
 
   ctx.restore();
 
+  // Abbiege-Warnung in Bildschirm-Koordinaten: goldener Schimmer +
+  // große Chevrons am Bildrand in Abbiege-Richtung
+  if (mode === "run") {
+    const up = upcomingTurn();
+    if (up) {
+      const u = 1 - Math.max(0, (up.z - PLAYER_Z) / (16 - PLAYER_Z)); // 0 fern → 1 nah
+      const pulse2 = 0.5 + 0.5 * Math.sin(now * (0.008 + u * 0.008));
+      const dir = up.e.dir;
+      // Seiten-Schimmer
+      const gw = W * 0.3;
+      const sg2 = ctx.createLinearGradient(dir < 0 ? 0 : W, 0, dir < 0 ? gw : W - gw, 0);
+      sg2.addColorStop(0, `rgba(232, 193, 90, ${(0.1 + 0.28 * u) * pulse2})`);
+      sg2.addColorStop(1, "rgba(232, 193, 90, 0)");
+      ctx.fillStyle = sg2;
+      ctx.fillRect(dir < 0 ? 0 : W - gw, 0, gw, H);
+      // Chevrons
+      const cxs = dir < 0 ? 34 : W - 34;
+      const size = 16 + u * 14;
+      ctx.strokeStyle = `rgba(255, 224, 102, ${0.35 + 0.65 * u * pulse2})`;
+      ctx.lineWidth = 6 + u * 3;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      ctx.shadowColor = GOLD; ctx.shadowBlur = 18 * pulse2;
+      for (let i = 0; i < 2; i++) {
+        const ox = cxs + dir * i * (size + 10) + Math.sin(now * 0.01) * 4 * dir;
+        ctx.beginPath();
+        ctx.moveTo(ox - dir * size * 0.5, H * 0.44 - size);
+        ctx.lineTo(ox + dir * size * 0.5, H * 0.44);
+        ctx.lineTo(ox - dir * size * 0.5, H * 0.44 + size);
+        ctx.stroke();
+      }
+      ctx.shadowBlur = 0;
+    }
+  }
+
   // Blitz beim Stolpern / Fangen
   if (flash > 0) {
     ctx.fillStyle = `rgba(255, 122, 194, ${flash * 0.4})`;
@@ -1242,6 +1300,7 @@ function render(now) {
 
 // --- Abzweigung: Balustrade quer über den Weg, Seitenpfad + Pfeile ---
 function drawTurnWall(e, t, alpha, now, pal) {
+  alpha = Math.min(1, t * 10); // Abzweigungen früher sichtbar als alles andere
   const y = Math.min(H + 30, groundY(t));
   const cx = centerX(t), half = roadHalf(t);
   const k = t / PLAYER_T;
@@ -1315,16 +1374,16 @@ function drawTurnWall(e, t, alpha, now, pal) {
   }
   ctx.shadowBlur = 0;
 
-  // Schwebender Hinweispfeil überm Weg, wenn's ernst wird
-  const z = e.wz - o;
-  if (z < PLAYER_Z + 7) {
+  // Schwebender Hinweispfeil überm Weg — von Anfang an sichtbar,
+  // wird beim Näherkommen größer
+  {
     const bob2 = Math.sin(now * 0.006) * 6 * k;
-    const py2 = y - hWall - 44 * k + bob2;
+    const py2 = y - hWall - 48 * k + bob2;
     ctx.globalAlpha = alpha * (0.7 + 0.3 * pulse);
     ctx.fillStyle = GOLD;
     ctx.shadowColor = GOLD; ctx.shadowBlur = 16;
     ctx.beginPath();
-    const aw = 30 * k, ah = 20 * k;
+    const aw = 42 * k, ah = 28 * k;
     ctx.moveTo(cx + e.dir * aw, py2);
     ctx.lineTo(cx, py2 - ah * 0.7);
     ctx.lineTo(cx, py2 - ah * 0.25);
@@ -1658,6 +1717,7 @@ const sound = (() => {
     slide() { tone(300, 110, 0.16, "triangle", 0.06); },
     whoosh() { tone(500, 260, 0.09, "sine", 0.045); },
     turn() { tone(240, 880, 0.28, "sawtooth", 0.06); tone(700, 180, 0.32, "sine", 0.07, 0.02); },
+    turnWarn() { [880, 1175].forEach((f, i) => tone(f, f * 0.99, 0.16, "sine", 0.07, i * 0.14)); },
     coin(combo) { tone(660 + combo * 55, 880 + combo * 55, 0.09, "square", 0.045); },
     stumble() { tone(170, 55, 0.3, "sawtooth", 0.13); tone(90, 40, 0.25, "square", 0.09, 0.03); },
     power() { [660, 880, 1320].forEach((f, i) => tone(f, f * 1.1, 0.14, "sine", 0.07, i * 0.07)); },
