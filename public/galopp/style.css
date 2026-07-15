@@ -408,3 +408,37 @@ button:active { transform: scale(0.94); }
     transition-duration: 0.001s !important;
   }
 }
+
+/* ==================================================================
+   HELLMODUS — die Spielszene (Canvas/#stage) bleibt Dämmerung,
+   der Rahmen wird hell.
+   ================================================================== */
+:root[data-theme="light"] {
+  --card: rgba(255, 255, 253, 0.78);
+  --card-hi: rgba(255, 255, 253, 0.95);
+  --edge: rgba(138, 106, 28, 0.32);
+  --edge-soft: rgba(50, 40, 60, 0.15);
+  --ink: #2e2440;
+  --muted: #6f6584;
+  --gold: #a5851f;
+  --gold-glow: rgba(165, 133, 31, 0.28);
+  --foil: linear-gradient(115deg, #6d5416 0%, #a5851f 30%, #c9a13b 50%, #a5851f 70%, #6d5416 100%);
+}
+[data-theme="light"] body {
+  background: radial-gradient(130% 100% at 50% -20%, #e8def2 0%, #f0eaf5 45%, #f6f2f8 100%);
+}
+/* HUD, Power-Pills und Zonen-Banner liegen AUF dem dunklen Canvas
+   → dunkler Grund + helle Schrift bleiben */
+[data-theme="light"] .hud-item { background: rgba(18, 8, 30, 0.55); color: #f6eefc; }
+[data-theme="light"] .hud-item label { color: #a08fb4; }
+[data-theme="light"] .hud-item #hud-coins { color: #e8c15a; }
+[data-theme="light"] .pill { background: rgba(20, 10, 34, 0.72); color: #f6eefc; }
+[data-theme="light"] .pill .p-time { color: #e8c15a; }
+[data-theme="light"] #zone-banner {
+  background: linear-gradient(115deg, #8a6a1c 0%, #e8c15a 25%, #fff3c4 50%, #e8c15a 75%, #8a6a1c 100%);
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+[data-theme="light"] .overlay { background: rgba(100, 92, 112, 0.4); }
+[data-theme="light"] .panel { background: linear-gradient(180deg, #fbf9f8, #f0ecf2) }

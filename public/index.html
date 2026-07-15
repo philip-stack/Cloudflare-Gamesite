@@ -8,6 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..900;1,9..144,400..900&family=Outfit:wght@300..800&display=swap" rel="stylesheet">
+  <script src="/theme.js"></script>
   <style>
     /* ============================================================
        PHILIP STACK — Landing Page ("Midnight Felt" Design System)
@@ -206,6 +207,53 @@
       }
       .grain, .aurora { animation: none !important; }
     }
+
+    .theme-toggle {
+      position: fixed;
+      top: calc(14px + env(safe-area-inset-top));
+      right: 14px;
+      z-index: 10;
+      width: 44px; height: 44px;
+      display: grid; place-items: center;
+      font-size: 1.15rem;
+      border: 0;
+      border-radius: 12px;
+      cursor: pointer;
+      background: var(--card-hi);
+      color: var(--ink);
+      box-shadow: 0 0 0 1px var(--edge-soft) inset, 0 6px 18px -8px rgba(0,0,0,0.4);
+      backdrop-filter: blur(8px);
+      transition: transform 0.15s var(--ease-spring);
+    }
+    .theme-toggle:active { transform: scale(0.92); }
+
+    /* ---------- Hellmodus ---------- */
+    :root[data-theme="light"] {
+      --bg0: #f4f1e6;
+      --felt: #ece9db;
+      --card: rgba(255, 255, 252, 0.72);
+      --card-hi: rgba(255, 255, 252, 0.95);
+      --edge: rgba(138, 106, 28, 0.3);
+      --edge-soft: rgba(35, 45, 35, 0.14);
+      --ink: #26301f;
+      --muted: #64705f;
+      --gold: #a5851f;
+      --gold-glow: rgba(165, 133, 31, 0.3);
+      --foil: linear-gradient(115deg, #6d5416 0%, #a5851f 30%, #c9a13b 50%, #a5851f 70%, #6d5416 100%);
+    }
+    [data-theme="light"] body {
+      background: radial-gradient(120% 90% at 50% -10%, #dbe6d6 0%, var(--felt) 45%, var(--bg0) 100%);
+      background-attachment: fixed;
+    }
+    [data-theme="light"] .aurora { opacity: 0.2; mix-blend-mode: multiply; }
+    [data-theme="light"] .grain { opacity: 0.03; }
+    [data-theme="light"] .app-card {
+      box-shadow: 0 1px 0 rgba(255,255,255,0.6) inset,
+                  0 8px 24px -14px rgba(40, 50, 40, 0.35),
+                  0 0 0 1px var(--edge-soft) inset;
+    }
+    [data-theme="light"] .app-icon { background: rgba(165, 133, 31, 0.12); }
+    [data-theme="light"] .badge { background: rgba(35, 45, 35, 0.06); }
   </style>
 </head>
 <body>
@@ -214,6 +262,8 @@
     <div class="aurora aurora-b"></div>
     <div class="grain"></div>
   </div>
+
+  <button class="theme-toggle" data-theme-toggle aria-label="Hell/Dunkel umschalten"></button>
 
   <main>
     <header class="hero">

@@ -295,3 +295,28 @@ button:active { transform: scale(0.94); }
     transition-duration: 0.001s !important;
   }
 }
+
+/* ==================================================================
+   HELLMODUS — die Spielszene (Canvas/#stage) bleibt Nacht,
+   der Rahmen wird hell.
+   ================================================================== */
+:root[data-theme="light"] {
+  --bg0: #f0f2f4;
+  --felt: #e8ecef;
+  --card: rgba(255, 255, 254, 0.78);
+  --card-hi: rgba(255, 255, 254, 0.95);
+  --edge: rgba(138, 106, 28, 0.32);
+  --edge-soft: rgba(30, 40, 50, 0.15);
+  --ink: #1f2833;
+  --muted: #5d6b77;
+  --gold: #a5851f;
+  --gold-glow: rgba(165, 133, 31, 0.28);
+  --foil: linear-gradient(115deg, #6d5416 0%, #a5851f 30%, #c9a13b 50%, #a5851f 70%, #6d5416 100%);
+}
+[data-theme="light"] body {
+  background: radial-gradient(120% 90% at 50% -10%, #d8e2ea 0%, #e8ecef 45%, #f0f2f4 100%);
+}
+/* Elemente AUF der dunklen Spielszene behalten helle Farben */
+[data-theme="light"] #hint { color: #9fb4c4; }
+[data-theme="light"] .overlay { background: rgba(95, 105, 115, 0.4); }
+[data-theme="light"] .panel { background: linear-gradient(180deg, #fbfbf6, #eef0ee); }

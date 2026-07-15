@@ -908,3 +908,78 @@ input:focus {
   box-shadow: 0 0 0 1px var(--edge-soft) inset;
   color: var(--muted);
 }
+
+/* ==================================================================
+   HELLMODUS ("Daylight Linen") — via <html data-theme="light">
+   ================================================================== */
+:root[data-theme="light"] {
+  --bg0: #f4f1e6;
+  --bg1: #eeeadd;
+  --felt: #ece9db;
+  --card: rgba(255, 255, 252, 0.75);
+  --card-hi: rgba(255, 255, 252, 0.95);
+  --edge: rgba(138, 106, 28, 0.32);
+  --edge-soft: rgba(35, 45, 35, 0.15);
+  --ink: #26301f;
+  --muted: #64705f;
+  --gold: #a5851f;
+  --gold-deep: #8a6a1c;
+  --gold-glow: rgba(165, 133, 31, 0.28);
+  --foil: linear-gradient(115deg, #6d5416 0%, #a5851f 30%, #c9a13b 50%, #a5851f 70%, #6d5416 100%);
+  --ivory: #3a4433;
+  --shadow-card: 0 1px 0 rgba(255,255,255,0.65) inset, 0 8px 24px -14px rgba(40, 50, 40, 0.35);
+}
+[data-theme="light"] body {
+  background: radial-gradient(120% 90% at 50% -10%, #dbe6d6 0%, var(--felt) 45%, var(--bg0) 100%);
+  background-attachment: fixed;
+}
+[data-theme="light"] .aurora { opacity: 0.18; mix-blend-mode: multiply; }
+[data-theme="light"] .grain { opacity: 0.028; }
+
+[data-theme="light"] .sheet-wrap { background: rgba(255, 255, 252, 0.75); }
+[data-theme="light"] .sheet .corner,
+[data-theme="light"] .sheet .p-head,
+[data-theme="light"] .sheet .row-label { background: #e4dfcd; }
+[data-theme="light"] .sheet .total-row th,
+[data-theme="light"] .sheet .total-row td { background: #e4dfcd; }
+[data-theme="light"] .sheet .sub-head { background: #dfd9c5; }
+[data-theme="light"] .sheet th, [data-theme="light"] .sheet td { border-color: rgba(35, 45, 35, 0.12); }
+[data-theme="light"] .sheet .p-head.turn {
+  color: #1a1508;
+  background: linear-gradient(160deg, #f0cd6e, #e8c15a);
+}
+[data-theme="light"] .sheet .cell.struck,
+[data-theme="light"] .sheet .cell.compact .struck-x { color: rgba(70, 85, 70, 0.5); }
+[data-theme="light"] .sheet .cell.filled.serviert { text-shadow: none; }
+
+/* Ranking-Farben mit mehr Kontrast auf hellem Grund */
+[data-theme="light"] .sheet .cell.total.rank-1 { color: #96700d; text-shadow: none; }
+[data-theme="light"] .sheet .cell.total.rank-2 { color: #5f6d80; text-shadow: none; }
+[data-theme="light"] .sheet .cell.total.rank-3 { color: #a05a24; text-shadow: none; }
+[data-theme="light"] .sheet .cell.total.rank-x { color: #3f6f9e; text-shadow: none; }
+
+[data-theme="light"] .toast {
+  background: rgba(255, 255, 250, 0.92);
+  box-shadow: 0 0 0 1px var(--edge) inset, 0 12px 32px -8px rgba(40, 50, 40, 0.35);
+}
+[data-theme="light"] .sheet-overlay { background: rgba(90, 100, 88, 0.35); }
+[data-theme="light"] .sheet-modal {
+  background: linear-gradient(180deg, #fbf9f1, #f0ecdf);
+  box-shadow: 0 0 0 1px var(--edge) inset, 0 -18px 60px -20px rgba(40, 50, 40, 0.4);
+}
+
+/* Schwebender Hell/Dunkel-Umschalter (Home-Screen) */
+.theme-fab {
+  position: fixed;
+  top: calc(14px + env(safe-area-inset-top));
+  right: 14px;
+  z-index: 10;
+  width: 44px; height: 44px;
+  display: grid; place-items: center;
+  font-size: 1.1rem;
+  border-radius: var(--radius-sm);
+  background: var(--card-hi);
+  color: var(--ink);
+  box-shadow: 0 0 0 1px var(--edge-soft) inset;
+  backdrop-filter: blur(8px);
+}

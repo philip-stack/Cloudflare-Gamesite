@@ -372,3 +372,31 @@ button:active { transform: scale(0.94); }
     transition-duration: 0.001s !important;
   }
 }
+
+/* ==================================================================
+   HELLMODUS — die Spielszene (Canvas/#stage) bleibt Weltraum,
+   der Rahmen wird hell.
+   ================================================================== */
+:root[data-theme="light"] {
+  --card: rgba(255, 255, 254, 0.78);
+  --card-hi: rgba(255, 255, 254, 0.95);
+  --edge: rgba(138, 106, 28, 0.32);
+  --edge-soft: rgba(35, 40, 60, 0.15);
+  --ink: #232840;
+  --muted: #61688a;
+  --gold: #a5851f;
+  --gold-glow: rgba(165, 133, 31, 0.28);
+  --foil: linear-gradient(115deg, #6d5416 0%, #a5851f 30%, #c9a13b 50%, #a5851f 70%, #6d5416 100%);
+}
+[data-theme="light"] body {
+  background: radial-gradient(130% 100% at 50% -20%, #dde1f0 0%, #e9ebf4 45%, #f1f2f7 100%);
+}
+/* Wellen-Banner liegt auf dem dunklen Canvas → helle Folie behalten */
+[data-theme="light"] #wave-banner {
+  background: linear-gradient(115deg, #8a6a1c 0%, #e8c15a 25%, #fff3c4 50%, #e8c15a 75%, #8a6a1c 100%);
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+[data-theme="light"] .overlay { background: rgba(95, 100, 120, 0.4); }
+[data-theme="light"] .panel { background: linear-gradient(180deg, #fbfbf7, #eeeff4); }

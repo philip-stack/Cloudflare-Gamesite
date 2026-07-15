@@ -695,3 +695,40 @@ body.skin-papier .blk::after { display: none; }
   }
   .grain, .aurora { animation: none !important; }
 }
+
+/* ==================================================================
+   HELLMODUS — das Spielbrett bleibt dunkler Filz (die Gems und Skins
+   sind dafür gebaut), der Rahmen wird hell.
+   ================================================================== */
+:root[data-theme="light"] {
+  --bg0: #f4f1e6;
+  --felt: #ece9db;
+  --card: rgba(255, 255, 252, 0.75);
+  --card-hi: rgba(255, 255, 252, 0.95);
+  --edge: rgba(138, 106, 28, 0.32);
+  --edge-soft: rgba(35, 45, 35, 0.15);
+  --ink: #26301f;
+  --muted: #64705f;
+  --gold: #a5851f;
+  --gold-glow: rgba(165, 133, 31, 0.28);
+  --foil: linear-gradient(115deg, #6d5416 0%, #a5851f 30%, #c9a13b 50%, #a5851f 70%, #6d5416 100%);
+}
+[data-theme="light"] body {
+  background: radial-gradient(120% 90% at 50% -10%, #dbe6d6 0%, var(--felt) 45%, var(--bg0) 100%);
+  background-attachment: fixed;
+}
+[data-theme="light"] .aurora { opacity: 0.18; mix-blend-mode: multiply; }
+[data-theme="light"] .grain { opacity: 0.028; }
+
+/* Brett bleibt dunkel — satter, deckender Untergrund statt Transparenz */
+[data-theme="light"] #board {
+  background: #171d16;
+  box-shadow: 0 0 0 1px rgba(138, 106, 28, 0.4) inset, 0 14px 40px -18px rgba(40, 50, 40, 0.5);
+}
+[data-theme="light"] .cell { background: rgba(255, 252, 240, 0.06); }
+[data-theme="light"] .float-text { text-shadow: 0 2px 12px rgba(0,0,0,0.7), 0 0 20px rgba(232,193,90,0.5); color: #e8c15a; }
+[data-theme="light"] .float-text.big { color: transparent; background: linear-gradient(115deg, #8a6a1c, #e8c15a 30%, #fff3c4 50%, #e8c15a 70%, #8a6a1c); -webkit-background-clip: text; background-clip: text; }
+
+[data-theme="light"] .overlay { background: rgba(90, 100, 88, 0.35); }
+[data-theme="light"] .panel,
+[data-theme="light"] .sheet-modal { background: linear-gradient(180deg, #fbf9f1, #f0ecdf); }

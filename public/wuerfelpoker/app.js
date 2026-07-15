@@ -385,6 +385,7 @@ async function renderHome() {
 
   app.innerHTML = `
     <a class="home-link" href="/">← Alle Apps</a>
+    <button class="theme-fab" data-theme-toggle aria-label="Hell/Dunkel umschalten"></button>
     <header class="hero">
       <span class="overline">Escalero</span>
       <h1><span class="foil">Würfelpoker</span></h1>
@@ -467,6 +468,7 @@ function renderJoin() {
     <div class="topbar">
       <button class="btn-back" id="btn-back">←</button>
       <h1>Spiel beitreten</h1>
+      <button class="btn-icon" data-theme-toggle></button>
     </div>
     <p class="hint">Gib den <strong>6-stelligen Code</strong> ein, den dir der Ersteller des Spiels geschickt hat.</p>
     <input type="text" id="join-code" class="code-input" placeholder="z. B. K7Q2ZX" maxlength="6"
@@ -508,6 +510,7 @@ function renderNewGame() {
     <div class="topbar">
       <button class="btn-back" id="btn-back">←</button>
       <h1>Neues Spiel</h1>
+      <button class="btn-icon" data-theme-toggle></button>
     </div>
     <div class="stack">
       <input type="text" id="game-name" placeholder="Spielname (optional)">
@@ -647,6 +650,7 @@ function renderStarterRoll(game, ref) {
     <div class="topbar">
       <button class="btn-back" id="btn-back">←</button>
       <h1>${esc(game.name)}</h1>
+      <button class="btn-icon" data-theme-toggle></button>
     </div>
     ${codeChipHtml(game)}
     <div class="starter-banner">Wer beginnt? Jeder würfelt einmal — <strong>höchster Wurf beginnt</strong> (9 &lt; 10 &lt; B &lt; D &lt; K &lt; A).</div>
@@ -829,6 +833,7 @@ function renderSheet(game, ref) {
     <div class="topbar">
       <button class="btn-back" id="btn-back">←</button>
       <h1>${esc(game.name)}</h1>
+      <button class="btn-icon" data-theme-toggle></button>
       <button class="btn-icon" id="btn-rules" title="Regeln">ℹ️</button>
     </div>
     ${codeChipHtml(game)}
@@ -1027,6 +1032,7 @@ function renderRoundEnd(game, ref) {
     <div class="topbar">
       <button class="btn-back" id="btn-back">←</button>
       <h1>${esc(game.name)}</h1>
+      <button class="btn-icon" data-theme-toggle></button>
     </div>
     ${codeChipHtml(game)}
     <div class="winner-box small">
@@ -1095,6 +1101,7 @@ function renderFinished(game, ref) {
     <div class="topbar">
       <button class="btn-back" id="btn-back">←</button>
       <h1>${esc(game.name)}</h1>
+      <button class="btn-icon" data-theme-toggle></button>
     </div>
     <div class="winner-box">
       <div class="trophy">🏆</div>
