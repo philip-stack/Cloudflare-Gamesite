@@ -697,8 +697,8 @@ body.skin-papier .blk::after { display: none; }
 }
 
 /* ==================================================================
-   HELLMODUS — das Spielbrett bleibt dunkler Filz (die Gems und Skins
-   sind dafür gebaut), der Rahmen wird hell.
+   HELLMODUS — auch das Spielbrett wird hell; die Gems tragen ihre
+   eigenen Farben und funktionieren auf beiden Untergründen.
    ================================================================== */
 :root[data-theme="light"] {
   --bg0: #f4f1e6;
@@ -720,14 +720,25 @@ body.skin-papier .blk::after { display: none; }
 [data-theme="light"] .aurora { opacity: 0.18; mix-blend-mode: multiply; }
 [data-theme="light"] .grain { opacity: 0.028; }
 
-/* Brett bleibt dunkel — satter, deckender Untergrund statt Transparenz */
+/* Helles Brett: warmes Papier mit leicht abgesetzten Zellen */
 [data-theme="light"] #board {
-  background: #171d16;
-  box-shadow: 0 0 0 1px rgba(138, 106, 28, 0.4) inset, 0 14px 40px -18px rgba(40, 50, 40, 0.5);
+  background: rgba(224, 219, 201, 0.85);
+  box-shadow: 0 0 0 1px rgba(138, 106, 28, 0.35) inset, 0 14px 40px -20px rgba(40, 50, 40, 0.45);
 }
-[data-theme="light"] .cell { background: rgba(255, 252, 240, 0.06); }
-[data-theme="light"] .float-text { text-shadow: 0 2px 12px rgba(0,0,0,0.7), 0 0 20px rgba(232,193,90,0.5); color: #e8c15a; }
-[data-theme="light"] .float-text.big { color: transparent; background: linear-gradient(115deg, #8a6a1c, #e8c15a 30%, #fff3c4 50%, #e8c15a 70%, #8a6a1c); -webkit-background-clip: text; background-clip: text; }
+[data-theme="light"] .cell {
+  background: rgba(35, 45, 35, 0.07);
+  box-shadow: 0 1px 2px rgba(40, 50, 40, 0.14) inset;
+}
+[data-theme="light"] .cell.preview-ok::before { background: rgba(165, 133, 31, 0.22); }
+[data-theme="light"] .float-text {
+  color: #96700d;
+  text-shadow: 0 1px 0 rgba(255, 255, 250, 0.8), 0 2px 10px rgba(255, 255, 250, 0.6);
+}
+/* Neon-Skin: helle Kerne statt dunkler, damit er aufs helle Brett passt */
+[data-theme="light"] body.skin-neon .blk {
+  background: color-mix(in srgb, var(--b) 22%, #faf7ec);
+  box-shadow: inset 0 0 0 2px var(--b), inset 0 0 10px color-mix(in srgb, var(--b) 45%, transparent), 0 0 10px -2px var(--b);
+}
 
 [data-theme="light"] .overlay { background: rgba(90, 100, 88, 0.35); }
 [data-theme="light"] .panel,
