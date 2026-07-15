@@ -26,6 +26,11 @@ Die ganze Seite kann zwischen **Hell- und Dunkelmodus** umgeschaltet werden
 Gerät gespeichert. Die Spielszenen der Canvas-Spiele bleiben bewusst dunkel,
 der Rahmen passt sich an.
 
+Die Seite ist eine **PWA**: Am Handy über „Zum Startbildschirm hinzufügen"
+(bzw. den Installieren-Hinweis im Browser) wird sie zur App mit eigenem Icon
+und Vollbild — bereits besuchte Spiele funktionieren auch offline
+(Bestenlisten und geteilte Spiele brauchen Internet).
+
 ## Struktur
 
 ```
@@ -34,7 +39,10 @@ wuerfelpoker/
 ├── schema.sql                 D1-Schema (Würfelpoker-Tabellen + *_scores)
 ├── public/                    statische Spiele (1 Ordner = 1 Spiel)
 │   ├── index.html             Landing Page mit App-Karten
-│   ├── theme.js               Hell/Dunkel-Umschalter (alle Apps)
+│   ├── theme.js               Hell/Dunkel-Umschalter + SW-Registrierung
+│   ├── manifest.webmanifest   PWA-Manifest (installierbare App)
+│   ├── sw.js                  Service Worker (offline-fähig)
+│   ├── icons/                 App-Icons
 │   ├── _redirects
 │   ├── wuerfelpoker/          index.html + app.js + style.css
 │   ├── funkelfeld/

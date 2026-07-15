@@ -52,4 +52,11 @@
   }
   if (document.body) watch();
   else document.addEventListener("DOMContentLoaded", watch);
+
+  // PWA: Service Worker registrieren (alle Apps laden theme.js)
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("/sw.js").catch(() => {});
+    });
+  }
 })();
