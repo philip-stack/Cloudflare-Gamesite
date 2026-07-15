@@ -11,7 +11,7 @@ statisches HTML/CSS/JS in `public/`, dazu Pages Functions als API und eine
 
 | Spiel | Pfad | Was es ist |
 |---|---|---|
-| 🎲 **Würfelpoker** | `/wuerfelpoker/` | Escalero-Verrechnungsblatt — lokal spielen oder per Beitritts-Code teilen |
+| 🎲 **Würfelpoker** | `/wuerfelpoker/` | Escalero-Verrechnungsblatt — mehrere Runden pro Spiel, 1–n Spalten pro Spieler, Live-Ranking in Gold/Silber/Bronze; lokal spielen oder per Beitritts-Code teilen |
 | 💎 **Funkelfeld** | `/funkelfeld/` | 8×8-Puzzle — Funkelsteine sammeln, Combos jagen, Skins freispielen |
 | ☄️ **Komet** | `/komet/` | One-Touch-Arcade — am Lichtseil von Stern zu Stern schwingen |
 | 🚀 **Sternensturm** | `/sternensturm/` | Roguelite-Space-Shooter — Wellen, Upgrades, NOVA, Bosse |
@@ -21,6 +21,11 @@ Alle Spiele sind mobile-first (Touch-Gesten), haben aber auch
 Tastatur-Steuerung. Funkelfeld, Komet, Sternensturm und Galopp teilen sich
 eine globale Bestenliste pro Spiel (Top 50, pro Name zählt der Highscore).
 
+Die ganze Seite kann zwischen **Hell- und Dunkelmodus** umgeschaltet werden
+(🌙/☀️-Button in jeder App); die Wahl gilt app-übergreifend und wird auf dem
+Gerät gespeichert. Die Spielszenen der Canvas-Spiele bleiben bewusst dunkel,
+der Rahmen passt sich an.
+
 ## Struktur
 
 ```
@@ -29,6 +34,7 @@ wuerfelpoker/
 ├── schema.sql                 D1-Schema (Würfelpoker-Tabellen + *_scores)
 ├── public/                    statische Spiele (1 Ordner = 1 Spiel)
 │   ├── index.html             Landing Page mit App-Karten
+│   ├── theme.js               Hell/Dunkel-Umschalter (alle Apps)
 │   ├── _redirects
 │   ├── wuerfelpoker/          index.html + app.js + style.css
 │   ├── funkelfeld/
@@ -70,11 +76,18 @@ Gespielt mit **5 Poker-Würfeln** (Bilder: 9, 10, B, D, K, A). Pro Zug bis zu
 **3×** würfeln – Würfel liegen lassen und nachwerfen.
 
 - Am Anfang würfelt jeder einmal: **höchste Zahl beginnt.** Danach reihum im Kreis.
-- Nach dem Zug trägt man das Ergebnis in **ein freies Feld der eigenen Spalte** ein.
+- Nach dem Zug trägt man das Ergebnis in **ein freies Feld einer eigenen Spalte** ein.
 - Passt nichts (oder man will nicht), muss man **ein freies Feld streichen** = 0 Punkte.
-- Das Spiel endet, wenn **alle 10 Felder** jedes Spielers gefüllt sind.
-- Höchste Gesamtsumme gewinnt.
-- Nächste Runde: **Sieger beginnt** – oder im Kreis der nächste Spieler.
+- Eine **Runde** endet, wenn alle Felder jedes Spielers gefüllt sind.
+- Danach: **weitere Runden im selben Spiel** spielen (Sieger beginnt oder im
+  Kreis weiter) oder das Spiel abschließen. Es gibt Sieger je Runde; am Ende
+  gewinnt die **höchste Gesamtsumme** über alle Runden.
+- **Spalten:** Vor Spielbeginn wählbar, wie viele Blätter (Spalten) jeder
+  gleichzeitig spielt (1–n). Pro Zug füllt man ein Feld in einer beliebigen
+  eigenen Spalte; die Tabelle zeigt kompakt die Summe, der Spieler am Zug ist
+  aufgeklappt, andere lassen sich per Tipp auf den Namen aufklappen.
+- Die Total-Zeile zeigt live die Platzierung in **Gold/Silber/Bronze**
+  (Platz 4+ in Blau).
 
 ### Punkte
 
