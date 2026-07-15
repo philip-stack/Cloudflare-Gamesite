@@ -25,6 +25,8 @@ export async function onRequestPost({ request, env }) {
   const status = ["starter", "active", "finished"].includes(body.status) ? body.status : "starter";
   const starterIndex = Number.isInteger(body.starter_index) ? body.starter_index : null;
   const turnIndex = Number.isInteger(body.turn_index) ? body.turn_index : null;
+  // Spalten pro Spieler: mind. 1, nach oben nur eine Vernunftgrenze
+  const cols = Math.min(50, Math.max(1, Number.isInteger(body.cols) ? body.cols : 1));
 
   let code = makeCode();
   for (let i = 0; i < 5; i++) {
@@ -34,8 +36,8 @@ export async function onRequestPost({ request, env }) {
   }
 
   const game = await env.DB.prepare(
-    "INSERT INTO games (name, status, starter_index, turn_index, code) VALUES (?, ?, ?, ?, ?) RETURNING id"
-  ).bind(name, status, starterIndex, turnIndex, code).first();
+    "INSERT INTO games (name, status, cols, round, starter_index, turn_index, code) VALUES (?, ?, ?, 1, ?, ?, ?) RETURNING id"
+  ).bind(name, status, cols, starterIndex, turnIndex, code).first();
 
   const stmts = players.map((p, i) =>
     env.DB.prepare("INSERT INTO players (game_id, name, seat_order) VALUES (?, ?, ?)")

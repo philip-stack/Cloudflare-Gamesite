@@ -813,3 +813,98 @@ input:focus {
   }
   .grain, .aurora { animation: none !important; }
 }
+
+/* ---------- Runden & Spalten (Mehrrunden-Spiele) ---------- */
+
+/* Spalten-Stepper im "Neues Spiel"-Screen */
+.stepper { display: flex; gap: 10px; align-items: stretch; }
+.stepper button {
+  width: 54px;
+  font-size: 1.4rem;
+  font-weight: 700;
+  border-radius: var(--radius-sm);
+  background: var(--card-hi);
+  color: var(--ink);
+  box-shadow: 0 0 0 1px var(--edge-soft) inset;
+}
+.stepper input {
+  flex: 1;
+  text-align: center;
+  font-size: 1.3rem;
+  font-weight: 700;
+  font-family: var(--font-display);
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+.stepper input::-webkit-outer-spin-button,
+.stepper input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
+/* Auf-/zuklappbare Spieler-Header */
+.sheet .p-head.clickable { cursor: pointer; user-select: none; }
+.sheet .p-head .ph-chev { margin-left: 5px; opacity: 0.6; font-size: 0.75em; }
+.sheet .p-head.expanded { box-shadow: 0 -2px 0 var(--gold) inset; }
+.sheet .sub-head {
+  background: #101711;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 4px 6px;
+  position: sticky;
+  top: 0;
+}
+
+/* Einzelspalten-Zellen etwas schmaler */
+.sheet .cell.sub { min-width: 46px; }
+
+/* Kompakte Summen-Zelle mit Füllstand */
+.sheet .cell.compact { line-height: 1.15; padding: 3px 0; }
+.sheet .cell.compact .cc-progress {
+  display: block;
+  font-size: 0.58rem;
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: 0.05em;
+}
+.sheet .cell.compact .struck-x { color: rgba(147, 163, 150, 0.55); }
+
+/* Ranking-Farben in den Total-Zeilen: Gold / Silber / Bronze / Rest.
+   Überschreiben den Standard-Folienverlauf von .cell.total. */
+.sheet .cell.total.rank-1,
+.sheet .cell.total.rank-2,
+.sheet .cell.total.rank-3,
+.sheet .cell.total.rank-x,
+.sheet .cell.total.plain {
+  background: none;
+  animation: none;
+  -webkit-text-fill-color: currentcolor;
+}
+.sheet .cell.total.rank-1 { color: #ffd76a; text-shadow: 0 0 14px rgba(232, 193, 90, 0.55); }
+.sheet .cell.total.rank-2 { color: #d4dbe6; text-shadow: 0 0 12px rgba(200, 215, 235, 0.4); }
+.sheet .cell.total.rank-3 { color: #e09a62; text-shadow: 0 0 12px rgba(224, 154, 98, 0.4); }
+.sheet .cell.total.rank-x { color: #8fb4d9; text-shadow: 0 0 10px rgba(143, 180, 217, 0.3); }
+.sheet .cell.total.plain { color: var(--ink); font-size: 1rem; font-weight: 700; }
+.sheet .grand-row th, .sheet .grand-row td { border-top: 2px solid var(--edge); }
+
+/* Rundensieger-Markierung in der Gesamtstand-Tabelle */
+.sheet .cell.round-win { color: var(--gold); font-weight: 700; }
+
+/* Rundenende / Endstand */
+.winner-box.small { padding: 18px 14px; }
+.winner-box.small .trophy { font-size: 2rem; }
+.winner-box.small .w-name { font-size: 1.4rem; }
+.round-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0 4px;
+  justify-content: center;
+}
+.round-chip {
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: var(--card);
+  box-shadow: 0 0 0 1px var(--edge-soft) inset;
+  color: var(--muted);
+}

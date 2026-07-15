@@ -9,8 +9,10 @@ DROP TABLE IF EXISTS games;
 CREATE TABLE games (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
   name          TEXT,
-  status        TEXT NOT NULL DEFAULT 'starter',  -- starter | active | finished
-  starter_index INTEGER,                          -- Sitzplatz-Index des Startspielers
+  status        TEXT NOT NULL DEFAULT 'starter',  -- starter | active | round_end | finished
+  cols          INTEGER NOT NULL DEFAULT 1,       -- Spalten (Blätter) pro Spieler
+  round         INTEGER NOT NULL DEFAULT 1,       -- aktuelle Runde (1-basiert)
+  starter_index INTEGER,                          -- Sitzplatz-Index des Startspielers (der Runde)
   turn_index    INTEGER,                          -- Sitzplatz-Index des aktuellen Spielers
   code          TEXT,                             -- Beitritts-Code (geteilte Spiele)
   created_at    TEXT NOT NULL DEFAULT (datetime('now'))
@@ -29,11 +31,13 @@ CREATE TABLE cells (
   seq       INTEGER PRIMARY KEY AUTOINCREMENT,   -- Reihenfolge der Einträge (für Undo)
   game_id   INTEGER NOT NULL REFERENCES games(id) ON DELETE CASCADE,
   player_id INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+  round     INTEGER NOT NULL DEFAULT 1,           -- Runde, zu der der Eintrag gehört
+  col       INTEGER NOT NULL DEFAULT 0,           -- Spalte (0-basiert)
   cat_key   TEXT NOT NULL,                        -- 9 10 B D K A S F P G
   kind      TEXT NOT NULL,                        -- score | strike
   value     INTEGER NOT NULL,
   serviert  INTEGER NOT NULL DEFAULT 0,
-  UNIQUE (player_id, cat_key)
+  UNIQUE (player_id, round, col, cat_key)
 );
 
 CREATE INDEX idx_players_game ON players(game_id);

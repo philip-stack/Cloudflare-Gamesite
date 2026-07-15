@@ -1,7 +1,8 @@
 import { json, CAT_KEYS, CAT_COUNT, cellCount, authGame } from "../../_util.js";
 
 // PUT /api/games/:id/cells?code=XXXXXX – ein Feld eintragen und Zug weiterschalten
-// body: { player_id, cat_key, kind, value, serviert?, turn_index }
+// body: { player_id, col, cat_key, kind, value, serviert?, turn_index }
+// Die Runde ist immer die aktuelle Runde des Spiels.
 export async function onRequestPut({ request, env, params }) {
   const auth = await authGame(env, params.id, request);
   if (!auth) return json({ error: "Spiel nicht gefunden oder Code falsch" }, 404);
@@ -12,6 +13,9 @@ export async function onRequestPut({ request, env, params }) {
   if (!["score", "strike"].includes(b.kind)) return json({ error: "Ungültige Art" }, 400);
   const value = Number(b.value);
   if (!Number.isInteger(value) || value < 0) return json({ error: "Ungültiger Wert" }, 400);
+  const col = Number.isInteger(b.col) ? b.col : 0;
+  if (col < 0 || col >= auth.cols) return json({ error: "Ungültige Spalte" }, 400);
+  const round = auth.round;
 
   const player = await env.DB.prepare(
     "SELECT id FROM players WHERE id = ? AND game_id = ?"
@@ -19,41 +23,45 @@ export async function onRequestPut({ request, env, params }) {
   if (!player) return json({ error: "Spieler gehört nicht zu diesem Spiel" }, 400);
 
   const exists = await env.DB.prepare(
-    "SELECT 1 FROM cells WHERE player_id = ? AND cat_key = ?"
-  ).bind(b.player_id, b.cat_key).first();
+    "SELECT 1 FROM cells WHERE player_id = ? AND round = ? AND col = ? AND cat_key = ?"
+  ).bind(b.player_id, round, col, b.cat_key).first();
   if (exists) return json({ error: "Feld ist bereits ausgefüllt" }, 409);
 
   await env.DB.prepare(
-    "INSERT INTO cells (game_id, player_id, cat_key, kind, value, serviert) VALUES (?, ?, ?, ?, ?, ?)"
-  ).bind(gameId, b.player_id, b.cat_key, b.kind, value, b.serviert ? 1 : 0).run();
+    "INSERT INTO cells (game_id, player_id, round, col, cat_key, kind, value, serviert) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+  ).bind(gameId, b.player_id, round, col, b.cat_key, b.kind, value, b.serviert ? 1 : 0).run();
 
-  // Spielerzahl → prüfen ob alle Felder voll sind
+  // Runde voll? → Status round_end (Rundenauswertung, kein hartes Spielende)
   const nPlayers = (await env.DB.prepare(
     "SELECT COUNT(*) AS n FROM players WHERE game_id = ?"
   ).bind(gameId).first()).n;
-  const filled = await cellCount(env, gameId);
-  const finished = filled >= nPlayers * CAT_COUNT;
+  const filled = await cellCount(env, gameId, round);
+  const roundFull = filled >= nPlayers * auth.cols * CAT_COUNT;
 
   const turnIndex = Number.isInteger(b.turn_index) ? b.turn_index : null;
   await env.DB.prepare("UPDATE games SET turn_index = ?, status = ? WHERE id = ?")
-    .bind(turnIndex, finished ? "finished" : "active", gameId).run();
+    .bind(turnIndex, roundFull ? "round_end" : "active", gameId).run();
 
-  return json({ ok: true, finished }, 201);
+  return json({ ok: true, roundFull }, 201);
 }
 
 // DELETE /api/games/:id/cells?code=XXXXXX – letzten Eintrag rückgängig machen
+// (nur innerhalb der aktuellen Runde)
 export async function onRequestDelete({ request, env, params }) {
   const auth = await authGame(env, params.id, request);
   if (!auth) return json({ error: "Spiel nicht gefunden oder Code falsch" }, 404);
   const gameId = auth.id;
   const last = await env.DB.prepare(
-    "SELECT c.seq, c.player_id, p.seat_order FROM cells c JOIN players p ON p.id = c.player_id " +
+    "SELECT c.seq, c.round, c.player_id, p.seat_order FROM cells c JOIN players p ON p.id = c.player_id " +
     "WHERE c.game_id = ? ORDER BY c.seq DESC LIMIT 1"
   ).bind(gameId).first();
   if (!last) return json({ error: "Nichts zum Löschen" }, 404);
+  if (last.round !== auth.round) {
+    return json({ error: "Einträge aus früheren Runden können nicht gelöscht werden" }, 409);
+  }
 
   await env.DB.prepare("DELETE FROM cells WHERE seq = ?").bind(last.seq).run();
-  // Zug zurück auf den Spieler, dessen Eintrag entfernt wurde; Spiel wieder aktiv
+  // Zug zurück auf den Spieler, dessen Eintrag entfernt wurde; Runde wieder aktiv
   await env.DB.prepare("UPDATE games SET turn_index = ?, status = 'active' WHERE id = ?")
     .bind(last.seat_order, gameId).run();
 

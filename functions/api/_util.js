@@ -25,7 +25,7 @@ export async function authGame(env, id, request) {
   const code = codeFromRequest(request);
   if (!code) return null;
   const g = await env.DB.prepare(
-    "SELECT id, code, status FROM games WHERE id = ?"
+    "SELECT id, code, status, cols, round FROM games WHERE id = ?"
   ).bind(Number(id)).first();
   if (!g || !g.code || g.code !== code) return null;
   return g;
@@ -35,7 +35,7 @@ export async function authGame(env, id, request) {
 // die das Frontend erwartet.
 export async function loadGame(env, id) {
   const game = await env.DB.prepare(
-    "SELECT id, name, status, starter_index, turn_index, created_at, code FROM games WHERE id = ?"
+    "SELECT id, name, status, cols, round, starter_index, turn_index, created_at, code FROM games WHERE id = ?"
   ).bind(id).first();
   if (!game) return null;
 
@@ -44,13 +44,14 @@ export async function loadGame(env, id) {
   ).bind(id).all()).results;
 
   const cellRows = (await env.DB.prepare(
-    "SELECT player_id, cat_key, kind, value, serviert FROM cells WHERE game_id = ?"
+    "SELECT player_id, round, col, cat_key, kind, value, serviert FROM cells WHERE game_id = ?"
   ).bind(id).all()).results;
 
+  // cells[pid][runde][spalte][kategorie] = { kind, v, serviert }
   const cells = {};
   for (const p of players) cells[p.id] = {};
   for (const c of cellRows) {
-    (cells[c.player_id] ||= {})[c.cat_key] = {
+    (((cells[c.player_id] ||= {})[c.round] ||= {})[c.col] ||= {})[c.cat_key] = {
       kind: c.kind,
       v: c.value,
       serviert: !!c.serviert,
@@ -62,6 +63,8 @@ export async function loadGame(env, id) {
     name: game.name,
     code: game.code,
     status: game.status,
+    cols: game.cols,
+    round: game.round,
     starterIndex: game.starter_index,
     turnIndex: game.turn_index,
     createdAt: game.created_at,
@@ -70,10 +73,10 @@ export async function loadGame(env, id) {
   };
 }
 
-// Anzahl gefüllter Zellen im Spiel – für die "fertig?"-Erkennung.
-export async function cellCount(env, gameId) {
+// Anzahl gefüllter Zellen einer Runde – für die "Runde fertig?"-Erkennung.
+export async function cellCount(env, gameId, round) {
   const row = await env.DB.prepare(
-    "SELECT COUNT(*) AS n FROM cells WHERE game_id = ?"
-  ).bind(gameId).first();
+    "SELECT COUNT(*) AS n FROM cells WHERE game_id = ? AND round = ?"
+  ).bind(gameId, round).first();
   return row.n;
 }

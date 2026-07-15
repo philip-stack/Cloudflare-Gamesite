@@ -6,6 +6,14 @@ const app = document.getElementById("app");
 // nur am Anfang aus, wer beginnt. Danach ist sie das digitale
 // Verrechnungsblatt.
 //
+// Spielmodell:
+//  - Ein Spiel besteht aus 1..n RUNDEN. Nach jeder vollen Runde kann
+//    man weiterspielen; am Ende zählt die Gesamtsumme (Endgewinner),
+//    zusätzlich gibt es Sieger je Runde.
+//  - Jeder Spieler spielt 1..n SPALTEN (Blätter) gleichzeitig. Pro Zug
+//    wird EIN freies Feld in einer beliebigen eigenen Spalte gefüllt.
+//  - cells[pid][runde][spalte][kategorie] = { kind, v, serviert }
+//
 // Spielstände:
 //  - Lokale Spiele  → nur auf diesem Gerät (localStorage), IDs "L…"
 //  - Geteilte Spiele → Cloudflare D1, erreichbar NUR über einen
@@ -44,8 +52,21 @@ const LS_SHARED = "wp_shared_refs";
 
 const isLocalId = id => String(id).startsWith("L");
 
+// Alte lokale Spiele (1 Spalte, 1 Runde, flaches cells-Objekt) anheben
+function migrateLocal(g) {
+  if (!g || g.cols) return g;
+  g.cols = 1;
+  g.round = 1;
+  for (const p of g.players) {
+    const old = g.cells[p.id] || {};
+    g.cells[p.id] = { 1: { 0: old } };
+  }
+  g.log = (g.log || []).map(e => ({ ...e, round: 1, col: 0 }));
+  return g;
+}
+
 function lsLoad() {
-  try { return JSON.parse(localStorage.getItem(LS_LOCAL) || "[]"); }
+  try { return JSON.parse(localStorage.getItem(LS_LOCAL) || "[]").map(migrateLocal); }
   catch { return []; }
 }
 function lsSave(list) { localStorage.setItem(LS_LOCAL, JSON.stringify(list)); }
@@ -74,6 +95,7 @@ function removeSharedRef(id) {
 // ---------- Datenzugriff (lokal oder Server, gleiche Schnittstelle) ----------
 const store = {
   async create(opts) {
+    const cols = Math.max(1, Number(opts.cols) || 1);
     if (!opts.shared) {
       const id = "L" + Date.now();
       const game = {
@@ -81,6 +103,8 @@ const store = {
         name: opts.name || "Würfelpoker",
         code: null,
         status: opts.status || "starter",
+        cols,
+        round: 1,
         starterIndex: Number.isInteger(opts.starter_index) ? opts.starter_index : null,
         turnIndex: Number.isInteger(opts.turn_index) ? opts.turn_index : null,
         createdAt: new Date().toISOString(),
@@ -94,7 +118,7 @@ const store = {
     const res = await api("/games", {
       method: "POST",
       body: JSON.stringify({
-        name: opts.name, players: opts.players, status: opts.status,
+        name: opts.name, players: opts.players, cols, status: opts.status,
         starter_index: opts.starter_index, turn_index: opts.turn_index,
       }),
     });
@@ -116,6 +140,7 @@ const store = {
       const g = lsGet(ref.id);
       if (!g) throw new Error("Spiel nicht gefunden");
       if (body.status !== undefined) g.status = body.status;
+      if (body.round !== undefined) g.round = body.round;
       if (body.starter_index !== undefined) g.starterIndex = body.starter_index;
       if (body.turn_index !== undefined) g.turnIndex = body.turn_index;
       lsPut(g);
@@ -124,19 +149,27 @@ const store = {
     return api(`/games/${ref.id}?code=${ref.code}`, { method: "PATCH", body: JSON.stringify(body) });
   },
 
+  // b: { player_id, col, cat_key, kind, value, serviert?, turn_index }
   async putCell(ref, b) {
     if (isLocalId(ref.id)) {
       const g = lsGet(ref.id);
       if (!g) throw new Error("Spiel nicht gefunden");
-      const cells = (g.cells[b.player_id] ||= {});
-      if (cells[b.cat_key]) throw new Error("Feld ist bereits ausgefüllt");
-      cells[b.cat_key] = { kind: b.kind, v: b.value, serviert: !!b.serviert };
-      (g.log ||= []).push({ pid: b.player_id, cat: b.cat_key });
-      const finished = g.players.every(p => CATS.every(c => (g.cells[p.id] || {})[c.key]));
+      const r = g.round;
+      const colObj = (((g.cells[b.player_id] ||= {})[r] ||= {})[b.col] ||= {});
+      if (colObj[b.cat_key]) throw new Error("Feld ist bereits ausgefüllt");
+      colObj[b.cat_key] = { kind: b.kind, v: b.value, serviert: !!b.serviert };
+      (g.log ||= []).push({ pid: b.player_id, cat: b.cat_key, round: r, col: b.col });
+      const roundFull = g.players.every(p => {
+        for (let c = 0; c < g.cols; c++) {
+          const cc = colCells(g, p.id, r, c);
+          if (!CATS.every(cat => cc[cat.key])) return false;
+        }
+        return true;
+      });
       g.turnIndex = b.turn_index;
-      g.status = finished ? "finished" : "active";
+      g.status = roundFull ? "round_end" : "active";
       lsPut(g);
-      return { ok: true, finished };
+      return { ok: true, roundFull };
     }
     return api(`/games/${ref.id}/cells?code=${ref.code}`, { method: "PUT", body: JSON.stringify(b) });
   },
@@ -145,8 +178,11 @@ const store = {
     if (isLocalId(ref.id)) {
       const g = lsGet(ref.id);
       if (!g || !(g.log || []).length) throw new Error("Nichts zum Löschen");
-      const last = g.log.pop();
-      if (g.cells[last.pid]) delete g.cells[last.pid][last.cat];
+      const last = g.log[g.log.length - 1];
+      if (last.round !== g.round) throw new Error("Einträge aus früheren Runden können nicht gelöscht werden");
+      g.log.pop();
+      const cc = colCells(g, last.pid, last.round, last.col);
+      delete cc[last.cat];
       const p = g.players.find(p => p.id === last.pid);
       if (p) g.turnIndex = p.seat_order;
       g.status = "active";
@@ -209,18 +245,58 @@ function cellValue(cell) {
   if (!cell) return null;
   return cell.kind === "strike" ? 0 : cell.v;
 }
-function playerTotal(game, pid) {
-  const cells = game.cells[pid] || {};
-  return CATS.reduce((sum, c) => sum + (cellValue(cells[c.key]) || 0), 0);
+// Zellen einer Spalte: cells[pid][runde][spalte] → { catKey: cell }
+function colCells(game, pid, round, col) {
+  return ((game.cells[pid] || {})[round] || {})[col] || {};
 }
-function filledCount(game, pid) {
-  const cells = game.cells[pid] || {};
-  return CATS.filter(c => cells[c.key]).length;
+// Eine Kategorie über alle Spalten eines Spielers (für die kompakte Ansicht)
+function catAcross(game, pid, round, catKey) {
+  let sum = 0, filled = 0, struck = 0, serviert = false;
+  for (let c = 0; c < game.cols; c++) {
+    const cell = colCells(game, pid, round, c)[catKey];
+    if (!cell) continue;
+    filled++;
+    if (cell.kind === "strike") struck++;
+    else { sum += cell.v; if (cell.serviert) serviert = true; }
+  }
+  return { sum, filled, struck, serviert };
 }
-function ranking(game) {
-  return [...game.players]
-    .map(p => ({ ...p, pts: playerTotal(game, p.id) }))
-    .sort((a, b) => b.pts - a.pts);
+function colTotal(game, pid, round, col) {
+  const cc = colCells(game, pid, round, col);
+  return CATS.reduce((s, c) => s + (cellValue(cc[c.key]) || 0), 0);
+}
+function roundTotal(game, pid, round) {
+  let s = 0;
+  for (let c = 0; c < game.cols; c++) s += colTotal(game, pid, round, c);
+  return s;
+}
+function grandTotal(game, pid) {
+  let s = 0;
+  for (let r = 1; r <= game.round; r++) s += roundTotal(game, pid, r);
+  return s;
+}
+function roundFilled(game, pid, round) {
+  let n = 0;
+  for (let c = 0; c < game.cols; c++) {
+    const cc = colCells(game, pid, round, c);
+    n += CATS.filter(cat => cc[cat.key]).length;
+  }
+  return n;
+}
+// Ranking mit Gleichstand (Competition Ranking: 1,1,3,…)
+function withRanks(list) {
+  const sorted = [...list].sort((a, b) => b.pts - a.pts);
+  return sorted.map(e => ({ ...e, rank: 1 + sorted.filter(o => o.pts > e.pts).length }));
+}
+function grandRanking(game) {
+  return withRanks(game.players.map(p => ({ ...p, pts: grandTotal(game, p.id) })));
+}
+function roundRanking(game, round) {
+  return withRanks(game.players.map(p => ({ ...p, pts: roundTotal(game, p.id, round) })));
+}
+function rankClass(rank) { return rank <= 3 ? `rank-${rank}` : "rank-x"; }
+function rankByPid(ranking) {
+  return Object.fromEntries(ranking.map(e => [e.id, e.rank]));
 }
 function playerName(game, pid) {
   const p = game.players.find(p => p.id == pid);
@@ -285,11 +361,12 @@ async function renderHome() {
   const refs = sharedRefs();
 
   const item = (g, ref, idx, extraBadge = "") => {
-    const r = ranking(g);
+    const r = grandRanking(g);
     const lead = r[0];
+    const colsNote = (g.cols || 1) > 1 ? ` · ${g.cols} Spalten` : "";
     const sub = g.status === "finished"
-      ? `🏆 ${esc(lead.name)} · ${lead.pts} P`
-      : `Runde ${filledCount(g, g.players[0].id) + 1}/${CATS.length}`;
+      ? `🏆 ${esc(lead.name)} · ${lead.pts} P${(g.round || 1) > 1 ? ` · ${g.round} Runden` : ""}`
+      : `Runde ${g.round || 1}${colsNote} · es führt ${esc(lead.name)}`;
     return `
       <div class="game-row" style="--i:${idx}">
         <button class="game-list-item" data-hash="${gameHash(ref)}">
@@ -425,6 +502,7 @@ function renderJoin() {
 function renderNewGame() {
   const savedNames = JSON.parse(localStorage.getItem("wp_last_players") || '["",""]');
   let shared = false;
+  let cols = Number(localStorage.getItem("wp_last_cols") || 1) || 1;
 
   app.innerHTML = `
     <div class="topbar">
@@ -446,6 +524,13 @@ function renderNewGame() {
           <span class="mt-note">andere treten per Code bei</span>
         </button>
       </div>
+      <h2>Spalten pro Spieler</h2>
+      <div class="stepper">
+        <button type="button" id="col-minus" aria-label="Weniger Spalten">−</button>
+        <input type="number" id="col-count" min="1" step="1" inputmode="numeric" value="${cols}">
+        <button type="button" id="col-plus" aria-label="Mehr Spalten">+</button>
+      </div>
+      <p class="hint" style="margin-top:2px">Jede Spalte ist ein eigenes Blatt — wie mehrere Spiele gleichzeitig. Pro Zug füllst du <strong>ein Feld in einer beliebigen eigenen Spalte</strong>.</p>
       <h2>Spieler (mind. 2)</h2>
       <div id="players"></div>
       <button class="btn-secondary" id="btn-add">+ Spieler hinzufügen</button>
@@ -459,6 +544,15 @@ function renderNewGame() {
       app.querySelectorAll(".mode-tile").forEach(t => t.classList.toggle("selected", t === el));
     };
   });
+
+  const colInput = document.getElementById("col-count");
+  const clampCols = () => {
+    cols = Math.max(1, Math.floor(Number(colInput.value) || 1));
+    colInput.value = cols;
+  };
+  colInput.onchange = clampCols;
+  document.getElementById("col-minus").onclick = () => { colInput.value = Math.max(1, cols - 1); clampCols(); };
+  document.getElementById("col-plus").onclick = () => { colInput.value = cols + 1; clampCols(); };
 
   const playersDiv = document.getElementById("players");
   function addPlayerRow(value = "") {
@@ -483,11 +577,13 @@ function renderNewGame() {
   document.getElementById("btn-start").onclick = async e => {
     const names = [...playersDiv.querySelectorAll("input")].map(i => i.value.trim()).filter(Boolean);
     if (names.length < 2) return toast("Mindestens 2 Spieler angeben", true);
+    clampCols();
     e.target.disabled = true;
     try {
       localStorage.setItem("wp_last_players", JSON.stringify(names));
+      localStorage.setItem("wp_last_cols", String(cols));
       const name = document.getElementById("game-name").value.trim() || null;
-      const res = await store.create({ name, players: names, shared });
+      const res = await store.create({ name, players: names, cols, shared });
       if (res.code) toast(`Beitritts-Code: ${res.code}`);
       navigate(gameHash(res));
     } catch (err) {
@@ -500,7 +596,9 @@ function renderNewGame() {
 // ---------- Spiel-Dispatcher ----------
 function renderGame(game, ref) {
   if (game.status === "finished") { stopPolling(); return renderFinished(game, ref); }
-  if (game.starterIndex === null || game.starterIndex === undefined) {
+  if (game.status === "round_end") {
+    renderRoundEnd(game, ref);
+  } else if (game.starterIndex === null || game.starterIndex === undefined) {
     renderStarterRoll(game, ref);
   } else {
     renderSheet(game, ref);
@@ -615,31 +713,88 @@ function renderStarterRoll(game, ref) {
 }
 
 // ---------- Verrechnungsblatt (Hauptansicht) ----------
-function renderSheet(game, ref) {
-  const turnPid = game.players[game.turnIndex].id;
-  const roundNo = filledCount(game, turnPid) + 1;
+// Aufgeklappter Spieler pro Spiel: undefined/null = automatisch (wer dran
+// ist), -1 = alle zu, sonst die Spieler-ID.
+const expandedChoice = {};
 
+function renderSheet(game, ref) {
+  const cols = game.cols || 1;
+  const round = game.round || 1;
+  const turnPid = game.players[game.turnIndex].id;
+  const zug = roundFilled(game, turnPid, round) + 1;
+  const zuegeGesamt = cols * CATS.length;
+
+  const choice = expandedChoice[game.id];
+  const expPid = cols === 1 ? null : (choice === undefined || choice === null ? turnPid : choice);
+
+  const grand = rankByPid(grandRanking(game));
+
+  // --- Kopfzeilen ---
+  const isExp = p => cols > 1 && p.id === expPid;
+  const anyExp = cols > 1 && game.players.some(isExp);
   const headCells = game.players.map((p, i) => {
     const isTurn = i === game.turnIndex;
-    return `<th class="p-head ${isTurn ? "turn" : ""}">${isTurn ? "🎲 " : ""}${esc(p.name)}</th>`;
+    const exp = isExp(p);
+    const attrs = cols > 1 ? `data-pid="${p.id}" role="button" tabindex="0"` : "";
+    const chev = cols > 1 ? `<span class="ph-chev">${exp ? "▾" : "▸"}</span>` : "";
+    const span = exp ? `colspan="${cols}"` : (anyExp ? `rowspan="2"` : "");
+    return `<th class="p-head ${isTurn ? "turn" : ""} ${exp ? "expanded" : ""} ${cols > 1 ? "clickable" : ""}" ${span} ${attrs}>${isTurn ? "🎲 " : ""}${esc(p.name)}${chev}</th>`;
   }).join("");
+  const subHead = anyExp
+    ? `<tr>${game.players.map(p => isExp(p)
+        ? Array.from({ length: cols }, (_, c) => `<th class="sub-head">${c + 1}</th>`).join("")
+        : "").join("")}</tr>`
+    : "";
 
+  // --- Kategorie-Zeilen ---
   const rowFor = cat => {
     const isCombo = cat.type === "combo";
     const cells = game.players.map(p => {
-      const c = (game.cells[p.id] || {})[cat.key];
       const isTurn = p.id == turnPid;
-      const editable = isTurn && !c;
-      let inner = "&nbsp;";
-      let cls = "cell";
-      if (c) {
-        if (c.kind === "strike") { inner = "✕"; cls += " struck"; }
-        else { inner = c.v; cls += " filled"; if (c.serviert) cls += " serviert"; }
-      } else if (editable) {
-        cls += " editable";
+      if (isExp(p)) {
+        // Einzelspalten sichtbar
+        return Array.from({ length: cols }, (_, c) => {
+          const cell = colCells(game, p.id, round, c)[cat.key];
+          const editable = isTurn && !cell;
+          let inner = "&nbsp;";
+          let cls = "cell sub";
+          if (cell) {
+            if (cell.kind === "strike") { inner = "✕"; cls += " struck"; }
+            else { inner = cell.v; cls += " filled"; if (cell.serviert) cls += " serviert"; }
+          } else if (editable) {
+            cls += " editable";
+          }
+          if (isTurn) cls += " in-turn";
+          return `<td class="${cls}" data-pid="${p.id}" data-cat="${cat.key}" data-col="${c}">${inner}</td>`;
+        }).join("");
+      }
+      // Kompakt: Summe der Kategorie über alle Spalten
+      if (cols === 1) {
+        const cell = colCells(game, p.id, round, 0)[cat.key];
+        const editable = isTurn && !cell;
+        let inner = "&nbsp;";
+        let cls = "cell";
+        if (cell) {
+          if (cell.kind === "strike") { inner = "✕"; cls += " struck"; }
+          else { inner = cell.v; cls += " filled"; if (cell.serviert) cls += " serviert"; }
+        } else if (editable) {
+          cls += " editable";
+        }
+        if (isTurn) cls += " in-turn";
+        return `<td class="${cls}" data-pid="${p.id}" data-cat="${cat.key}" data-col="0">${inner}</td>`;
+      }
+      const a = catAcross(game, p.id, round, cat.key);
+      let inner = "&nbsp;", cls = "cell compact";
+      if (a.filled > 0) {
+        inner = (a.filled === a.struck)
+          ? `<span class="struck-x">✕</span>`
+          : `${a.sum}`;
+        cls += a.filled === a.struck ? " struck" : " filled";
+        if (a.serviert) cls += " serviert";
+        inner += `<span class="cc-progress">${a.filled}/${cols}</span>`;
       }
       if (isTurn) cls += " in-turn";
-      return `<td class="${cls}" data-pid="${p.id}" data-cat="${cat.key}">${inner}</td>`;
+      return `<td class="${cls}">${inner}</td>`;
     }).join("");
     return `
       <tr class="${isCombo ? "combo-row" : "upper-row"} ${cat.key === "S" ? "combo-start" : ""}">
@@ -651,8 +806,24 @@ function renderSheet(game, ref) {
       </tr>`;
   };
 
-  const totalCells = game.players.map(p =>
-    `<td class="cell total">${playerTotal(game, p.id)}</td>`).join("");
+  // --- Total-Zeilen ---
+  // Runde 1: eine Zeile "Total" (gefärbt). Ab Runde 2: "Runde" (neutral)
+  // + "Gesamt" (gefärbt) — die Farben zeigen die Gesamtführung.
+  const colorRoundRow = round === 1;
+  const roundCells = game.players.map(p => {
+    const cls = colorRoundRow ? `cell total ${rankClass(grand[p.id])}` : "cell total plain";
+    if (isExp(p)) {
+      return Array.from({ length: cols }, (_, c) =>
+        `<td class="${cls} sub">${colTotal(game, p.id, round, c)}</td>`).join("");
+    }
+    return `<td class="${cls}">${roundTotal(game, p.id, round)}</td>`;
+  }).join("");
+  const grandRow = round > 1 ? `
+    <tr class="total-row grand-row">
+      <th class="row-label">Gesamt</th>
+      ${game.players.map(p =>
+        `<td class="cell total ${rankClass(grand[p.id])}" ${isExp(p) ? `colspan="${cols}"` : ""}>${grandTotal(game, p.id)}</td>`).join("")}
+    </tr>` : "";
 
   app.innerHTML = `
     <div class="topbar">
@@ -662,25 +833,29 @@ function renderSheet(game, ref) {
     </div>
     ${codeChipHtml(game)}
     <div class="starter-banner">
-      <strong>${esc(playerName(game, turnPid))}</strong> ist dran · Runde ${roundNo}/${CATS.length}
+      <strong>${esc(playerName(game, turnPid))}</strong> ist dran · Runde ${round} · Zug ${zug}/${zuegeGesamt}
     </div>
-    <p class="hint">Echte Würfel werfen, dann ein freies Feld in deiner Spalte antippen. Nichts Passendes? Feld <strong>streichen</strong> (✕).</p>
+    <p class="hint">Echte Würfel werfen, dann ein freies Feld ${cols > 1 ? "in einer <strong>beliebigen eigenen Spalte</strong>" : "in deiner Spalte"} antippen. Nichts Passendes? Feld <strong>streichen</strong> (✕).${cols > 1 ? " Spielernamen antippen zeigt dessen Spalten." : ""}</p>
 
     <div class="sheet-wrap">
       <table class="sheet">
-        <thead><tr><th class="corner">Name</th>${headCells}</tr></thead>
+        <thead>
+          <tr><th class="corner" ${anyExp ? `rowspan="2"` : ""}>Name</th>${headCells}</tr>
+          ${subHead}
+        </thead>
         <tbody>
           ${CATS.map(rowFor).join("")}
           <tr class="total-row">
-            <th class="row-label">Total</th>
-            ${totalCells}
+            <th class="row-label">${round === 1 ? "Total" : `Runde ${round}`}</th>
+            ${roundCells}
           </tr>
+          ${grandRow}
         </tbody>
       </table>
     </div>
 
     <div class="footer-actions">
-      ${hasAnyEntry(game) ? `<button class="btn-secondary" id="btn-undo">↩︎ Letzten Eintrag löschen</button>` : ""}
+      ${hasUndo(game) ? `<button class="btn-secondary" id="btn-undo">↩︎ Letzten Eintrag löschen</button>` : ""}
       <button class="btn-danger" id="btn-finish">Spiel beenden</button>
     </div>
   `;
@@ -689,8 +864,19 @@ function renderSheet(game, ref) {
   document.getElementById("btn-rules").onclick = showRules;
   wireCodeChip();
 
+  // Spieler auf-/zuklappen
+  if (cols > 1) {
+    app.querySelectorAll(".p-head.clickable").forEach(el => {
+      el.onclick = () => {
+        const pid = Number(el.dataset.pid);
+        expandedChoice[game.id] = (pid === expPid) ? -1 : pid;
+        renderSheet(game, ref);
+      };
+    });
+  }
+
   app.querySelectorAll(".cell.editable").forEach(el => {
-    el.onclick = () => openEntry(game, ref, el.dataset.pid, el.dataset.cat);
+    el.onclick = () => openEntry(game, ref, el.dataset.pid, el.dataset.cat, Number(el.dataset.col));
   });
 
   const undo = document.getElementById("btn-undo");
@@ -701,7 +887,7 @@ function renderSheet(game, ref) {
   };
 
   document.getElementById("btn-finish").onclick = async e => {
-    if (!confirm("Spiel wirklich vorzeitig beenden?")) return;
+    if (!confirm("Spiel wirklich vorzeitig beenden? Der aktuelle Stand wird als Endstand gewertet.")) return;
     e.target.disabled = true;
     try {
       await store.patch(ref, { status: "finished" });
@@ -710,12 +896,18 @@ function renderSheet(game, ref) {
   };
 }
 
-function hasAnyEntry(game) {
-  return game.players.some(p => filledCount(game, p.id) > 0);
+function hasUndo(game) {
+  if (isLocalId(game.id)) {
+    const last = (game.log || [])[game.log?.length - 1];
+    return !!last && last.round === game.round;
+  }
+  // Geteilt: Server prüft die Runde — Button zeigen, sobald in der
+  // aktuellen Runde etwas eingetragen ist.
+  return game.players.some(p => roundFilled(game, p.id, game.round) > 0);
 }
 
 // ---------- Eintrag / Feld ausfüllen ----------
-function openEntry(game, ref, pid, catKey) {
+function openEntry(game, ref, pid, catKey, col) {
   const cat = CAT_BY_KEY[catKey];
   let options;
   if (cat.type === "upper") {
@@ -733,11 +925,12 @@ function openEntry(game, ref, pid, catKey) {
     ];
   }
 
+  const colNote = (game.cols || 1) > 1 ? ` · Spalte ${col + 1}` : "";
   const overlay = document.createElement("div");
   overlay.className = "sheet-overlay";
   overlay.innerHTML = `
     <div class="sheet-modal">
-      <div class="sm-title">${esc(cat.name || cat.label)} — ${esc(playerName(game, pid))}</div>
+      <div class="sm-title">${esc(cat.name || cat.label)} — ${esc(playerName(game, pid))}${colNote}</div>
       <div class="sm-options">
         ${options.map((o, i) => `
           <button class="sm-opt" data-i="${i}">
@@ -756,23 +949,26 @@ function openEntry(game, ref, pid, catKey) {
   const close = () => overlay.remove();
   overlay.onclick = e => { if (e.target === overlay) close(); };
   overlay.querySelector("[data-cancel]").onclick = close;
-  overlay.querySelector("[data-strike]").onclick = () => { close(); commit(game, ref, pid, catKey, { kind: "strike", value: 0 }); };
+  overlay.querySelector("[data-strike]").onclick = () => { close(); commit(game, ref, pid, catKey, col, { kind: "strike", value: 0 }); };
   overlay.querySelectorAll(".sm-opt[data-i]").forEach(el => {
-    el.onclick = () => { close(); commit(game, ref, pid, catKey, options[Number(el.dataset.i)].apply); };
+    el.onclick = () => { close(); commit(game, ref, pid, catKey, col, options[Number(el.dataset.i)].apply); };
   });
 }
 
-async function commit(game, ref, pid, catKey, cell) {
+async function commit(game, ref, pid, catKey, col, cell) {
   const nextTurn = (game.turnIndex + 1) % game.players.length;
   try {
     await store.putCell(ref, {
       player_id: Number(pid),
+      col,
       cat_key: catKey,
       kind: cell.kind,
       value: cell.value,
       serviert: !!cell.serviert,
       turn_index: nextTurn,
     });
+    // Nach dem Zug wieder automatisch den nächsten aktiven Spieler zeigen
+    delete expandedChoice[game.id];
     await reload(ref);
   } catch (err) {
     toast(err.message, true);
@@ -780,12 +976,120 @@ async function commit(game, ref, pid, catKey, cell) {
   }
 }
 
+// ---------- Gesamtstand-Tabelle (Rundenende + Endstand) ----------
+function standingsTable(game, { withRoundRows = true } = {}) {
+  const rounds = game.round || 1;
+  const grand = grandRanking(game);
+  const grandRank = rankByPid(grand);
+
+  const roundRows = withRoundRows ? Array.from({ length: rounds }, (_, i) => {
+    const r = i + 1;
+    const rr = roundRanking(game, r);
+    const best = rr[0].pts;
+    return `
+      <tr>
+        <th class="row-label">Runde ${r}</th>
+        ${game.players.map(p => {
+          const pts = roundTotal(game, p.id, r);
+          const win = pts === best && pts > 0;
+          return `<td class="cell ${win ? "round-win" : ""}">${win ? "🏆 " : ""}${pts}</td>`;
+        }).join("")}
+      </tr>`;
+  }).join("") : "";
+
+  return `
+    <div class="sheet-wrap">
+      <table class="sheet readonly">
+        <thead><tr><th class="corner">&nbsp;</th>${game.players.map(p =>
+          `<th class="p-head">${esc(p.name)}</th>`).join("")}</tr></thead>
+        <tbody>
+          ${roundRows}
+          <tr class="total-row grand-row">
+            <th class="row-label">Gesamt</th>
+            ${game.players.map(p =>
+              `<td class="cell total ${rankClass(grandRank[p.id])}">${grandTotal(game, p.id)}</td>`).join("")}
+          </tr>
+        </tbody>
+      </table>
+    </div>`;
+}
+
+// ---------- Rundenende: weiterspielen oder abschließen ----------
+function renderRoundEnd(game, ref) {
+  const round = game.round || 1;
+  const rr = roundRanking(game, round);
+  const topPts = rr[0].pts;
+  const roundWinners = rr.filter(p => p.pts === topPts);
+  const nextCircleIdx = ((game.starterIndex ?? 0) + 1) % game.players.length;
+  const winnerSeat = game.players.findIndex(p => p.id === roundWinners[0].id);
+
+  app.innerHTML = `
+    <div class="topbar">
+      <button class="btn-back" id="btn-back">←</button>
+      <h1>${esc(game.name)}</h1>
+    </div>
+    ${codeChipHtml(game)}
+    <div class="winner-box small">
+      <div class="trophy">🏆</div>
+      <div class="w-name">${roundWinners.map(w => esc(w.name)).join(" & ")}</div>
+      <div class="w-pts">gewinnt Runde ${round} mit ${topPts} Punkten${roundWinners.length > 1 ? " (geteilt)" : ""}</div>
+    </div>
+
+    <h2>Gesamtstand</h2>
+    ${standingsTable(game)}
+
+    <h2>Wie geht's weiter?</h2>
+    <div class="stack">
+      <button class="btn-primary" id="btn-next-winner">▶️ Nächste Runde — 🏆 ${esc(roundWinners[0].name)} beginnt</button>
+      <button class="btn-secondary" id="btn-next-circle">▶️ Nächste Runde — im Kreis (${esc(game.players[nextCircleIdx].name)} beginnt)</button>
+      <button class="btn-danger" id="btn-end">🏁 Spiel abschließen — Endstand</button>
+      <button class="btn-link" id="btn-undo">↩︎ Letzten Eintrag löschen (Runde fortsetzen)</button>
+    </div>
+  `;
+
+  document.getElementById("btn-back").onclick = () => navigate("#/");
+  wireCodeChip();
+
+  const nextRound = async idx => {
+    try {
+      await store.patch(ref, { status: "active", round: round + 1, starter_index: idx, turn_index: idx });
+      toast(`Runde ${round + 1} — ${game.players[idx].name} beginnt`);
+      await reload(ref);
+    } catch (err) { toast(err.message, true); }
+  };
+  document.getElementById("btn-next-winner").onclick = () => nextRound(winnerSeat);
+  document.getElementById("btn-next-circle").onclick = () => nextRound(nextCircleIdx);
+  document.getElementById("btn-end").onclick = async e => {
+    e.target.disabled = true;
+    try {
+      await store.patch(ref, { status: "finished" });
+      await reload(ref);
+    } catch (err) { toast(err.message, true); e.target.disabled = false; }
+  };
+  document.getElementById("btn-undo").onclick = async e => {
+    e.target.disabled = true;
+    try { await store.undo(ref); await reload(ref); }
+    catch (err) { toast(err.message, true); e.target.disabled = false; }
+  };
+}
+
 // ---------- Endstand ----------
 function renderFinished(game, ref) {
-  const r = ranking(game);
-  const topPts = r[0].pts;
-  const winners = r.filter(p => p.pts === topPts);
+  const rounds = game.round || 1;
+  const grand = grandRanking(game);
+  const topPts = grand[0].pts;
+  const winners = grand.filter(p => p.pts === topPts);
   const nextCircleIdx = ((game.starterIndex ?? 0) + 1) % game.players.length;
+
+  // Rundensieger-Chips
+  const roundChips = rounds > 1 ? `
+    <div class="round-chips">
+      ${Array.from({ length: rounds }, (_, i) => {
+        const rr = roundRanking(game, i + 1);
+        const best = rr.filter(p => p.pts === rr[0].pts);
+        return `<span class="round-chip">R${i + 1}: 🏆 ${best.map(b => esc(b.name)).join(" & ")} (${rr[0].pts})</span>`;
+      }).join("")}
+    </div>` : "";
 
   app.innerHTML = `
     <div class="topbar">
@@ -795,32 +1099,15 @@ function renderFinished(game, ref) {
     <div class="winner-box">
       <div class="trophy">🏆</div>
       <div class="w-name">${winners.map(w => esc(w.name)).join(" & ")}</div>
-      <div class="w-pts">${topPts} Punkte${winners.length > 1 ? " (geteilt)" : ""} · ${fmtDate(game.createdAt)}</div>
+      <div class="w-pts">${rounds > 1 ? `Endgewinner mit ${topPts} Punkten aus ${rounds} Runden` : `${topPts} Punkte`}${winners.length > 1 ? " (geteilt)" : ""} · ${fmtDate(game.createdAt)}</div>
     </div>
+    ${roundChips}
 
-    <div class="sheet-wrap">
-      <table class="sheet readonly">
-        <thead><tr><th class="corner">Name</th>${game.players.map(p =>
-          `<th class="p-head">${esc(p.name)}</th>`).join("")}</tr></thead>
-        <tbody>
-          ${CATS.map(cat => `
-            <tr class="${cat.type === "combo" ? "combo-row" : "upper-row"} ${cat.key === "S" ? "combo-start" : ""}">
-              <th class="row-label"><span class="rl-main">${cat.label}</span>${cat.sub ? `<sub class="rl-sub">${cat.sub}</sub>` : ""}</th>
-              ${game.players.map(p => {
-                const c = (game.cells[p.id] || {})[cat.key];
-                if (!c) return `<td class="cell">&nbsp;</td>`;
-                if (c.kind === "strike") return `<td class="cell struck">✕</td>`;
-                return `<td class="cell filled ${c.serviert ? "serviert" : ""}">${c.v}</td>`;
-              }).join("")}
-            </tr>`).join("")}
-          <tr class="total-row"><th class="row-label">Total</th>
-            ${game.players.map(p => `<td class="cell total">${playerTotal(game, p.id)}</td>`).join("")}
-          </tr>
-        </tbody>
-      </table>
-    </div>
+    ${standingsTable(game)}
 
-    <h2>Neue Runde?</h2>
+    ${rounds === 1 ? detailSheet(game) : ""}
+
+    <h2>Revanche?</h2>
     <div class="stack">
       <button class="btn-primary" id="btn-rematch-winner">🏆 Sieger beginnt (${esc(winners[0].name)})</button>
       <button class="btn-secondary" id="btn-rematch-circle">Im Kreis weiter (${esc(game.players[nextCircleIdx].name)} beginnt)</button>
@@ -834,6 +1121,37 @@ function renderFinished(game, ref) {
     rematch(game, ref, game.players.findIndex(p => p.id === winners[0].id));
   document.getElementById("btn-rematch-circle").onclick = () =>
     rematch(game, ref, nextCircleIdx);
+}
+
+// Detailblatt (nur für 1-Runden-Spiele am Ende; kompakt über Spalten summiert)
+function detailSheet(game) {
+  const cols = game.cols || 1;
+  return `
+    <h2>Verrechnungsblatt</h2>
+    <div class="sheet-wrap">
+      <table class="sheet readonly">
+        <thead><tr><th class="corner">Name</th>${game.players.map(p =>
+          `<th class="p-head">${esc(p.name)}</th>`).join("")}</tr></thead>
+        <tbody>
+          ${CATS.map(cat => `
+            <tr class="${cat.type === "combo" ? "combo-row" : "upper-row"} ${cat.key === "S" ? "combo-start" : ""}">
+              <th class="row-label"><span class="rl-main">${cat.label}</span>${cat.sub ? `<sub class="rl-sub">${cat.sub}</sub>` : ""}</th>
+              ${game.players.map(p => {
+                if (cols === 1) {
+                  const c = colCells(game, p.id, 1, 0)[cat.key];
+                  if (!c) return `<td class="cell">&nbsp;</td>`;
+                  if (c.kind === "strike") return `<td class="cell struck">✕</td>`;
+                  return `<td class="cell filled ${c.serviert ? "serviert" : ""}">${c.v}</td>`;
+                }
+                const a = catAcross(game, p.id, 1, cat.key);
+                if (!a.filled) return `<td class="cell">&nbsp;</td>`;
+                if (a.filled === a.struck) return `<td class="cell struck">✕</td>`;
+                return `<td class="cell filled ${a.serviert ? "serviert" : ""}">${a.sum}</td>`;
+              }).join("")}
+            </tr>`).join("")}
+        </tbody>
+      </table>
+    </div>`;
 }
 
 function launchConfetti() {
@@ -859,6 +1177,7 @@ async function rematch(prev, prevRef, starterIndex) {
     const res = await store.create({
       name: prev.name,
       players: prev.players.map(p => p.name),
+      cols: prev.cols || 1,
       shared: !isLocalId(prevRef.id),
       status: "active",
       starter_index: starterIndex,
@@ -879,7 +1198,7 @@ function showRules() {
       <div class="rules-body">
         <p>Gespielt wird mit <strong>5 Poker-Würfeln</strong> (9, 10, B, D, K, A). Pro Zug darfst du bis zu <strong>3×</strong> würfeln – Würfel liegen lassen und nachwerfen.</p>
         <p>Am Anfang würfelt jeder einmal: <strong>höchste Zahl beginnt.</strong> Danach reihum im Kreis.</p>
-        <p>Nach deinem Zug trägst du dein Ergebnis in <strong>ein freies Feld deiner Spalte</strong> ein:</p>
+        <p>Nach deinem Zug trägst du dein Ergebnis in <strong>ein freies Feld</strong> ein:</p>
         <ul>
           <li><strong>9,10,B,D,K,A:</strong> Anzahl der Würfel × Wert<br>(9=1, 10=2, B=3, D=4, K=5, A=6)</li>
           <li><strong>S</strong> Straße = 20 (serviert 25)</li>
@@ -889,7 +1208,8 @@ function showRules() {
         </ul>
         <p><strong>Serviert</strong> = die Kombination gleich im 1. Wurf (ohne Nachwerfen).</p>
         <p>Passt nichts oder willst du nichts eintragen, musst du <strong>ein freies Feld streichen</strong> (0 Punkte) – z. B. das Grande.</p>
-        <p>Das Spiel endet, wenn <strong>alle Felder ausgefüllt</strong> sind. Die höchste Gesamtsumme gewinnt.</p>
+        <p><strong>Mehrere Spalten:</strong> Spielt ihr mit 2+ Spalten pro Spieler, füllst du pro Zug ein freies Feld in einer <strong>beliebigen eigenen Spalte</strong>. In der Tabelle siehst du kompakt die Summe je Kategorie — Spielernamen antippen zeigt die Einzelspalten.</p>
+        <p><strong>Runden:</strong> Sind alle Felder voll, ist die Runde vorbei — ihr könnt beliebig viele weitere Runden im selben Spiel spielen. Es gibt Sieger je Runde, am Ende gewinnt die <strong>höchste Gesamtsumme</strong>. Unten in der Tabelle zeigen die Farben (Gold/Silber/Bronze) live, wer insgesamt führt.</p>
         <p><strong>Spielstände:</strong> Lokale Spiele bleiben nur auf diesem Gerät. Geteilte Spiele erreichst du auf jedem Gerät über den 6-stelligen Beitritts-Code.</p>
       </div>
       <button class="btn-secondary" data-cancel="1">Schließen</button>
