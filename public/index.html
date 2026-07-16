@@ -187,6 +187,20 @@
       pointer-events: none;
       filter: saturate(0.4);
     }
+    .app-card.is-last { box-shadow: 0 0 0 1.5px var(--gold, #e8c15a) inset, 0 12px 30px -12px rgba(0,0,0,0.5); }
+    .last-tag {
+      display: inline-block;
+      margin-top: 4px;
+      font-size: 0.66rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: rgba(232, 193, 90, 0.16);
+      color: var(--gold, #e8c15a);
+      box-shadow: 0 0 0 1px rgba(232, 193, 90, 0.35) inset;
+    }
     .badge {
       display: inline-block;
       font-size: 0.66rem;
@@ -369,8 +383,17 @@
         <span class="app-arrow">→</span>
       </a>
 
+      <a class="app-card" href="/galopp/?weekly=1" style="--i:6" id="weekly-card">
+        <span class="app-icon">📅</span>
+        <span class="app-info">
+          <span class="app-name">Wochen-Challenge</span>
+          <span class="app-desc" style="display:block">Galopp — eine Strecke für die ganze Woche. Perfekt, wenn's mal nicht täglich klappt.<span class="app-rec daily-lead" id="weekly-lead"></span></span>
+        </span>
+        <span class="app-arrow">→</span>
+      </a>
+
       <!-- Nächste App: Block kopieren, href und --i anpassen -->
-      <a class="app-card soon" href="#" style="--i:6" aria-disabled="true">
+      <a class="app-card soon" href="#" style="--i:7" aria-disabled="true">
         <span class="app-icon">✨</span>
         <span class="app-info">
           <span class="app-name">Nächste App<span class="badge">bald</span></span>
@@ -418,6 +441,28 @@
       }
     } catch { /* kaputte Daten ignorieren */ }
 
+    // --- Zuletzt gespielt: nach oben holen und markieren ---
+    try {
+      const last = localStorage.getItem("gs_last_game");
+      const hrefMap = {
+        wuerfelpoker: "/wuerfelpoker/", funkelfeld: "/funkelfeld/",
+        komet: "/komet/", sternensturm: "/sternensturm/", galopp: "/galopp/",
+      };
+      if (last && hrefMap[last]) {
+        const card = document.querySelector(`.app-card[href="${hrefMap[last]}"]`);
+        const nav = document.querySelector(".apps");
+        if (card && nav) {
+          card.classList.add("is-last");
+          const tag = document.createElement("span");
+          tag.className = "last-tag";
+          tag.textContent = "Zuletzt gespielt";
+          (card.querySelector(".app-info") || card).appendChild(tag);
+          const resume = nav.querySelector(".app-card[href^='/wuerfelpoker/#']");
+          nav.insertBefore(card, resume ? resume.nextElementSibling : nav.firstElementChild);
+        }
+      }
+    } catch { /* egal */ }
+
     // --- Eigene Rekorde + Weltrang pro Spiel ---
     const RECORDS = [
       { href: "/funkelfeld/", game: "funkelfeld", key: "bb_best" },
@@ -446,6 +491,14 @@
       const lead = (d.top || [])[0];
       $("#daily-lead").textContent = lead
         ? `👑 Heute vorn: ${lead.name} (${lead.score})`
+        : "Noch niemand gelaufen — sei die/der Erste!";
+    }).catch(() => {});
+
+    // --- Wochen-Challenge: Führende:r dieser Woche ---
+    fetch("/api/scores/galopp?weekly=1").then(x => x.json()).then(d => {
+      const lead = (d.top || [])[0];
+      $("#weekly-lead").textContent = lead
+        ? `👑 Diese Woche vorn: ${lead.name} (${lead.score})`
         : "Noch niemand gelaufen — sei die/der Erste!";
     }).catch(() => {});
 

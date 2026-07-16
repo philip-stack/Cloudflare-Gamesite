@@ -30,17 +30,27 @@
 
   // ---------- Score-Einsendung ----------
   // → {rank, best} | {error, nameTaken} | null (kein Name / Netzfehler)
+  async function runToken(game) {
+    try {
+      const r = await fetch(`/api/scores/${game}?token=1&device=${encodeURIComponent(deviceId())}`);
+      const d = await r.json().catch(() => ({}));
+      return d.token || null;
+    } catch { return null; }
+  }
+
   async function submitScore(game, score, opts = {}) {
     const name = getName();
     if (!name || !(score > 0)) return null;
     try {
+      const token = await runToken(game);
       const res = await fetch(`/api/scores/${game}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name, score, device: deviceId(),
+          name, score, device: deviceId(), token,
           meta: opts.meta || undefined,
           daily: !!opts.daily,
+          weekly: !!opts.weekly,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -55,7 +65,7 @@
   // Kompletter Ranglisten-Block im Game-Over-Panel: fragt bei Bedarf
   // nach dem Namen, sendet ein, zeigt Platzierung; bei vergebenem
   // Namen darf man direkt einen neuen wählen.
-  function scoreFlow(container, rankEl, { game, score, meta, daily, onName }) {
+  function scoreFlow(container, rankEl, { game, score, meta, daily, weekly, onName }) {
     let submitted = false;
 
     const showResult = resp => {
@@ -66,14 +76,15 @@
         return;
       }
       const extra = resp.best > score ? ` · dein Rekord: ${resp.best}` : "";
-      rankEl.innerHTML = `${daily ? "Heute" : "Weltweit"} <b>Platz ${resp.rank}</b> als ${esc(getName())}${extra}`;
+      const scope = weekly ? "Diese Woche" : daily ? "Heute" : "Weltweit";
+      rankEl.innerHTML = `${scope} <b>Platz ${resp.rank}</b> als ${esc(getName())}${extra}`;
     };
 
     const send = async () => {
       if (submitted) return;
       submitted = true;
       rankEl.textContent = "Übertrage …";
-      showResult(await submitScore(game, score, { meta, daily }));
+      showResult(await submitScore(game, score, { meta, daily, weekly }));
     };
 
     function askName(retry) {
@@ -98,7 +109,7 @@
   }
 
   // ---------- Bestenlisten-Overlay ----------
-  async function showLeaderboard({ game, title = "Bestenliste", sub = "Die 50 Besten weltweit", daily = false }) {
+  async function showLeaderboard({ game, title = "Bestenliste", sub = "Die 50 Besten weltweit", daily = false, weekly = false }) {
     const overlay = document.createElement("div");
     overlay.className = "overlay";
     overlay.innerHTML = `
@@ -114,7 +125,7 @@
     overlay.querySelector(".gs-close").onclick = close;
 
     try {
-      const res = await fetch(`/api/scores/${game}${daily ? "?daily=1" : ""}`);
+      const res = await fetch(`/api/scores/${game}${weekly ? "?weekly=1" : daily ? "?daily=1" : ""}`);
       const data = await res.json();
       const me = getName().toLowerCase();
       const medals = ["🥇", "🥈", "🥉"];
@@ -205,6 +216,134 @@
     },
   };
 
+  // ---------- Skins (über Meilensteine freispielbar) ----------
+  const skinDefs = {};
+  const skins = {
+    // defs: [{ id, name, req, swatch:[farben], colors:{...} }]
+    //   req: 0/undefined = von Anfang an frei; Zahl N = ab N Abzeichen;
+    //        { badge:"id" } = ab einem bestimmten Abzeichen.
+    define(game, defs) { skinDefs[game] = defs; },
+    unlocked(game, def) {
+      if (!def.req) return true;
+      if (typeof def.req === "number") return badges.earnedCount(game) >= def.req;
+      if (def.req.badge) return !!(badgeState(game).earned || {})[def.req.badge];
+      return true;
+    },
+    list(game) {
+      return (skinDefs[game] || []).map(d => ({ ...d, unlocked: this.unlocked(game, d) }));
+    },
+    currentId(game) {
+      const defs = skinDefs[game] || [];
+      const saved = localStorage.getItem("gs_skin_" + game);
+      const found = defs.find(d => d.id === saved && this.unlocked(game, d));
+      return found ? found.id : (defs[0] && defs[0].id) || null;
+    },
+    get(game) {
+      const defs = skinDefs[game] || [];
+      const id = this.currentId(game);
+      return ((defs.find(d => d.id === id) || defs[0] || {}).colors) || {};
+    },
+    set(game, id) {
+      const def = (skinDefs[game] || []).find(d => d.id === id);
+      if (def && this.unlocked(game, def)) { localStorage.setItem("gs_skin_" + game, id); return true; }
+      return false;
+    },
+    reqLabel(def) {
+      if (!def.req) return "";
+      if (typeof def.req === "number") return `🔒 ${def.req} Abzeichen`;
+      return "🔒 gesperrt";
+    },
+    picker(game, { title = "Skins", onChange } = {}) {
+      const overlay = document.createElement("div");
+      overlay.className = "overlay";
+      const render = () => {
+        const cur = this.currentId(game);
+        overlay.innerHTML = `
+          <div class="panel">
+            <h2><span class="foil">${esc(title)}</span></h2>
+            <p class="sub">Durch Meilensteine freischalten</p>
+            <div class="gs-skin-grid">${this.list(game).map(d => `
+              <button class="gs-skin ${d.id === cur ? "sel" : ""} ${d.unlocked ? "" : "locked"}"
+                      data-id="${esc(d.id)}" ${d.unlocked ? "" : "disabled"}>
+                <span class="gs-skin-sw">${(d.swatch || []).map(c => `<i style="background:${c}"></i>`).join("")}</span>
+                <span class="gs-skin-name">${esc(d.name)}</span>
+                <span class="gs-skin-lock">${d.unlocked ? (d.id === cur ? "✔ Aktiv" : "Auswählen") : this.reqLabel(d)}</span>
+              </button>`).join("")}</div>
+            <button class="btn-secondary gs-close">Schließen</button>`;
+        overlay.querySelectorAll(".gs-skin:not(.locked)").forEach(b => {
+          b.onclick = () => { if (this.set(game, b.dataset.id)) { onChange && onChange(this.get(game)); render(); } };
+        });
+        overlay.querySelector(".gs-close").onclick = () => overlay.remove();
+      };
+      render();
+      overlay.onclick = e => { if (e.target === overlay) overlay.remove(); };
+      document.body.appendChild(overlay);
+    },
+  };
+
+  // ---------- Sound & Haptik (gemeinsam, abschaltbar) ----------
+  let actx = null;
+  const soundOn = () => localStorage.getItem("gs_sound_off") !== "1";
+  const sound = {
+    on: soundOn,
+    toggle() { const off = !soundOn(); localStorage.setItem("gs_sound_off", off ? "1" : "0"); return !off; },
+    ctx() {
+      try {
+        if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
+        if (actx.state === "suspended") actx.resume().catch(() => {});
+        return actx;
+      } catch { return null; }
+    },
+    tone(freq, dur = 0.12, { type = "sine", gain = 0.13, slideTo = null, delay = 0 } = {}) {
+      if (!soundOn()) return;
+      const c = this.ctx(); if (!c) return;
+      const t0 = c.currentTime + delay;
+      const o = c.createOscillator(), g = c.createGain();
+      o.type = type; o.frequency.setValueAtTime(freq, t0);
+      if (slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, t0 + dur);
+      g.gain.setValueAtTime(gain, t0);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+      o.connect(g); g.connect(c.destination);
+      o.start(t0); o.stop(t0 + dur + 0.02);
+    },
+    click() { this.tone(300, 0.05, { type: "triangle", gain: 0.07 }); },
+    good() { this.tone(620, 0.09, { type: "triangle" }); this.tone(930, 0.11, { type: "triangle", delay: 0.05 }); },
+    great() { [660, 880, 1180].forEach((f, i) => this.tone(f, 0.12, { type: "triangle", delay: i * 0.05 })); },
+    win() { [523, 659, 784, 1047].forEach((f, i) => this.tone(f, 0.18, { type: "triangle", delay: i * 0.09, gain: 0.14 })); },
+    lose() { this.tone(300, 0.4, { type: "sawtooth", gain: 0.1, slideTo: 90 }); },
+    roll() { this.tone(180 + Math.floor((soundOn() ? Math.random() : 0) * 60), 0.06, { type: "square", gain: 0.05 }); },
+  };
+  const haptic = (ms = 12) => { try { navigator.vibrate && navigator.vibrate(ms); } catch {} };
+
+  // ---------- Onboarding (einmaliger Hinweis beim ersten Start) ----------
+  function onboard(game, { title = "So geht's", steps = [], force = false } = {}) {
+    const key = "gs_onboard_" + game;
+    if (!force && localStorage.getItem(key)) return;
+    const overlay = document.createElement("div");
+    overlay.className = "overlay";
+    overlay.innerHTML = `
+      <div class="panel">
+        <h2><span class="foil">${esc(title)}</span></h2>
+        <ul class="gs-steps">${steps.map(s => `
+          <li><span class="gs-step-ic">${s.icon || "•"}</span><span>${esc(s.text)}</span></li>`).join("")}</ul>
+        <button class="btn-secondary gs-close">Los geht's!</button>`;
+    overlay.querySelector(".gs-close").onclick = () => { localStorage.setItem(key, "1"); overlay.remove(); };
+    document.body.appendChild(overlay);
+  }
+
+  // ---------- Teilen (Web-Share mit Zwischenablage-Fallback) ----------
+  async function share({ title = "Spieleabend", text = "", url = location.origin } = {}) {
+    try {
+      if (navigator.share) { await navigator.share({ title, text, url }); return "shared"; }
+    } catch { return "cancelled"; }
+    try { await navigator.clipboard.writeText(`${text} ${url}`.trim()); return "copied"; } catch { return "failed"; }
+  }
+
+  // ---------- Zuletzt gespieltes Spiel (für die Landing Page) ----------
+  function markPlayed(game) {
+    try { localStorage.setItem("gs_last_game", game); } catch {}
+  }
+
   // ---------- Gemeinsame Styles (nutzen die CSS-Variablen der App) ----------
   const style = document.createElement("style");
   style.textContent = `
@@ -234,8 +373,30 @@
     .gs-badge .gb-name { font-weight: 700; display: block; }
     .gs-badge .gb-desc { color: var(--muted, #999); font-size: 0.8rem; display: block; margin-top: 1px; }
     .gs-badge .gb-check { margin-left: auto; color: var(--gold, #e8c15a); font-weight: 700; }
+    .gs-skin-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 6px 0 16px; }
+    .gs-skin {
+      display: flex; flex-direction: column; align-items: center; gap: 7px;
+      padding: 12px 8px; border-radius: 14px; cursor: pointer;
+      background: var(--card, rgba(255,255,255,0.05)); color: var(--ink, inherit);
+      border: 0; box-shadow: 0 0 0 1px var(--edge-soft, rgba(255,255,255,0.1)) inset;
+      font-family: inherit; transition: transform 0.1s;
+    }
+    .gs-skin:active { transform: scale(0.96); }
+    .gs-skin.sel { box-shadow: 0 0 0 2px var(--gold, #e8c15a) inset; }
+    .gs-skin.locked { opacity: 0.5; filter: saturate(0.3); cursor: not-allowed; }
+    .gs-skin-sw { display: flex; gap: 4px; }
+    .gs-skin-sw i { width: 16px; height: 16px; border-radius: 50%; box-shadow: 0 0 0 1px rgba(0,0,0,0.25) inset; }
+    .gs-skin-name { font-weight: 700; font-size: 0.95rem; }
+    .gs-skin-lock { font-size: 0.72rem; color: var(--muted, #999); }
+    .gs-skin.sel .gs-skin-lock { color: var(--gold, #e8c15a); }
+    .gs-steps { list-style: none; text-align: left; margin: 8px 0 18px; display: flex; flex-direction: column; gap: 12px; }
+    .gs-steps li { display: flex; align-items: flex-start; gap: 12px; line-height: 1.35; }
+    .gs-steps .gs-step-ic { font-size: 1.5rem; flex-shrink: 0; width: 30px; text-align: center; }
   `;
   document.head.appendChild(style);
 
-  window.GS = { esc, deviceId, getName, setName, submitScore, scoreFlow, showLeaderboard, badges };
+  window.GS = {
+    esc, deviceId, getName, setName, submitScore, scoreFlow, showLeaderboard,
+    badges, skins, sound, haptic, onboard, share, markPlayed,
+  };
 })();

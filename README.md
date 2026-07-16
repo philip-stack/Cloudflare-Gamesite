@@ -28,18 +28,32 @@ der Rahmen passt sich an.
 
 **Plattform-Features:**
 
-- **Tages-Challenge** (Galopp): Alle laufen dieselbe, per Datum-Seed erzeugte
-  Strecke — mit eigener Tagesbestenliste. Karte auf der Landing Page.
+- **Tages- & Wochen-Challenge** (Galopp): Alle laufen dieselbe, per Datum-
+  bzw. Wochen-Seed erzeugte Strecke — je mit eigener Bestenliste. Karten auf
+  der Landing Page.
 - **Meilensteine** (Galopp, Sternensturm, Komet): Abzeichen für Lauf- und
   Lebenszeit-Erfolge, lokal gespeichert, im Spielmenü einsehbar.
+- **Skins** (Galopp, Komet, Sternensturm): freispielbare Farbvarianten der
+  Spielfigur, an die Zahl der Abzeichen gekoppelt, im Menü wählbar. Funkelfeld
+  hat eigene Skins.
+- **Onboarding**: Beim ersten Start jedes Spiels ein kurzer Steuerungs-Hinweis.
+- **Teilen-Button** in jedem Game-Over (Web-Share mit Zwischenablage-Fallback);
+  Würfelpoker lädt per **QR-Code** zum Beitreten ein (eigener QR-Encoder in
+  `public/qr.js`, kein externes Skript).
+- **Klang & Haptik**: gemeinsamer, abschaltbarer Sound-/Vibrations-Layer
+  (`GS.sound` / `GS.haptic`), u. a. beim Würfeln und Eintragen in Würfelpoker.
 - Die Landing Page zeigt **eigene Rekorde + Weltrang** pro Spiel, eine
-  **Weiterspielen-Karte** für laufende Würfelpoker-Spiele und den heutigen
-  Challenge-Führenden; Würfelpoker führt eine **Statistik** (Siege, Spiele,
-  Punkteschnitt) über abgeschlossene Spiele.
+  **Weiterspielen-Karte** für laufende Würfelpoker-Spiele, das **zuletzt
+  gespielte** Spiel ganz oben und die Challenge-Führenden; Würfelpoker führt
+  eine **Statistik** (Siege, Spiele, Punkteschnitt) über abgeschlossene Spiele.
 - **Gemeinsame Bestenlisten-API** (`/api/scores/<spiel>`, eine D1-Tabelle)
   mit Geräte-Token, Namensschutz (ein Name gehört dem Gerät, das ihn zuerst
-  benutzt), Plausibilitätsprüfung der Scores und Rate-Limit. Gemeinsamer
-  Client-Code in `public/shared.js`.
+  benutzt), Plausibilitätsprüfung der Scores, Rate-Limit und einem
+  **signierten Lauf-Token** (HMAC): jede Einsendung muss ein kurz vorher
+  ausgestelltes Token mitschicken, was blindes Absenden per Skript erschwert.
+  Gemeinsamer Client-Code in `public/shared.js`.
+- **Automatische Tests** (`tests/`, per GitHub Actions bei jedem Push):
+  Syntaxprüfung aller JS-Dateien, QR-Encoder- und Scores-API-Tests.
 
 Die Seite ist eine **PWA**: Am Handy über „Zum Startbildschirm hinzufügen"
 (bzw. den Installieren-Hinweis im Browser) wird sie zur App mit eigenem Icon
@@ -55,7 +69,9 @@ wuerfelpoker/
 ├── public/                    statische Spiele (1 Ordner = 1 Spiel)
 │   ├── index.html             Landing Page mit App-Karten
 │   ├── theme.js               Hell/Dunkel-Umschalter + SW-Registrierung + Update-Hinweis
-│   ├── shared.js              gemeinsame Spiele-Schicht (Scores, Name, Meilensteine)
+│   ├── shared.js              gemeinsame Spiele-Schicht (Scores, Name, Meilensteine, Skins, Sound, Teilen)
+│   ├── qr.js                  eigenständiger QR-Code-Encoder (Beitritt teilen)
+│   ├── favicon.ico            Browser-Tab-Icon
 │   ├── 404.html               Fehlerseite
 │   ├── manifest.webmanifest   PWA-Manifest (installierbare App)
 │   ├── sw.js                  Service Worker (offline-fähig)
@@ -66,12 +82,16 @@ wuerfelpoker/
 │   ├── komet/
 │   ├── sternensturm/
 │   └── galopp/
-└── functions/api/             Cloudflare Pages Functions
-    ├── _util.js               gemeinsame Helfer (json, Codes, Spiel laden)
-    ├── health.js
-    ├── games/                 Würfelpoker: geteilte Spiele (CRUD + Zellen)
-    └── scores/[game].js       Bestenlisten aller Spiele (GET/POST, ?daily=1)
+├── functions/api/             Cloudflare Pages Functions
+│   ├── _util.js               gemeinsame Helfer (json, Codes, Spiel laden)
+│   ├── health.js
+│   ├── games/                 Würfelpoker: geteilte Spiele (CRUD + Zellen)
+│   └── scores/[game].js       Bestenlisten aller Spiele (GET/POST, ?daily=1, ?weekly=1)
+├── tests/                     Node-Tests (Syntax, QR-Encoder, Scores-API)
+└── .github/workflows/ci.yml   CI: führt die Tests bei jedem Push aus
 ```
+
+Tests lokal ausführen: `npm test` (Node ≥ 22).
 
 Jedes Spiel ist bewusst **selbst enthalten**: ein Ordner mit `index.html`,
 `app.js`, `style.css` — kein Framework, kein Bundler. Die Spiele rendern

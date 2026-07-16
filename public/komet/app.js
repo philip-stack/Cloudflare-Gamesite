@@ -38,6 +38,20 @@ let mode = "ready";          // ready | run | dead
 let pos, vel, holding, anchor, ropeLen;
 let anchors = [], sparks = [], particles = [], trail = [];
 let camX = 0;
+
+// ---------- Skins (über Meilensteine freispielbar) ----------
+// Färbt Kern, Glühen, Schweif und Lichtseil des Kometen.
+GS.skins.define("komet", [
+  { id: "gold", name: "Goldkomet", req: 0, swatch: ["#fffdf4", "#f0cd6e", "#e8c15a"],
+    colors: { core: "#fffdf4", glow: ["rgba(255,248,220,1)", "rgba(240,205,110,0.9)", "rgba(232,193,90,0)"], trail: "232,193,90" } },
+  { id: "eis", name: "Eiskomet", req: 3, swatch: ["#eafcff", "#7fd8ff", "#3aa0e0"],
+    colors: { core: "#eafcff", glow: ["rgba(234,252,255,1)", "rgba(127,216,255,0.9)", "rgba(58,160,224,0)"], trail: "127,216,255" } },
+  { id: "glut", name: "Glutkomet", req: 5, swatch: ["#fff0e6", "#ff8a4d", "#ff4d4d"],
+    colors: { core: "#fff0e6", glow: ["rgba(255,240,230,1)", "rgba(255,138,77,0.9)", "rgba(255,77,77,0)"], trail: "255,120,80" } },
+  { id: "nebel", name: "Nebelkomet", req: 7, swatch: ["#f7eaff", "#c39dff", "#8a4dff"],
+    colors: { core: "#f7eaff", glow: ["rgba(247,234,255,1)", "rgba(195,157,255,0.9)", "rgba(138,77,255,0)"], trail: "170,120,255" } },
+]);
+let KSKIN = GS.skins.get("komet");
 let startX = 0;
 let sparkCount = 0;
 let shakeT = 0;
@@ -297,7 +311,7 @@ function draw(now) {
       const a = toScreen(anchor), k = toScreen(pos);
       const grad = ctx.createLinearGradient(a.x, a.y, k.x, k.y);
       grad.addColorStop(0, "rgba(255,243,196,0.9)");
-      grad.addColorStop(1, "rgba(232,193,90,0.55)");
+      grad.addColorStop(1, `rgba(${KSKIN.trail},0.55)`);
       ctx.beginPath();
       ctx.moveTo(a.x, a.y);
       ctx.lineTo(k.x, k.y);
@@ -313,7 +327,7 @@ function draw(now) {
       ctx.beginPath();
       ctx.moveTo(t0.x, t0.y);
       ctx.lineTo(t1.x, t1.y);
-      ctx.strokeStyle = `rgba(232,193,90,${f * 0.5})`;
+      ctx.strokeStyle = `rgba(${KSKIN.trail},${f * 0.5})`;
       ctx.lineWidth = f * 7;
       ctx.lineCap = "round";
       ctx.stroke();
@@ -323,14 +337,14 @@ function draw(now) {
     if (mode === "run" || performance.now() - deathAt < 80) {
       const k = toScreen(pos);
       const glow = ctx.createRadialGradient(k.x, k.y, 0, k.x, k.y, 26);
-      glow.addColorStop(0, "rgba(255,248,220,1)");
-      glow.addColorStop(0.35, "rgba(240,205,110,0.9)");
-      glow.addColorStop(1, "rgba(232,193,90,0)");
+      glow.addColorStop(0, KSKIN.glow[0]);
+      glow.addColorStop(0.35, KSKIN.glow[1]);
+      glow.addColorStop(1, KSKIN.glow[2]);
       ctx.fillStyle = glow;
       ctx.beginPath();
       ctx.arc(k.x, k.y, 26, 0, Math.PI * 2);
       ctx.fill();
-      ctx.fillStyle = "#fffdf4";
+      ctx.fillStyle = KSKIN.core;
       ctx.beginPath();
       ctx.arc(k.x, k.y, 7, 0, Math.PI * 2);
       ctx.fill();
@@ -471,12 +485,23 @@ async function gameOver() {
 
   overlay.querySelector("#go-again").onclick = () => { overlay.remove(); startRun(); };
   overlay.querySelector("#go-top").onclick = () => showLeaderboard();
-  const gb = document.createElement("button");
-  gb.className = "btn-secondary";
-  gb.style.marginTop = "10px";
-  gb.textContent = "🏅 Meilensteine";
-  gb.onclick = () => GS.badges.show("komet", "Meilensteine — Komet");
-  overlay.querySelector(".panel").appendChild(gb);
+  const panel = overlay.querySelector(".panel");
+  const addBtn = (label, fn) => {
+    const b = document.createElement("button");
+    b.className = "btn-secondary"; b.style.marginTop = "10px";
+    b.textContent = label; b.onclick = fn; panel.appendChild(b);
+    return b;
+  };
+  addBtn("🏅 Meilensteine", () => GS.badges.show("komet", "Meilensteine — Komet"));
+  addBtn("🎨 Skins", () => GS.skins.picker("komet", { title: "Kometen-Skins", onChange: c => { KSKIN = c; } }));
+  const sb = addBtn("📤 Teilen", async () => {
+    const r = await GS.share({
+      title: "Komet",
+      text: `Ich bin bei Komet ☄️ ${meters()} m weit geflogen (${score} Punkte) — schaffst du mehr?`,
+      url: location.origin + "/komet/",
+    });
+    if (r === "copied") sb.textContent = "✔ Link kopiert";
+  });
 
   GS.scoreFlow(overlay.querySelector("#go-name-area"), overlay.querySelector("#go-rank"), {
     game: "komet", score,
@@ -511,9 +536,20 @@ const soundBtn = $("#btn-sound");
 soundBtn.textContent = sound.muted ? "🔇" : "🔊";
 soundBtn.onclick = () => { soundBtn.textContent = sound.toggle() ? "🔇" : "🔊"; };
 
+GS.markPlayed("komet");
 reset();
 if (new URLSearchParams(location.search).has("auto")) startRun();
-else showStart();
+else {
+  showStart();
+  GS.onboard("komet", {
+    title: "Komet — so geht's",
+    steps: [
+      { icon: "👆", text: "Halten wirft ein Lichtseil zum nächsten Stern — du schwingst." },
+      { icon: "✋", text: "Loslassen schleudert dich nach vorn." },
+      { icon: "✦", text: "Sammle Funken für mehr Punkte und stürze nicht ab." },
+    ],
+  });
+}
 
 // ---------- Meilensteine ----------
 GS.badges.define("komet", [

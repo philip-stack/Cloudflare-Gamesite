@@ -357,6 +357,15 @@ async function reload(ref) {
 
 // ---------- Home ----------
 async function renderHome() {
+  GS.markPlayed("wuerfelpoker");
+  GS.onboard("wuerfelpoker", {
+    title: "Würfelpoker — so geht's",
+    steps: [
+      { icon: "🎲", text: "Am Tisch mit echten Würfeln spielen — die App ist euer Punkteblatt." },
+      { icon: "➕", text: "Neues Spiel starten oder mit einem 6-stelligen Code / QR beitreten." },
+      { icon: "🏆", text: "Mehrere Runden pro Spiel; die Gesamtsumme kürt den Sieger." },
+    ],
+  });
   const localGames = lsLoad();
   const refs = sharedRefs();
 
@@ -643,17 +652,51 @@ function renderGame(game, ref) {
   startPolling(ref, game);
 }
 
-// Code-Zeile für geteilte Spiele (antippen = kopieren)
+// Code-Zeile für geteilte Spiele (antippen = kopieren; QR zum Beitreten)
 function codeChipHtml(game) {
   if (!game.code) return "";
   return `
-    <button class="code-chip" data-code="${esc(game.code)}" title="Code kopieren">
-      🔑 Beitritts-Code: <b>${esc(game.code)}</b> <span class="cc-hint">antippen zum Kopieren</span>
-    </button>`;
+    <div class="code-row">
+      <button class="code-chip" data-code="${esc(game.code)}" title="Code kopieren">
+        🔑 Beitritts-Code: <b>${esc(game.code)}</b> <span class="cc-hint">antippen zum Kopieren</span>
+      </button>
+      <button class="code-qr" data-code="${esc(game.code)}" data-id="${esc(game.id)}" title="QR-Code zum Beitreten">📱 QR</button>
+    </div>`;
 }
 function wireCodeChip() {
   const chip = app.querySelector(".code-chip");
   if (chip) chip.onclick = () => copyCode(chip.dataset.code);
+  const qr = app.querySelector(".code-qr");
+  if (qr) qr.onclick = () => showJoinQR(qr.dataset.id, qr.dataset.code);
+}
+
+// Overlay mit QR-Code + Link zum Beitreten (Mitspieler scannen einfach)
+function showJoinQR(id, code) {
+  const url = location.href.split("#")[0] + `#/game/${id}/${code}`;
+  const overlay = document.createElement("div");
+  overlay.className = "overlay";
+  overlay.innerHTML = `
+    <div class="panel">
+      <h2><span class="foil">Zum Spiel einladen</span></h2>
+      <p class="sub">Mitspieler scannen den Code mit der Handy-Kamera.</p>
+      <div class="qr-box"><canvas id="qr-canvas"></canvas></div>
+      <p class="qr-code">🔑 <b>${esc(code)}</b></p>
+      <button class="btn-primary" id="qr-share">📤 Link teilen</button>
+      <button class="btn-secondary" id="qr-close">Schließen</button>
+    </div>`;
+  document.body.appendChild(overlay);
+  try {
+    window.QR.toCanvas(url, overlay.querySelector("#qr-canvas"), { scale: 6, margin: 3, dark: "#141414", light: "#ffffff" });
+  } catch (e) {
+    overlay.querySelector(".qr-box").innerHTML = `<p class="sub">QR nicht verfügbar — nutze den Code ${esc(code)}.</p>`;
+  }
+  const close = () => overlay.remove();
+  overlay.onclick = e => { if (e.target === overlay) close(); };
+  overlay.querySelector("#qr-close").onclick = close;
+  overlay.querySelector("#qr-share").onclick = async () => {
+    const r = await GS.share({ title: "Würfelpoker", text: `Spiel mit mir Würfelpoker mit! Beitritts-Code: ${code}`, url });
+    if (r === "copied") toast("Link kopiert");
+  };
 }
 
 // ---------- Startspieler auswürfeln (einziges Würfeln der App) ----------
@@ -728,6 +771,7 @@ function renderStarterRoll(game, ref) {
     const cubes = [...app.querySelectorAll(".die3d-cube")];
     const rolls = game.players.map(() => 1 + Math.floor(Math.random() * 6));
 
+    GS.haptic(20);
     cubes.forEach((cube, i) => {
       const o = DIE_ORIENT[rolls[i] - 1];
       const spinsX = (2 + Math.floor(Math.random() * 2)) * 360;
@@ -735,6 +779,8 @@ function renderStarterRoll(game, ref) {
       cube.style.transitionDelay = `${i * 90}ms`;
       cube.style.transform = `rotateX(${o.x + spinsX}deg) rotateY(${o.y + spinsY}deg)`;
     });
+    // Rasselnde Würfel-Klänge während der Animation
+    for (let k = 0; k < 8; k++) GS.sound.tone(140 + k * 20, 0.05, { type: "square", gain: 0.045, delay: k * 0.12 });
 
     setTimeout(() => {
       const max = Math.max(...rolls);
@@ -744,6 +790,7 @@ function renderStarterRoll(game, ref) {
         btn.disabled = false;
       } else {
         app.querySelector(`.dice-roll-row[data-idx="${winners[0].i}"]`).classList.add("win");
+        GS.sound.win(); GS.haptic([15, 60, 15]);
         setTimeout(() => setStarter(winners[0].i), 1000);
       }
     }, 1600 + cubes.length * 90);
@@ -996,6 +1043,10 @@ function openEntry(game, ref, pid, catKey, col) {
 
 async function commit(game, ref, pid, catKey, col, cell) {
   const nextTurn = (game.turnIndex + 1) % game.players.length;
+  // Klang + Haptik: gestrichen dumpf, Punkte hell, großer Wurf glänzend
+  if (cell.kind === "strike") { GS.sound.tone(200, 0.14, { type: "sawtooth", gain: 0.08 }); GS.haptic(8); }
+  else if (cell.value >= 30) { GS.sound.great(); GS.haptic([12, 40, 12]); }
+  else { GS.sound.good(); GS.haptic(12); }
   try {
     await store.putCell(ref, {
       player_id: Number(pid),

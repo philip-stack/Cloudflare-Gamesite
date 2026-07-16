@@ -1,0 +1,10 @@
+{
+  "name": "spieleabend-gamesite",
+  "version": "1.0.0",
+  "description": "Cloudflare-Pages-Gamesite (Würfelpoker, Funkelfeld, Komet, Sternensturm, Galopp)",
+  "private": true,
+  "scripts": {
+    "test": "node tests/check.mjs && node tests/qr.test.js && node tests/api.test.mjs",
+    "check": "node tests/check.mjs"
+  }
+}

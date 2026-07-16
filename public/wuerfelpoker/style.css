@@ -420,6 +420,34 @@ input:focus {
   box-shadow: 0 0 0 1px rgba(232, 193, 90, 0.3) inset;
   font-variant-numeric: tabular-nums;
 }
+.code-row { display: flex; gap: 8px; align-items: stretch; margin-bottom: 12px; }
+.code-row .code-chip { margin-bottom: 0; flex: 1; }
+.code-qr {
+  flex-shrink: 0;
+  background: rgba(232, 193, 90, 0.08);
+  color: var(--ink);
+  border: 0;
+  padding: 0 14px;
+  border-radius: var(--radius);
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 0 0 1px var(--edge) inset;
+}
+.code-qr:active { transform: scale(0.96); }
+.qr-box {
+  display: grid;
+  place-items: center;
+  background: #fff;
+  padding: 14px;
+  border-radius: var(--radius);
+  margin: 6px auto 12px;
+  width: max-content;
+  max-width: 100%;
+}
+.qr-box canvas { display: block; max-width: 100%; height: auto; image-rendering: pixelated; }
+.qr-code { text-align: center; font-size: 1.1rem; margin-bottom: 14px; letter-spacing: 0.1em; }
+.qr-code b { color: var(--gold); font-family: var(--font-display); }
 .code-chip {
   display: flex;
   align-items: center;
@@ -432,6 +460,9 @@ input:focus {
   margin-bottom: 12px;
   font-size: 0.92rem;
   box-shadow: 0 0 0 1px var(--edge) inset;
+  border: 0;
+  cursor: pointer;
+  text-align: left;
 }
 .code-chip b {
   color: var(--gold);

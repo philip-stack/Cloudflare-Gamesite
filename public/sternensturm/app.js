@@ -56,9 +56,9 @@ function hullGrad(g, y0, y1, light, mid, dark) {
 
 const SPR = {};
 
-// --- Spieler: goldener Abfangjäger ---
-SPR.player = makeSprite(52, 60, g => {
-  g.shadowColor = GOLD; g.shadowBlur = 14;
+// --- Spieler: Abfangjäger (Rumpffarbe je nach Skin) ---
+function makePlayerSprite(sk) { return makeSprite(52, 60, g => {
+  g.shadowColor = sk.mid; g.shadowBlur = 14;
   // Flügel (dunkles Metall mit Goldkante)
   g.fillStyle = hullGrad(g, -8, 22, "#3a4468", "#232b47", "#141a2e");
   g.beginPath();
@@ -69,12 +69,12 @@ SPR.player = makeSprite(52, 60, g => {
   g.closePath();
   g.fill();
   g.shadowBlur = 0;
-  g.strokeStyle = "rgba(232,193,90,0.8)";
+  g.strokeStyle = sk.edge;
   g.lineWidth = 1.2;
   g.stroke();
   // Rumpf
-  g.shadowColor = GOLD; g.shadowBlur = 10;
-  g.fillStyle = hullGrad(g, -26, 20, "#fff3c4", GOLD, "#8a6a1c");
+  g.shadowColor = sk.mid; g.shadowBlur = 10;
+  g.fillStyle = hullGrad(g, -26, 20, sk.light, sk.mid, sk.dark);
   g.beginPath();
   g.moveTo(0, -26);
   g.quadraticCurveTo(7, -8, 6, 8);
@@ -99,11 +99,24 @@ SPR.player = makeSprite(52, 60, g => {
   g.fillStyle = "#101626";
   g.fillRect(-6.5, 18, 5, 4);
   g.fillRect(1.5, 18, 5, 4);
-  g.fillStyle = GOLD;
+  g.fillStyle = sk.noz;
   g.globalAlpha = 0.9;
   g.fillRect(-5.5, 19, 3, 2);
   g.fillRect(2.5, 19, 3, 2);
-});
+}); }
+
+// Skins (über Meilensteine freispielbar) — färben den Rumpf des Jägers
+GS.skins.define("sternensturm", [
+  { id: "gold",    name: "Goldjäger", req: 0, swatch: ["#fff3c4", "#e8c15a", "#8a6a1c"],
+    colors: { light: "#fff3c4", mid: "#e8c15a", dark: "#8a6a1c", edge: "rgba(232,193,90,0.8)", noz: "#e8c15a" } },
+  { id: "stahl",   name: "Stahlblau", req: 3, swatch: ["#dbe6ff", "#5b78c8", "#26386e"],
+    colors: { light: "#dbe6ff", mid: "#5b78c8", dark: "#26386e", edge: "rgba(120,150,230,0.85)", noz: "#7f9dff" } },
+  { id: "toxin",   name: "Toxin", req: 5, swatch: ["#e6ffe0", "#4fd07a", "#1f6e3c"],
+    colors: { light: "#e6ffe0", mid: "#4fd07a", dark: "#1f6e3c", edge: "rgba(90,220,130,0.85)", noz: "#6bff9c" } },
+  { id: "inferno", name: "Inferno", req: 7, swatch: ["#ffe0cc", "#ff7a3d", "#8a2c10"],
+    colors: { light: "#ffe0cc", mid: "#ff7a3d", dark: "#8a2c10", edge: "rgba(255,120,70,0.85)", noz: "#ff9d5a" } },
+]);
+let PLAYER_SPR = makePlayerSprite(GS.skins.get("sternensturm"));
 
 // --- Drohne: rotes Insekt ---
 SPR.drone = makeSprite(36, 36, g => {
@@ -1010,7 +1023,7 @@ function drawPlayer(now, dt) {
   }
   ctx.globalCompositeOperation = "source-over";
 
-  blit(SPR.player, p.x, p.y, shipTilt);
+  blit(PLAYER_SPR, p.x, p.y, shipTilt);
 
   // Schild
   if (p.shield > 0) {
@@ -1185,6 +1198,7 @@ function showMenu() {
       <button class="btn-primary" id="m-go">🚀 Starten</button>
       <button class="btn-secondary" id="m-top">🏆 Bestenliste</button>
       <button class="btn-secondary" id="m-badges" style="margin-top:10px">🏅 Meilensteine</button>
+      <button class="btn-secondary" id="m-skins" style="margin-top:10px">🎨 Skins</button>
     </div>`;
   document.body.appendChild(overlay);
   overlay.querySelector("#m-go").onclick = () => {
@@ -1195,6 +1209,9 @@ function showMenu() {
   };
   overlay.querySelector("#m-top").onclick = () => showLeaderboard();
   overlay.querySelector("#m-badges").onclick = () => GS.badges.show("sternensturm", "Meilensteine — Sternensturm");
+  overlay.querySelector("#m-skins").onclick = () => GS.skins.picker("sternensturm", {
+    title: "Jäger-Skins", onChange: () => { PLAYER_SPR = makePlayerSprite(GS.skins.get("sternensturm")); },
+  });
 }
 
 
@@ -1220,6 +1237,7 @@ async function gameOver() {
       <div id="go-name-area"></div>
       <button class="btn-primary" id="go-again">🚀 Nochmal fliegen</button>
       <button class="btn-secondary" id="go-top">🏆 Bestenliste</button>
+      <button class="btn-secondary" id="go-share" style="margin-top:10px">📤 Teilen</button>
     </div>`;
   document.body.appendChild(overlay);
 
@@ -1229,6 +1247,15 @@ async function gameOver() {
     mode = "run";
   };
   overlay.querySelector("#go-top").onclick = () => showLeaderboard();
+  const sb = overlay.querySelector("#go-share");
+  sb.onclick = async () => {
+    const r = await GS.share({
+      title: "Sternensturm",
+      text: `Ich hab bei Sternensturm 🚀 Welle ${wave} erreicht (${score} Punkte) — schaffst du mehr?`,
+      url: location.origin + "/sternensturm/",
+    });
+    if (r === "copied") sb.textContent = "✔ Link kopiert";
+  };
 
   GS.scoreFlow(overlay.querySelector("#go-name-area"), overlay.querySelector("#go-rank"), {
     game: "sternensturm", score,
@@ -1246,6 +1273,7 @@ soundBtn.textContent = sound.muted ? "🔇" : "🔊";
 soundBtn.onclick = () => { soundBtn.textContent = sound.toggle() ? "🔇" : "🔊"; };
 
 // ---------- Start ----------
+GS.markPlayed("sternensturm");
 buildVignette();
 newRun();
 const params = new URLSearchParams(location.search);
@@ -1264,6 +1292,14 @@ if (params.has("auto")) {
   }
 } else {
   showMenu();
+  GS.onboard("sternensturm", {
+    title: "Sternensturm — so geht's",
+    steps: [
+      { icon: "👆", text: "Ziehen bewegt dein Schiff — gefeuert wird automatisch." },
+      { icon: "💥", text: "Sternenstaub füllt die NOVA-Leiste; volle Leiste räumt den Bildschirm." },
+      { icon: "⬆️", text: "Nach Bossen wählst du 1 von 3 Upgrades — werde stärker." },
+    ],
+  });
 }
 
 // ---------- Meilensteine ----------

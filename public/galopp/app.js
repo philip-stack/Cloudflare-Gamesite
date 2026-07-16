@@ -7,10 +7,13 @@
 // nicht aufholen. Pseudo-3D komplett auf Canvas gerendert.
 // ====================================================================
 
-// Tages-Challenge (?daily): gleicher Seed = gleiche Strecke für alle.
+// Challenge-Modi (?daily / ?weekly): gleicher Seed = gleiche Strecke.
 // rngW steuert NUR die Weltgenerierung (Hindernisse, Kurven, Power-ups);
 // Optik/Partikel bleiben bei Math.random.
-const DAILY = new URLSearchParams(location.search).has("daily");
+const _params0 = new URLSearchParams(location.search);
+const DAILY = _params0.has("daily");
+const WEEKLY = _params0.has("weekly");
+const CHALLENGE = DAILY || WEEKLY;
 function mulberry32(a) {
   return function () {
     a |= 0; a = a + 0x6D2B79F5 | 0;
@@ -41,6 +44,20 @@ resize();
 const GOLD = "#e8c15a", PINK = "#ff7ac2", VIOLET = "#b678ff",
       MINT = "#6fe3c1", RED = "#ff5a7a", CREAM = "#fff3c4";
 const RAINBOW = ["#ff6b6b", "#ffa14d", "#ffe066", "#69d98a", "#56d5e8", "#b678ff"];
+
+// ==================== Skins (über Meilensteine freispielbar) ====================
+// Jeder Skin färbt die Läuferin: Tunika, Umhang, Kapuze, Beine, Stiefel, Haar.
+GS.skins.define("galopp", [
+  { id: "violett", name: "Kapuzenlila", req: 0, swatch: ["#8a5cc7", "#6d47a3", "#e8c15a"],
+    colors: { tunic: ["#8a5cc7", "#4d2e78"], cloak: ["#6d47a3", "#452a66"], hood: "#5e3a8f", leg: "#3a2456", boot: GOLD, hair: "#e8a25e" } },
+  { id: "smaragd", name: "Smaragd", req: 3, swatch: ["#3fc98a", "#2b8f63", "#ffe066"],
+    colors: { tunic: ["#3fc98a", "#1f6e4c"], cloak: ["#2f9d6d", "#1c5c40"], hood: "#278a5e", leg: "#16402c", boot: "#ffe066", hair: "#e8a25e" } },
+  { id: "karmesin", name: "Karmesin", req: 6, swatch: ["#ff5a7a", "#c02f4d", "#ffd36e"],
+    colors: { tunic: ["#ff6b83", "#a82440"], cloak: ["#d43f5c", "#7e1c30"], hood: "#b73048", leg: "#4a1220", boot: "#ffd36e", hair: "#2a1a12" } },
+  { id: "mitternacht", name: "Mitternachtsgold", req: 9, swatch: ["#22304a", "#e8c15a", "#fff3c4"],
+    colors: { tunic: ["#2c3d5c", "#141d30"], cloak: ["#e8c15a", "#8a6a1c"], hood: "#1c2740", leg: "#0d1422", boot: "#fff3c4", hair: "#e8c15a" } },
+]);
+let SKIN = GS.skins.get("galopp");
 
 // ==================== Projektion ====================
 // Pseudo-3D: t = NEAR/z ∈ (0..1], t=1 ist die Unterkante der Bühne.
@@ -387,6 +404,20 @@ const ZONES = [
     road: ["#3a446b", "#272f57"],
     ridge: "#141a3d", stars: 1,
   },
+  {
+    name: "Polarnacht", sub: "Zone 5",
+    sky: ["#04121a", "#0e3a4a", "#3fb0c9"],
+    ground: ["#bcd6e0", "#7fa3b2"],
+    road: ["#8fb3c4", "#5e8496"],
+    ridge: "#274a5a", stars: 0.85,
+  },
+  {
+    name: "Morgenröte", sub: "Zone 6",
+    sky: ["#22143a", "#c24d7a", "#ffd6a0"],
+    ground: ["#c98a5c", "#9c5f3c"],
+    road: ["#b57a6a", "#8a574a"],
+    ridge: "#7a3a52", stars: 0.08,
+  },
 ];
 const ZONE_LEN = 450; // Meter pro Zone
 
@@ -452,6 +483,10 @@ function newRun() {
   if (DAILY) {
     const d = new Date();
     rngW = mulberry32(d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate());
+  } else if (WEEKLY) {
+    // UTC-Wochen-Bucket (Montag-Start): jede:r läuft diese Woche dieselbe Strecke
+    const week = Math.floor((Date.now() / 86400000 - 4) / 7);
+    rngW = mulberry32(7000000 + week);
   }
   nextSpawnW = 18; nextScenW = 2; nextPowM = 180 + rngW() * 120;
   nextTurnM = 160 + rngW() * 100;
@@ -1215,6 +1250,26 @@ function render(now) {
       const bob = Math.sin(now * 0.004 + e.wz) * 6;
       const y = groundY(t) - (e.h + bob) * t / PLAYER_T;
       const sc = t / PLAYER_T * ITEMS * (1 + 0.08 * Math.sin(now * 0.005));
+      const powCol = e.kind === "shield" ? MINT : e.kind === "boost" ? GOLD : "#ff6b6b";
+      // Pulsierender Lichtschein + aufsteigende Ringe machen Power-ups von Weitem sichtbar
+      const pulse = 0.5 + 0.5 * Math.sin(now * 0.006 + e.wz);
+      const oy = y; // Zentrum des Orbs (blitFoot + powSprite-Versatz heben sich auf)
+      ctx.save();
+      ctx.globalAlpha = alpha * (0.25 + 0.25 * pulse);
+      const halo = ctx.createRadialGradient(x, oy - 4 * sc, 2, x, oy - 4 * sc, 46 * sc);
+      halo.addColorStop(0, powCol);
+      halo.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = halo;
+      ctx.beginPath(); ctx.arc(x, oy - 4 * sc, 46 * sc, 0, Math.PI * 2); ctx.fill();
+      // aufsteigender Ring
+      const rp = (now * 0.0011 + e.wz) % 1;
+      ctx.globalAlpha = alpha * (1 - rp) * 0.8;
+      ctx.strokeStyle = powCol; ctx.lineWidth = 2.5 * sc;
+      ctx.beginPath();
+      ctx.ellipse(x, oy + 6 * sc - rp * 34 * sc, (14 + rp * 10) * sc, (5 + rp * 3) * sc, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+      ctx.globalAlpha = 1;
       blitFoot(SPR[e.kind], x, y + 23 * sc, sc, alpha);
     }
   }
@@ -1456,15 +1511,15 @@ function drawRunner(now) {
     const kick = inAir ? 10 : Math.max(0, phase) * 16; // Ferse schnellt hoch
     const fx = side * 5 + side * (inAir ? 0 : Math.abs(phase)) * 2;
     const fy = -6 - kick;
-    ctx.strokeStyle = "#3a2456";
+    ctx.strokeStyle = SKIN.leg;
     ctx.lineWidth = 8;
     ctx.lineCap = "round";
     ctx.beginPath();
     ctx.moveTo(side * 5, -26);
     ctx.quadraticCurveTo(side * 6, -16, fx, fy);
     ctx.stroke();
-    // Goldener Stiefel — bei hochgeschnellter Ferse sieht man die Sohle
-    ctx.fillStyle = GOLD;
+    // Stiefel — bei hochgeschnellter Ferse sieht man die Sohle
+    ctx.fillStyle = SKIN.boot;
     ctx.beginPath();
     ctx.ellipse(fx, fy, 5, 3.5 + kick * 0.12, 0, 0, Math.PI * 2);
     ctx.fill();
@@ -1474,7 +1529,7 @@ function drawRunner(now) {
 
   // Rumpf (Rücken): Tunika mit Kapuzenumhang darüber
   const bg = ctx.createLinearGradient(0, -58, 0, -22);
-  bg.addColorStop(0, "#8a5cc7"); bg.addColorStop(1, "#4d2e78");
+  bg.addColorStop(0, SKIN.tunic[0]); bg.addColorStop(1, SKIN.tunic[1]);
   ctx.fillStyle = bg;
   ctx.beginPath();
   ctx.roundRect(-13, -58, 26, 36, 11);
@@ -1482,7 +1537,7 @@ function drawRunner(now) {
 
   // Umhang liegt auf dem Rücken und flattert nach unten aus
   const cg2 = ctx.createLinearGradient(0, -56, 0, -14);
-  cg2.addColorStop(0, "#6d47a3"); cg2.addColorStop(1, "#452a66");
+  cg2.addColorStop(0, SKIN.cloak[0]); cg2.addColorStop(1, SKIN.cloak[1]);
   ctx.fillStyle = cg2;
   ctx.beginPath();
   ctx.moveTo(-12, -56);
@@ -1519,7 +1574,7 @@ function drawRunner(now) {
 
   // Arme pumpen seitlich (von hinten sichtbar)
   const armA = inAir ? -0.6 : Math.sin(ph + Math.PI);
-  ctx.strokeStyle = "#6d47a3";
+  ctx.strokeStyle = SKIN.cloak[0];
   ctx.lineWidth = 6.5;
   ctx.lineCap = "round";
   for (const side of [-1, 1]) {
@@ -1536,7 +1591,7 @@ function drawRunner(now) {
   }
 
   // Kopf von hinten: nur die Kapuze mit wehendem Zipfel
-  ctx.fillStyle = "#5e3a8f";
+  ctx.fillStyle = SKIN.hood;
   ctx.beginPath();
   ctx.arc(0, -66, 11, 0, Math.PI * 2);
   ctx.fill();
@@ -1547,7 +1602,7 @@ function drawRunner(now) {
   ctx.arc(0, -66, 7.5, Math.PI * 0.25, Math.PI * 0.75);
   ctx.stroke();
   // Zipfel weht im Fahrtwind Richtung Kamera
-  ctx.fillStyle = "#5e3a8f";
+  ctx.fillStyle = SKIN.hood;
   ctx.beginPath();
   ctx.moveTo(-3, -75);
   ctx.quadraticCurveTo(-6 - flut, -62, -4 - flut * 1.6, -50);
@@ -1555,7 +1610,7 @@ function drawRunner(now) {
   ctx.closePath();
   ctx.fill();
   // Ein Büschel Haar lugt unter der Kapuze hervor
-  ctx.fillStyle = "#e8a25e";
+  ctx.fillStyle = SKIN.hair;
   ctx.beginPath();
   ctx.ellipse(0, -56, 6, 3, 0, 0, Math.PI);
   ctx.fill();
@@ -1783,10 +1838,15 @@ function showMenu() {
         <div class="ctrl"><b>↩️</b>An der Mauer: in Pfeilrichtung wischen!</div>
       </div>
       ${DAILY ? `<p class="sub" style="margin-top:-6px"><b>🗓️ Tages-Challenge:</b> Heute läuft jede:r dieselbe Strecke!</p>` : ""}
+      ${WEEKLY ? `<p class="sub" style="margin-top:-6px"><b>📅 Wochen-Challenge:</b> Diese Woche läuft jede:r dieselbe Strecke!</p>` : ""}
       <button class="btn-primary" id="m-go">🏃 Lauf los!</button>
       <button class="btn-secondary" id="m-top">🏆 Bestenliste</button>
-      <button class="btn-secondary" id="m-daily" style="margin-top:10px">${DAILY ? "🎲 Normaler Modus" : "🗓️ Tages-Challenge"}</button>
+      ${CHALLENGE
+        ? `<button class="btn-secondary" id="m-normal" style="margin-top:10px">🎲 Normaler Modus</button>`
+        : `<button class="btn-secondary" id="m-daily" style="margin-top:10px">🗓️ Tages-Challenge</button>
+           <button class="btn-secondary" id="m-weekly" style="margin-top:10px">📅 Wochen-Challenge</button>`}
       <button class="btn-secondary" id="m-badges" style="margin-top:10px">🏅 Meilensteine</button>
+      <button class="btn-secondary" id="m-skins" style="margin-top:10px">🎨 Skins</button>
     </div>`;
   document.body.appendChild(overlay);
   overlay.querySelector("#m-go").onclick = () => {
@@ -1795,8 +1855,13 @@ function showMenu() {
     mode = "run";
   };
   overlay.querySelector("#m-top").onclick = () => showLeaderboard();
-  overlay.querySelector("#m-daily").onclick = () => { location.search = DAILY ? "" : "?daily=1"; };
+  const setMode = q => { location.search = q; };
+  if (overlay.querySelector("#m-normal")) overlay.querySelector("#m-normal").onclick = () => setMode("");
+  if (overlay.querySelector("#m-daily")) overlay.querySelector("#m-daily").onclick = () => setMode("?daily=1");
+  if (overlay.querySelector("#m-weekly")) overlay.querySelector("#m-weekly").onclick = () => setMode("?weekly=1");
   overlay.querySelector("#m-badges").onclick = () => GS.badges.show("galopp", "Meilensteine — Galopp");
+  overlay.querySelector("#m-skins").onclick = () =>
+    GS.skins.picker("galopp", { title: "Läufer-Skins", onChange: c => { SKIN = c; } });
 }
 
 
@@ -1810,7 +1875,7 @@ async function gameOver() {
   overlay.className = "overlay";
   overlay.innerHTML = `
     <div class="panel">
-      <h2>${DAILY ? "🗓️ " : ""}${isRecord ? "Neuer Rekord!" : "Erwischt! 🦄"}</h2>
+      <h2>${DAILY ? "🗓️ " : WEEKLY ? "📅 " : ""}${isRecord ? "Neuer Rekord!" : "Erwischt! 🦄"}</h2>
       <div class="go-score">${score}</div>
       ${isRecord ? `<div class="go-best-badge">👑 Persönliche Bestleistung</div>` : `<div class="sub">Rekord: ${best}</div>`}
       <div class="go-stats">
@@ -1824,6 +1889,7 @@ async function gameOver() {
       <div id="go-name-area"></div>
       <button class="btn-primary" id="go-again">🏃 Nochmal rennen</button>
       <button class="btn-secondary" id="go-top">🏆 Bestenliste</button>
+      <button class="btn-secondary" id="go-share" style="margin-top:10px">📤 Teilen</button>
     </div>`;
   document.body.appendChild(overlay);
 
@@ -1833,18 +1899,29 @@ async function gameOver() {
     mode = "run";
   };
   overlay.querySelector("#go-top").onclick = () => showLeaderboard();
+  const shareBtn = overlay.querySelector("#go-share");
+  shareBtn.onclick = async () => {
+    const r = await GS.share({
+      title: "Galopp",
+      text: `Ich bin bei Galopp 🦄 ${Math.floor(meters)} m weit gerannt (${score} Punkte) — schaffst du mehr?`,
+      url: location.origin + "/galopp/",
+    });
+    if (r === "copied") shareBtn.textContent = "✔ Link kopiert";
+  };
 
   GS.scoreFlow(overlay.querySelector("#go-name-area"), overlay.querySelector("#go-rank"), {
-    game: "galopp", score, daily: DAILY,
+    game: "galopp", score, daily: DAILY, weekly: WEEKLY,
     meta: { meters: Math.floor(meters), coins },
   });
 }
 
 function showLeaderboard() {
   GS.showLeaderboard({
-    game: "galopp", daily: DAILY,
-    title: DAILY ? "Tages-Challenge" : "Bestenliste",
-    sub: DAILY ? "Die Besten von heute — gleiche Strecke für alle" : "Die 50 schnellsten Läufer:innen weltweit",
+    game: "galopp", daily: DAILY, weekly: WEEKLY,
+    title: WEEKLY ? "Wochen-Challenge" : DAILY ? "Tages-Challenge" : "Bestenliste",
+    sub: WEEKLY ? "Die Besten dieser Woche — gleiche Strecke für alle"
+       : DAILY ? "Die Besten von heute — gleiche Strecke für alle"
+       : "Die 50 schnellsten Läufer:innen weltweit",
   });
 }
 // ==================== UI ====================
@@ -1896,6 +1973,7 @@ function loop(now) {
   requestAnimationFrame(loop);
 }
 
+GS.markPlayed("galopp");
 newRun();
 if (AUTO) { mode = "run"; }
 else showMenu();

@@ -812,6 +812,7 @@ soundBtn.textContent = sound.muted ? "🔇" : "🔊";
 soundBtn.onclick = () => { soundBtn.textContent = sound.toggle() ? "🔇" : "🔊"; };
 
 // ---------- Start ----------
+GS.markPlayed("funkelfeld");
 applySkin();
 updateNameLabel();
 if (loadState()) {
@@ -821,5 +822,13 @@ if (loadState()) {
   newGame();
 }
 updateUndoBtn();
+GS.onboard("funkelfeld", {
+  title: "Funkelfeld — so geht's",
+  steps: [
+    { icon: "🧩", text: "Ziehe die drei Steine unten aufs 8×8-Brett." },
+    { icon: "➖", text: "Volle Reihen und Spalten lösen sich auf und geben Punkte." },
+    { icon: "✦", text: "Räume Funkelsteine mit ab und jage Combos für Extra-Punkte." },
+  ],
+});
 // Beim Spielstart einmalig nach dem Namen fragen, falls noch keiner gesetzt ist
 if (!getName() && !over) showNameDialog(true);
