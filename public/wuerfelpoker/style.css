@@ -440,7 +440,6 @@ input:focus {
   position: fixed;
   inset: 0;
   background: rgba(5, 8, 6, 0.6);
-  backdrop-filter: blur(6px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -448,6 +447,7 @@ input:focus {
   z-index: 30;
   animation: overlay-in 0.25s ease;
 }
+.qr-overlay.blurred { backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
 [data-theme="light"] .qr-overlay { background: rgba(90, 100, 88, 0.4); }
 .qr-modal {
   position: relative;
@@ -813,13 +813,15 @@ input:focus {
   position: fixed;
   inset: 0;
   background: rgba(5, 8, 6, 0.55);
-  backdrop-filter: blur(6px);
   display: flex;
   align-items: flex-end;
   justify-content: center;
   z-index: 20;
   animation: overlay-in 0.25s ease;
 }
+/* Blur erst per JS im nächsten Frame (.blurred) — verhindert den schwarzen
+   Frame, den Chromium beim Einfügen eines backdrop-filter-Elements zeigt. */
+.sheet-overlay.blurred { backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
 @keyframes overlay-in { from { opacity: 0; } to { opacity: 1; } }
 .sheet-modal {
   background: linear-gradient(180deg, #17201a, var(--bg1));

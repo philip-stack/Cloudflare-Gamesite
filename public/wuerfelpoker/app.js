@@ -222,6 +222,15 @@ function toast(msg, isErr = false) {
   setTimeout(() => el.remove(), 2500);
 }
 
+// Overlay einfügen und den backdrop-filter erst im nächsten Frame aktivieren.
+// Sonst zeigt Chromium beim Einfügen eines blur-Elements kurz einen
+// schwarzen Frame ("Flackern").
+function mountOverlay(overlay) {
+  document.body.appendChild(overlay);
+  requestAnimationFrame(() => overlay.classList.add("blurred"));
+  return overlay;
+}
+
 function fmtDate(iso) {
   const d = new Date(String(iso).replace(" ", "T") + (String(iso).includes("Z") ? "" : "Z"));
   return isNaN(d) ? "" : d.toLocaleDateString("de-AT", { day: "2-digit", month: "2-digit", year: "numeric" });
@@ -684,7 +693,7 @@ function showJoinQR(id, code) {
       <p class="qr-code">🔑 <b>${esc(code)}</b></p>
       <button class="btn-primary" id="qr-share">📤 Link teilen</button>
     </div>`;
-  document.body.appendChild(overlay);
+  mountOverlay(overlay);
   try {
     window.QR.toCanvas(url, overlay.querySelector("#qr-canvas"), { scale: 6, margin: 3, dark: "#141414", light: "#ffffff" });
   } catch (e) {
@@ -1004,10 +1013,10 @@ function openEntry(game, ref, pid, catKey, col) {
     }));
   } else {
     options = [
-      { label: `${cat.name} serviert`, note: `${cat.serviert} P (im 1. Wurf)`,
-        apply: { kind: "score", value: cat.serviert, serviert: true } },
       { label: `${cat.name}`, note: `${cat.base} P`,
         apply: { kind: "score", value: cat.base } },
+      { label: `${cat.name} serviert`, note: `${cat.serviert} P (im 1. Wurf)`,
+        apply: { kind: "score", value: cat.serviert, serviert: true } },
     ];
   }
 
@@ -1030,7 +1039,7 @@ function openEntry(game, ref, pid, catKey, col) {
       </div>
       <button class="btn-secondary" data-cancel="1">Abbrechen</button>
     </div>`;
-  document.body.appendChild(overlay);
+  mountOverlay(overlay);
 
   const close = () => overlay.remove();
   overlay.onclick = e => { if (e.target === overlay) close(); };
@@ -1306,7 +1315,7 @@ function showRules() {
       </div>
       <button class="btn-secondary" data-cancel="1">Schließen</button>
     </div>`;
-  document.body.appendChild(overlay);
+  mountOverlay(overlay);
   const close = () => overlay.remove();
   overlay.onclick = e => { if (e.target === overlay) close(); };
   overlay.querySelector("[data-cancel]").onclick = close;
