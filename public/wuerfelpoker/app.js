@@ -721,9 +721,13 @@ const DIE_ORIENT = [
 ];
 
 function dieCube(idx) {
+  // Außen 6 stark gerundete Flächen (echte Würfel-Silhouette) + innen ein
+  // minimal kleinerer Kern-Würfel, der die Rundungs-Löcher an Ecken und
+  // Kanten von innen füllt — so wirkt der Körper geschlossen.
   return `
     <span class="die3d" data-idx="${idx}">
       <span class="die3d-cube">
+        ${DIE_FACES.map((_, n) => `<span class="die-core c${n + 1}"></span>`).join("")}
         ${DIE_FACES.map((f, n) =>
           `<span class="die-face f${n + 1} ${n >= 4 ? "hi" : ""}">${f}</span>`).join("")}
       </span>
