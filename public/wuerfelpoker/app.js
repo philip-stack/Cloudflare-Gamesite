@@ -721,9 +721,10 @@ const DIE_ORIENT = [
 ];
 
 function dieCube(idx) {
-  // Außen 6 stark gerundete Flächen (echte Würfel-Silhouette) + innen ein
-  // minimal kleinerer Kern-Würfel, der die Rundungs-Löcher an Ecken und
-  // Kanten von innen füllt — so wirkt der Körper geschlossen.
+  // Echtes 3D-Modell (WebGL, die3d.js); CSS-Würfel nur als Fallback
+  if (window.Die3D && Die3D.ok()) {
+    return `<span class="die3d" data-idx="${idx}"><canvas class="die-canvas"></canvas></span>`;
+  }
   return `
     <span class="die3d" data-idx="${idx}">
       <span class="die3d-cube">
@@ -760,6 +761,11 @@ function renderStarterRoll(game, ref) {
   document.getElementById("btn-back").onclick = () => navigate("#/");
   wireCodeChip();
 
+  // WebGL-Würfel an ihre Canvases binden (zeichnet die Ruhelage)
+  const glDice = (window.Die3D && Die3D.ok())
+    ? [...app.querySelectorAll("canvas.die-canvas")].map(c => Die3D.attach(c))
+    : null;
+
   async function setStarter(idx) {
     try {
       await store.patch(ref, { status: "active", starter_index: idx, turn_index: idx });
@@ -784,15 +790,22 @@ function renderStarterRoll(game, ref) {
     const rolls = game.players.map(() => 1 + Math.floor(Math.random() * 6));
 
     GS.haptic(20);
-    cubes.forEach((cube, i) => {
-      const o = DIE_ORIENT[rolls[i] - 1];
-      const spinsX = (2 + Math.floor(Math.random() * 2)) * 360;
-      const spinsY = (2 + Math.floor(Math.random() * 2)) * 360;
-      cube.style.transitionDelay = `${i * 90}ms`;
-      // perspective() bleibt in der Transform-Kette (s. CSS)
-      cube.style.transform =
-        `perspective(420px) rotateX(${o.x + spinsX}deg) rotateY(${o.y + spinsY}deg)`;
-    });
+    const spins = () => (2 + Math.floor(Math.random() * 2)) * 360;
+    if (glDice) {
+      // Echtes 3D-Modell: Zielrotation je Würfel, gestaffelt animiert
+      Die3D.roll(glDice, rolls.map(r => {
+        const o = DIE_ORIENT[r - 1];
+        return { x: o.x + spins(), y: o.y + spins() };
+      }));
+    } else {
+      cubes.forEach((cube, i) => {
+        const o = DIE_ORIENT[rolls[i] - 1];
+        cube.style.transitionDelay = `${i * 90}ms`;
+        // perspective() bleibt in der Transform-Kette (s. CSS)
+        cube.style.transform =
+          `perspective(420px) rotateX(${o.x + spins()}deg) rotateY(${o.y + spins()}deg)`;
+      });
+    }
     // Rasselnde Würfel-Klänge während der Animation
     for (let k = 0; k < 8; k++) GS.sound.tone(140 + k * 20, 0.05, { type: "square", gain: 0.045, delay: k * 0.12 });
 

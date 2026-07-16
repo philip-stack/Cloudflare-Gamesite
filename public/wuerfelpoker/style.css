@@ -577,6 +577,7 @@ input:focus {
   width: 52px; height: 52px;
   flex-shrink: 0;
 }
+.die-canvas { display: block; width: 52px; height: 52px; }
 .die3d-cube {
   display: block;
   position: relative;
