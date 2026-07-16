@@ -723,7 +723,7 @@ const DIE_ORIENT = [
 function dieCube(idx) {
   // Echtes 3D-Modell (WebGL, die3d.js); CSS-Würfel nur als Fallback
   if (window.Die3D && Die3D.ok()) {
-    return `<span class="die3d" data-idx="${idx}"><canvas class="die-canvas"></canvas></span>`;
+    return `<span class="die3d gl" data-idx="${idx}"><canvas class="die-canvas"></canvas></span>`;
   }
   return `
     <span class="die3d" data-idx="${idx}">

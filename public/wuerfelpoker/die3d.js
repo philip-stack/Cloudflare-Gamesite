@@ -110,11 +110,13 @@
     const t = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, t);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, buildTexture());
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    // WICHTIG: keine Mipmaps — der Atlas (384×256) ist keine Zweierpotenz;
+    // mit Mipmap-Filter wäre die Textur in WebGL1 "unvollständig" und
+    // sampelt komplett schwarz. LINEAR reicht (wird eh herunterskaliert).
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    gl.generateMipmap(gl.TEXTURE_2D);
   }
 
   // ---------- Init ----------
@@ -221,8 +223,9 @@
 
     attach(canvas) {
       const dpr = Math.min(2, window.devicePixelRatio || 1);
-      canvas.width = Math.round(52 * dpr);
-      canvas.height = Math.round(52 * dpr);
+      const px = canvas.clientWidth || 62;
+      canvas.width = Math.round(px * dpr);
+      canvas.height = Math.round(px * dpr);
       const h = { canvas, ctx: canvas.getContext("2d"), rx: -22, ry: 28 };
       drawHandle(h);
       handles.push(h);
