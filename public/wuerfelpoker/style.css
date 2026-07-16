@@ -450,8 +450,9 @@ input:focus {
   justify-content: center;
   padding: 20px;
   z-index: 30;
-  animation: overlay-in 0.25s ease;
+  animation: qr-dim 0.25s ease;
 }
+@keyframes qr-dim { from { background-color: rgba(5, 8, 6, 0); } }
 [data-theme="light"] .qr-overlay { background: rgba(90, 100, 88, 0.4); }
 .qr-modal {
   position: relative;
@@ -468,7 +469,8 @@ input:focus {
   background: linear-gradient(180deg, #fbf9f1, #f0ecdf);
   box-shadow: 0 0 0 1px var(--edge) inset, 0 24px 70px -20px rgba(40, 50, 40, 0.45);
 }
-@keyframes modal-pop { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+/* Nur transform, kein opacity — vermeidet den schwarzen Layer-Blitz auf Android */
+@keyframes modal-pop { from { transform: scale(0.85); } to { transform: scale(1); } }
 .qr-x {
   position: absolute;
   top: 12px; right: 12px;
@@ -574,8 +576,7 @@ input:focus {
 
 .die3d {
   display: inline-block;
-  width: 52px; height: 52px;
-  perspective: 420px;
+  width: 58px; height: 58px;
   flex-shrink: 0;
 }
 .die3d-cube {
@@ -583,8 +584,12 @@ input:focus {
   position: relative;
   width: 100%; height: 100%;
   transform-style: preserve-3d;
-  transform: rotateX(-18deg) rotateY(24deg);
+  /* perspective() direkt in der Transform-Kette: robust auf Mobilgeräten,
+     unabhängig von Eltern-Kontexten. Kräftige Kipp-Stellung, damit immer
+     drei Flächen (vorne, rechts, oben) sichtbar sind. */
+  transform: perspective(560px) rotateX(-26deg) rotateY(32deg);
   transition: transform 1.5s cubic-bezier(0.2, 0.9, 0.25, 1);
+  will-change: transform;
 }
 .die-face {
   position: absolute;
@@ -594,21 +599,33 @@ input:focus {
   justify-content: center;
   font-family: var(--font-display);
   font-weight: 800;
-  font-size: 1.35rem;
+  font-size: 1.4rem;
   color: #23301f;
   background:
     radial-gradient(circle at 30% 25%, #fffdf4, var(--ivory) 60%, #ddd5bc 100%);
-  border-radius: 10px;
-  box-shadow: 0 0 0 1px rgba(120, 105, 60, 0.35) inset;
+  border-radius: 12px;
+  box-shadow: 0 0 0 1.5px rgba(120, 105, 60, 0.4) inset;
   backface-visibility: hidden;
 }
 .die-face.hi { color: #b3372c; }        /* Ass & König traditionell rot */
-.die-face.f1 { transform: rotateY(0deg)    translateZ(26px); }
-.die-face.f2 { transform: rotateY(90deg)   translateZ(26px); }
-.die-face.f3 { transform: rotateX(90deg)   translateZ(26px); }
-.die-face.f4 { transform: rotateX(-90deg)  translateZ(26px); }
-.die-face.f5 { transform: rotateY(-90deg)  translateZ(26px); }
-.die-face.f6 { transform: rotateY(180deg)  translateZ(26px); }
+.die-face.f1 { transform: rotateY(0deg)    translateZ(29px); }
+.die-face.f2 { transform: rotateY(90deg)   translateZ(29px); }
+.die-face.f3 { transform: rotateX(90deg)   translateZ(29px); }
+.die-face.f4 { transform: rotateX(-90deg)  translateZ(29px); }
+.die-face.f5 { transform: rotateY(-90deg)  translateZ(29px); }
+.die-face.f6 { transform: rotateY(180deg)  translateZ(29px); }
+/* Tiefen-Schattierung: Seiten dunkler, Ober-/Unterseite mittel — liest
+   sich auch während des Drehens klar als Körper */
+.die-face::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+}
+.die-face.f2::after, .die-face.f5::after { background: rgba(60, 48, 20, 0.28); }
+.die-face.f3::after, .die-face.f4::after { background: rgba(60, 48, 20, 0.14); }
+.die-face.f6::after { background: rgba(60, 48, 20, 0.2); }
 
 /* ---------- Verrechnungsblatt ---------- */
 .sheet-wrap {
@@ -823,9 +840,11 @@ input:focus {
   align-items: flex-end;
   justify-content: center;
   z-index: 20;
-  animation: overlay-in 0.25s ease;
+  /* Hintergrundfarbe statt opacity animieren: opacity-Animationen erzeugen
+     auf Android-Chrome eine neue GPU-Ebene, die einen Frame schwarz blitzt. */
+  animation: overlay-dim 0.25s ease;
 }
-@keyframes overlay-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes overlay-dim { from { background-color: rgba(5, 8, 6, 0); } }
 .sheet-modal {
   background: linear-gradient(180deg, #17201a, var(--bg1));
   border-top-left-radius: 24px;
@@ -836,11 +855,12 @@ input:focus {
   max-width: 560px;
   max-height: 85vh;
   overflow-y: auto;
-  animation: modal-up 0.4s var(--ease-spring);
+  /* Nur transform animieren (kein opacity) — s. Kommentar am Overlay */
+  animation: modal-up 0.35s var(--ease-spring);
 }
 @keyframes modal-up {
-  from { transform: translateY(60px); opacity: 0; }
-  to { transform: translateY(0); opacity: 1; }
+  from { transform: translateY(105%); }
+  to { transform: translateY(0); }
 }
 .sheet-modal::before {
   content: "";
@@ -899,6 +919,9 @@ input:focus {
     transition-duration: 0.001s !important;
   }
   .grain, .aurora { animation: none !important; }
+  /* Der Würfelwurf ist funktionales Feedback (zeigt die Auslosung),
+     kein Deko-Effekt — er behält eine kurze, ruhige Drehung. */
+  .die3d-cube { transition-duration: 0.9s !important; }
 }
 
 /* ---------- Runden & Spalten (Mehrrunden-Spiele) ---------- */

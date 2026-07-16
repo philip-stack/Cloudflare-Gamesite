@@ -784,8 +784,13 @@ function renderStarterRoll(game, ref) {
       const o = DIE_ORIENT[rolls[i] - 1];
       const spinsX = (2 + Math.floor(Math.random() * 2)) * 360;
       const spinsY = (2 + Math.floor(Math.random() * 2)) * 360;
+      const wobble = (Math.random() * 24 - 12).toFixed(1); // leichtes Taumeln
       cube.style.transitionDelay = `${i * 90}ms`;
-      cube.style.transform = `rotateX(${o.x + spinsX}deg) rotateY(${o.y + spinsY}deg)`;
+      // perspective() muss in der Transform-Kette bleiben (s. CSS), sonst
+      // fällt der Würfel auf Mobilgeräten flach zusammen. Die Endlage kippt
+      // leicht (-12°/18°), damit das Ergebnis plastisch bleibt.
+      cube.style.transform =
+        `perspective(560px) rotateX(${o.x + spinsX - 12}deg) rotateY(${o.y + spinsY + 18}deg) rotateZ(${wobble}deg)`;
     });
     // Rasselnde Würfel-Klänge während der Animation
     for (let k = 0; k < 8; k++) GS.sound.tone(140 + k * 20, 0.05, { type: "square", gain: 0.045, delay: k * 0.12 });
