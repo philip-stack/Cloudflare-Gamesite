@@ -398,6 +398,7 @@ async function renderHome() {
     ${localGames.length ? `<h2>Auf diesem Gerät</h2><div class="stack">${localHtml}</div>` : ""}
     <div id="shared-section"></div>
     ${!localGames.length && !refs.length ? `<p class="loading">Noch keine Spiele.</p>` : ""}
+    ${statsHtml(localGames)}
     <button class="btn-link" id="btn-rules">ℹ️ Spielregeln</button>
   `;
 
@@ -460,6 +461,39 @@ async function renderHome() {
       el.onclick = () => { removeSharedRef(Number(el.dataset.forget)); renderHome(); };
     });
   }
+}
+
+// ---------- Statistik über abgeschlossene Spiele (dieses Gerät) ----------
+function statsHtml(games) {
+  const finished = games.filter(g => g.status === "finished");
+  if (!finished.length) return "";
+  const stats = {}; // name (lowercase) → { name, spiele, siege, punkte }
+  for (const g of finished) {
+    const r = grandRanking(g);
+    const top = r[0].pts;
+    for (const p of r) {
+      const key = p.name.toLowerCase();
+      const s = (stats[key] ||= { name: p.name, spiele: 0, siege: 0, punkte: 0 });
+      s.spiele++;
+      s.punkte += p.pts;
+      if (p.pts === top && top > 0) s.siege++;
+    }
+  }
+  const rows = Object.values(stats).sort((a, b) => b.siege - a.siege || b.punkte - a.punkte);
+  return `
+    <h2>Statistik</h2>
+    <div class="stats-box">
+      <div class="stats-row stats-head">
+        <span class="st-name">Spieler</span><span>Siege</span><span>Spiele</span><span>Ø Punkte</span>
+      </div>
+      ${rows.map((s, i) => `
+        <div class="stats-row">
+          <span class="st-name">${i === 0 ? "👑 " : ""}${esc(s.name)}</span>
+          <span class="st-wins">${s.siege}</span>
+          <span>${s.spiele}</span>
+          <span>${Math.round(s.punkte / s.spiele)}</span>
+        </div>`).join("")}
+    </div>`;
 }
 
 // ---------- Mit Code beitreten ----------

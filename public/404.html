@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0a0e0b">
+  <title>Nicht gefunden — Spieleabend</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..900;1,9..144,400..900&family=Outfit:wght@300..800&display=swap" rel="stylesheet">
+  <script src="/theme.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg0: #0a0e0b; --felt: #0e1410;
+      --ink: #f4efe2; --muted: #93a396; --gold: #e8c15a;
+      --foil: linear-gradient(115deg, #8a6a1c 0%, #e8c15a 25%, #fff3c4 50%, #e8c15a 75%, #8a6a1c 100%);
+    }
+    :root[data-theme="light"] {
+      --bg0: #f4f1e6; --felt: #ece9db;
+      --ink: #26301f; --muted: #64705f; --gold: #a5851f;
+      --foil: linear-gradient(115deg, #6d5416 0%, #a5851f 30%, #c9a13b 50%, #a5851f 70%, #6d5416 100%);
+    }
+    body {
+      font-family: "Outfit", system-ui, sans-serif;
+      background: radial-gradient(120% 90% at 50% -10%, var(--felt) 0%, var(--bg0) 100%);
+      color: var(--ink);
+      min-height: 100dvh;
+      display: grid;
+      place-items: center;
+      text-align: center;
+      padding: 24px;
+    }
+    .dice { font-size: 3rem; letter-spacing: 0.3em; color: var(--gold); }
+    h1 {
+      font-family: "Fraunces", Georgia, serif;
+      font-style: italic; font-weight: 800;
+      font-size: clamp(2rem, 9vw, 3rem);
+      margin: 14px 0 8px;
+      background: var(--foil);
+      background-size: 250% 100%;
+      -webkit-background-clip: text; background-clip: text;
+      color: transparent;
+    }
+    p { color: var(--muted); margin-bottom: 26px; }
+    a {
+      display: inline-block;
+      background: linear-gradient(160deg, #f0cd6e, #e8c15a 45%, #c39a30);
+      color: #1a1508;
+      font-weight: 700;
+      text-decoration: none;
+      padding: 14px 28px;
+      border-radius: 14px;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="dice">⚀ ⚄ ⚅</div>
+    <h1>Verwürfelt!</h1>
+    <p>Diese Seite gibt es nicht — der Wurf ging daneben.</p>
+    <a href="/">← Zurück zum Spieleabend</a>
+  </main>
+</body>
+</html>

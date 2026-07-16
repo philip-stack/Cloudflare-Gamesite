@@ -443,28 +443,10 @@ function escHtml(s) {
   })[c]);
 }
 
-async function submitScore() {
-  const name = getName();
-  const score = finalScore();
-  if (!name || score <= 0 || submitted) return null;
-  submitted = true;
-  try {
-    const res = await fetch("/api/komet/scores", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, score }),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Fehler");
-    return data;
-  } catch {
-    submitted = false;
-    return null;
-  }
-}
 
 async function gameOver() {
   const score = finalScore();
+  const newBadges = GS.badges.record("komet", { meters: score - sparkCount * 5, sparks: sparkCount, score });
   const isRecord = score > best && score > 0;
   if (isRecord) { best = score; localStorage.setItem("km_best", best); sound.fanfare(); }
 
@@ -479,6 +461,7 @@ async function gameOver() {
         <span>📏 ${meters()} m</span>
         <span>✦ ${sparkCount} Funken</span>
       </div>
+      ${GS.badges.chipsHtml(newBadges)}
       <div class="go-rank" id="go-rank"></div>
       <div id="go-name-area"></div>
       <button class="btn-primary" id="go-again">🚀 Nochmal fliegen</button>
@@ -488,69 +471,22 @@ async function gameOver() {
 
   overlay.querySelector("#go-again").onclick = () => { overlay.remove(); startRun(); };
   overlay.querySelector("#go-top").onclick = () => showLeaderboard();
+  const gb = document.createElement("button");
+  gb.className = "btn-secondary";
+  gb.style.marginTop = "10px";
+  gb.textContent = "🏅 Meilensteine";
+  gb.onclick = () => GS.badges.show("komet", "Meilensteine — Komet");
+  overlay.querySelector(".panel").appendChild(gb);
 
-  const rankEl = overlay.querySelector("#go-rank");
-  const nameArea = overlay.querySelector("#go-name-area");
-
-  if (!getName() && score > 0) {
-    nameArea.innerHTML = `
-      <p class="sub">Wie sollen wir dich in der Bestenliste nennen?</p>
-      <input type="text" id="go-name" maxlength="16" placeholder="Dein Name" autocomplete="off">
-      <button class="btn-secondary" id="go-save" style="margin-bottom:10px">Score eintragen</button>`;
-    nameArea.querySelector("#go-save").onclick = async () => {
-      const v = nameArea.querySelector("#go-name").value.trim().slice(0, 16);
-      if (!v) return;
-      localStorage.setItem("bb_name", v);
-      nameArea.innerHTML = "";
-      rankEl.textContent = "Übertrage …";
-      const resp = await submitScore();
-      rankEl.innerHTML = resp ? `Weltweit <b>Platz ${resp.rank}</b> als ${escHtml(v)}` : "Konnte nicht übertragen werden";
-    };
-  } else if (score > 0) {
-    rankEl.textContent = "Übertrage …";
-    const resp = await submitScore();
-    rankEl.innerHTML = resp
-      ? `Weltweit <b>Platz ${resp.rank}</b> als ${escHtml(getName())}${resp.best > score ? ` · dein Rekord: ${resp.best}` : ""}`
-      : "Score konnte nicht übertragen werden";
-  }
+  GS.scoreFlow(overlay.querySelector("#go-name-area"), overlay.querySelector("#go-rank"), {
+    game: "komet", score,
+    meta: { meters: score - sparkCount * 5, sparks: sparkCount },
+  });
 }
 
-async function showLeaderboard() {
-  const overlay = document.createElement("div");
-  overlay.className = "overlay";
-  overlay.innerHTML = `
-    <div class="panel">
-      <h2><span class="foil">Bestenliste</span></h2>
-      <p class="sub">Die 50 weitesten Kometen weltweit</p>
-      <div id="lb-content"><p class="lb-empty">Lade …</p></div>
-      <button class="btn-secondary" id="lb-close">Schließen</button>
-    </div>`;
-  document.body.appendChild(overlay);
-  const close = () => overlay.remove();
-  overlay.onclick = e => { if (e.target === overlay) close(); };
-  overlay.querySelector("#lb-close").onclick = close;
-
-  try {
-    const res = await fetch("/api/komet/scores");
-    const data = await res.json();
-    const me = getName().toLowerCase();
-    const medals = ["🥇", "🥈", "🥉"];
-    const content = overlay.querySelector("#lb-content");
-    if (!data.top?.length) {
-      content.innerHTML = `<p class="lb-empty">Noch keine Einträge — sei die/der Erste!</p>`;
-      return;
-    }
-    content.innerHTML = `<ol class="lb-list">${data.top.map((row, i) => `
-      <li class="${row.name.toLowerCase() === me ? "me" : ""}">
-        <span class="lb-rank">${medals[i] || i + 1}</span>
-        <span class="lb-name">${escHtml(row.name)}</span>
-        <span class="lb-score">${row.score}</span>
-      </li>`).join("")}</ol>`;
-  } catch {
-    overlay.querySelector("#lb-content").innerHTML = `<p class="lb-empty">Bestenliste nicht erreichbar</p>`;
-  }
+function showLeaderboard() {
+  GS.showLeaderboard({ game: "komet", sub: "Die 50 weitesten Flüge weltweit" });
 }
-
 // ---------- Start-Overlay ----------
 function showStart() {
   const overlay = document.createElement("div");
@@ -578,3 +514,14 @@ soundBtn.onclick = () => { soundBtn.textContent = sound.toggle() ? "🔇" : "�
 reset();
 if (new URLSearchParams(location.search).has("auto")) startRun();
 else showStart();
+
+// ---------- Meilensteine ----------
+GS.badges.define("komet", [
+  { id: "m100",   icon: "🌠", name: "Abgehoben",      desc: "100 m in einem Flug",      test: s => s.meters >= 100 },
+  { id: "m300",   icon: "☄️", name: "Sternenreiter", desc: "300 m in einem Flug",      test: s => s.meters >= 300 },
+  { id: "m700",   icon: "🌌", name: "Weltraumkurier", desc: "700 m in einem Flug",      test: s => s.meters >= 700 },
+  { id: "s50",    icon: "✨", name: "Funkenfänger",  desc: "50 Funken in einem Flug",  test: s => s.sparks >= 50 },
+  { id: "sum5k",  icon: "🛰️", name: "Vielflieger", desc: "5.000 m insgesamt",     test: (s, t) => t.sum_meters >= 5000 },
+  { id: "sums1k", icon: "💫", name: "Funkensammler",  desc: "1.000 Funken insgesamt",   test: (s, t) => t.sum_sparks >= 1000 },
+  { id: "runs25", icon: "🎖️", name: "Stammgast", desc: "25 Flüge absolviert", test: (s, t) => t.runs >= 25 },
+]);

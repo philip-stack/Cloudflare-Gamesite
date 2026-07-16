@@ -983,3 +983,38 @@ input:focus {
   box-shadow: 0 0 0 1px var(--edge-soft) inset;
   backdrop-filter: blur(8px);
 }
+
+/* ---------- Statistik (Home) ---------- */
+.stats-box {
+  background: linear-gradient(175deg, var(--card-hi), var(--card));
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card), 0 0 0 1px var(--edge-soft) inset;
+  padding: 6px 14px;
+  backdrop-filter: blur(8px);
+}
+.stats-row {
+  display: grid;
+  grid-template-columns: 1fr 62px 62px 76px;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 2px;
+  border-bottom: 1px solid var(--edge-soft);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+.stats-row:last-child { border-bottom: 0; }
+.stats-row .st-name {
+  text-align: left;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.stats-row .st-wins { color: var(--gold); font-weight: 700; }
+.stats-head {
+  color: var(--muted);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-weight: 700;
+}

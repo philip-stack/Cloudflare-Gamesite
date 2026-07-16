@@ -7,6 +7,20 @@
 // nicht aufholen. Pseudo-3D komplett auf Canvas gerendert.
 // ====================================================================
 
+// Tages-Challenge (?daily): gleicher Seed = gleiche Strecke für alle.
+// rngW steuert NUR die Weltgenerierung (Hindernisse, Kurven, Power-ups);
+// Optik/Partikel bleiben bei Math.random.
+const DAILY = new URLSearchParams(location.search).has("daily");
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+let rngW = Math.random;
+
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 const stage = document.getElementById("stage");
@@ -435,8 +449,12 @@ function newRun() {
   magnetT = 0; boostT = 0; shieldOn = false;
   coinCombo = 0; comboT = 0; zoneShown = -1;
   whip = null; swayKick = 0; turnCount = 0;
-  nextSpawnW = 18; nextScenW = 2; nextPowM = 180 + Math.random() * 120;
-  nextTurnM = 160 + Math.random() * 100;
+  if (DAILY) {
+    const d = new Date();
+    rngW = mulberry32(d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate());
+  }
+  nextSpawnW = 18; nextScenW = 2; nextPowM = 180 + rngW() * 120;
+  nextTurnM = 160 + rngW() * 100;
   entities = []; sceneries = []; particles = [];
   submitted = false;
   buildStars();
@@ -474,38 +492,38 @@ function difficulty() { return Math.min(1, meters / 2000); }
 
 function spawnEvent(wz) {
   const d = difficulty();
-  const r = Math.random();
+  const r = rngW();
   const lanes = [0, 1, 2];
 
   if (r < 0.16) {
     // Nur Taler
-    spawnCoinPattern(wz, lanes[Math.floor(Math.random() * 3)]);
+    spawnCoinPattern(wz, lanes[Math.floor(rngW() * 3)]);
     return;
   }
   if (r < 0.30 && meters > 120) {
     // Ganze Breite: springen oder ducken
-    const kind = Math.random() < 0.5 ? "hurdle" : "arch";
+    const kind = rngW() < 0.5 ? "hurdle" : "arch";
     entities.push({ type: "ob", kind, lane: -1, wz, passed: false });
-    if (kind === "hurdle" && Math.random() < 0.6) spawnCoinArc(wz, Math.floor(Math.random() * 3));
+    if (kind === "hurdle" && rngW() < 0.6) spawnCoinArc(wz, Math.floor(rngW() * 3));
     return;
   }
   // 1–2 Spuren blockiert (nie alle 3)
-  const nBlock = (meters > 250 && Math.random() < 0.35 + d * 0.35) ? 2 : 1;
-  const shuffled = lanes.sort(() => Math.random() - 0.5);
+  const nBlock = (meters > 250 && rngW() < 0.35 + d * 0.35) ? 2 : 1;
+  const shuffled = lanes.sort(() => rngW() - 0.5);
   for (let i = 0; i < nBlock; i++) {
     const kinds = ["hurdle", "arch", "rock"];
-    const kind = kinds[Math.floor(Math.random() * (meters > 60 ? 3 : 2))];
-    entities.push({ type: "ob", kind, lane: shuffled[i], wz: wz + (i ? Math.random() * 1.2 : 0), passed: false });
+    const kind = kinds[Math.floor(rngW() * (meters > 60 ? 3 : 2))];
+    entities.push({ type: "ob", kind, lane: shuffled[i], wz: wz + (i ? rngW() * 1.2 : 0), passed: false });
   }
   // Belohnung auf der freien Spur
-  if (Math.random() < 0.45) spawnCoinPattern(wz + 1.5, shuffled[nBlock]);
+  if (rngW() < 0.45) spawnCoinPattern(wz + 1.5, shuffled[nBlock]);
 }
 
 function spawnCoinPattern(wz, lane) {
-  const style = Math.random();
+  const style = rngW();
   if (style < 0.6) {
     // Linie
-    const n = 5 + Math.floor(Math.random() * 4);
+    const n = 5 + Math.floor(rngW() * 4);
     for (let i = 0; i < n; i++) {
       entities.push({ type: "coin", kind: "coin", lane, lanePos: lane, wz: wz + i * 0.75, h: 26, taken: false });
     }
@@ -536,8 +554,8 @@ function spawnCoinArc(wz, lane) {
 
 function spawnPowerup(wz) {
   const kinds = ["magnet", "shield", "boost"];
-  const kind = kinds[Math.floor(Math.random() * 3)];
-  const lane = Math.floor(Math.random() * 3);
+  const kind = kinds[Math.floor(rngW() * 3)];
+  const lane = Math.floor(rngW() * 3);
   entities.push({ type: "pow", kind, lane, lanePos: lane, wz, h: 30, taken: false });
 }
 
@@ -806,14 +824,14 @@ function update(dt) {
   // Spawnen
   if (meters > nextTurnM) {
     // Abzweigung! Der Weg endet an einer Balustrade — wisch in Pfeilrichtung.
-    const dir = Math.random() < 0.5 ? -1 : 1;
+    const dir = rngW() < 0.5 ? -1 : 1;
     entities.push({ type: "ob", kind: "turn", dir, lane: -1, wz: o + SPAWN_Z, passed: false, taken: false });
-    nextTurnM = meters + 240 + Math.random() * 200;
+    nextTurnM = meters + 240 + rngW() * 200;
     nextSpawnW = Math.max(nextSpawnW, o + SPAWN_Z + 6.5); // Luft nach der Kurve
   }
   while (nextSpawnW < o + SPAWN_Z) {
     spawnEvent(nextSpawnW);
-    nextSpawnW += 5.4 - d * 1.6 + Math.random() * 1.8;
+    nextSpawnW += 5.4 - d * 1.6 + rngW() * 1.8;
   }
   while (nextScenW < o + SPAWN_Z) {
     spawnScenery(nextScenW);
@@ -821,7 +839,7 @@ function update(dt) {
   }
   if (meters > nextPowM) {
     spawnPowerup(o + SPAWN_Z - 1);
-    nextPowM = meters + 280 + Math.random() * 180;
+    nextPowM = meters + 280 + rngW() * 180;
   }
 
   // Entities
@@ -1764,8 +1782,11 @@ function showMenu() {
         <div class="ctrl"><b>⬇️</b>Runter: ducken</div>
         <div class="ctrl"><b>↩️</b>An der Mauer: in Pfeilrichtung wischen!</div>
       </div>
+      ${DAILY ? `<p class="sub" style="margin-top:-6px"><b>🗓️ Tages-Challenge:</b> Heute läuft jede:r dieselbe Strecke!</p>` : ""}
       <button class="btn-primary" id="m-go">🏃 Lauf los!</button>
       <button class="btn-secondary" id="m-top">🏆 Bestenliste</button>
+      <button class="btn-secondary" id="m-daily" style="margin-top:10px">${DAILY ? "🎲 Normaler Modus" : "🗓️ Tages-Challenge"}</button>
+      <button class="btn-secondary" id="m-badges" style="margin-top:10px">🏅 Meilensteine</button>
     </div>`;
   document.body.appendChild(overlay);
   overlay.querySelector("#m-go").onclick = () => {
@@ -1774,28 +1795,13 @@ function showMenu() {
     mode = "run";
   };
   overlay.querySelector("#m-top").onclick = () => showLeaderboard();
+  overlay.querySelector("#m-daily").onclick = () => { location.search = DAILY ? "" : "?daily=1"; };
+  overlay.querySelector("#m-badges").onclick = () => GS.badges.show("galopp", "Meilensteine — Galopp");
 }
 
-async function submitScore() {
-  const name = getName();
-  if (!name || score <= 0 || submitted) return null;
-  submitted = true;
-  try {
-    const res = await fetch("/api/galopp/scores", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, score }),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error();
-    return data;
-  } catch {
-    submitted = false;
-    return null;
-  }
-}
 
 async function gameOver() {
+  const newBadges = GS.badges.record("galopp", { meters: Math.floor(meters), coins, turns: turnCount, score });
   const isRecord = score >= best && score > 0;
   if (score > best) { best = score; localStorage.setItem("galopp_best", best); }
   if (isRecord) sound.fanfare();
@@ -1804,7 +1810,7 @@ async function gameOver() {
   overlay.className = "overlay";
   overlay.innerHTML = `
     <div class="panel">
-      <h2>${isRecord ? "Neuer Rekord!" : "Erwischt! 🦄"}</h2>
+      <h2>${DAILY ? "🗓️ " : ""}${isRecord ? "Neuer Rekord!" : "Erwischt! 🦄"}</h2>
       <div class="go-score">${score}</div>
       ${isRecord ? `<div class="go-best-badge">👑 Persönliche Bestleistung</div>` : `<div class="sub">Rekord: ${best}</div>`}
       <div class="go-stats">
@@ -1813,6 +1819,7 @@ async function gameOver() {
         <span>↩️ ${turnCount} Kurven</span>
         <span>🗺️ ${ZONES[zoneShown % ZONES.length]?.name || "Zuckerwiese"}</span>
       </div>
+      ${GS.badges.chipsHtml(newBadges)}
       <div class="go-rank" id="go-rank"></div>
       <div id="go-name-area"></div>
       <button class="btn-primary" id="go-again">🏃 Nochmal rennen</button>
@@ -1827,73 +1834,25 @@ async function gameOver() {
   };
   overlay.querySelector("#go-top").onclick = () => showLeaderboard();
 
-  const rankEl = overlay.querySelector("#go-rank");
-  const nameArea = overlay.querySelector("#go-name-area");
-
-  if (!getName() && score > 0) {
-    nameArea.innerHTML = `
-      <p class="sub">Wie sollen wir dich in der Bestenliste nennen?</p>
-      <input type="text" id="go-name" maxlength="16" placeholder="Dein Name" autocomplete="off">
-      <button class="btn-secondary" id="go-save" style="margin-bottom:10px">Score eintragen</button>`;
-    nameArea.querySelector("#go-save").onclick = async () => {
-      const v = nameArea.querySelector("#go-name").value.trim().slice(0, 16);
-      if (!v) return;
-      localStorage.setItem("bb_name", v);
-      nameArea.innerHTML = "";
-      rankEl.textContent = "Übertrage …";
-      const resp = await submitScore();
-      rankEl.innerHTML = resp ? `Weltweit <b>Platz ${resp.rank}</b> als ${escHtml(v)}` : "Konnte nicht übertragen werden";
-    };
-  } else if (score > 0) {
-    rankEl.textContent = "Übertrage …";
-    const resp = await submitScore();
-    rankEl.innerHTML = resp
-      ? `Weltweit <b>Platz ${resp.rank}</b> als ${escHtml(getName())}${resp.best > score ? ` · dein Rekord: ${resp.best}` : ""}`
-      : "Score konnte nicht übertragen werden";
-  }
+  GS.scoreFlow(overlay.querySelector("#go-name-area"), overlay.querySelector("#go-rank"), {
+    game: "galopp", score, daily: DAILY,
+    meta: { meters: Math.floor(meters), coins },
+  });
 }
 
-async function showLeaderboard() {
-  const overlay = document.createElement("div");
-  overlay.className = "overlay";
-  overlay.innerHTML = `
-    <div class="panel">
-      <h2><span class="foil">Bestenliste</span></h2>
-      <p class="sub">Die 50 schnellsten Läufer:innen weltweit</p>
-      <div id="lb-content"><p class="lb-empty">Lade …</p></div>
-      <button class="btn-secondary" id="lb-close">Schließen</button>
-    </div>`;
-  document.body.appendChild(overlay);
-  const close = () => overlay.remove();
-  overlay.onclick = e => { if (e.target === overlay) close(); };
-  overlay.querySelector("#lb-close").onclick = close;
-
-  try {
-    const res = await fetch("/api/galopp/scores");
-    const data = await res.json();
-    const me = getName().toLowerCase();
-    const medals = ["🥇", "🥈", "🥉"];
-    const content = overlay.querySelector("#lb-content");
-    if (!data.top?.length) {
-      content.innerHTML = `<p class="lb-empty">Noch keine Einträge — sei die/der Erste!</p>`;
-      return;
-    }
-    content.innerHTML = `<ol class="lb-list">${data.top.map((row, i) => `
-      <li class="${row.name.toLowerCase() === me ? "me" : ""}">
-        <span class="lb-rank">${medals[i] || i + 1}</span>
-        <span class="lb-name">${escHtml(row.name)}</span>
-        <span class="lb-score">${row.score}</span>
-      </li>`).join("")}</ol>`;
-  } catch {
-    overlay.querySelector("#lb-content").innerHTML = `<p class="lb-empty">Bestenliste nicht erreichbar</p>`;
-  }
+function showLeaderboard() {
+  GS.showLeaderboard({
+    game: "galopp", daily: DAILY,
+    title: DAILY ? "Tages-Challenge" : "Bestenliste",
+    sub: DAILY ? "Die Besten von heute — gleiche Strecke für alle" : "Die 50 schnellsten Läufer:innen weltweit",
+  });
 }
-
 // ==================== UI ====================
 $("#btn-top").onclick = () => showLeaderboard();
 const soundBtn = $("#btn-sound");
 soundBtn.textContent = sound.muted ? "🔇" : "🔊";
 soundBtn.onclick = () => { soundBtn.textContent = sound.toggle() ? "🔇" : "🔊"; };
+$("#btn-pause").onclick = () => togglePause();
 
 // ==================== Auto-Test (?auto) ====================
 // Einfacher Selbstläufer für schnelle Smoke-Tests.
@@ -1941,3 +1900,16 @@ newRun();
 if (AUTO) { mode = "run"; }
 else showMenu();
 requestAnimationFrame(loop);
+
+// ---------- Meilensteine ----------
+GS.badges.define("galopp", [
+  { id: "m100",    icon: "🏃", name: "Warmgelaufen",   desc: "100 m in einem Lauf",     test: s => s.meters >= 100 },
+  { id: "m500",    icon: "💨", name: "Sprinter:in",    desc: "500 m in einem Lauf",     test: s => s.meters >= 500 },
+  { id: "m1000",   icon: "🏔️", name: "Marathoni", desc: "1.000 m in einem Lauf",  test: s => s.meters >= 1000 },
+  { id: "zone4",   icon: "🗺️", name: "Zonenwandler", desc: "Den Sternenpass erreicht", test: s => s.meters >= 1350 },
+  { id: "turns5",  icon: "↩️", name: "Kurvenkönig:in", desc: "5 Kurven in einem Lauf", test: s => s.turns >= 5 },
+  { id: "c100",    icon: "🪙", name: "Talerfreund",    desc: "100 Taler in einem Lauf", test: s => s.coins >= 100 },
+  { id: "sumc1k",  icon: "💰", name: "Dagobert",       desc: "1.000 Taler insgesamt",   test: (s, t) => t.sum_coins >= 1000 },
+  { id: "summ10k", icon: "🌍", name: "Dauerläufer:in", desc: "10 km insgesamt",    test: (s, t) => t.sum_meters >= 10000 },
+  { id: "runs25",  icon: "🎖️", name: "Stammgast", desc: "25 Läufe gerannt",  test: (s, t) => t.runs >= 25 },
+]);

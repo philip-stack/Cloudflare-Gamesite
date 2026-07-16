@@ -43,42 +43,16 @@ CREATE TABLE cells (
 CREATE INDEX idx_players_game ON players(game_id);
 CREATE INDEX idx_cells_game   ON cells(game_id);
 
--- Funkelfeld – globale Bestenliste (Tabellenname historisch "blockblast_scores")
-CREATE TABLE IF NOT EXISTS blockblast_scores (
+-- Gemeinsame Bestenliste aller Spiele (Details: functions/api/scores/)
+CREATE TABLE IF NOT EXISTS scores (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  game       TEXT NOT NULL,               -- z. B. "galopp", "galopp:daily"
   name       TEXT NOT NULL,
+  device     TEXT,                        -- Geraete-Token (Rate-Limit, Namensschutz)
   score      INTEGER NOT NULL,
+  meta       TEXT,                        -- Spielstatistik (Plausibilitaetspruefung)
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
-CREATE INDEX IF NOT EXISTS idx_bb_score ON blockblast_scores(score);
-
--- Komet – globale Bestenliste
-CREATE TABLE IF NOT EXISTS komet_scores (
-  id         INTEGER PRIMARY KEY AUTOINCREMENT,
-  name       TEXT NOT NULL,
-  score      INTEGER NOT NULL,
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
-CREATE INDEX IF NOT EXISTS idx_komet_score ON komet_scores(score);
-
--- Sternensturm – globale Bestenliste
-CREATE TABLE IF NOT EXISTS sternensturm_scores (
-  id         INTEGER PRIMARY KEY AUTOINCREMENT,
-  name       TEXT NOT NULL,
-  score      INTEGER NOT NULL,
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
-CREATE INDEX IF NOT EXISTS idx_sturm_score ON sternensturm_scores(score);
-
--- Galopp – globale Bestenliste
-CREATE TABLE IF NOT EXISTS galopp_scores (
-  id         INTEGER PRIMARY KEY AUTOINCREMENT,
-  name       TEXT NOT NULL,
-  score      INTEGER NOT NULL,
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
-CREATE INDEX IF NOT EXISTS idx_galopp_score ON galopp_scores(score);
+CREATE INDEX IF NOT EXISTS idx_scores_game_score ON scores(game, score);
+CREATE INDEX IF NOT EXISTS idx_scores_device ON scores(device, created_at);

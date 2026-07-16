@@ -713,31 +713,7 @@ document.addEventListener("pointerup", endDrag);
 document.addEventListener("pointercancel", endDrag);
 
 // ---------- Game Over & Bestenliste ----------
-async function submitScore() {
-  const name = getName();
-  if (!name || score <= 0 || submitted) return null;
-  submitted = true;
-  try {
-    const res = await fetch("/api/funkelfeld/scores", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, score }),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Fehler");
-    return data; // { ok, rank, best }
-  } catch {
-    submitted = false;
-    return null;
-  }
-}
 
-function rankHtml(resp, name) {
-  if (!resp) return "Score konnte nicht übertragen werden";
-  let s = `Weltweit <b>Platz ${resp.rank}</b> als ${escHtml(name)}`;
-  if (resp.best > score) s += ` · dein Rekord: ${resp.best}`;
-  return s;
-}
 
 async function gameOver() {
   sound.dead();
@@ -769,28 +745,11 @@ async function gameOver() {
   overlay.querySelector("#go-again").onclick = () => { overlay.remove(); newGame(); };
   overlay.querySelector("#go-top").onclick = () => showLeaderboard();
 
-  const rankEl = overlay.querySelector("#go-rank");
-  const nameArea = overlay.querySelector("#go-name-area");
-
-  if (!getName() && score > 0) {
-    // Erster Game Over ohne Namen → einmalig festlegen
-    nameArea.innerHTML = `
-      <p class="sub">Wie sollen wir dich in der Bestenliste nennen?</p>
-      <input type="text" id="go-name" maxlength="16" placeholder="Dein Name" autocomplete="off">
-      <button class="btn-secondary" id="go-save" style="margin-bottom:10px">Score eintragen</button>`;
-    nameArea.querySelector("#go-save").onclick = async () => {
-      const v = nameArea.querySelector("#go-name").value.trim().slice(0, 16);
-      if (!v) return;
-      localStorage.setItem("bb_name", v);
-      updateNameLabel();
-      nameArea.innerHTML = "";
-      rankEl.textContent = "Übertrage …";
-      rankEl.innerHTML = rankHtml(await submitScore(), v);
-    };
-  } else if (score > 0) {
-    rankEl.textContent = "Übertrage …";
-    rankEl.innerHTML = rankHtml(await submitScore(), getName());
-  }
+  GS.scoreFlow(overlay.querySelector("#go-name-area"), overlay.querySelector("#go-rank"), {
+    game: "funkelfeld", score,
+    meta: { lines: run.lines, combo: run.bestCombo, gems: run.gems },
+    onName: updateNameLabel,
+  });
 }
 
 function escHtml(s) {
@@ -799,42 +758,9 @@ function escHtml(s) {
   })[c]);
 }
 
-async function showLeaderboard() {
-  const overlay = document.createElement("div");
-  overlay.className = "overlay";
-  overlay.innerHTML = `
-    <div class="panel">
-      <h2><span class="foil">Bestenliste</span></h2>
-      <p class="sub">Die 50 besten Runden weltweit</p>
-      <div id="lb-content"><p class="lb-empty">Lade …</p></div>
-      <button class="btn-secondary" id="lb-close">Schließen</button>
-    </div>`;
-  document.body.appendChild(overlay);
-  const close = () => overlay.remove();
-  overlay.onclick = e => { if (e.target === overlay) close(); };
-  overlay.querySelector("#lb-close").onclick = close;
-
-  try {
-    const res = await fetch("/api/funkelfeld/scores");
-    const data = await res.json();
-    const me = getName().toLowerCase();
-    const medals = ["🥇", "🥈", "🥉"];
-    const content = overlay.querySelector("#lb-content");
-    if (!data.top?.length) {
-      content.innerHTML = `<p class="lb-empty">Noch keine Einträge — sei die/der Erste!</p>`;
-      return;
-    }
-    content.innerHTML = `<ol class="lb-list">${data.top.map((row, i) => `
-      <li class="${row.name.toLowerCase() === me ? "me" : ""}">
-        <span class="lb-rank">${medals[i] || i + 1}</span>
-        <span class="lb-name">${escHtml(row.name)}</span>
-        <span class="lb-score">${row.score}</span>
-      </li>`).join("")}</ol>`;
-  } catch {
-    overlay.querySelector("#lb-content").innerHTML = `<p class="lb-empty">Bestenliste nicht erreichbar</p>`;
-  }
+function showLeaderboard() {
+  GS.showLeaderboard({ game: "funkelfeld", sub: "Die 50 besten Runden weltweit" });
 }
-
 // ---------- Name setzen / ändern ----------
 function updateNameLabel() {
   $("#name-label").textContent = getName() || "Name";

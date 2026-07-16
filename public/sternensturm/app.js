@@ -1184,6 +1184,7 @@ function showMenu() {
       </p>
       <button class="btn-primary" id="m-go">🚀 Starten</button>
       <button class="btn-secondary" id="m-top">🏆 Bestenliste</button>
+      <button class="btn-secondary" id="m-badges" style="margin-top:10px">🏅 Meilensteine</button>
     </div>`;
   document.body.appendChild(overlay);
   overlay.querySelector("#m-go").onclick = () => {
@@ -1193,29 +1194,13 @@ function showMenu() {
     updateNova();
   };
   overlay.querySelector("#m-top").onclick = () => showLeaderboard();
+  overlay.querySelector("#m-badges").onclick = () => GS.badges.show("sternensturm", "Meilensteine — Sternensturm");
 }
 
-async function submitScore() {
-  const name = getName();
-  if (!name || score <= 0 || submitted) return null;
-  submitted = true;
-  try {
-    const res = await fetch("/api/sternensturm/scores", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, score }),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error();
-    return data;
-  } catch {
-    submitted = false;
-    return null;
-  }
-}
 
 async function gameOver() {
   $("#nova-btn").classList.add("hidden");
+  const newBadges = GS.badges.record("sternensturm", { wave, kills, score });
   const isRecord = score >= best && score > 0;
   if (isRecord) sound.fanfare();
 
@@ -1230,6 +1215,7 @@ async function gameOver() {
         <span>🌊 Welle ${wave}</span>
         <span>💥 ${kills} Abschüsse</span>
       </div>
+      ${GS.badges.chipsHtml(newBadges)}
       <div class="go-rank" id="go-rank"></div>
       <div id="go-name-area"></div>
       <button class="btn-primary" id="go-again">🚀 Nochmal fliegen</button>
@@ -1244,68 +1230,15 @@ async function gameOver() {
   };
   overlay.querySelector("#go-top").onclick = () => showLeaderboard();
 
-  const rankEl = overlay.querySelector("#go-rank");
-  const nameArea = overlay.querySelector("#go-name-area");
-
-  if (!getName() && score > 0) {
-    nameArea.innerHTML = `
-      <p class="sub">Wie sollen wir dich in der Bestenliste nennen?</p>
-      <input type="text" id="go-name" maxlength="16" placeholder="Dein Name" autocomplete="off">
-      <button class="btn-secondary" id="go-save" style="margin-bottom:10px">Score eintragen</button>`;
-    nameArea.querySelector("#go-save").onclick = async () => {
-      const v = nameArea.querySelector("#go-name").value.trim().slice(0, 16);
-      if (!v) return;
-      localStorage.setItem("bb_name", v);
-      nameArea.innerHTML = "";
-      rankEl.textContent = "Übertrage …";
-      const resp = await submitScore();
-      rankEl.innerHTML = resp ? `Weltweit <b>Platz ${resp.rank}</b> als ${escHtml(v)}` : "Konnte nicht übertragen werden";
-    };
-  } else if (score > 0) {
-    rankEl.textContent = "Übertrage …";
-    const resp = await submitScore();
-    rankEl.innerHTML = resp
-      ? `Weltweit <b>Platz ${resp.rank}</b> als ${escHtml(getName())}${resp.best > score ? ` · dein Rekord: ${resp.best}` : ""}`
-      : "Score konnte nicht übertragen werden";
-  }
+  GS.scoreFlow(overlay.querySelector("#go-name-area"), overlay.querySelector("#go-rank"), {
+    game: "sternensturm", score,
+    meta: { wave, kills },
+  });
 }
 
-async function showLeaderboard() {
-  const overlay = document.createElement("div");
-  overlay.className = "overlay";
-  overlay.innerHTML = `
-    <div class="panel">
-      <h2><span class="foil">Bestenliste</span></h2>
-      <p class="sub">Die 50 besten Piloten weltweit</p>
-      <div id="lb-content"><p class="lb-empty">Lade …</p></div>
-      <button class="btn-secondary" id="lb-close">Schließen</button>
-    </div>`;
-  document.body.appendChild(overlay);
-  const close = () => overlay.remove();
-  overlay.onclick = e => { if (e.target === overlay) close(); };
-  overlay.querySelector("#lb-close").onclick = close;
-
-  try {
-    const res = await fetch("/api/sternensturm/scores");
-    const data = await res.json();
-    const me = getName().toLowerCase();
-    const medals = ["🥇", "🥈", "🥉"];
-    const content = overlay.querySelector("#lb-content");
-    if (!data.top?.length) {
-      content.innerHTML = `<p class="lb-empty">Noch keine Einträge — sei die/der Erste!</p>`;
-      return;
-    }
-    content.innerHTML = `<ol class="lb-list">${data.top.map((row, i) => `
-      <li class="${row.name.toLowerCase() === me ? "me" : ""}">
-        <span class="lb-rank">${medals[i] || i + 1}</span>
-        <span class="lb-name">${escHtml(row.name)}</span>
-        <span class="lb-score">${row.score}</span>
-      </li>`).join("")}</ol>`;
-  } catch {
-    overlay.querySelector("#lb-content").innerHTML = `<p class="lb-empty">Bestenliste nicht erreichbar</p>`;
-  }
+function showLeaderboard() {
+  GS.showLeaderboard({ game: "sternensturm", sub: "Die 50 besten Piloten weltweit" });
 }
-
 // ---------- UI ----------
 $("#btn-top").onclick = () => showLeaderboard();
 const soundBtn = $("#btn-sound");
@@ -1332,3 +1265,14 @@ if (params.has("auto")) {
 } else {
   showMenu();
 }
+
+// ---------- Meilensteine ----------
+GS.badges.define("sternensturm", [
+  { id: "w5",     icon: "🌊", name: "Wellenbrecher", desc: "Welle 5 erreicht",           test: s => s.wave >= 5 },
+  { id: "w10",    icon: "🌀", name: "Sturmpilot",    desc: "Welle 10 erreicht",          test: s => s.wave >= 10 },
+  { id: "w20",    icon: "⚡", name: "Sturmlegende",      desc: "Welle 20 erreicht",          test: s => s.wave >= 20 },
+  { id: "k50",    icon: "💥", name: "Scharfschütze", desc: "50 Abschüsse in einem Run", test: s => s.kills >= 50 },
+  { id: "p10k",   icon: "🏆", name: "Punktejäger", desc: "10.000 Punkte in einem Run", test: s => s.score >= 10000 },
+  { id: "sumk2k", icon: "🎯", name: "Fleet Admiral", desc: "2.000 Abschüsse insgesamt", test: (s, t) => t.sum_kills >= 2000 },
+  { id: "runs25", icon: "🎖️", name: "Stammgast", desc: "25 Runs geflogen",         test: (s, t) => t.runs >= 25 },
+]);

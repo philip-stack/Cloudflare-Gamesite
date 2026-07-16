@@ -5,6 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#0a0e0b">
   <title>Spieleabend</title>
+  <meta property="og:title" content="Spieleabend">
+  <meta property="og:description" content="Würfelpoker, Funkelfeld, Komet, Sternensturm und Galopp — kostenlose Spiele für den Spieleabend.">
+  <meta property="og:type" content="website">
+  <meta property="og:image" content="https://philip-stack.pages.dev/icons/icon-512.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..900;1,9..144,400..900&family=Outfit:wght@300..800&display=swap" rel="stylesheet">
@@ -213,6 +217,37 @@
       .grain, .aurora { animation: none !important; }
     }
 
+    .app-rec {
+      display: block;
+      color: var(--gold);
+      font-size: 0.8rem;
+      font-weight: 600;
+      margin-top: 5px;
+    }
+    .daily-lead { color: var(--muted); }
+    .install-hint {
+      position: relative;
+      margin-top: 26px;
+      padding: 16px 42px 16px 18px;
+      border-radius: var(--radius);
+      background: linear-gradient(175deg, var(--card-hi), var(--card));
+      box-shadow: 0 0 0 1px var(--edge-soft) inset;
+      color: var(--muted);
+      font-size: 0.88rem;
+      line-height: 1.5;
+    }
+    .install-hint b { color: var(--ink); }
+    .install-hint .ih-close {
+      position: absolute;
+      top: 8px; right: 8px;
+      width: 30px; height: 30px;
+      border: 0; border-radius: 8px;
+      background: transparent;
+      color: var(--muted);
+      font-size: 1rem;
+      cursor: pointer;
+    }
+
     .theme-toggle {
       position: fixed;
       top: calc(14px + env(safe-area-inset-top));
@@ -323,8 +358,17 @@
         <span class="app-arrow">→</span>
       </a>
 
+      <a class="app-card" href="/galopp/?daily=1" style="--i:5" id="daily-card">
+        <span class="app-icon">🗓️</span>
+        <span class="app-info">
+          <span class="app-name">Tages-Challenge</span>
+          <span class="app-desc" style="display:block">Galopp — heute läuft jede:r dieselbe Strecke. Wer hält den Tagesrekord?<span class="app-rec daily-lead" id="daily-lead"></span></span>
+        </span>
+        <span class="app-arrow">→</span>
+      </a>
+
       <!-- Nächste App: Block kopieren, href und --i anpassen -->
-      <a class="app-card soon" href="#" style="--i:5" aria-disabled="true">
+      <a class="app-card soon" href="#" style="--i:6" aria-disabled="true">
         <span class="app-icon">✨</span>
         <span class="app-info">
           <span class="app-name">Nächste App<span class="badge">bald</span></span>
@@ -334,6 +378,85 @@
       </a>
     </nav>
 
+
+    <div class="install-hint" id="install-hint" hidden>
+      <button class="ih-close" id="ih-close" aria-label="Hinweis ausblenden">✕</button>
+      📲 <b>Als App installieren:</b> Android — Chrome-Menü → „App installieren".
+      iPhone — in Safari das Teilen-Symbol antippen → <b>„Zum Home-Bildschirm"</b>.
+    </div>
   </main>
+
+  <script>
+  // ================= Landing-Dynamik =================
+  (function () {
+    const $ = s => document.querySelector(s);
+    const esc = s => String(s).replace(/[&<>"']/g, c => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+    })[c]);
+    const myName = (localStorage.getItem("bb_name") || "").trim();
+
+    // --- Weiterspielen: laufendes Würfelpoker-Spiel prominent anbieten ---
+    try {
+      const games = JSON.parse(localStorage.getItem("wp_local_games") || "[]");
+      const running = games.find(g => g.status !== "finished");
+      if (running) {
+        const card = document.createElement("a");
+        card.className = "app-card";
+        card.style.setProperty("--i", 0);
+        card.href = "/wuerfelpoker/#/game/" + running.id;
+        card.innerHTML = `
+          <span class="app-icon">▶️</span>
+          <span class="app-info">
+            <span class="app-name">Weiterspielen</span>
+            <span class="app-desc" style="display:block">${esc(running.name || "Würfelpoker")} · ${esc((running.players || []).map(p => p.name).join(", "))} · Runde ${running.round || 1}</span>
+          </span>
+          <span class="app-arrow">→</span>`;
+        const nav = document.querySelector(".apps");
+        nav.insertBefore(card, nav.firstElementChild);
+      }
+    } catch { /* kaputte Daten ignorieren */ }
+
+    // --- Eigene Rekorde + Weltrang pro Spiel ---
+    const RECORDS = [
+      { href: "/funkelfeld/", game: "funkelfeld", key: "bb_best" },
+      { href: "/komet/", game: "komet", key: "km_best" },
+      { href: "/sternensturm/", game: "sternensturm", key: "ss_best" },
+      { href: "/galopp/", game: "galopp", key: "galopp_best" },
+    ];
+    for (const r of RECORDS) {
+      const best = Number(localStorage.getItem(r.key) || 0);
+      const info = document.querySelector(`.app-card[href="${r.href}"] .app-desc`);
+      if (!info || !best) continue;
+      const el = document.createElement("span");
+      el.className = "app-rec";
+      el.textContent = `🏅 Dein Rekord: ${best}`;
+      info.appendChild(el);
+      if (myName) {
+        fetch("/api/scores/" + r.game).then(x => x.json()).then(d => {
+          const i = (d.top || []).findIndex(row => row.name.toLowerCase() === myName.toLowerCase());
+          if (i >= 0) el.textContent += ` · Weltrang #${i + 1}`;
+        }).catch(() => {});
+      }
+    }
+
+    // --- Tages-Challenge: heutige:r Führende:r ---
+    fetch("/api/scores/galopp?daily=1").then(x => x.json()).then(d => {
+      const lead = (d.top || [])[0];
+      $("#daily-lead").textContent = lead
+        ? `👑 Heute vorn: ${lead.name} (${lead.score})`
+        : "Noch niemand gelaufen — sei die/der Erste!";
+    }).catch(() => {});
+
+    // --- Install-Hinweis (nicht in der installierten App, abschaltbar) ---
+    const standalone = matchMedia("(display-mode: standalone)").matches || navigator.standalone;
+    if (!standalone && !localStorage.getItem("gs_install_hint_off")) {
+      $("#install-hint").hidden = false;
+      $("#ih-close").onclick = () => {
+        localStorage.setItem("gs_install_hint_off", "1");
+        $("#install-hint").hidden = true;
+      };
+    }
+  })();
+  </script>
 </body>
 </html>

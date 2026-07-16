@@ -26,6 +26,21 @@ Die ganze Seite kann zwischen **Hell- und Dunkelmodus** umgeschaltet werden
 Gerät gespeichert. Die Spielszenen der Canvas-Spiele bleiben bewusst dunkel,
 der Rahmen passt sich an.
 
+**Plattform-Features:**
+
+- **Tages-Challenge** (Galopp): Alle laufen dieselbe, per Datum-Seed erzeugte
+  Strecke — mit eigener Tagesbestenliste. Karte auf der Landing Page.
+- **Meilensteine** (Galopp, Sternensturm, Komet): Abzeichen für Lauf- und
+  Lebenszeit-Erfolge, lokal gespeichert, im Spielmenü einsehbar.
+- Die Landing Page zeigt **eigene Rekorde + Weltrang** pro Spiel, eine
+  **Weiterspielen-Karte** für laufende Würfelpoker-Spiele und den heutigen
+  Challenge-Führenden; Würfelpoker führt eine **Statistik** (Siege, Spiele,
+  Punkteschnitt) über abgeschlossene Spiele.
+- **Gemeinsame Bestenlisten-API** (`/api/scores/<spiel>`, eine D1-Tabelle)
+  mit Geräte-Token, Namensschutz (ein Name gehört dem Gerät, das ihn zuerst
+  benutzt), Plausibilitätsprüfung der Scores und Rate-Limit. Gemeinsamer
+  Client-Code in `public/shared.js`.
+
 Die Seite ist eine **PWA**: Am Handy über „Zum Startbildschirm hinzufügen"
 (bzw. den Installieren-Hinweis im Browser) wird sie zur App mit eigenem Icon
 und Vollbild — bereits besuchte Spiele funktionieren auch offline
@@ -39,7 +54,9 @@ wuerfelpoker/
 ├── schema.sql                 D1-Schema (Würfelpoker-Tabellen + *_scores)
 ├── public/                    statische Spiele (1 Ordner = 1 Spiel)
 │   ├── index.html             Landing Page mit App-Karten
-│   ├── theme.js               Hell/Dunkel-Umschalter + SW-Registrierung
+│   ├── theme.js               Hell/Dunkel-Umschalter + SW-Registrierung + Update-Hinweis
+│   ├── shared.js              gemeinsame Spiele-Schicht (Scores, Name, Meilensteine)
+│   ├── 404.html               Fehlerseite
 │   ├── manifest.webmanifest   PWA-Manifest (installierbare App)
 │   ├── sw.js                  Service Worker (offline-fähig)
 │   ├── icons/                 App-Icons
@@ -53,10 +70,7 @@ wuerfelpoker/
     ├── _util.js               gemeinsame Helfer (json, Codes, Spiel laden)
     ├── health.js
     ├── games/                 Würfelpoker: geteilte Spiele (CRUD + Zellen)
-    ├── funkelfeld/scores.js   Bestenlisten: GET Top 50 / POST Score
-    ├── komet/scores.js
-    ├── sternensturm/scores.js
-    └── galopp/scores.js
+    └── scores/[game].js       Bestenlisten aller Spiele (GET/POST, ?daily=1)
 ```
 
 Jedes Spiel ist bewusst **selbst enthalten**: ein Ordner mit `index.html`,
@@ -70,9 +84,11 @@ Gold-Folie, dunkle Karten-Optik).
 1. Ordner `public/<name>/` mit `index.html`, `app.js`, `style.css` anlegen
    (bestehendes Spiel als Vorlage kopieren).
 2. App-Karte in `public/index.html` ergänzen (`--i` hochzählen).
-3. Für eine Bestenliste: Tabelle `<name>_scores` in `schema.sql` ergänzen,
-   `functions/api/<name>/scores.js` von einem bestehenden Spiel kopieren
-   und die Tabelle einmalig in der D1-Datenbank anlegen.
+3. Für eine Bestenliste: Spiel in der Allowlist von
+   `functions/api/scores/[game].js` eintragen (Score-Obergrenze +
+   optionale Plausibilitätsprüfung) — fertig, keine neue Tabelle nötig.
+   Im Spiel `shared.js` einbinden und `GS.scoreFlow`/`GS.showLeaderboard`
+   verwenden.
 
 ## Würfelpoker: Spielregeln (Escalero)
 
