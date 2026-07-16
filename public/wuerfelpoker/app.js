@@ -222,12 +222,11 @@ function toast(msg, isErr = false) {
   setTimeout(() => el.remove(), 2500);
 }
 
-// Overlay einfügen und den backdrop-filter erst im nächsten Frame aktivieren.
-// Sonst zeigt Chromium beim Einfügen eines blur-Elements kurz einen
-// schwarzen Frame ("Flackern").
+// Overlay einfügen. Bewusst OHNE backdrop-filter (siehe CSS): dessen Ein-
+// oder Umschalten beim Einfügen erzeugt in Chromium kurz einen schwarzen
+// Frame ("Flackern"). Der abgedunkelte Hintergrund reicht optisch.
 function mountOverlay(overlay) {
   document.body.appendChild(overlay);
-  requestAnimationFrame(() => overlay.classList.add("blurred"));
   return overlay;
 }
 
