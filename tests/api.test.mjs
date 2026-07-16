@@ -55,7 +55,8 @@ let r = await post({ name: "Tester", score: 150, device, token, meta: { meters: 
 assert("Gültiger Post (201)", r.status === 201 && r.data.ok);
 r = await post({ name: "Tester", score: 150, device, meta: { meters: 100, coins: 5 } });
 assert("Ohne Token abgelehnt (403)", r.status === 403);
-r = await post({ name: "Tester", score: 150, device, token: token.slice(0, -1) + "0", meta: { meters: 100, coins: 5 } });
+const tampered = token.slice(0, -1) + (token.slice(-1) === "0" ? "1" : "0");
+r = await post({ name: "Tester", score: 150, device, token: tampered, meta: { meters: 100, coins: 5 } });
 assert("Manipuliertes Token abgelehnt", r.status === 403);
 r = await post({ name: "Tester", score: 150, device: "zzzz9999zzzz9999", token, meta: { meters: 100, coins: 5 } });
 assert("Token an Gerät gebunden", r.status === 403);
