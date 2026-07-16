@@ -435,18 +435,69 @@ input:focus {
   box-shadow: 0 0 0 1px var(--edge) inset;
 }
 .code-qr:active { transform: scale(0.96); }
+/* Zentriertes QR-Einladungs-Popup (wie Galopp-Game-Over) */
+.qr-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(5, 8, 6, 0.6);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 30;
+  animation: overlay-in 0.25s ease;
+}
+[data-theme="light"] .qr-overlay { background: rgba(90, 100, 88, 0.4); }
+.qr-modal {
+  position: relative;
+  background: linear-gradient(180deg, #17201a, var(--bg1));
+  border-radius: 24px;
+  box-shadow: 0 0 0 1px var(--edge) inset, 0 24px 70px -20px rgba(0,0,0,0.85);
+  padding: 26px 22px 22px;
+  width: 100%;
+  max-width: 360px;
+  text-align: center;
+  animation: modal-pop 0.35s var(--ease-spring);
+}
+[data-theme="light"] .qr-modal {
+  background: linear-gradient(180deg, #fbf9f1, #f0ecdf);
+  box-shadow: 0 0 0 1px var(--edge) inset, 0 24px 70px -20px rgba(40, 50, 40, 0.45);
+}
+@keyframes modal-pop { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+.qr-x {
+  position: absolute;
+  top: 12px; right: 12px;
+  width: 34px; height: 34px;
+  display: grid; place-items: center;
+  background: var(--card-hi);
+  color: var(--ink);
+  border-radius: 50%;
+  font-size: 1rem;
+  box-shadow: 0 0 0 1px var(--edge-soft) inset;
+  cursor: pointer;
+}
+.qr-x:active { transform: scale(0.92); }
+.qr-h {
+  font-family: var(--font-display);
+  font-size: 1.4rem;
+  font-weight: 800;
+  color: var(--gold);
+  margin-bottom: 6px;
+}
+.qr-sub { color: var(--muted); font-size: 0.9rem; margin-bottom: 16px; }
 .qr-box {
   display: grid;
   place-items: center;
   background: #fff;
   padding: 14px;
   border-radius: var(--radius);
-  margin: 6px auto 12px;
+  margin: 0 auto 14px;
   width: max-content;
   max-width: 100%;
 }
 .qr-box canvas { display: block; max-width: 100%; height: auto; image-rendering: pixelated; }
-.qr-code { text-align: center; font-size: 1.1rem; margin-bottom: 14px; letter-spacing: 0.1em; }
+.qr-code { text-align: center; font-size: 1.2rem; margin-bottom: 16px; letter-spacing: 0.1em; }
 .qr-code b { color: var(--gold); font-family: var(--font-display); }
 .code-chip {
   display: flex;

@@ -333,10 +333,13 @@
 
   // ---------- Teilen (Web-Share mit Zwischenablage-Fallback) ----------
   async function share({ title = "Spieleabend", text = "", url = location.origin } = {}) {
+    // Nachricht UND Link zusammen ins Text-Feld — sonst zeigen viele
+    // Ziel-Apps (WhatsApp, Signal …) nur die URL ohne die Score-Nachricht.
+    const full = url ? `${text}\n${url}`.trim() : text;
     try {
-      if (navigator.share) { await navigator.share({ title, text, url }); return "shared"; }
+      if (navigator.share) { await navigator.share({ title, text: full }); return "shared"; }
     } catch { return "cancelled"; }
-    try { await navigator.clipboard.writeText(`${text} ${url}`.trim()); return "copied"; } catch { return "failed"; }
+    try { await navigator.clipboard.writeText(full); return "copied"; } catch { return "failed"; }
   }
 
   // ---------- Zuletzt gespieltes Spiel (für die Landing Page) ----------

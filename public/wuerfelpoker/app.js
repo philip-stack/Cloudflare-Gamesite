@@ -674,15 +674,15 @@ function wireCodeChip() {
 function showJoinQR(id, code) {
   const url = location.href.split("#")[0] + `#/game/${id}/${code}`;
   const overlay = document.createElement("div");
-  overlay.className = "overlay";
+  overlay.className = "qr-overlay";
   overlay.innerHTML = `
-    <div class="panel">
-      <h2><span class="foil">Zum Spiel einladen</span></h2>
-      <p class="sub">Mitspieler scannen den Code mit der Handy-Kamera.</p>
+    <div class="qr-modal">
+      <button class="qr-x" id="qr-close" aria-label="Schließen">✕</button>
+      <h2 class="qr-h">Zum Spiel einladen</h2>
+      <p class="qr-sub">Mitspieler scannen den Code mit der Handy-Kamera.</p>
       <div class="qr-box"><canvas id="qr-canvas"></canvas></div>
       <p class="qr-code">🔑 <b>${esc(code)}</b></p>
       <button class="btn-primary" id="qr-share">📤 Link teilen</button>
-      <button class="btn-secondary" id="qr-close">Schließen</button>
     </div>`;
   document.body.appendChild(overlay);
   try {
