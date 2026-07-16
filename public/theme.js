@@ -40,6 +40,27 @@
 
   apply(get());
 
+  // ------------------------------------------------------------------
+  // Zuverlässige Viewport-Höhe (--app-h).
+  // Auf manchen mobilen Browsern löst 100dvh beim ersten Laden auf die
+  // GROSSE Höhe (ohne Adressleiste) auf, sodass Vollbild-Layouts unten
+  // aus dem Sichtbereich laufen — erst ein Reflow (z. B. Theme-Wechsel)
+  // korrigiert das. Wir setzen die Höhe darum aus visualViewport und
+  // aktualisieren sie bei jeder echten Größenänderung.
+  // Die Canvas-Spiele nutzen: #app { height: var(--app-h, 100dvh); }
+  // ------------------------------------------------------------------
+  function setAppHeight() {
+    const h = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
+    if (h) document.documentElement.style.setProperty("--app-h", Math.round(h) + "px");
+  }
+  setAppHeight();
+  requestAnimationFrame(setAppHeight);
+  window.addEventListener("resize", setAppHeight);
+  window.addEventListener("orientationchange", () => setTimeout(setAppHeight, 200));
+  window.addEventListener("pageshow", setAppHeight);
+  window.addEventListener("load", setAppHeight);
+  if (window.visualViewport) window.visualViewport.addEventListener("resize", setAppHeight);
+
   document.addEventListener("click", e => {
     const btn = e.target.closest("[data-theme-toggle]");
     if (btn) window.gsTheme.toggle();

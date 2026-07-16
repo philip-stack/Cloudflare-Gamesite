@@ -561,8 +561,8 @@ input:focus {
   justify-content: space-between;
   background: linear-gradient(175deg, var(--card-hi), var(--card));
   border-radius: var(--radius);
-  padding: 12px 16px;
-  min-height: 76px;
+  padding: 10px 16px;
+  min-height: 100px;
   box-shadow: var(--shadow-card), 0 0 0 1px var(--edge-soft) inset;
   transition: box-shadow 0.4s ease;
 }
@@ -577,8 +577,8 @@ input:focus {
   width: 52px; height: 52px;
   flex-shrink: 0;
 }
-/* WebGL-Variante etwas größer (das Mesh füllt den Canvas nicht randlos) */
-.die3d.gl { width: 64px; height: 64px; }
+/* WebGL-Variante deutlich größer (das Mesh füllt den Canvas nicht randlos) */
+.die3d.gl { width: 84px; height: 84px; }
 .die-canvas { display: block; width: 100%; height: 100%; }
 .die3d-cube {
   display: block;

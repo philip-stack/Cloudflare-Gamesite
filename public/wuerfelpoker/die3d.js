@@ -11,7 +11,7 @@
 //   Die3D.roll(handles, targets, dS) → animiert zu Zielrotationen (Grad)
 // ====================================================================
 (function () {
-  const SIZE = 256;            // Render-Auflösung (wird herunterskaliert)
+  const SIZE = 320;            // Render-Auflösung (wird herunterskaliert)
   const RADIUS = 0.30;         // Kantenrundung (Halbkante = 1)
   const SEG = 10;              // Unterteilungen pro Fläche
   const DIST = 6.0, FOV = 35;  // Kamera (FOV mit Reserve, damit Ecken beim Drehen nie anschneiden)

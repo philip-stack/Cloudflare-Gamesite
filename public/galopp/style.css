@@ -41,6 +41,7 @@ body {
 #app {
   height: 100vh;
   height: 100dvh;
+  height: var(--app-h, 100dvh);
   max-width: 620px;
   margin: 0 auto;
   padding: 12px 12px calc(10px + env(safe-area-inset-bottom));
