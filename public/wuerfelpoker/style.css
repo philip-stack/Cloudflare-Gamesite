@@ -32,6 +32,8 @@
 }
 
 html { -webkit-text-size-adjust: 100%; }
+/* Kein dunkles Tap-Highlight beim Antippen (Zellen sind <td>, nicht button) */
+* { -webkit-tap-highlight-color: transparent; }
 
 body {
   font-family: var(--font-ui);
@@ -48,7 +50,10 @@ body {
 }
 
 /* ---------- Ambiente: Aurora + Filmkorn ---------- */
-.ambience { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+/* isolation: isolate hält das mix-blend-mode der Aurora in einer eigenen
+   Kompositions-Gruppe — sonst blitzt beim Einfügen eines Overlays (neuer
+   Layer) auf Mobilgeräten kurz Schwarz auf. */
+.ambience { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; isolation: isolate; }
 .aurora {
   position: absolute;
   width: 70vmax; height: 70vmax;
