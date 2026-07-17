@@ -57,6 +57,8 @@ der Rahmen passt sich an.
 
 ## 🍳 KI-Kochstudio
 
+**Live:** https://philip-stack.pages.dev/kochstudio/
+
 Kein Spiel, sondern ein KI-Helfer unter `/kochstudio/` (bewusst **nicht** auf
 der Landing Page verlinkt — nur direkt erreichbar). Man gibt ein, was im
 Kühlschrank/Vorrat ist, und bekommt:
