@@ -1150,13 +1150,14 @@ function columnStandings(game, { heading = true } = {}) {
   const rows = Array.from({ length: cols }, (_, c) => {
     const rr = colRanking(game, c);
     const best = rr[0].pts;
+    const rk = rankByPid(rr);
     return `
       <tr>
         <th class="row-label">Spalte ${c + 1}</th>
         ${game.players.map(p => {
           const pts = colGrandTotal(game, p.id, c);
           const win = pts === best && pts > 0;
-          return `<td class="cell ${win ? "round-win" : ""}">${win ? "🏆 " : ""}${pts}</td>`;
+          return `<td class="cell total ${rankClass(rk[p.id])}">${win ? "🏆 " : ""}${pts}</td>`;
         }).join("")}
       </tr>`;
   }).join("");
@@ -1353,9 +1354,16 @@ function detailSheetTable(game, round) {
       </tr>`;
   };
 
+  // Total-Zeile mit Rang-Farben: aufgeklappt je Spalte (wer führt die Spalte),
+  // kompakt je Runde (wer führt die Runde). Die Rang-Klassen machen den Text
+  // auch wieder solide sichtbar (sonst transparenter Folientext).
+  const roundRank = rankByPid(roundRanking(game, round));
+  const colRank = Array.from({ length: cols }, (_, c) =>
+    rankByPid(withRanks(game.players.map(p => ({ id: p.id, pts: colTotal(game, p.id, round, c) })))));
   const totalCells = game.players.map(p => isExp(p)
-    ? Array.from({ length: cols }, (_, c) => `<td class="cell total sub">${colTotal(game, p.id, round, c)}</td>`).join("")
-    : `<td class="cell total">${roundTotal(game, p.id, round)}</td>`).join("");
+    ? Array.from({ length: cols }, (_, c) =>
+        `<td class="cell total sub ${rankClass(colRank[c][p.id])}">${colTotal(game, p.id, round, c)}</td>`).join("")
+    : `<td class="cell total ${rankClass(roundRank[p.id])}">${roundTotal(game, p.id, round)}</td>`).join("");
 
   return `
     <div class="sheet-wrap">
