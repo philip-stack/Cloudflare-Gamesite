@@ -218,15 +218,19 @@
 
   // ---------- Skins (über Meilensteine freispielbar) ----------
   const skinDefs = {};
+  const skinBadgeKey = {};
   const skins = {
     // defs: [{ id, name, req, swatch:[farben], colors:{...} }]
     //   req: 0/undefined = von Anfang an frei; Zahl N = ab N Abzeichen;
     //        { badge:"id" } = ab einem bestimmten Abzeichen.
-    define(game, defs) { skinDefs[game] = defs; },
+    // badgeGame: optionaler Abzeichen-Schlüssel für die Freischaltung
+    //   (z. B. koppeln Einhorn-Skins an die "galopp"-Abzeichen).
+    define(game, defs, badgeGame) { skinDefs[game] = defs; skinBadgeKey[game] = badgeGame || game; },
     unlocked(game, def) {
       if (!def.req) return true;
-      if (typeof def.req === "number") return badges.earnedCount(game) >= def.req;
-      if (def.req.badge) return !!(badgeState(game).earned || {})[def.req.badge];
+      const bk = skinBadgeKey[game] || game;
+      if (typeof def.req === "number") return badges.earnedCount(bk) >= def.req;
+      if (def.req.badge) return !!(badgeState(bk).earned || {})[def.req.badge];
       return true;
     },
     list(game) {

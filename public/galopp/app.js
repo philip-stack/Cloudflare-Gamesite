@@ -59,6 +59,35 @@ GS.skins.define("galopp", [
 ]);
 let SKIN = GS.skins.get("galopp");
 
+// Einhorn-Skins (färben Körper, Mähne, Horn, Hufe) — über Galopp-Abzeichen frei
+GS.skins.define("galopp_unicorn", [
+  { id: "regenbogen", name: "Regenbogen", req: 0, swatch: ["#f0e6f7", "#ff6b6b", "#56d5e8"],
+    colors: {
+      body: ["#ffffff", "#f0e6f7", "#cfb8e0"], ear: "#e8dcf2", nostril: "#b08ac2", brow: "#8a6aa8", leg: "#e0d2ec",
+      horn: ["#fff3c4", "#e8c15a", "#a37a1e"], hornGlow: "#e8c15a", hoof: "#e8c15a",
+      mane: ["#ff6b6b", "#ffa14d", "#ffe066", "#69d98a", "#56d5e8", "#b678ff"],
+    } },
+  { id: "schatten", name: "Schattenmähre", req: 3, swatch: ["#332f42", "#8a4de0", "#c4ccdf"],
+    colors: {
+      body: ["#4a4458", "#332f42", "#211d2e"], ear: "#3a3448", nostril: "#6a5a80", brow: "#141020", leg: "#2e2a3c",
+      horn: ["#eef2fa", "#9aa4c0", "#4a5170"], hornGlow: "#9fb0e0", hoof: "#c4ccdf",
+      mane: ["#6a3fd9", "#8a4de0", "#b04de0", "#5a2fa8", "#7a3fd0", "#3a2f8a"],
+    } },
+  { id: "inferno", name: "Inferno", req: 6, swatch: ["#5e2418", "#ff5a2d", "#ffd24d"],
+    colors: {
+      body: ["#5e2418", "#3a1410", "#210a08"], ear: "#4a1a12", nostril: "#8a3a20", brow: "#160604", leg: "#3a1610",
+      horn: ["#fff3c4", "#ff9d4d", "#a34d1e"], hornGlow: "#ff7a3d", hoof: "#ff9d4d",
+      mane: ["#ffd24d", "#ff9d3d", "#ff5a2d", "#ff3d3d", "#ffb04d", "#ff6a1d"],
+    } },
+  { id: "eishorn", name: "Eishorn", req: 9, swatch: ["#e0f0ff", "#5ec8ff", "#ffffff"],
+    colors: {
+      body: ["#ffffff", "#e0f0ff", "#a9cdec"], ear: "#d6ecff", nostril: "#7fb0d8", brow: "#5a86b8", leg: "#c9e4f7",
+      horn: ["#ffffff", "#bfe6ff", "#5a9fd0"], hornGlow: "#9fdcff", hoof: "#bfe6ff",
+      mane: ["#eafcff", "#9fe0ff", "#5ec8ff", "#3aa0e0", "#7fd8ff", "#bfefff"],
+    } },
+], "galopp");
+let USKIN = GS.skins.get("galopp_unicorn");
+
 // ==================== Projektion ====================
 // Pseudo-3D: t = NEAR/z ∈ (0..1], t=1 ist die Unterkante der Bühne.
 // Der Weg schlängelt sich sanft (sway), das gibt Kurven-Gefühl.
@@ -1645,14 +1674,14 @@ function drawUnicorn(now) {
   ctx.translate(ux, uy);
   ctx.scale(s, s);
 
-  // Regenbogen-Mähne (fließende Bänder)
+  // Mähne (fließende Bänder)
   for (let i = 0; i < 6; i++) {
     const off = i - 2.5;
-    ctx.strokeStyle = RAINBOW[i];
+    ctx.strokeStyle = USKIN.mane[i];
     ctx.globalAlpha = 0.85;
     ctx.lineWidth = 7;
     ctx.lineCap = "round";
-    ctx.shadowColor = RAINBOW[i]; ctx.shadowBlur = 8;
+    ctx.shadowColor = USKIN.mane[i]; ctx.shadowBlur = 8;
     ctx.beginPath();
     const wav = Math.sin(now * 0.004 + i * 0.9) * 12;
     ctx.moveTo(-14 + off * 2, -96);
@@ -1664,7 +1693,7 @@ function drawUnicorn(now) {
 
   // Hals + Kopf
   const hg = ctx.createLinearGradient(-20, -110, 30, -40);
-  hg.addColorStop(0, "#ffffff"); hg.addColorStop(0.6, "#f0e6f7"); hg.addColorStop(1, "#cfb8e0");
+  hg.addColorStop(0, USKIN.body[0]); hg.addColorStop(0.6, USKIN.body[1]); hg.addColorStop(1, USKIN.body[2]);
   ctx.fillStyle = hg;
   ctx.beginPath();
   ctx.moveTo(-34, 10);
@@ -1678,7 +1707,7 @@ function drawUnicorn(now) {
   ctx.fill();
 
   // Nüstern (schnaubt!)
-  ctx.fillStyle = "#b08ac2";
+  ctx.fillStyle = USKIN.nostril;
   ctx.beginPath(); ctx.ellipse(46, -82, 2.8, 4, -0.4, 0, Math.PI * 2); ctx.fill();
   // Dampfwölkchen beim Schnauben
   if (p > 0.45 && Math.sin(now * 0.003 * gallopF) > 0.7) {
@@ -1693,7 +1722,7 @@ function drawUnicorn(now) {
   ctx.fillStyle = "#1a0a24";
   ctx.beginPath(); ctx.arc(21, -91, 2, 0, Math.PI * 2); ctx.fill();
   // Zornige Braue
-  ctx.strokeStyle = "#8a6aa8";
+  ctx.strokeStyle = USKIN.brow;
   ctx.lineWidth = 3.5;
   ctx.lineCap = "round";
   ctx.beginPath();
@@ -1701,16 +1730,16 @@ function drawUnicorn(now) {
   ctx.stroke();
 
   // Ohr
-  ctx.fillStyle = "#e8dcf2";
+  ctx.fillStyle = USKIN.ear;
   ctx.beginPath();
   ctx.moveTo(-4, -108); ctx.lineTo(4, -126); ctx.lineTo(10, -106);
   ctx.closePath(); ctx.fill();
 
   // DAS HORN — golden, spiralig, glühend
   const hornGlow = 0.6 + 0.4 * Math.sin(now * 0.005);
-  ctx.shadowColor = GOLD; ctx.shadowBlur = 18 * hornGlow;
+  ctx.shadowColor = USKIN.hornGlow; ctx.shadowBlur = 18 * hornGlow;
   const hgr = ctx.createLinearGradient(14, -160, 22, -110);
-  hgr.addColorStop(0, CREAM); hgr.addColorStop(0.5, GOLD); hgr.addColorStop(1, "#a37a1e");
+  hgr.addColorStop(0, USKIN.horn[0]); hgr.addColorStop(0.5, USKIN.horn[1]); hgr.addColorStop(1, USKIN.horn[2]);
   ctx.fillStyle = hgr;
   ctx.beginPath();
   ctx.moveTo(10, -112);
@@ -1734,7 +1763,7 @@ function drawUnicorn(now) {
   // Vorderbeine im Galopp (nur sichtbar wenn nah)
   if (p > 0.4) {
     const leg = Math.sin(now * 0.001 * gallopF * Math.PI);
-    ctx.strokeStyle = "#e0d2ec";
+    ctx.strokeStyle = USKIN.leg;
     ctx.lineWidth = 12;
     ctx.lineCap = "round";
     ctx.beginPath();
@@ -1743,8 +1772,8 @@ function drawUnicorn(now) {
     ctx.moveTo(4, 6);
     ctx.quadraticCurveTo(8 - leg * 14, 36, 14 - leg * 26, 54);
     ctx.stroke();
-    // Goldene Hufe
-    ctx.fillStyle = GOLD;
+    // Hufe
+    ctx.fillStyle = USKIN.hoof;
     ctx.beginPath(); ctx.arc(-14 + leg * 26, 54, 7, 0, Math.PI * 2); ctx.fill();
     ctx.beginPath(); ctx.arc(14 - leg * 26, 54, 7, 0, Math.PI * 2); ctx.fill();
   }
@@ -1753,7 +1782,7 @@ function drawUnicorn(now) {
 
   // Funkel-Spur hinterm Einhorn
   if (p > 0.25 && Math.random() < p * 0.6) {
-    sparkleTrail(ux + (Math.random() - 0.5) * 90 * s, uy - Math.random() * 60 * s, RAINBOW[Math.floor(Math.random() * 6)]);
+    sparkleTrail(ux + (Math.random() - 0.5) * 90 * s, uy - Math.random() * 60 * s, USKIN.mane[Math.floor(Math.random() * 6)]);
   }
 }
 
@@ -1846,7 +1875,8 @@ function showMenu() {
         : `<button class="btn-secondary" id="m-daily" style="margin-top:10px">🗓️ Tages-Challenge</button>
            <button class="btn-secondary" id="m-weekly" style="margin-top:10px">📅 Wochen-Challenge</button>`}
       <button class="btn-secondary" id="m-badges" style="margin-top:10px">🏅 Meilensteine</button>
-      <button class="btn-secondary" id="m-skins" style="margin-top:10px">🎨 Skins</button>
+      <button class="btn-secondary" id="m-skins" style="margin-top:10px">🎨 Läufer-Skins</button>
+      <button class="btn-secondary" id="m-uskins" style="margin-top:10px">🦄 Einhorn-Skins</button>
     </div>`;
   document.body.appendChild(overlay);
   overlay.querySelector("#m-go").onclick = () => {
@@ -1862,6 +1892,8 @@ function showMenu() {
   overlay.querySelector("#m-badges").onclick = () => GS.badges.show("galopp", "Meilensteine — Galopp");
   overlay.querySelector("#m-skins").onclick = () =>
     GS.skins.picker("galopp", { title: "Läufer-Skins", onChange: c => { SKIN = c; } });
+  overlay.querySelector("#m-uskins").onclick = () =>
+    GS.skins.picker("galopp_unicorn", { title: "Einhorn-Skins", onChange: c => { USKIN = c; } });
 }
 
 
