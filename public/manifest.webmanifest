@@ -2,6 +2,7 @@
   "name": "Spieleabend",
   "short_name": "Spieleabend",
   "description": "Würfelpoker, Funkelfeld, Komet, Sternensturm und Galopp — Spiele für den Spieleabend.",
+  "id": "/?app=spieleabend",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

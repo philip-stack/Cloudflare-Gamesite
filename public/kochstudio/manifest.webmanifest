@@ -2,6 +2,7 @@
   "name": "Kochstudio",
   "short_name": "Kochstudio",
   "description": "KI-Rezepte aus dem Kühlschrank – mit Anleitung und passenden Rezept-Links aus dem Netz.",
+  "id": "/kochstudio/",
   "start_url": "/kochstudio/",
   "scope": "/kochstudio/",
   "display": "standalone",
