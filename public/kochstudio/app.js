@@ -111,8 +111,27 @@ function hostOf(u) { try { return new URL(u).hostname.replace(/^www\./, ""); } c
 const COOKING = [
   "Schnipple die Zutaten …", "Rühre im Topf …", "Schmecke ab …",
   "Blättere in Rezeptbüchern …", "Frage die Oma um Rat …", "Suche im Netz …",
+  "Wetze die Messer …", "Heize den Ofen vor …", "Zerlasse die Butter …",
+  "Hacke frische Kräuter …", "Röste Zwiebeln goldbraun …", "Öffne die Gewürzlade …",
+  "Setze das Nudelwasser auf …", "Salze, wie das Meer es mag …", "Zupfe am Basilikum …",
+  "Reibe den Parmesan …", "Prüfe die Garprobe …", "Deglaciere die Pfanne …",
+  "Zähme die Chili …", "Klopfe an Nonnas Küchentür …", "Konsultiere die Sterneköche …",
+  "Krame im Vorratsschrank …", "Poliere den Kochlöffel …", "Lausche dem Brutzeln …",
+  "Rechne die Portionen aus …", "Sortiere nach Farbe & Frische …", "Karamellisiere ein bisschen …",
+  "Presse eine Zitrone aus …", "Stimme die Aromen ab …", "Träume von Trüffeln …",
+  "Frage den Marktstandler …", "Entkorke Inspiration …", "Balanciere süß & salzig …",
+  "Föhne den Braten glasig …", "Blättere durch Chefkoch …", "Rufe kurz beim Wirt an …",
 ];
 let busy = false;
+
+// zufällig, ohne direkte Wiederholung
+let lastCook = -1;
+function nextCook() {
+  let n;
+  do { n = Math.floor(Math.random() * COOKING.length); } while (n === lastCook && COOKING.length > 1);
+  lastCook = n;
+  return COOKING[n];
+}
 
 $("#go").onclick = async () => {
   if (busy) return;
@@ -126,11 +145,10 @@ $("#go").onclick = async () => {
   $("#out").hidden = false;
   $("#webbox").hidden = true;
   $("#actions").hidden = true;
-  let i = 0;
-  $("#recipes").innerHTML = `<p class="cooking">👨‍🍳 ${COOKING[0]}</p>`;
+  $("#recipes").innerHTML = `<p class="cooking">👨‍🍳 ${nextCook()}</p>`;
   const ticker = setInterval(() => {
     const el = document.querySelector(".cooking");
-    if (el) el.textContent = "👨‍🍳 " + COOKING[++i % COOKING.length];
+    if (el) el.textContent = "👨‍🍳 " + nextCook();
   }, 1800);
 
   try {
