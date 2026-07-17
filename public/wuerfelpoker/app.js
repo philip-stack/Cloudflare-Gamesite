@@ -283,6 +283,13 @@ function grandTotal(game, pid) {
   for (let r = 1; r <= game.round; r++) s += roundTotal(game, pid, r);
   return s;
 }
+// Eine Spalte ist ein eigenes Blatt: ihr Endstand ist die Summe dieser
+// Spalte über ALLE Runden. (Bei einem 1-Runden-Spiel = colTotal der Runde.)
+function colGrandTotal(game, pid, col) {
+  let s = 0;
+  for (let r = 1; r <= (game.round || 1); r++) s += colTotal(game, pid, r, col);
+  return s;
+}
 function roundFilled(game, pid, round) {
   let n = 0;
   for (let c = 0; c < game.cols; c++) {
@@ -301,6 +308,9 @@ function grandRanking(game) {
 }
 function roundRanking(game, round) {
   return withRanks(game.players.map(p => ({ ...p, pts: roundTotal(game, p.id, round) })));
+}
+function colRanking(game, col) {
+  return withRanks(game.players.map(p => ({ ...p, pts: colGrandTotal(game, p.id, col) })));
 }
 function rankClass(rank) { return rank <= 3 ? `rank-${rank}` : "rank-x"; }
 function rankByPid(ranking) {
@@ -1131,6 +1141,49 @@ function standingsTable(game, { withRoundRows = true } = {}) {
     </div>`;
 }
 
+// ---------- Spalten-Wertung (jede Spalte = eigenes Blatt mit Sieger) ----------
+// Nutzt die ohnehin gespeicherten Spaltendaten und wirkt daher auch
+// rückwirkend für bereits gespielte Spiele. Nur sinnvoll ab 2 Spalten.
+function columnStandings(game, { heading = true } = {}) {
+  const cols = game.cols || 1;
+  if (cols < 2) return "";
+  const rows = Array.from({ length: cols }, (_, c) => {
+    const rr = colRanking(game, c);
+    const best = rr[0].pts;
+    return `
+      <tr>
+        <th class="row-label">Spalte ${c + 1}</th>
+        ${game.players.map(p => {
+          const pts = colGrandTotal(game, p.id, c);
+          const win = pts === best && pts > 0;
+          return `<td class="cell ${win ? "round-win" : ""}">${win ? "🏆 " : ""}${pts}</td>`;
+        }).join("")}
+      </tr>`;
+  }).join("");
+  return `
+    ${heading ? "<h2>Spalten-Wertung</h2>" : ""}
+    <div class="sheet-wrap">
+      <table class="sheet readonly">
+        <thead><tr><th class="corner">Spalte</th>${game.players.map(p =>
+          `<th class="p-head">${esc(p.name)}</th>`).join("")}</tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+}
+// Kurz-Chips: „Spalte 1: 🏆 Name (Punkte)"
+function columnChips(game) {
+  const cols = game.cols || 1;
+  if (cols < 2) return "";
+  return `
+    <div class="round-chips">
+      ${Array.from({ length: cols }, (_, c) => {
+        const rr = colRanking(game, c);
+        const best = rr.filter(p => p.pts === rr[0].pts);
+        return `<span class="round-chip">Spalte ${c + 1}: 🏆 ${best.map(b => esc(b.name)).join(" & ")} (${rr[0].pts})</span>`;
+      }).join("")}
+    </div>`;
+}
+
 // ---------- Rundenende: weiterspielen oder abschließen ----------
 function renderRoundEnd(game, ref) {
   const round = game.round || 1;
@@ -1155,6 +1208,7 @@ function renderRoundEnd(game, ref) {
 
     <h2>Gesamtstand</h2>
     ${standingsTable(game)}
+    ${columnStandings(game)}
 
     <h2>Wie geht's weiter?</h2>
     <div class="stack">
@@ -1218,11 +1272,13 @@ function renderFinished(game, ref) {
     <div class="winner-box">
       <div class="trophy">🏆</div>
       <div class="w-name">${winners.map(w => esc(w.name)).join(" & ")}</div>
-      <div class="w-pts">${rounds > 1 ? `Endgewinner mit ${topPts} Punkten aus ${rounds} Runden` : `${topPts} Punkte`}${winners.length > 1 ? " (geteilt)" : ""} · ${fmtDate(game.createdAt)}</div>
+      <div class="w-pts">${rounds > 1 ? `Endgewinner mit ${topPts} Punkten aus ${rounds} Runden` : ((game.cols || 1) > 1 ? `Gesamtsieger mit ${topPts} Punkten` : `${topPts} Punkte`)}${winners.length > 1 ? " (geteilt)" : ""} · ${fmtDate(game.createdAt)}</div>
     </div>
     ${roundChips}
+    ${columnChips(game)}
 
-    ${standingsTable(game)}
+    ${standingsTable(game, { withRoundRows: rounds > 1 })}
+    ${columnStandings(game)}
 
     ${rounds === 1 ? detailSheet(game) : ""}
 
@@ -1327,7 +1383,7 @@ function showRules() {
         </ul>
         <p><strong>Serviert</strong> = die Kombination gleich im 1. Wurf (ohne Nachwerfen).</p>
         <p>Passt nichts oder willst du nichts eintragen, musst du <strong>ein freies Feld streichen</strong> (0 Punkte) – z. B. das Grande.</p>
-        <p><strong>Mehrere Spalten:</strong> Spielt ihr mit 2+ Spalten pro Spieler, füllst du pro Zug ein freies Feld in einer <strong>beliebigen eigenen Spalte</strong>. In der Tabelle siehst du kompakt die Summe je Kategorie — Spielernamen antippen zeigt die Einzelspalten.</p>
+        <p><strong>Mehrere Spalten:</strong> Spielt ihr mit 2+ Spalten pro Spieler, füllst du pro Zug ein freies Feld in einer <strong>beliebigen eigenen Spalte</strong>. In der Tabelle siehst du kompakt die Summe je Kategorie — Spielernamen antippen zeigt die Einzelspalten. Jede Spalte ist ein <strong>eigenes Blatt mit eigenem Sieger</strong> (Summe über alle Runden); zusätzlich gibt es den <strong>Gesamtsieger</strong> über alle Spalten.</p>
         <p><strong>Runden:</strong> Sind alle Felder voll, ist die Runde vorbei — ihr könnt beliebig viele weitere Runden im selben Spiel spielen. Es gibt Sieger je Runde, am Ende gewinnt die <strong>höchste Gesamtsumme</strong>. Unten in der Tabelle zeigen die Farben (Gold/Silber/Bronze) live, wer insgesamt führt.</p>
         <p><strong>Spielstände:</strong> Lokale Spiele bleiben nur auf diesem Gerät. Geteilte Spiele erreichst du auf jedem Gerät über den 6-stelligen Beitritts-Code.</p>
       </div>
