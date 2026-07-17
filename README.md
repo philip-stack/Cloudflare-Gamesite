@@ -55,6 +55,27 @@ der Rahmen passt sich an.
 - **Automatische Tests** (`tests/`, per GitHub Actions bei jedem Push):
   Syntaxprüfung aller JS-Dateien, QR-Encoder- und Scores-API-Tests.
 
+## 🍳 KI-Kochstudio
+
+Kein Spiel, sondern ein KI-Helfer unter `/kochstudio/` (bewusst **nicht** auf
+der Landing Page verlinkt — nur direkt erreichbar). Man gibt ein, was im
+Kühlschrank/Vorrat ist, und bekommt:
+
+- **Zwei passende Rezepte** mit Dauer, Schwierigkeit, Mengen (2 Portionen),
+  nummerierter Zubereitung und Profi-Tipp — generiert von **Cloudflare
+  Workers AI** (Llama 3.3 70B, mit 8B-Modell als Fallback; kein externer
+  API-Schlüssel, kostenloses Tageskontingent).
+- **Echte Rezept-Links aus dem Netz** über eine serverseitige DuckDuckGo-Suche
+  (mit Chefkoch-/GuteKueche-Such-Links als Fallback); die Treffer fließen der
+  KI auch als Inspiration zu.
+- **Verlauf pro Gerät** (localStorage): letzte Rezepte anklickbar wieder öffnen
+  (ohne neue KI-Anfrage) oder löschen.
+- Ausgabe **kopieren, teilen (Web-Share) oder als `.txt` speichern**.
+
+Eingaben werden zur Erzeugung an Workers AI und als Suchanfrage an DuckDuckGo
+geschickt, aber nicht serverseitig gespeichert (siehe Datenschutzerklärung).
+Backend: `functions/api/koch.js`, benötigt das `AI`-Binding in `wrangler.toml`.
+
 Die Seite ist eine **PWA**: Am Handy über „Zum Startbildschirm hinzufügen"
 (bzw. den Installieren-Hinweis im Browser) wird sie zur App mit eigenem Icon
 und Vollbild — bereits besuchte Spiele funktionieren auch offline
@@ -64,7 +85,7 @@ und Vollbild — bereits besuchte Spiele funktionieren auch offline
 
 ```
 wuerfelpoker/
-├── wrangler.toml              Pages-Config + D1-Binding (DB)
+├── wrangler.toml              Pages-Config + D1-Binding (DB) + AI-Binding (Kochstudio)
 ├── schema.sql                 D1-Schema (Würfelpoker-Tabellen + *_scores)
 ├── public/                    statische Spiele (1 Ordner = 1 Spiel)
 │   ├── index.html             Landing Page mit App-Karten
@@ -74,6 +95,7 @@ wuerfelpoker/
 │   ├── fonts/                 selbst gehostete Schriften (Fraunces, Outfit) — kein Google-Fonts-CDN
 │   ├── impressum/             Impressum (§ 5 ECG / § 25 MedienG)
 │   ├── datenschutz/           Datenschutzerklärung (DSGVO)
+│   ├── kochstudio/            KI-Kochstudio (index.html + app.js + style.css)
 │   ├── favicon.ico            Browser-Tab-Icon
 │   ├── 404.html               Fehlerseite
 │   ├── manifest.webmanifest   PWA-Manifest (installierbare App)
@@ -89,7 +111,8 @@ wuerfelpoker/
 │   ├── _util.js               gemeinsame Helfer (json, Codes, Spiel laden)
 │   ├── health.js
 │   ├── games/                 Würfelpoker: geteilte Spiele (CRUD + Zellen)
-│   └── scores/[game].js       Bestenlisten aller Spiele (GET/POST, ?daily=1, ?weekly=1)
+│   ├── scores/[game].js       Bestenlisten aller Spiele (GET/POST, ?daily=1, ?weekly=1)
+│   └── koch.js                KI-Kochstudio (Workers AI + DuckDuckGo-Websuche)
 ├── tests/                     Node-Tests (Syntax, QR-Encoder, Scores-API)
 └── .github/workflows/ci.yml   CI: führt die Tests bei jedem Push aus
 ```
