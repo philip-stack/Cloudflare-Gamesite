@@ -932,12 +932,16 @@ function renderSheet(game, ref) {
   // Runde 1: eine Zeile "Total" (gefärbt). Ab Runde 2: "Runde" (neutral)
   // + "Gesamt" (gefärbt) — die Farben zeigen die Gesamtführung.
   const colorRoundRow = round === 1;
+  // Führung je Spalte in DIESER Runde (fürs Aufklappen) — färbt jede Spalte
+  // nach ihrem eigenen Spitzenreiter, nicht nach der Gesamtwertung.
+  const roundColRank = Array.from({ length: cols }, (_, c) =>
+    rankByPid(withRanks(game.players.map(p => ({ id: p.id, pts: colTotal(game, p.id, round, c) })))));
   const roundCells = game.players.map(p => {
-    const cls = colorRoundRow ? `cell total ${rankClass(grand[p.id])}` : "cell total plain";
     if (isExp(p)) {
       return Array.from({ length: cols }, (_, c) =>
-        `<td class="${cls} sub">${colTotal(game, p.id, round, c)}</td>`).join("");
+        `<td class="cell total sub ${rankClass(roundColRank[c][p.id])}">${colTotal(game, p.id, round, c)}</td>`).join("");
     }
+    const cls = colorRoundRow ? `cell total ${rankClass(grand[p.id])}` : "cell total plain";
     return `<td class="${cls}">${roundTotal(game, p.id, round)}</td>`;
   }).join("");
   const grandRow = round > 1 ? `
