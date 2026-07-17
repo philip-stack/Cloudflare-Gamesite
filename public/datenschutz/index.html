@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0a0e0b">
+  <title>Datenschutz — Spieleabend</title>
+  <link rel="icon" href="/favicon.ico" sizes="any">
+  <link rel="icon" type="image/png" href="/icons/icon-32.png">
+  <link rel="stylesheet" href="/fonts/fonts.css">
+  <script src="/theme.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg0: #0a0e0b; --felt: #0e1410;
+      --card: rgba(255,252,240,0.045); --edge: rgba(232,193,90,0.14);
+      --ink: #f4efe2; --muted: #93a396; --gold: #e8c15a;
+      --foil: linear-gradient(115deg, #8a6a1c 0%, #e8c15a 25%, #fff3c4 50%, #e8c15a 75%, #8a6a1c 100%);
+    }
+    :root[data-theme="light"] {
+      --bg0: #f4f1e6; --felt: #ece9db; --card: rgba(40,48,31,0.05);
+      --edge: rgba(120,95,20,0.2); --ink: #26301f; --muted: #64705f; --gold: #a5851f;
+      --foil: linear-gradient(115deg, #6d5416 0%, #a5851f 30%, #c9a13b 50%, #a5851f 70%, #6d5416 100%);
+    }
+    body {
+      font-family: "Outfit", system-ui, sans-serif;
+      background: radial-gradient(120% 90% at 50% -10%, var(--felt) 0%, var(--bg0) 100%);
+      color: var(--ink);
+      min-height: 100dvh;
+      line-height: 1.6;
+      padding: 24px 18px calc(48px + env(safe-area-inset-bottom));
+    }
+    main { max-width: 680px; margin: 0 auto; }
+    .topbar { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
+    .btn-back {
+      display: grid; place-items: center; width: 42px; height: 42px;
+      border-radius: 12px; background: var(--card); color: var(--ink);
+      text-decoration: none; font-size: 1.2rem; box-shadow: 0 0 0 1px var(--edge) inset;
+    }
+    h1 {
+      font-family: "Fraunces", Georgia, serif; font-style: italic; font-weight: 800;
+      font-size: 2rem;
+      background: var(--foil); background-size: 250% 100%;
+      -webkit-background-clip: text; background-clip: text; color: transparent;
+    }
+    h2 {
+      font-family: "Fraunces", Georgia, serif; font-weight: 700;
+      font-size: 1.2rem; margin: 26px 0 8px; color: var(--gold);
+    }
+    p, li { margin-bottom: 10px; }
+    ul { margin: 0 0 12px 20px; }
+    a { color: var(--gold); }
+    .muted { color: var(--muted); font-size: 0.9rem; }
+    strong { color: var(--gold); font-weight: 600; }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="topbar">
+      <a class="btn-back" href="/" aria-label="Zurück">←</a>
+      <h1>Datenschutzerklärung</h1>
+    </div>
+
+    <p>
+      Diese Website ist ein privates, kostenloses Hobby-Projekt. Es gibt <strong>keine Werbung,
+      kein Tracking, keine Analyse-Tools und keine Benutzerkonten</strong>. Nachfolgend erklären
+      wir, welche Daten trotzdem anfallen und warum.
+    </p>
+
+    <h2>Verantwortlicher</h2>
+    <p>
+      Philip Stix, Gerasdorf, Österreich · E-Mail:
+      <a href="mailto:philipstix@gmail.com">philipstix@gmail.com</a><br>
+      (vollständige Anschrift siehe <a href="/impressum/">Impressum</a>)
+    </p>
+
+    <h2>Hosting</h2>
+    <p>
+      Die Website wird bei <strong>Cloudflare</strong> (Cloudflare, Inc., USA, sowie Cloudflare
+      Germany GmbH) als Auftragsverarbeiter gehostet. Beim Aufruf verarbeitet Cloudflare
+      technisch bedingt Server-Protokolldaten (u. a. gekürzte IP-Adresse, Zeitpunkt, aufgerufene
+      Seite, Browsertyp), um die Seite auszuliefern und die Sicherheit zu gewährleisten
+      (Rechtsgrundlage: Art. 6 Abs. 1 lit. f DSGVO — berechtigtes Interesse am sicheren Betrieb).
+      Eine Übermittlung in die USA erfolgt auf Basis der EU-Standardvertragsklauseln.
+    </p>
+
+    <h2>Welche Daten die Spiele speichern</h2>
+    <ul>
+      <li>
+        <strong>Bestenlisten</strong> (Funkelfeld, Komet, Sternensturm, Galopp): der von dir frei
+        gewählte Anzeigename, eine zufällig erzeugte Geräte-Kennung (kein Login, keine echte
+        Identität), deine Punktzahl mit Spiel-Statistik und der Zeitpunkt. Gespeichert in einer
+        Datenbank bei Cloudflare. Zweck: Anzeige der Rangliste und Schutz vor Manipulation
+        (Rate-Limit, signiertes Token). Rechtsgrundlage: Art. 6 Abs. 1 lit. b und lit. f DSGVO.
+      </li>
+      <li>
+        <strong>Geteilte Würfelpoker-Spiele</strong>: die eingegebenen Spielernamen, die
+        Spielstände und ein Beitritts-Code, damit ihr euch dasselbe Punkteblatt teilen könnt.
+      </li>
+      <li>
+        <strong>Lokale Speicherung im Browser</strong> (localStorage): Anzeigename, Geräte-Kennung,
+        Hell-/Dunkelmodus, Meilensteine und lokale Spielstände. Diese Daten bleiben auf deinem
+        Gerät und werden nicht an uns übertragen; sie sind für den Betrieb der Spiele notwendig
+        (kein Einwilligungs-Banner erforderlich). Du kannst sie jederzeit über die Browser-
+        Einstellungen löschen.
+      </li>
+    </ul>
+    <p>
+      Ein Name gehört jeweils dem Gerät, das ihn zuerst verwendet hat — dadurch kann derselbe
+      Name nicht von mehreren Personen belegt werden.
+    </p>
+
+    <h2>Schriftarten</h2>
+    <p>
+      Die verwendeten Schriften (Fraunces, Outfit) werden <strong>lokal von diesem Server</strong>
+      ausgeliefert. Es besteht <strong>keine Verbindung zu Google Fonts</strong> oder anderen
+      Drittanbietern, es werden keine Daten an Google übertragen.
+    </p>
+
+    <h2>Keine Weitergabe zu Werbezwecken</h2>
+    <p>
+      Es findet kein Verkauf, keine Vermietung und keine Weitergabe deiner Daten zu Werbe- oder
+      Analysezwecken statt.
+    </p>
+
+    <h2>Speicherdauer</h2>
+    <p>
+      Bestenlisten- und Spieldaten werden gespeichert, bis sie nicht mehr benötigt werden oder du
+      ihre Löschung verlangst. Auf Wunsch entfernen wir deinen Bestenlisten-Eintrag; schreib uns
+      dazu einfach eine E-Mail mit dem betroffenen Namen.
+    </p>
+
+    <h2>Deine Rechte</h2>
+    <p>
+      Du hast das Recht auf Auskunft, Berichtigung, Löschung, Einschränkung der Verarbeitung sowie
+      Widerspruch. Wende dich dafür an <a href="mailto:philipstix@gmail.com">philipstix@gmail.com</a>.
+      Außerdem kannst du dich bei der Aufsichtsbehörde beschweren — in Österreich bei der
+      <a href="https://www.dsb.gv.at/" target="_blank" rel="noopener">Österreichischen Datenschutzbehörde</a>.
+    </p>
+
+    <p class="muted">Stand: Juli 2026</p>
+  </main>
+</body>
+</html>

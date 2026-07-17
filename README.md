@@ -71,6 +71,9 @@ wuerfelpoker/
 │   ├── theme.js               Hell/Dunkel-Umschalter + SW-Registrierung + Update-Hinweis
 │   ├── shared.js              gemeinsame Spiele-Schicht (Scores, Name, Meilensteine, Skins, Sound, Teilen)
 │   ├── qr.js                  eigenständiger QR-Code-Encoder (Beitritt teilen)
+│   ├── fonts/                 selbst gehostete Schriften (Fraunces, Outfit) — kein Google-Fonts-CDN
+│   ├── impressum/             Impressum (§ 5 ECG / § 25 MedienG)
+│   ├── datenschutz/           Datenschutzerklärung (DSGVO)
 │   ├── favicon.ico            Browser-Tab-Icon
 │   ├── 404.html               Fehlerseite
 │   ├── manifest.webmanifest   PWA-Manifest (installierbare App)

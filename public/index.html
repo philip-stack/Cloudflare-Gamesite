@@ -9,9 +9,7 @@
   <meta property="og:description" content="Würfelpoker, Funkelfeld, Komet, Sternensturm und Galopp — kostenlose Spiele für den Spieleabend.">
   <meta property="og:type" content="website">
   <meta property="og:image" content="https://philip-stack.pages.dev/icons/icon-512.png">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..900;1,9..144,400..900&family=Outfit:wght@300..800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/fonts/fonts.css">
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="apple-touch-icon" href="/icons/icon-180.png">
   <link rel="icon" href="/favicon.ico" sizes="any">
@@ -252,6 +250,18 @@
       font-size: 0.88rem;
       line-height: 1.5;
     }
+    .site-footer {
+      margin-top: 34px;
+      text-align: center;
+      font-size: 0.85rem;
+      color: var(--muted);
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+      align-items: center;
+    }
+    .site-footer a { color: var(--muted); text-decoration: none; }
+    .site-footer a:hover { color: var(--gold); }
     .install-hint b { color: var(--ink); }
     .install-hint .ih-close {
       position: absolute;
@@ -409,6 +419,12 @@
       📲 <b>Als App installieren:</b> Android — Chrome-Menü → „App installieren".
       iPhone — in Safari das Teilen-Symbol antippen → <b>„Zum Home-Bildschirm"</b>.
     </div>
+
+    <footer class="site-footer">
+      <a href="/impressum/">Impressum</a>
+      <span aria-hidden="true">·</span>
+      <a href="/datenschutz/">Datenschutz</a>
+    </footer>
   </main>
 
   <script>

@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0a0e0b">
+  <title>Impressum — Spieleabend</title>
+  <link rel="icon" href="/favicon.ico" sizes="any">
+  <link rel="icon" type="image/png" href="/icons/icon-32.png">
+  <link rel="stylesheet" href="/fonts/fonts.css">
+  <script src="/theme.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg0: #0a0e0b; --felt: #0e1410;
+      --card: rgba(255,252,240,0.045); --edge: rgba(232,193,90,0.14);
+      --ink: #f4efe2; --muted: #93a396; --gold: #e8c15a;
+      --foil: linear-gradient(115deg, #8a6a1c 0%, #e8c15a 25%, #fff3c4 50%, #e8c15a 75%, #8a6a1c 100%);
+    }
+    :root[data-theme="light"] {
+      --bg0: #f4f1e6; --felt: #ece9db; --card: rgba(40,48,31,0.05);
+      --edge: rgba(120,95,20,0.2); --ink: #26301f; --muted: #64705f; --gold: #a5851f;
+      --foil: linear-gradient(115deg, #6d5416 0%, #a5851f 30%, #c9a13b 50%, #a5851f 70%, #6d5416 100%);
+    }
+    body {
+      font-family: "Outfit", system-ui, sans-serif;
+      background: radial-gradient(120% 90% at 50% -10%, var(--felt) 0%, var(--bg0) 100%);
+      color: var(--ink);
+      min-height: 100dvh;
+      line-height: 1.6;
+      padding: 24px 18px calc(48px + env(safe-area-inset-bottom));
+    }
+    main { max-width: 640px; margin: 0 auto; }
+    .topbar { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
+    .btn-back {
+      display: grid; place-items: center; width: 42px; height: 42px;
+      border-radius: 12px; background: var(--card); color: var(--ink);
+      text-decoration: none; font-size: 1.2rem; box-shadow: 0 0 0 1px var(--edge) inset;
+    }
+    h1 {
+      font-family: "Fraunces", Georgia, serif; font-style: italic; font-weight: 800;
+      font-size: 2rem;
+      background: var(--foil); background-size: 250% 100%;
+      -webkit-background-clip: text; background-clip: text; color: transparent;
+    }
+    h2 {
+      font-family: "Fraunces", Georgia, serif; font-weight: 700;
+      font-size: 1.2rem; margin: 26px 0 8px; color: var(--gold);
+    }
+    p { margin-bottom: 12px; }
+    a { color: var(--gold); }
+    .todo { color: #e2685a; font-weight: 700; }
+    .muted { color: var(--muted); font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="topbar">
+      <a class="btn-back" href="/" aria-label="Zurück">←</a>
+      <h1>Impressum</h1>
+    </div>
+
+    <p>Angaben gemäß § 5 E-Commerce-Gesetz (ECG) und § 25 Mediengesetz (MedienG).</p>
+
+    <h2>Medieninhaber &amp; Betreiber</h2>
+    <p>
+      Philip Stix<br>
+      Brünnerstraße <span class="todo">[HAUSNUMMER]</span>, <span class="todo">[PLZ]</span> Gerasdorf<br>
+      Österreich<br>
+      E-Mail: <a href="mailto:philipstix@gmail.com">philipstix@gmail.com</a>
+    </p>
+
+    <h2>Art &amp; Zweck</h2>
+    <p>
+      Private, nicht-kommerzielle Website mit kleinen Browser-Spielen für den privaten
+      Zeitvertreib. Keine Gewinnabsicht, keine Werbung, kein Verkauf von Waren oder
+      Dienstleistungen.
+    </p>
+
+    <h2>Haftung für Inhalte</h2>
+    <p>
+      Die Inhalte wurden mit Sorgfalt erstellt. Für die Richtigkeit, Vollständigkeit und
+      Aktualität kann jedoch keine Gewähr übernommen werden.
+    </p>
+
+    <p class="muted">Datenschutzinformationen findest du in der <a href="/datenschutz/">Datenschutzerklärung</a>.</p>
+  </main>
+</body>
+</html>
