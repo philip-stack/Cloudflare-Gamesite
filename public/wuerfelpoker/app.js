@@ -1280,7 +1280,7 @@ function renderFinished(game, ref) {
     ${standingsTable(game, { withRoundRows: rounds > 1 })}
     ${columnStandings(game)}
 
-    ${rounds === 1 ? detailSheet(game) : ""}
+    ${detailSheet(game)}
 
     <h2>Revanche?</h2>
     <div class="stack">
@@ -1290,6 +1290,7 @@ function renderFinished(game, ref) {
   `;
 
   launchConfetti();
+  wireDetail(game);
 
   document.getElementById("btn-back").onclick = () => navigate("#/");
   document.getElementById("btn-rematch-winner").onclick = () =>
@@ -1298,35 +1299,102 @@ function renderFinished(game, ref) {
     rematch(game, ref, nextCircleIdx);
 }
 
-// Detailblatt (nur für 1-Runden-Spiele am Ende; kompakt über Spalten summiert)
-function detailSheet(game) {
+// Detailblatt am Spielende: read-only, aber Spielernamen antippbar, um die
+// Einzelspalten aufzuklappen (wie in der Live-Ansicht). Merkt sich je Runde,
+// welcher Spieler ausgeklappt ist. Bei mehreren Runden: ein Blatt pro Runde.
+const detailExpand = {}; // key `${gameId}:${round}` → pid (ausgeklappt) | undefined
+
+function detailSheetTable(game, round) {
   const cols = game.cols || 1;
+  const key = `${game.id}:${round}`;
+  const expPid = cols > 1 ? detailExpand[key] : undefined;
+  const isExp = p => cols > 1 && p.id === expPid;
+  const anyExp = cols > 1 && game.players.some(isExp);
+
+  const headCells = game.players.map(p => {
+    const exp = isExp(p);
+    const attrs = cols > 1 ? `data-pid="${p.id}" data-round="${round}" role="button" tabindex="0"` : "";
+    const chev = cols > 1 ? `<span class="ph-chev">${exp ? "▾" : "▸"}</span>` : "";
+    const span = exp ? `colspan="${cols}"` : (anyExp ? `rowspan="2"` : "");
+    return `<th class="p-head ${exp ? "expanded" : ""} ${cols > 1 ? "clickable" : ""}" ${span} ${attrs}>${esc(p.name)}${chev}</th>`;
+  }).join("");
+  const subHead = anyExp
+    ? `<tr>${game.players.map(p => isExp(p)
+        ? Array.from({ length: cols }, (_, c) => `<th class="sub-head">${c + 1}</th>`).join("")
+        : "").join("")}</tr>`
+    : "";
+
+  const rowFor = cat => {
+    const cells = game.players.map(p => {
+      if (isExp(p)) {
+        return Array.from({ length: cols }, (_, c) => {
+          const cell = colCells(game, p.id, round, c)[cat.key];
+          if (!cell) return `<td class="cell sub">&nbsp;</td>`;
+          if (cell.kind === "strike") return `<td class="cell sub struck">✕</td>`;
+          return `<td class="cell sub filled ${cell.serviert ? "serviert" : ""}">${cell.v}</td>`;
+        }).join("");
+      }
+      if (cols === 1) {
+        const c = colCells(game, p.id, round, 0)[cat.key];
+        if (!c) return `<td class="cell">&nbsp;</td>`;
+        if (c.kind === "strike") return `<td class="cell struck">✕</td>`;
+        return `<td class="cell filled ${c.serviert ? "serviert" : ""}">${c.v}</td>`;
+      }
+      const a = catAcross(game, p.id, round, cat.key);
+      if (!a.filled) return `<td class="cell compact">&nbsp;</td>`;
+      const prog = `<span class="cc-progress">${a.filled}/${cols}</span>`;
+      if (a.filled === a.struck) return `<td class="cell compact struck"><span class="struck-x">✕</span>${prog}</td>`;
+      return `<td class="cell compact filled ${a.serviert ? "serviert" : ""}">${a.sum}${prog}</td>`;
+    }).join("");
+    return `
+      <tr class="${cat.type === "combo" ? "combo-row" : "upper-row"} ${cat.key === "S" ? "combo-start" : ""}">
+        <th class="row-label"><span class="rl-main">${cat.label}</span>${cat.sub ? `<sub class="rl-sub">${cat.sub}</sub>` : ""}</th>
+        ${cells}
+      </tr>`;
+  };
+
+  const totalCells = game.players.map(p => isExp(p)
+    ? Array.from({ length: cols }, (_, c) => `<td class="cell total sub">${colTotal(game, p.id, round, c)}</td>`).join("")
+    : `<td class="cell total">${roundTotal(game, p.id, round)}</td>`).join("");
+
   return `
-    <h2>Verrechnungsblatt</h2>
     <div class="sheet-wrap">
       <table class="sheet readonly">
-        <thead><tr><th class="corner">Name</th>${game.players.map(p =>
-          `<th class="p-head">${esc(p.name)}</th>`).join("")}</tr></thead>
+        <thead>
+          <tr><th class="corner" ${anyExp ? `rowspan="2"` : ""}>Name</th>${headCells}</tr>
+          ${subHead}
+        </thead>
         <tbody>
-          ${CATS.map(cat => `
-            <tr class="${cat.type === "combo" ? "combo-row" : "upper-row"} ${cat.key === "S" ? "combo-start" : ""}">
-              <th class="row-label"><span class="rl-main">${cat.label}</span>${cat.sub ? `<sub class="rl-sub">${cat.sub}</sub>` : ""}</th>
-              ${game.players.map(p => {
-                if (cols === 1) {
-                  const c = colCells(game, p.id, 1, 0)[cat.key];
-                  if (!c) return `<td class="cell">&nbsp;</td>`;
-                  if (c.kind === "strike") return `<td class="cell struck">✕</td>`;
-                  return `<td class="cell filled ${c.serviert ? "serviert" : ""}">${c.v}</td>`;
-                }
-                const a = catAcross(game, p.id, 1, cat.key);
-                if (!a.filled) return `<td class="cell">&nbsp;</td>`;
-                if (a.filled === a.struck) return `<td class="cell struck">✕</td>`;
-                return `<td class="cell filled ${a.serviert ? "serviert" : ""}">${a.sum}</td>`;
-              }).join("")}
-            </tr>`).join("")}
+          ${CATS.map(rowFor).join("")}
+          <tr class="total-row"><th class="row-label">Total</th>${totalCells}</tr>
         </tbody>
       </table>
     </div>`;
+}
+
+function detailSheet(game) {
+  const rounds = game.round || 1;
+  const hint = (game.cols || 1) > 1
+    ? `<p class="hint">Spielernamen antippen zeigt dessen Einzelspalten.</p>` : "";
+  return Array.from({ length: rounds }, (_, i) => {
+    const r = i + 1;
+    const head = rounds > 1 ? `<h2>Runde ${r} — Verrechnungsblatt</h2>` : `<h2>Verrechnungsblatt</h2>`;
+    return `${head}${i === 0 ? hint : ""}<div class="detail-round" data-round="${r}">${detailSheetTable(game, r)}</div>`;
+  }).join("");
+}
+
+// Klick auf Spielernamen im Endstand-Blatt → Spalten auf-/zuklappen
+function wireDetail(game) {
+  app.querySelectorAll(".detail-round .p-head.clickable").forEach(el => {
+    el.onclick = () => {
+      const pid = Number(el.dataset.pid);
+      const round = Number(el.dataset.round);
+      const key = `${game.id}:${round}`;
+      detailExpand[key] = detailExpand[key] === pid ? undefined : pid;
+      const box = app.querySelector(`.detail-round[data-round="${round}"]`);
+      if (box) { box.innerHTML = detailSheetTable(game, round); wireDetail(game); }
+    };
+  });
 }
 
 function launchConfetti() {
