@@ -6,3 +6,7 @@ compatibility_date = "2026-06-01"
 binding = "DB"
 database_name = "wuerfelpoker"
 database_id = "1a3ff398-8491-47b4-922b-3d331fcb7366"
+
+# Workers AI (kostenloses Tageskontingent) — für das Kochstudio
+[ai]
+binding = "AI"
