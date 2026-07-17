@@ -14,7 +14,7 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <script src="/theme.js"></script>
-  <link rel="stylesheet" href="style.css?v=1">
+  <link rel="stylesheet" href="style.css?v=2">
 </head>
 <body>
   <main id="app">
@@ -45,14 +45,28 @@
         <h2>🌐 Rezepte aus dem Netz</h2>
         <ul id="weblinks"></ul>
       </div>
+      <div class="actions" id="actions" hidden>
+        <button class="btn-secondary" id="copy">📋 Kopieren</button>
+        <button class="btn-secondary" id="share">📤 Teilen</button>
+        <button class="btn-secondary" id="dl">⬇️ Als Text</button>
+      </div>
       <p class="disclaimer">
         KI-generiert — Mengen &amp; Garzeiten bitte mit Hausverstand prüfen.
         Deine Eingaben werden zur Rezept-Erstellung an die KI (Cloudflare Workers AI)
         und als Suchanfrage an DuckDuckGo geschickt, aber nicht von uns gespeichert.
       </p>
     </div>
+
+    <section id="history-sec" hidden>
+      <div class="hist-head">
+        <h2>🕘 Dein Verlauf</h2>
+        <button class="btn-link" id="hist-clear">Alles löschen</button>
+      </div>
+      <p class="hist-note">Nur auf diesem Gerät gespeichert.</p>
+      <ul id="history"></ul>
+    </section>
   </main>
 
-  <script src="app.js?v=1"></script>
+  <script src="app.js?v=2"></script>
 </body>
 </html>

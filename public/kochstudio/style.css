@@ -143,3 +143,60 @@ textarea:focus, input:focus { outline: none; border-color: var(--gold); }
   line-height: 1.5;
   text-align: center;
 }
+
+/* ---------- Aktionen (Kopieren/Teilen/Download) ---------- */
+.actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+.btn-secondary {
+  flex: 1;
+  min-width: 120px;
+  font-family: inherit; font-size: 0.98rem; font-weight: 600;
+  color: var(--ink);
+  background: var(--card-hi);
+  border: 0; border-radius: 12px;
+  padding: 12px 10px;
+  cursor: pointer;
+  box-shadow: 0 0 0 1px var(--edge-soft) inset;
+  transition: transform 0.12s var(--ease-spring);
+}
+.btn-secondary:active { transform: scale(0.96); }
+
+/* ---------- Verlauf ---------- */
+#history-sec { margin-top: 34px; }
+.hist-head { display: flex; align-items: center; justify-content: space-between; }
+.hist-head h2 {
+  font-family: var(--font-display); font-weight: 700; font-size: 1.3rem; color: var(--gold);
+}
+.btn-link {
+  background: none; border: 0; cursor: pointer;
+  color: var(--muted); font-family: inherit; font-size: 0.85rem;
+  text-decoration: underline;
+}
+.btn-link:hover { color: var(--red); }
+.hist-note { color: var(--muted); font-size: 0.78rem; margin: 2px 0 12px; }
+
+#history { list-style: none; display: flex; flex-direction: column; gap: 8px; }
+.hist-item { display: flex; gap: 8px; align-items: stretch; }
+.hist-open {
+  flex: 1; min-width: 0; text-align: left;
+  font-family: inherit; color: var(--ink);
+  background: linear-gradient(175deg, var(--card-hi), var(--card));
+  border: 0; border-radius: 12px;
+  padding: 11px 14px; cursor: pointer;
+  box-shadow: 0 0 0 1px var(--edge-soft) inset;
+}
+.hist-open:active { transform: scale(0.99); }
+.hist-title {
+  display: block; font-weight: 700; font-size: 0.98rem;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.hist-meta {
+  display: block; color: var(--muted); font-size: 0.78rem; margin-top: 2px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.hist-del {
+  flex-shrink: 0; width: 46px;
+  background: var(--card); border: 0; border-radius: 12px;
+  color: var(--muted); font-size: 1rem; cursor: pointer;
+  box-shadow: 0 0 0 1px var(--edge-soft) inset;
+}
+.hist-del:active { transform: scale(0.94); }

@@ -1,6 +1,7 @@
 // ====================================================================
 // KOCHSTUDIO — KI-Rezepte aus dem Kühlschrank + Rezept-Links aus dem Netz.
-// Frontend: schickt Zutaten an /api/koch, rendert Markdown-Antwort.
+// - Verlauf pro Gerät (localStorage), anklickbar & löschbar
+// - Ausgabe kopieren / teilen / als Textdatei speichern
 // ====================================================================
 const $ = s => document.querySelector(s);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({
@@ -10,7 +11,7 @@ const esc = s => String(s).replace(/[&<>"']/g, c => ({
 // Mini-Markdown → HTML (nur was der Prompt erzeugt: ##, **, *, Listen)
 function md(text) {
   const lines = String(text).split("\n");
-  let html = "", list = null; // null | "ul" | "ol"
+  let html = "", list = null;
   const closeList = () => { if (list) { html += `</${list}>`; list = null; } };
   const inline = s => esc(s)
     .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
@@ -32,12 +33,87 @@ function md(text) {
   return html;
 }
 
+// ---------- Klartext (für Kopieren / Teilen / Download) ----------
+const stripMd = s => String(s)
+  .replace(/^#{2,3}\s+/gm, "").replace(/\*\*(.+?)\*\*/g, "$1").replace(/\*(.+?)\*/g, "$1");
+
+function toPlain(e) {
+  let t = "🍳 Rezepte aus dem Kochstudio\n";
+  t += `Zutaten: ${e.ingredients}\n`;
+  if (e.wishes) t += `Wünsche: ${e.wishes}\n`;
+  t += "\n" + stripMd(e.answer).trim() + "\n";
+  if (e.links && e.links.length) {
+    t += "\nRezepte aus dem Netz:\n" + e.links.map(l => `• ${l.title}: ${l.url}`).join("\n") + "\n";
+  }
+  t += `\n— erstellt mit dem Kochstudio · ${location.origin}/kochstudio/`;
+  return t;
+}
+
+// ---------- Verlauf (localStorage, pro Gerät) ----------
+const HKEY = "koch_history", HMAX = 20;
+const loadHist = () => { try { return JSON.parse(localStorage.getItem(HKEY) || "[]"); } catch { return []; } };
+const saveHist = h => { try { localStorage.setItem(HKEY, JSON.stringify(h.slice(0, HMAX))); } catch {} };
+
+function addHist(entry) {
+  const h = loadHist().filter(e => e.id !== entry.id);
+  h.unshift(entry);
+  saveHist(h);
+  renderHist();
+}
+
+function fmtWhen(ts) {
+  const d = new Date(ts);
+  return d.toLocaleDateString("de-AT", { day: "2-digit", month: "2-digit" }) + " " +
+         d.toLocaleTimeString("de-AT", { hour: "2-digit", minute: "2-digit" });
+}
+
+// Titel der Rezepte aus der Antwort ziehen (## Zeilen), sonst Zutaten
+function histTitle(e) {
+  const titles = (e.answer.match(/^#{2,3}\s+(.+)$/gm) || [])
+    .map(l => l.replace(/^#{2,3}\s+/, "").trim());
+  return titles.length ? titles.join(" · ") : e.ingredients;
+}
+
+function renderHist() {
+  const h = loadHist();
+  $("#history-sec").hidden = h.length === 0;
+  $("#history").innerHTML = h.map(e => `
+    <li class="hist-item" data-id="${esc(e.id)}">
+      <button class="hist-open" data-id="${esc(e.id)}">
+        <span class="hist-title">${esc(histTitle(e))}</span>
+        <span class="hist-meta">${esc(fmtWhen(e.ts))} · ${esc(e.ingredients)}</span>
+      </button>
+      <button class="hist-del" data-del="${esc(e.id)}" title="Löschen" aria-label="Eintrag löschen">🗑</button>
+    </li>`).join("");
+}
+
+// ---------- Ergebnis anzeigen ----------
+let current = null;
+
+function showResult(entry) {
+  current = entry;
+  $("#recipes").innerHTML = md(entry.answer);
+  if (entry.links && entry.links.length) {
+    $("#weblinks").innerHTML = entry.links.map(l => `
+      <li><a href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.title)}</a>
+      <span class="host">${esc(hostOf(l.url))}</span></li>`).join("");
+    $("#webbox").hidden = false;
+  } else {
+    $("#webbox").hidden = true;
+  }
+  $("#actions").hidden = false;
+  $("#out").hidden = false;
+}
+
+function hostOf(u) { try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return ""; } }
+
+// ---------- Generieren ----------
 const COOKING = [
   "Schnipple die Zutaten …", "Rühre im Topf …", "Schmecke ab …",
   "Blättere in Rezeptbüchern …", "Frage die Oma um Rat …", "Suche im Netz …",
 ];
-
 let busy = false;
+
 $("#go").onclick = async () => {
   if (busy) return;
   const ingredients = $("#ings").value.trim();
@@ -49,6 +125,7 @@ $("#go").onclick = async () => {
   btn.disabled = true;
   $("#out").hidden = false;
   $("#webbox").hidden = true;
+  $("#actions").hidden = true;
   let i = 0;
   $("#recipes").innerHTML = `<p class="cooking">👨‍🍳 ${COOKING[0]}</p>`;
   const ticker = setInterval(() => {
@@ -67,24 +144,89 @@ $("#go").onclick = async () => {
 
     if (!res.ok || !data.answer) {
       $("#recipes").innerHTML = `<p class="err">😔 ${esc(data.error || "Das hat leider nicht geklappt — probier es gleich nochmal.")}</p>`;
+      $("#actions").hidden = true;
+      if (data.links && data.links.length) {
+        $("#weblinks").innerHTML = data.links.map(l => `
+          <li><a href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.title)}</a>
+          <span class="host">${esc(hostOf(l.url))}</span></li>`).join("");
+        $("#webbox").hidden = false;
+      }
     } else {
-      $("#recipes").innerHTML = md(data.answer);
-    }
-
-    if (data.links && data.links.length) {
-      $("#weblinks").innerHTML = data.links.map(l => `
-        <li><a href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.title)}</a>
-        <span class="host">${esc(new URL(l.url).hostname.replace(/^www\./, ""))}</span></li>`).join("");
-      $("#webbox").hidden = false;
+      const entry = { id: String(Date.now()), ts: Date.now(), ingredients, wishes, answer: data.answer, links: data.links || [] };
+      showResult(entry);
+      addHist(entry);
     }
   } catch {
     clearInterval(ticker);
     $("#recipes").innerHTML = `<p class="err">😔 Keine Verbindung — bist du online?</p>`;
+    $("#actions").hidden = true;
   }
   btn.disabled = false;
   busy = false;
   $("#out").scrollIntoView({ behavior: "smooth", block: "nearest" });
 };
 
-// Enter im Wünsche-Feld startet direkt
 $("#wishes").addEventListener("keydown", e => { if (e.key === "Enter") $("#go").click(); });
+
+// ---------- Aktionen: Kopieren / Teilen / Download ----------
+async function flash(btn, text) {
+  const old = btn.textContent;
+  btn.textContent = text;
+  setTimeout(() => { btn.textContent = old; }, 1600);
+}
+
+$("#copy").onclick = async () => {
+  if (!current) return;
+  try { await navigator.clipboard.writeText(toPlain(current)); flash($("#copy"), "✔ Kopiert"); }
+  catch { flash($("#copy"), "✖ Ging nicht"); }
+};
+
+$("#share").onclick = async () => {
+  if (!current) return;
+  const text = toPlain(current);
+  try {
+    if (navigator.share) { await navigator.share({ title: "Rezepte aus dem Kochstudio", text }); return; }
+    await navigator.clipboard.writeText(text);
+    flash($("#share"), "✔ Kopiert");
+  } catch { /* Abbruch durch Nutzer ignorieren */ }
+};
+
+$("#dl").onclick = () => {
+  if (!current) return;
+  const blob = new Blob([toPlain(current)], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  const d = new Date(current.ts);
+  a.href = url;
+  a.download = `Rezepte-${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}.txt`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+};
+
+// ---------- Verlauf-Interaktion ----------
+$("#history").addEventListener("click", e => {
+  const del = e.target.closest("[data-del]");
+  if (del) {
+    saveHist(loadHist().filter(x => x.id !== del.dataset.del));
+    renderHist();
+    return;
+  }
+  const open = e.target.closest(".hist-open");
+  if (open) {
+    const entry = loadHist().find(x => x.id === open.dataset.id);
+    if (entry) {
+      $("#ings").value = entry.ingredients;
+      $("#wishes").value = entry.wishes || "";
+      showResult(entry);
+      $("#out").scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  }
+});
+
+$("#hist-clear").onclick = () => {
+  if (!loadHist().length) return;
+  if (confirm("Gesamten Verlauf auf diesem Gerät löschen?")) { saveHist([]); renderHist(); }
+};
+
+// Beim Laden: Verlauf anzeigen
+renderHist();
