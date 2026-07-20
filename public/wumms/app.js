@@ -82,9 +82,10 @@ function reset() {
   tray = [null, null, null];
   score = 0; combo = 0; pow = 0; threat = 0; shoves = 0;
   THREAT_MAX = 7;
-  armed = null; over = false; running = true;
+  over = false; running = true;
   stats = { lines: 0, maxCombo: 0, shoves: 0, ultimates: 0 };
   best = Number(localStorage.getItem("wumms_best") || 0);
+  clearArmUI();
   dealTray();
   updateHUD();
 }
@@ -187,7 +188,8 @@ function villainShove() {
   grid[N - 1] = Array.from({ length: N }, (_, c) => chosen.has(c) ? { villain: true } : null);
   burst("GRRR!", "#ff4d6d"); shake(7);
   GS.sound.tone(150, 0.25, { type: "sawtooth", gain: 0.09, slideTo: 70 }); GS.haptic([20, 30, 20]);
-  if (!over && !anyMoveLeft()) gameOver();
+  // Kein Game-Over-Check hier: das Tray kann gerade leer sein (letztes Teil
+  // eben gelegt). placePiece legt danach neue Teile nach und prüft dort.
 }
 
 // ---------- Helden-Ultimates ----------
@@ -212,9 +214,13 @@ function armUltimate(type) {
   document.getElementById("arm-banner").hidden = false;
   document.getElementById("pow-btn").hidden = true;
 }
-function cancelArm() {
+function clearArmUI() {
   armed = null;
-  document.getElementById("arm-banner").hidden = true;
+  const ab = document.getElementById("arm-banner");
+  if (ab) ab.hidden = true;
+}
+function cancelArm() {
+  clearArmUI();
   updateHUD();
 }
 function execUltimate(r, c) {
@@ -544,6 +550,8 @@ function mkOverlay(html) {
 // ---------- Startmenü ----------
 function startMenu() {
   running = false;
+  clearArmUI();
+  document.getElementById("pow-btn").hidden = true;
   const ov = mkOverlay(`
     <h2><span class="foil">WUMMS!</span></h2>
     <p class="sub">Block-Puzzle mit Tier-Helden. Reihen abräumen, Power laden, den Bösewicht zurückschlagen.</p>
