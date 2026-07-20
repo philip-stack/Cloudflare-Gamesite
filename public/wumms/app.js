@@ -80,8 +80,11 @@ function reset() {
   if (DAILY) seededRand = mulberry32((Math.floor(Date.now() / 86400000)) ^ 0x5eed);
   grid = Array.from({ length: N }, () => Array(N).fill(null));
   tray = [null, null, null];
-  score = 0; combo = 0; pow = 0; threat = 0; shoves = 0;
-  THREAT_MAX = 7;
+  score = 0; combo = 0; threat = 0; shoves = 0;
+  const perk = currentPerk();
+  THREAT_MAX = perk === "calm" ? 9 : 7;         // Katze: seltenere Schübe
+  pow = perk === "charged" ? POW_MAX / 2 : 0;   // Frosch: halb voller Start-POW
+  heroCheer = 0; villainPush = 0; speeches = [];
   over = false; running = true;
   stats = { lines: 0, maxCombo: 0, shoves: 0, ultimates: 0 };
   best = Number(localStorage.getItem("wumms_best") || 0);
@@ -135,16 +138,21 @@ function placePiece(slot, r0, c0) {
 
   if (res.lines > 0) {
     stats.lines += res.lines;
+    const perk = currentPerk();
     const sBonus = res.speciesLines * 20;
-    const gain = (res.cells * 5 + res.lines * res.lines * 10 + sBonus) * mult;
+    const comboBoost = perk === "combo" ? 1.25 : 1;          // Fuchs: mehr Punkte
+    const powRate = perk === "pow" ? 1.25 : 1;               // Waschbär: schneller laden
+    const gain = Math.round((res.cells * 5 + res.lines * res.lines * 10 + sBonus) * mult * comboBoost);
     score += gain;
-    pow = Math.min(POW_MAX, pow + res.cells * 3 + res.lines * 5 + res.speciesLines * 8);
+    pow = Math.min(POW_MAX, pow + Math.round((res.cells * 3 + res.lines * 5 + res.speciesLines * 8) * powRate));
     threat = Math.max(0, threat - res.lines);   // Clears drängen den Bösewicht zurück
     burst(res.lines >= 3 ? "WUMMS!" : res.lines >= 2 ? "BÄM!" : "PLOPP!", "#ffd23f");
     floater(`+${gain}`, "#57e39b");
     if (mult >= 2) showCombo(mult);
     if (res.lines >= 2) { GS.sound.great(); GS.haptic([10, 40, 10]); } else GS.sound.good();
     shake(res.lines * 3 + 2);
+    heroCheer = 0.85;
+    say("hero", mult >= 3 ? "COMBO!" : ["JUHU!", "STARK!", "YEAH!", "PENG!"][ri(4)]);
   }
 
   // Bösewicht-Druck
@@ -187,15 +195,20 @@ function villainShove() {
   // niemand stirbt. Das Spiel endet ausschließlich, wenn kein Teil mehr passt.
   if (grid[0].some(Boolean)) return;
   shoves++; stats.shoves = shoves;
-  // Schwierigkeit zieht langsam an: kürzeres Intervall, dichtere Reihe
-  THREAT_MAX = Math.max(4, 7 - Math.floor(shoves / 3));
+  const perk = currentPerk();
+  // Schwierigkeit zieht langsam an: kürzeres Intervall, dichtere Reihe.
+  // Katze (calm) hält den Bösewicht ruhiger.
+  const floorMax = perk === "calm" ? 6 : 4, baseMax = perk === "calm" ? 9 : 7;
+  THREAT_MAX = Math.max(floorMax, baseMax - Math.floor(shoves / 3));
   for (let r = 0; r < N - 1; r++) grid[r] = grid[r + 1];
-  const fill = Math.min(7, 4 + Math.floor(shoves / 2));
+  let fill = Math.min(7, 4 + Math.floor(shoves / 2));
+  if (perk === "gap") fill = Math.max(3, fill - 1);   // Igel: mehr Lücken
   const cols = [...Array(N).keys()];
   for (let i = cols.length - 1; i > 0; i--) { const j = ri(i + 1); [cols[i], cols[j]] = [cols[j], cols[i]]; }
   const chosen = new Set(cols.slice(0, fill));
   grid[N - 1] = Array.from({ length: N }, (_, c) => chosen.has(c) ? { villain: true } : null);
   burst("GRRR!", "#ff4d6d"); shake(7);
+  villainPush = 0.6; say("villain", ["GRR!", "HA!", "MEHR!", "HOCH!"][ri(4)]);
   GS.sound.tone(150, 0.25, { type: "sawtooth", gain: 0.09, slideTo: 70 }); GS.haptic([20, 30, 20]);
   // Kein Game-Over-Check hier: das Tray kann gerade leer sein (letztes Teil
   // eben gelegt). placePiece legt danach neue Teile nach und prüft dort.
@@ -264,14 +277,23 @@ let traySlots = [];   // { r:{x,y,w,h}, tcell, cols, rows, idx }
 function layout() {
   const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
   canvas.style.width = "100%";
-  cssW = canvas.clientWidth || 340;
+  const wrap = canvas.parentElement;
+  const availW = (wrap && wrap.clientWidth) || canvas.clientWidth || 340;
+  const availH = (wrap && wrap.clientHeight) || 520;
   const PAD = 6;
-  cell = Math.floor((cssW - PAD * 2) / N);
+  // Höhen-Budget: Strip(1.5) + Brett(N) + Tray(2.3) + Abstände(~0.65) in Zellen
+  const UNITS = 1.5 + N + 2.3 + 0.65;
+  const cellW = (availW - PAD * 2) / N;
+  const cellH = (availH - PAD * 2) / UNITS;
+  cell = Math.max(22, Math.floor(Math.min(cellW, cellH)));
   const boardSize = cell * N;
-  boardX = Math.round((cssW - boardSize) / 2);
-  boardY = PAD;
-  const trayGap = Math.round(cell * 0.5);
-  traySlotH = Math.round(cell * 2.4);
+  cssW = availW;
+  boardX = Math.round((availW - boardSize) / 2);
+  stripH = Math.round(cell * 1.5);
+  stripY = PAD;
+  boardY = stripY + stripH + Math.round(cell * 0.2);
+  const trayGap = Math.round(cell * 0.45);
+  traySlotH = Math.round(cell * 2.3);
   trayY = boardY + boardSize + trayGap;
   cssH = trayY + traySlotH + PAD;
   canvas.style.height = cssH + "px";
@@ -382,8 +404,11 @@ function computeTray() {
   }
 }
 
-// ---------- Effekte ----------
+// ---------- Effekte & Figuren ----------
 let particles = [], bursts = [], floaters = [], shakeAmt = 0;
+let heroCheer = 0, villainPush = 0, speeches = [], powWasReady = false, animT = 0;
+let stripY = 0, stripH = 0;
+function say(who, text) { speeches = speeches.filter(s => s.who !== who); speeches.push({ who, text, t: 0, life: 1.2 }); }
 function spawnParticles(r, c, data) {
   const col = data && data.villain ? VILLAIN.base : (data ? SPECIES[data.sp].base : "#fff");
   const x = boardX + c * cell + cell / 2, y = boardY + r * cell + cell / 2;
@@ -397,11 +422,19 @@ let lastT = 0;
 function frame(t) {
   const dt = Math.min(0.05, (t - lastT) / 1000 || 0); lastT = t;
   // Effekte updaten
+  animT += dt;
   particles = particles.filter(p => (p.life -= dt * 1.6) > 0);
   particles.forEach(p => { p.x += p.vx; p.y += p.vy; p.vy += 0.35; p.rot += p.vr; });
   bursts = bursts.filter(b => (b.t += dt) < b.life);
   floaters = floaters.filter(f => (f.t += dt) < f.life);
+  speeches = speeches.filter(s => (s.t += dt) < s.life);
+  if (heroCheer > 0) heroCheer = Math.max(0, heroCheer - dt);
+  if (villainPush > 0) villainPush = Math.max(0, villainPush - dt);
   if (shakeAmt > 0) shakeAmt = Math.max(0, shakeAmt - dt * 40);
+  // POW gerade voll geworden? Held jubelt einmal.
+  const ready = pow >= POW_MAX && !over && running;
+  if (ready && !powWasReady) { say("hero", "POWER!"); heroCheer = 0.85; }
+  powWasReady = ready;
   draw();
   requestAnimationFrame(frame);
 }
@@ -410,6 +443,8 @@ function draw() {
   ctx.clearRect(0, 0, cssW, cssH);
   ctx.save();
   if (shakeAmt > 0) ctx.translate((rnd() - 0.5) * shakeAmt, (rnd() - 0.5) * shakeAmt);
+
+  drawStage();
 
   // Brett-Panel
   const bs = cell * N;
@@ -477,6 +512,130 @@ function draw() {
     ctx.fillStyle = b.col; ctx.fillText(b.text, 0, 0);
     ctx.restore();
   }
+  // Sprechblasen an Held/Bösewicht
+  for (const s of speeches) {
+    const heroSide = s.who === "hero";
+    const cx = heroSide ? boardX + stripH * 0.5 : boardX + cell * N - stripH * 0.5;
+    drawBubble(cx, stripY + stripH * 0.18, s.text, heroSide, s.t / s.life);
+  }
+  ctx.restore();
+}
+
+// ---------- Bühne: Held (links) vs. Bösewicht (rechts) ----------
+function drawStage() {
+  const s = stripH;
+  drawHero(boardX, stripY, s, heroId(), animT, heroCheer);
+  drawVillain(boardX + cell * N - s, stripY, s, animT, Math.min(1, threat / THREAT_MAX), villainPush);
+}
+
+function headEyes(cx, cy, rr, s, happy, look) {
+  ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(cx, cy, rr, 0, 7); ctx.fill();
+  ctx.lineWidth = Math.max(1, s * 0.012); ctx.strokeStyle = "#17122a"; ctx.stroke();
+  ctx.fillStyle = "#17122a"; ctx.beginPath();
+  ctx.arc(cx + (look || 0) * rr * 0.4, cy + (happy ? -rr * 0.15 : rr * 0.15), rr * 0.55, 0, 7); ctx.fill();
+}
+
+function drawHero(x, y, s, id, t, cheer) {
+  const L = HERO_LOOK[id] || HERO_LOOK.raccoon;
+  const hop = cheer > 0 ? Math.sin((1 - cheer / 0.85) * Math.PI) * s * 0.16 : 0;
+  const bob = Math.sin(t * 3) * s * 0.02;
+  ctx.save();
+  ctx.translate(x + s * 0.5, y + s * 0.55 - hop - bob);
+  const R = s * 0.32, lw = Math.max(2, s * 0.06);
+  ctx.lineWidth = lw; ctx.strokeStyle = "#17122a"; ctx.lineJoin = "round"; ctx.lineCap = "round";
+
+  // Arme beim Jubeln
+  if (cheer > 0) {
+    ctx.save(); ctx.strokeStyle = "#17122a"; ctx.lineWidth = lw * 1.3;
+    ctx.beginPath(); ctx.moveTo(-R * 0.8, R * 0.2); ctx.lineTo(-R * 1.15, -R * 0.5);
+    ctx.moveTo(R * 0.8, R * 0.2); ctx.lineTo(R * 1.15, -R * 0.5); ctx.stroke();
+    ctx.restore();
+  }
+  // Ohren
+  ctx.fillStyle = L.fur;
+  const ear = (ex) => {
+    if (L.ear === "round") { ctx.beginPath(); ctx.arc(ex, -R * 0.72, R * 0.3, 0, 7); ctx.fillStyle = L.fur; ctx.fill(); ctx.stroke(); ctx.beginPath(); ctx.arc(ex, -R * 0.72, R * 0.15, 0, 7); ctx.fillStyle = L.dark; ctx.fill(); }
+    else if (L.ear === "tri") { ctx.beginPath(); ctx.moveTo(ex - R * 0.28, -R * 0.5); ctx.lineTo(ex, -R * 1.15); ctx.lineTo(ex + R * 0.28, -R * 0.5); ctx.closePath(); ctx.fillStyle = L.fur; ctx.fill(); ctx.stroke(); }
+    else if (L.ear === "spike") { for (let k = -2; k <= 2; k++) { ctx.beginPath(); ctx.moveTo(ex + k * R * 0.34 - R * 0.14, -R * 0.55); ctx.lineTo(ex + k * R * 0.34, -R * 1.05); ctx.lineTo(ex + k * R * 0.34 + R * 0.14, -R * 0.55); ctx.closePath(); ctx.fillStyle = L.dark; ctx.fill(); ctx.stroke(); } }
+    else if (L.ear === "bump") { ctx.beginPath(); ctx.arc(ex, -R * 0.62, R * 0.32, 0, 7); ctx.fillStyle = L.fur; ctx.fill(); ctx.stroke(); }
+  };
+  if (L.ear === "spike") ear(0); else { ear(-R * 0.62); ear(R * 0.62); }
+
+  // Kopf
+  const g = ctx.createLinearGradient(0, -R, 0, R);
+  g.addColorStop(0, L.fur); g.addColorStop(1, L.dark);
+  ctx.beginPath(); ctx.arc(0, 0, R, 0, 7); ctx.fillStyle = g; ctx.fill(); ctx.stroke();
+  // Schnauze
+  ctx.beginPath(); ctx.ellipse(0, R * 0.3, R * 0.6, R * 0.48, 0, 0, 7); ctx.fillStyle = L.face; ctx.fill(); ctx.stroke();
+  // Waschbär-Maske
+  if (L.mask) { ctx.fillStyle = L.dark; roundRect(-R * 0.82, -R * 0.18, R * 1.64, R * 0.52, R * 0.22); ctx.fill(); ctx.stroke(); }
+  // Frosch: Augen auf den Bumps
+  const eo = R * 0.4, ey = L.ear === "bump" ? -R * 0.55 : -R * 0.02, er = R * 0.2;
+  headEyes(-eo, L.ear === "bump" ? -R * 0.62 : ey, er, s, cheer > 0, 0);
+  headEyes(eo, L.ear === "bump" ? -R * 0.62 : ey, er, s, cheer > 0, 0);
+  // Nase
+  ctx.fillStyle = "#17122a"; ctx.beginPath(); ctx.arc(0, R * 0.2, R * 0.11, 0, 7); ctx.fill();
+  // Schnurrhaare (Katze)
+  if (L.whisk) { ctx.lineWidth = Math.max(1, s * 0.02); ctx.beginPath(); ctx.moveTo(R * 0.2, R * 0.28); ctx.lineTo(R * 0.7, R * 0.2); ctx.moveTo(R * 0.2, R * 0.34); ctx.lineTo(R * 0.7, R * 0.36); ctx.moveTo(-R * 0.2, R * 0.28); ctx.lineTo(-R * 0.7, R * 0.2); ctx.moveTo(-R * 0.2, R * 0.34); ctx.lineTo(-R * 0.7, R * 0.36); ctx.stroke(); ctx.lineWidth = lw; }
+  // Mund
+  ctx.beginPath();
+  if (cheer > 0) { ctx.arc(0, R * 0.34, R * 0.26, 0.05 * Math.PI, 0.95 * Math.PI); ctx.fillStyle = "#17122a"; ctx.fill(); }
+  else { ctx.arc(0, R * 0.3, R * 0.16, 0.15 * Math.PI, 0.85 * Math.PI); ctx.stroke(); }
+  ctx.restore();
+}
+
+function drawVillain(x, y, s, t, threatRatio, push) {
+  const L = VILLAIN_LOOK;
+  const lunge = push > 0 ? Math.sin((1 - push / 0.6) * Math.PI) * s * 0.16 : 0;
+  const bob = Math.sin(t * 2.4 + 1) * s * 0.02;
+  const anger = 0.4 + threatRatio * 0.6;
+  ctx.save();
+  ctx.translate(x + s * 0.5 - lunge, y + s * 0.55 - bob);
+  const R = s * 0.32, lw = Math.max(2, s * 0.06);
+  ctx.lineWidth = lw; ctx.strokeStyle = "#17122a"; ctx.lineJoin = "round"; ctx.lineCap = "round";
+
+  // Hörner/spitze Ohren
+  ctx.fillStyle = L.dark;
+  for (const ex of [-R * 0.6, R * 0.6]) { ctx.beginPath(); ctx.moveTo(ex - R * 0.24, -R * 0.5); ctx.lineTo(ex + R * 0.05, -R * 1.2); ctx.lineTo(ex + R * 0.28, -R * 0.5); ctx.closePath(); ctx.fill(); ctx.stroke(); }
+  // Kopf
+  const g = ctx.createLinearGradient(0, -R, 0, R);
+  g.addColorStop(0, L.fur); g.addColorStop(1, L.dark);
+  ctx.beginPath(); ctx.arc(0, 0, R, 0, 7); ctx.fillStyle = g; ctx.fill(); ctx.stroke();
+  // wütende Brauen
+  ctx.strokeStyle = "#17122a"; ctx.lineWidth = Math.max(2, s * 0.06);
+  ctx.beginPath();
+  ctx.moveTo(-R * 0.72, -R * 0.5); ctx.lineTo(-R * 0.16, -R * 0.5 + anger * R * 0.5);
+  ctx.moveTo(R * 0.72, -R * 0.5); ctx.lineTo(R * 0.16, -R * 0.5 + anger * R * 0.5);
+  ctx.stroke();
+  // Augen (verengt)
+  ctx.fillStyle = "#ffe14d";
+  for (const ex of [-R * 0.38, R * 0.38]) { ctx.beginPath(); ctx.ellipse(ex, -R * 0.08, R * 0.17, R * 0.13, 0, 0, 7); ctx.fill(); ctx.lineWidth = Math.max(1, s * 0.02); ctx.strokeStyle = "#17122a"; ctx.stroke(); ctx.fillStyle = "#17122a"; ctx.beginPath(); ctx.arc(ex, -R * 0.08, R * 0.06, 0, 7); ctx.fill(); ctx.fillStyle = "#ffe14d"; }
+  // fieses Grinsen mit Zahn
+  ctx.strokeStyle = "#17122a"; ctx.lineWidth = lw; ctx.fillStyle = "#2a1c40";
+  ctx.beginPath(); ctx.moveTo(-R * 0.4, R * 0.3); ctx.quadraticCurveTo(0, R * 0.28 + anger * R * 0.35, R * 0.4, R * 0.3); ctx.quadraticCurveTo(0, R * 0.62, -R * 0.4, R * 0.3); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.moveTo(-R * 0.16, R * 0.32); ctx.lineTo(-R * 0.02, R * 0.32); ctx.lineTo(-R * 0.09, R * 0.46); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.restore();
+}
+
+function drawBubble(cx, cy, text, tailLeft, k) {
+  ctx.save();
+  const a = k < 0.15 ? k / 0.15 : (k > 0.8 ? (1 - k) / 0.2 : 1);
+  ctx.globalAlpha = Math.max(0, Math.min(1, a));
+  ctx.font = `800 ${Math.max(12, stripH * 0.26)}px ${getVar("--font-ui") || "Outfit"}, sans-serif`;
+  const w = ctx.measureText(text).width + stripH * 0.34;
+  const h = stripH * 0.5;
+  let bx = cx - w / 2;
+  bx = Math.max(2, Math.min(cssW - w - 2, bx));
+  const by = cy - h;
+  roundRect(bx, by, w, h, h * 0.34); ctx.fillStyle = "#fff8ec"; ctx.fill();
+  ctx.lineWidth = Math.max(2, stripH * 0.05); ctx.strokeStyle = "#17122a"; ctx.stroke();
+  // Zipfel
+  ctx.beginPath();
+  const tx = Math.max(bx + h * 0.4, Math.min(bx + w - h * 0.4, cx));
+  ctx.moveTo(tx - h * 0.16, by + h - 1); ctx.lineTo(tailLeft ? tx - h * 0.4 : tx + h * 0.4, by + h + h * 0.34); ctx.lineTo(tx + h * 0.16, by + h - 1); ctx.closePath();
+  ctx.fillStyle = "#fff8ec"; ctx.fill(); ctx.stroke();
+  ctx.fillStyle = "#241a3a"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText(text, bx + w / 2, by + h / 2);
   ctx.restore();
 }
 
@@ -539,6 +698,8 @@ function updateHUD() {
   powBtn.hidden = !(pow >= POW_MAX) || !!armed || over;
   const hero = GS.skins.get("wumms");
   document.getElementById("hero").textContent = (hero && hero.avatar) || "🦝";
+  const hp = document.getElementById("hero-perk");
+  if (hp) hp.textContent = `${HERO_NAME[heroId()] || "Held"} · ${PERK_TEXT[currentPerk()] || ""}`;
   document.getElementById("btn-sound").textContent = GS.sound.on() ? "🔊" : "🔇";
 }
 function showCombo(mult) {
@@ -646,12 +807,30 @@ function toast(msg) {
 // Skins & Meilensteine
 // ====================================================================
 GS.skins.define("wumms", [
-  { id: "raccoon",   name: "Waschbär", req: 0, swatch: ["#8a93a6", "#2b2f3a"], colors: { avatar: "🦝", accent: "#8a93a6" } },
-  { id: "fox",       name: "Fuchs",    req: 1, swatch: ["#ff8a3d", "#c85f14"], colors: { avatar: "🦊", accent: "#ff8a3d" } },
-  { id: "cat",       name: "Katze",    req: 3, swatch: ["#ffd23f", "#c99b14"], colors: { avatar: "🐱", accent: "#ffd23f" } },
-  { id: "hedgehog",  name: "Igel",     req: 5, swatch: ["#b98a5e", "#6f4f2f"], colors: { avatar: "🦔", accent: "#b98a5e" } },
-  { id: "frog",      name: "Frosch",   req: 7, swatch: ["#57e39b", "#1f9d5c"], colors: { avatar: "🐸", accent: "#57e39b" } },
+  { id: "raccoon",  name: "Waschbär · POW+",  req: 0, swatch: ["#9aa3b2", "#5b6273"], colors: { avatar: "🦝", accent: "#9aa3b2", perk: "pow" } },
+  { id: "fox",      name: "Fuchs · Punkte+",  req: 1, swatch: ["#ff8a3d", "#c85f14"], colors: { avatar: "🦊", accent: "#ff8a3d", perk: "combo" } },
+  { id: "cat",      name: "Katze · ruhiger",  req: 3, swatch: ["#ffd23f", "#c99b14"], colors: { avatar: "🐱", accent: "#ffd23f", perk: "calm" } },
+  { id: "hedgehog", name: "Igel · Lücken+",   req: 5, swatch: ["#b98a5e", "#6f4f2f"], colors: { avatar: "🦔", accent: "#b98a5e", perk: "gap" } },
+  { id: "frog",     name: "Frosch · Startpow", req: 7, swatch: ["#57e39b", "#1f9d5c"], colors: { avatar: "🐸", accent: "#57e39b", perk: "charged" } },
 ]);
+
+// Aussehen der Comic-Figuren (Kopf-Paletten). raccoon: Maske übers Gesicht.
+const HERO_LOOK = {
+  raccoon:  { fur: "#9aa3b2", dark: "#5b6273", face: "#eef1f6", ear: "round", mask: true },
+  fox:      { fur: "#ff8a3d", dark: "#c85f14", face: "#ffe6d2", ear: "tri" },
+  cat:      { fur: "#ffd23f", dark: "#c99b14", face: "#fff3c9", ear: "tri", whisk: true },
+  hedgehog: { fur: "#b98a5e", dark: "#6f4f2f", face: "#efdcc6", ear: "spike" },
+  frog:     { fur: "#57e39b", dark: "#1f9d5c", face: "#bff6da", ear: "bump" },
+};
+const VILLAIN_LOOK = { fur: "#8a5cff", dark: "#4a2f9e", face: "#d8c8ff" };
+const PERK_TEXT = {
+  pow: "POW lädt schneller", combo: "mehr Punkte bei Clears",
+  calm: "Bösewicht schiebt seltener", gap: "Bösewicht-Reihen mit mehr Lücken",
+  charged: "startet mit halbem POW",
+};
+const HERO_NAME = { raccoon: "Waschbär", fox: "Fuchs", cat: "Katze", hedgehog: "Igel", frog: "Frosch" };
+function heroId() { return GS.skins.currentId("wumms") || "raccoon"; }
+function currentPerk() { return (GS.skins.get("wumms") || {}).perk || "pow"; }
 GS.badges.define("wumms", [
   { id: "clean30",  icon: "🧹", name: "Aufräumer",        desc: "30 Reihen in einem Lauf abräumen", test: s => s.lines >= 30 },
   { id: "combo5",   icon: "🔥", name: "Combo-König",       desc: "Combo ×5 erreichen",             test: s => s.maxCombo >= 5 },

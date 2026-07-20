@@ -134,6 +134,11 @@ body {
 .meter-threat.danger { box-shadow: 0 0 0 2px #ff4d6d inset; animation: threat-pulse 0.5s ease-in-out infinite; }
 @keyframes threat-pulse { 50% { box-shadow: 0 0 0 2px #ff4d6d inset, 0 0 20px 1px rgba(255,77,109,0.6); } }
 
+.hero-perk {
+  text-align: center; font-size: 0.8rem; font-weight: 700; color: var(--muted);
+  margin-top: -2px;
+}
+
 /* ---------- Power-Button / Arm-Banner ---------- */
 .pow-btn {
   border: 0; border-radius: 14px; padding: 11px;
