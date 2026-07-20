@@ -594,18 +594,21 @@ function frame(ts) {
 
 function draw() {
   ctx.clearRect(0, 0, W, H);
-  // Wiese
+  const light = document.documentElement.dataset.theme !== "dark";
+  // Wiese (theme-abhängig: sonnig hell vs. abendlich gedämpft)
   roundRect(1.5, 1.5, W - 3, H - 3, 16);
   const g = ctx.createLinearGradient(0, 0, 0, H);
-  g.addColorStop(0, "#5fd07f"); g.addColorStop(0.55, "#37b058"); g.addColorStop(1, "#218a44");
+  if (light) { g.addColorStop(0, "#5fd07f"); g.addColorStop(0.55, "#37b058"); g.addColorStop(1, "#218a44"); }
+  else { g.addColorStop(0, "#2f6d42"); g.addColorStop(0.55, "#215233"); g.addColorStop(1, "#163a24"); }
   ctx.fillStyle = g; ctx.fill(); ctx.lineWidth = 3.5; ctx.strokeStyle = "#123018"; ctx.stroke();
   ctx.save(); roundRect(1.5, 1.5, W - 3, H - 3, 16); ctx.clip();
-  // Sonnen-Lichtfleck oben
+  // Licht von oben (Sonne bzw. Mond)
   const sun = ctx.createRadialGradient(W * 0.3, H * 0.12, 0, W * 0.3, H * 0.12, W * 0.65);
-  sun.addColorStop(0, "rgba(255,255,255,0.18)"); sun.addColorStop(1, "rgba(255,255,255,0)");
+  const sunA = light ? 0.18 : 0.1;
+  sun.addColorStop(0, `rgba(255,255,255,${sunA})`); sun.addColorStop(1, "rgba(255,255,255,0)");
   ctx.fillStyle = sun; ctx.fillRect(0, 0, W, H);
   // Grasbüschel
-  ctx.strokeStyle = "rgba(255,255,255,0.11)"; ctx.lineWidth = 2; ctx.lineCap = "round";
+  ctx.strokeStyle = light ? "rgba(255,255,255,0.11)" : "rgba(255,255,255,0.07)"; ctx.lineWidth = 2; ctx.lineCap = "round";
   for (let i = 0; i < 16; i++) {
     const gx = ((i * 137) % 100) / 100 * W, gy = ((i * 79) % 100) / 100 * H;
     ctx.beginPath(); ctx.moveTo(gx, gy); ctx.lineTo(gx - 4, gy - 9); ctx.moveTo(gx, gy); ctx.lineTo(gx, gy - 12); ctx.moveTo(gx, gy); ctx.lineTo(gx + 4, gy - 9); ctx.stroke();
@@ -620,7 +623,7 @@ function draw() {
   }
   // Vignette unten für Tiefe
   const vg = ctx.createLinearGradient(0, H * 0.62, 0, H);
-  vg.addColorStop(0, "rgba(0,40,15,0)"); vg.addColorStop(1, "rgba(0,40,15,0.22)");
+  vg.addColorStop(0, "rgba(0,30,12,0)"); vg.addColorStop(1, light ? "rgba(0,40,15,0.22)" : "rgba(0,20,8,0.4)");
   ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
   ctx.restore();
 
