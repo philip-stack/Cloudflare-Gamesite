@@ -281,15 +281,15 @@ function layout() {
   const availW = (wrap && wrap.clientWidth) || canvas.clientWidth || 340;
   const availH = (wrap && wrap.clientHeight) || 520;
   const PAD = 6;
-  // Höhen-Budget: Strip(1.5) + Brett(N) + Tray(2.3) + Abstände(~0.65) in Zellen
-  const UNITS = 1.5 + N + 2.3 + 0.65;
+  // Höhen-Budget: Strip(1.9) + Brett(N) + Tray(2.3) + Abstände(~0.65) in Zellen
+  const UNITS = 1.9 + N + 2.3 + 0.65;
   const cellW = (availW - PAD * 2) / N;
   const cellH = (availH - PAD * 2) / UNITS;
   cell = Math.max(22, Math.floor(Math.min(cellW, cellH)));
   const boardSize = cell * N;
   cssW = availW;
   boardX = Math.round((availW - boardSize) / 2);
-  stripH = Math.round(cell * 1.5);
+  stripH = Math.round(cell * 1.9);
   stripY = PAD;
   boardY = stripY + stripH + Math.round(cell * 0.2);
   const trayGap = Math.round(cell * 0.45);
@@ -516,124 +516,73 @@ function draw() {
   for (const s of speeches) {
     const heroSide = s.who === "hero";
     const cx = heroSide ? boardX + stripH * 0.5 : boardX + cell * N - stripH * 0.5;
-    drawBubble(cx, stripY + stripH * 0.18, s.text, heroSide, s.t / s.life);
+    drawBubble(cx, s.text, heroSide, s.t / s.life);
   }
   ctx.restore();
 }
 
 // ---------- Bühne: Held (links) vs. Bösewicht (rechts) ----------
+// Figuren als große, saubere Emoji (rendern zuverlässig hübsch) mit
+// Comic-Animation: wippen, hüpfen/jubeln, der Bösewicht stößt nach vorne.
+const EMOJI_FONT = '"Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif';
+
+function charShadow(cx, cy, rw) {
+  ctx.save(); ctx.fillStyle = "rgba(0,0,0,0.22)";
+  ctx.beginPath(); ctx.ellipse(cx, cy, rw, rw * 0.28, 0, 0, 7); ctx.fill(); ctx.restore();
+}
+function drawEmoji(emoji, x, y, size, rot, scale) {
+  ctx.save();
+  ctx.translate(x, y);
+  if (rot) ctx.rotate(rot);
+  if (scale && scale !== 1) ctx.scale(scale, scale);
+  ctx.font = `${Math.round(size)}px ${EMOJI_FONT}`;
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText(emoji, 0, 0);
+  ctx.restore();
+}
+
 function drawStage() {
   const s = stripH;
-  drawHero(boardX, stripY, s, heroId(), animT, heroCheer);
-  drawVillain(boardX + cell * N - s, stripY, s, animT, Math.min(1, threat / THREAT_MAX), villainPush);
+  const size = s * 0.72;
+  const heroX = boardX + s * 0.5;
+  const villX = boardX + cell * N - s * 0.5;
+  const cy = stripY + s * 0.6;
+
+  // Held
+  const hop = heroCheer > 0 ? Math.sin((1 - heroCheer / 0.85) * Math.PI) * s * 0.22 : 0;
+  const hbob = Math.sin(animT * 3) * s * 0.03;
+  charShadow(heroX, stripY + s * 0.98, s * 0.42);
+  const heroEmoji = (GS.skins.get("wumms") || {}).avatar || "🦝";
+  drawEmoji(heroEmoji, heroX, cy - hop - hbob, size, heroCheer > 0 ? Math.sin(animT * 22) * 0.14 : 0, heroCheer > 0 ? 1.08 : 1);
+
+  // Bösewicht
+  const threatRatio = Math.min(1, threat / THREAT_MAX);
+  const lunge = villainPush > 0 ? Math.sin((1 - villainPush / 0.6) * Math.PI) * s * 0.3 : 0;
+  const vbob = Math.sin(animT * 2.4 + 1) * s * 0.025;
+  charShadow(villX, stripY + s * 0.98, s * 0.42);
+  drawEmoji("🦹", villX - lunge, cy - vbob, size, villainPush > 0 ? -0.16 : threatRatio * 0.06, 1 + threatRatio * 0.06);
 }
 
-function headEyes(cx, cy, rr, s, happy, look) {
-  ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(cx, cy, rr, 0, 7); ctx.fill();
-  ctx.lineWidth = Math.max(1, s * 0.012); ctx.strokeStyle = "#17122a"; ctx.stroke();
-  ctx.fillStyle = "#17122a"; ctx.beginPath();
-  ctx.arc(cx + (look || 0) * rr * 0.4, cy + (happy ? -rr * 0.15 : rr * 0.15), rr * 0.55, 0, 7); ctx.fill();
-}
-
-function drawHero(x, y, s, id, t, cheer) {
-  const L = HERO_LOOK[id] || HERO_LOOK.raccoon;
-  const hop = cheer > 0 ? Math.sin((1 - cheer / 0.85) * Math.PI) * s * 0.16 : 0;
-  const bob = Math.sin(t * 3) * s * 0.02;
+// Sprechblase — immer vollständig sichtbar (oben im Strip verankert, geclamped)
+function drawBubble(anchorX, text, tailLeft, k) {
   ctx.save();
-  ctx.translate(x + s * 0.5, y + s * 0.55 - hop - bob);
-  const R = s * 0.32, lw = Math.max(2, s * 0.06);
-  ctx.lineWidth = lw; ctx.strokeStyle = "#17122a"; ctx.lineJoin = "round"; ctx.lineCap = "round";
-
-  // Arme beim Jubeln
-  if (cheer > 0) {
-    ctx.save(); ctx.strokeStyle = "#17122a"; ctx.lineWidth = lw * 1.3;
-    ctx.beginPath(); ctx.moveTo(-R * 0.8, R * 0.2); ctx.lineTo(-R * 1.15, -R * 0.5);
-    ctx.moveTo(R * 0.8, R * 0.2); ctx.lineTo(R * 1.15, -R * 0.5); ctx.stroke();
-    ctx.restore();
-  }
-  // Ohren
-  ctx.fillStyle = L.fur;
-  const ear = (ex) => {
-    if (L.ear === "round") { ctx.beginPath(); ctx.arc(ex, -R * 0.72, R * 0.3, 0, 7); ctx.fillStyle = L.fur; ctx.fill(); ctx.stroke(); ctx.beginPath(); ctx.arc(ex, -R * 0.72, R * 0.15, 0, 7); ctx.fillStyle = L.dark; ctx.fill(); }
-    else if (L.ear === "tri") { ctx.beginPath(); ctx.moveTo(ex - R * 0.28, -R * 0.5); ctx.lineTo(ex, -R * 1.15); ctx.lineTo(ex + R * 0.28, -R * 0.5); ctx.closePath(); ctx.fillStyle = L.fur; ctx.fill(); ctx.stroke(); }
-    else if (L.ear === "spike") { for (let k = -2; k <= 2; k++) { ctx.beginPath(); ctx.moveTo(ex + k * R * 0.34 - R * 0.14, -R * 0.55); ctx.lineTo(ex + k * R * 0.34, -R * 1.05); ctx.lineTo(ex + k * R * 0.34 + R * 0.14, -R * 0.55); ctx.closePath(); ctx.fillStyle = L.dark; ctx.fill(); ctx.stroke(); } }
-    else if (L.ear === "bump") { ctx.beginPath(); ctx.arc(ex, -R * 0.62, R * 0.32, 0, 7); ctx.fillStyle = L.fur; ctx.fill(); ctx.stroke(); }
-  };
-  if (L.ear === "spike") ear(0); else { ear(-R * 0.62); ear(R * 0.62); }
-
-  // Kopf
-  const g = ctx.createLinearGradient(0, -R, 0, R);
-  g.addColorStop(0, L.fur); g.addColorStop(1, L.dark);
-  ctx.beginPath(); ctx.arc(0, 0, R, 0, 7); ctx.fillStyle = g; ctx.fill(); ctx.stroke();
-  // Schnauze
-  ctx.beginPath(); ctx.ellipse(0, R * 0.3, R * 0.6, R * 0.48, 0, 0, 7); ctx.fillStyle = L.face; ctx.fill(); ctx.stroke();
-  // Waschbär-Maske
-  if (L.mask) { ctx.fillStyle = L.dark; roundRect(-R * 0.82, -R * 0.18, R * 1.64, R * 0.52, R * 0.22); ctx.fill(); ctx.stroke(); }
-  // Frosch: Augen auf den Bumps
-  const eo = R * 0.4, ey = L.ear === "bump" ? -R * 0.55 : -R * 0.02, er = R * 0.2;
-  headEyes(-eo, L.ear === "bump" ? -R * 0.62 : ey, er, s, cheer > 0, 0);
-  headEyes(eo, L.ear === "bump" ? -R * 0.62 : ey, er, s, cheer > 0, 0);
-  // Nase
-  ctx.fillStyle = "#17122a"; ctx.beginPath(); ctx.arc(0, R * 0.2, R * 0.11, 0, 7); ctx.fill();
-  // Schnurrhaare (Katze)
-  if (L.whisk) { ctx.lineWidth = Math.max(1, s * 0.02); ctx.beginPath(); ctx.moveTo(R * 0.2, R * 0.28); ctx.lineTo(R * 0.7, R * 0.2); ctx.moveTo(R * 0.2, R * 0.34); ctx.lineTo(R * 0.7, R * 0.36); ctx.moveTo(-R * 0.2, R * 0.28); ctx.lineTo(-R * 0.7, R * 0.2); ctx.moveTo(-R * 0.2, R * 0.34); ctx.lineTo(-R * 0.7, R * 0.36); ctx.stroke(); ctx.lineWidth = lw; }
-  // Mund
-  ctx.beginPath();
-  if (cheer > 0) { ctx.arc(0, R * 0.34, R * 0.26, 0.05 * Math.PI, 0.95 * Math.PI); ctx.fillStyle = "#17122a"; ctx.fill(); }
-  else { ctx.arc(0, R * 0.3, R * 0.16, 0.15 * Math.PI, 0.85 * Math.PI); ctx.stroke(); }
-  ctx.restore();
-}
-
-function drawVillain(x, y, s, t, threatRatio, push) {
-  const L = VILLAIN_LOOK;
-  const lunge = push > 0 ? Math.sin((1 - push / 0.6) * Math.PI) * s * 0.16 : 0;
-  const bob = Math.sin(t * 2.4 + 1) * s * 0.02;
-  const anger = 0.4 + threatRatio * 0.6;
-  ctx.save();
-  ctx.translate(x + s * 0.5 - lunge, y + s * 0.55 - bob);
-  const R = s * 0.32, lw = Math.max(2, s * 0.06);
-  ctx.lineWidth = lw; ctx.strokeStyle = "#17122a"; ctx.lineJoin = "round"; ctx.lineCap = "round";
-
-  // Hörner/spitze Ohren
-  ctx.fillStyle = L.dark;
-  for (const ex of [-R * 0.6, R * 0.6]) { ctx.beginPath(); ctx.moveTo(ex - R * 0.24, -R * 0.5); ctx.lineTo(ex + R * 0.05, -R * 1.2); ctx.lineTo(ex + R * 0.28, -R * 0.5); ctx.closePath(); ctx.fill(); ctx.stroke(); }
-  // Kopf
-  const g = ctx.createLinearGradient(0, -R, 0, R);
-  g.addColorStop(0, L.fur); g.addColorStop(1, L.dark);
-  ctx.beginPath(); ctx.arc(0, 0, R, 0, 7); ctx.fillStyle = g; ctx.fill(); ctx.stroke();
-  // wütende Brauen
-  ctx.strokeStyle = "#17122a"; ctx.lineWidth = Math.max(2, s * 0.06);
-  ctx.beginPath();
-  ctx.moveTo(-R * 0.72, -R * 0.5); ctx.lineTo(-R * 0.16, -R * 0.5 + anger * R * 0.5);
-  ctx.moveTo(R * 0.72, -R * 0.5); ctx.lineTo(R * 0.16, -R * 0.5 + anger * R * 0.5);
-  ctx.stroke();
-  // Augen (verengt)
-  ctx.fillStyle = "#ffe14d";
-  for (const ex of [-R * 0.38, R * 0.38]) { ctx.beginPath(); ctx.ellipse(ex, -R * 0.08, R * 0.17, R * 0.13, 0, 0, 7); ctx.fill(); ctx.lineWidth = Math.max(1, s * 0.02); ctx.strokeStyle = "#17122a"; ctx.stroke(); ctx.fillStyle = "#17122a"; ctx.beginPath(); ctx.arc(ex, -R * 0.08, R * 0.06, 0, 7); ctx.fill(); ctx.fillStyle = "#ffe14d"; }
-  // fieses Grinsen mit Zahn
-  ctx.strokeStyle = "#17122a"; ctx.lineWidth = lw; ctx.fillStyle = "#2a1c40";
-  ctx.beginPath(); ctx.moveTo(-R * 0.4, R * 0.3); ctx.quadraticCurveTo(0, R * 0.28 + anger * R * 0.35, R * 0.4, R * 0.3); ctx.quadraticCurveTo(0, R * 0.62, -R * 0.4, R * 0.3); ctx.closePath(); ctx.fill(); ctx.stroke();
-  ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.moveTo(-R * 0.16, R * 0.32); ctx.lineTo(-R * 0.02, R * 0.32); ctx.lineTo(-R * 0.09, R * 0.46); ctx.closePath(); ctx.fill(); ctx.stroke();
-  ctx.restore();
-}
-
-function drawBubble(cx, cy, text, tailLeft, k) {
-  ctx.save();
-  const a = k < 0.15 ? k / 0.15 : (k > 0.8 ? (1 - k) / 0.2 : 1);
+  const a = k < 0.12 ? k / 0.12 : (k > 0.82 ? (1 - k) / 0.18 : 1);
   ctx.globalAlpha = Math.max(0, Math.min(1, a));
-  ctx.font = `800 ${Math.max(12, stripH * 0.26)}px ${getVar("--font-ui") || "Outfit"}, sans-serif`;
-  const w = ctx.measureText(text).width + stripH * 0.34;
-  const h = stripH * 0.5;
-  let bx = cx - w / 2;
-  bx = Math.max(2, Math.min(cssW - w - 2, bx));
-  const by = cy - h;
+  const fs = Math.max(12, Math.min(20, stripH * 0.28));
+  ctx.font = `800 ${fs}px ${getVar("--font-ui") || "Outfit"}, sans-serif`;
+  const w = Math.min(cssW - 8, ctx.measureText(text).width + fs * 1.5);
+  const h = fs * 1.85;
+  let bx = Math.max(4, Math.min(cssW - w - 4, anchorX - w / 2));
+  const by = stripY + 1;                 // ganz oben verankert → nie abgeschnitten
   roundRect(bx, by, w, h, h * 0.34); ctx.fillStyle = "#fff8ec"; ctx.fill();
-  ctx.lineWidth = Math.max(2, stripH * 0.05); ctx.strokeStyle = "#17122a"; ctx.stroke();
-  // Zipfel
+  ctx.lineWidth = Math.max(2, fs * 0.16); ctx.strokeStyle = "#17122a"; ctx.stroke();
+  // Zipfel nach unten zur Figur
+  const tx = Math.max(bx + h * 0.4, Math.min(bx + w - h * 0.4, anchorX));
   ctx.beginPath();
-  const tx = Math.max(bx + h * 0.4, Math.min(bx + w - h * 0.4, cx));
-  ctx.moveTo(tx - h * 0.16, by + h - 1); ctx.lineTo(tailLeft ? tx - h * 0.4 : tx + h * 0.4, by + h + h * 0.34); ctx.lineTo(tx + h * 0.16, by + h - 1); ctx.closePath();
-  ctx.fillStyle = "#fff8ec"; ctx.fill(); ctx.stroke();
+  ctx.moveTo(tx - h * 0.15, by + h - 1);
+  ctx.lineTo(tailLeft ? tx - h * 0.34 : tx + h * 0.34, by + h + h * 0.32);
+  ctx.lineTo(tx + h * 0.15, by + h - 1);
+  ctx.closePath(); ctx.fillStyle = "#fff8ec"; ctx.fill(); ctx.stroke();
   ctx.fillStyle = "#241a3a"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
   ctx.fillText(text, bx + w / 2, by + h / 2);
   ctx.restore();
