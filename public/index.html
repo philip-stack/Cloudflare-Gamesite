@@ -402,8 +402,17 @@
         <span class="app-arrow">→</span>
       </a>
 
+      <a class="app-card" href="/wumms/" style="--i:7">
+        <span class="app-icon">🦝</span>
+        <span class="app-info">
+          <span class="app-name">WUMMS!</span>
+          <span class="app-desc" style="display:block">Comic-Block-Puzzle mit Tier-Helden — Blöcke legen, Reihen abräumen, Helden-Power zünden und den Bösewicht zurückschlagen</span>
+        </span>
+        <span class="app-arrow">→</span>
+      </a>
+
       <!-- Nächste App: Block kopieren, href und --i anpassen -->
-      <a class="app-card soon" href="#" style="--i:7" aria-disabled="true">
+      <a class="app-card soon" href="#" style="--i:8" aria-disabled="true">
         <span class="app-icon">✨</span>
         <span class="app-info">
           <span class="app-name">Nächste App<span class="badge">bald</span></span>
@@ -463,6 +472,7 @@
       const hrefMap = {
         wuerfelpoker: "/wuerfelpoker/", funkelfeld: "/funkelfeld/",
         komet: "/komet/", sternensturm: "/sternensturm/", galopp: "/galopp/",
+        wumms: "/wumms/",
       };
       if (last && hrefMap[last]) {
         const card = document.querySelector(`.app-card[href="${hrefMap[last]}"]`);
@@ -485,6 +495,7 @@
       { href: "/komet/", game: "komet", key: "km_best" },
       { href: "/sternensturm/", game: "sternensturm", key: "ss_best" },
       { href: "/galopp/", game: "galopp", key: "galopp_best" },
+      { href: "/wumms/", game: "wumms", key: "wumms_best" },
     ];
     for (const r of RECORDS) {
       const best = Number(localStorage.getItem(r.key) || 0);

@@ -47,6 +47,10 @@ const GAMES = {
       m.meters >= 0 && m.meters <= 100_000 && m.coins >= 0 && m.coins <= 20_000 &&
       score === Math.floor(m.meters) + m.coins * 10,
   },
+  wumms: {
+    max: 2_000_000,
+    daily: true,
+  },
 };
 
 // Modus aus Query/Body ableiten und gegen die Spiel-Config prüfen.
