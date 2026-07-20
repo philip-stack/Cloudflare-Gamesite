@@ -148,6 +148,32 @@ body {
 .album-name { font-weight: 800; font-size: 0.78rem; line-height: 1.1; }
 .album-desc { color: #5c7a64; font-size: 0.68rem; line-height: 1.25; }
 
+/* Shop */
+#shop-rows { display: flex; flex-direction: column; gap: 8px; margin: 6px 0 14px; }
+.shop-row {
+  display: flex; align-items: center; gap: 10px; text-align: left;
+  padding: 9px 11px; border-radius: 14px; background: rgba(20,50,24,0.05);
+  box-shadow: 0 0 0 2px rgba(18,48,24,0.15) inset;
+}
+.shop-ic { font-size: 1.5rem; flex-shrink: 0; }
+.shop-info { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.shop-info b { font-size: 0.98rem; }
+.shop-lvl { font-size: 0.72rem; color: #5c7a64; font-weight: 700; }
+.shop-desc { font-size: 0.74rem; color: #5c7a64; line-height: 1.2; }
+.shop-buy {
+  flex-shrink: 0; border: 0; border-radius: 10px; padding: 9px 12px; cursor: pointer;
+  font-family: inherit; font-weight: 800; font-size: 0.85rem; color: #123018;
+  background: linear-gradient(160deg, #ffe066, #ffb020);
+  box-shadow: 0 0 0 2px #123018 inset, 0 3px 0 #b97c10;
+}
+.shop-buy:active { transform: translateY(2px); box-shadow: 0 0 0 2px #123018 inset, 0 1px 0 #b97c10; }
+.shop-buy:disabled { opacity: 0.4; filter: grayscale(0.5); cursor: not-allowed; box-shadow: 0 0 0 2px #123018 inset; transform: none; }
+
+/* Entdeck-/Angeber-Karte */
+.reveal-canvas { display: block; margin: 6px auto 2px; animation: reveal-bob 1.6s ease-in-out infinite; }
+@keyframes reveal-bob { 50% { transform: translateY(-6px); } }
+.reveal-name { font-weight: 900; font-size: 1.25rem; margin: 2px 0; }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.001s !important; transition-duration: 0.01s !important; }
 }

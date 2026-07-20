@@ -37,18 +37,35 @@ const EXP_BASE = 100, EXP_GROW = 2.2;
 const DROP_MIN = 3.2, DROP_MAX = 6.0;   // Sekunden zwischen Münz-Blasen je Meeri
 const OFFLINE_EFF = 0.4, OFFLINE_CAP_H = 3;
 
+// ---------- Upgrade-Shop ----------
+const UPGRADES = [
+  { key: "coin",   icon: "🪙", name: "Münzwert",     base: 50,  grow: 1.55, max: 40,
+    desc: l => `+${l * 25}% Münzen` },
+  { key: "speed",  icon: "⚡", name: "Wurf-Tempo",    base: 40,  grow: 1.7,  max: 20,
+    desc: l => `+${l * 12}% schnellere Würfe` },
+  { key: "magnet", icon: "🧲", name: "Auto-Sammler",  base: 250, grow: 2.5,  max: 5,
+    desc: l => l === 0 ? "aus (Münzen selbst antippen)" : `Münzen nach ${Math.max(0.3, 2.6 - l * 0.5).toFixed(1)}s automatisch ein` },
+  { key: "luck",   icon: "🍀", name: "Glücks-Wurf",   base: 150, grow: 2.0,  max: 10,
+    desc: l => `${Math.round(Math.min(0.6, l * 0.06) * 100)}% Chance: gekauftes Meeri startet höher` },
+];
+const upCost = u => Math.round(u.base * Math.pow(u.grow, up[u.key] || 0));
+const coinMult = () => 1 + 0.25 * (up.coin || 0);
+const magnetDelay = () => (up.magnet || 0) > 0 ? Math.max(0.3, 2.6 - up.magnet * 0.5) : Infinity;
+const luckChance = () => Math.min(0.6, (up.luck || 0) * 0.06);
+
 // ---------- Zustand ----------
 const SAVE = "meeri_save_v1";
-let coins, meeries, capLevel, buyCount, album, lastSeen, uid;
-let over = false;
+let coins, meeries, capLevel, buyCount, album, lastSeen, uid, up;
+let over = false, hudDirty = false;
 
 function capacity() { return CAP_START + capLevel * CAP_STEP; }
 function buyCost() { return Math.round(BUY_BASE * Math.pow(BUY_GROW, buyCount)); }
 function expCost() { return Math.round(EXP_BASE * Math.pow(EXP_GROW, capLevel)); }
 
+function newUp() { return { coin: 0, speed: 0, magnet: 0, luck: 0 }; }
 function fresh() {
   coins = 0; meeries = []; capLevel = 0; buyCount = 0; album = {}; uid = 1;
-  lastSeen = Date.now();
+  up = newUp(); lastSeen = Date.now();
 }
 function load() {
   try {
@@ -59,6 +76,7 @@ function load() {
     buyCount = Number(s.buyCount) || 0;
     album = s.album || {};
     uid = Number(s.uid) || 1;
+    up = Object.assign(newUp(), s.up || {});
     lastSeen = Number(s.lastSeen) || Date.now();
     meeries = (s.meeries || []).map(m => ({
       id: uid++, tier: Math.max(0, Math.min(MAXT, m.tier | 0)),
@@ -74,21 +92,23 @@ function save() {
   lastSeen = Date.now();
   try {
     localStorage.setItem(SAVE, JSON.stringify({
-      coins, capLevel, buyCount, album, uid, lastSeen,
+      coins, capLevel, buyCount, album, uid, up, lastSeen,
       meeries: meeries.map(m => ({ tier: m.tier, x: m.x, y: m.y })),
     }));
   } catch {}
 }
 function saveSoon() { clearTimeout(saveTimer); saveTimer = setTimeout(save, 600); }
 
-const rndDrop = () => DROP_MIN + Math.random() * (DROP_MAX - DROP_MIN);
+const rndDrop = () => (DROP_MIN + Math.random() * (DROP_MAX - DROP_MIN)) / (1 + 0.12 * (up ? up.speed : 0));
 
 // ---------- Meeri-Verwaltung ----------
 function discover(tier) {
   if (!album[tier]) {
     album[tier] = new Date().toISOString();
-    toast(`📖 Neu im Album: ${TIERS[tier].name}!`);
     GS.sound.great();
+    if (tier >= 2) setTimeout(() => reveal(tier, true), 120);   // cooles Meeri → große Karte
+    else toast(`📖 Neu im Album: ${TIERS[tier].name}!`);
+    saveSoon();
   }
 }
 function spawnMeeri(tier, x, y) {
@@ -107,8 +127,10 @@ function buyMeeri() {
   const c = buyCost();
   if (coins < c) { toast("Zu wenig Münzen"); return; }
   coins -= c; buyCount++;
-  spawnMeeri(0);
-  GS.sound.click(); GS.haptic(8);
+  const startTier = (Math.random() < luckChance()) ? 1 : 0;   // Glücks-Wurf
+  const m = spawnMeeri(startTier);
+  if (startTier > 0) { floater("🍀", "#57e39b", m.x, m.y); GS.sound.good(); } else GS.sound.click();
+  GS.haptic(8);
   updateHUD(); saveSoon();
 }
 function expandMeadow() {
@@ -123,10 +145,11 @@ function mergeInto(target, src) {
   if (target.tier >= MAXT) { toast("Endstufe erreicht! 🌌"); return false; }
   target.tier++; target.pop = 0.001;
   meeries = meeries.filter(m => m.id !== src.id);
+  const bonus = Math.round(coinVal(target.tier) * 3 * coinMult());   // kleiner Merge-Bonus
+  coins += bonus;
   discover(target.tier);
-  coins += coinVal(target.tier) * 3;              // kleiner Merge-Bonus
   burst(target.tier >= MAXT ? "GALAXIE!" : "EVOLVE!", "#ffd23f");
-  floater("+" + fmt(coinVal(target.tier) * 3), "#ffd23f", target.x, target.y);
+  floater("+" + fmt(bonus), "#ffd23f", target.x, target.y);
   spawnConfetti(target.x, target.y, TIERS[target.tier].c1);
   GS.sound.great(); GS.haptic([12, 40, 12]);
   updateHUD(); saveSoon();
@@ -136,8 +159,9 @@ function mergeInto(target, src) {
 // ---------- Offline-Einnahmen ----------
 function passivePerSec() {
   let s = 0;
-  for (const m of meeries) s += coinVal(m.tier) / ((DROP_MIN + DROP_MAX) / 2);
-  return s;
+  const interval = ((DROP_MIN + DROP_MAX) / 2) / (1 + 0.12 * (up ? up.speed : 0));
+  for (const m of meeries) s += coinVal(m.tier) / interval;
+  return s * coinMult();
 }
 function applyOffline() {
   const elapsed = Math.max(0, (Date.now() - lastSeen) / 1000);
@@ -179,61 +203,69 @@ function roundRect(x, y, w, h, r) {
   ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
 }
 
-function drawMeeri(cx, cy, s, tier, t, pop) {
+function drawMeeri(g, cx, cy, s, tier, t, pop) {
   const T = TIERS[tier];
   const sc = pop > 0 ? 1 + Math.sin(Math.min(1, pop) * Math.PI) * 0.25 : 1;
   const wob = Math.sin(t * 4 + tier) * s * 0.02;
-  ctx.save();
-  ctx.translate(cx, cy + wob);
-  ctx.scale(sc, sc);
+  g.save();
+  g.translate(cx, cy + wob);
+  g.scale(sc, sc);
   const lw = Math.max(2, s * 0.07);
-  ctx.lineWidth = lw; ctx.strokeStyle = "#123018"; ctx.lineJoin = "round"; ctx.lineCap = "round";
+  g.lineWidth = lw; g.strokeStyle = "#123018"; g.lineJoin = "round"; g.lineCap = "round";
+
+  // Aura bei hohen Stufen
+  if (tier >= 9) {
+    const glow = g.createRadialGradient(0, 0, s * 0.2, 0, 0, s * 0.75);
+    const gc = tier >= 15 ? "rgba(184,146,255,0.55)" : tier >= 12 ? "rgba(122,167,255,0.5)" : "rgba(255,210,63,0.5)";
+    glow.addColorStop(0, gc); glow.addColorStop(1, "rgba(0,0,0,0)");
+    g.fillStyle = glow; g.beginPath(); g.arc(0, 0, s * 0.75, 0, 7); g.fill();
+  }
 
   // Schatten
-  ctx.save(); ctx.fillStyle = "rgba(0,0,0,0.18)";
-  ctx.beginPath(); ctx.ellipse(0, s * 0.5, s * 0.42, s * 0.12, 0, 0, 7); ctx.fill(); ctx.restore();
+  g.save(); g.fillStyle = "rgba(0,0,0,0.18)";
+  g.beginPath(); g.ellipse(0, s * 0.5, s * 0.42, s * 0.12, 0, 0, 7); g.fill(); g.restore();
 
   // Füße
-  ctx.fillStyle = T.c2;
-  for (const fx of [-s * 0.22, s * 0.22]) { ctx.beginPath(); ctx.ellipse(fx, s * 0.42, s * 0.1, s * 0.07, 0, 0, 7); ctx.fill(); ctx.stroke(); }
+  g.fillStyle = T.c2;
+  for (const fx of [-s * 0.22, s * 0.22]) { g.beginPath(); g.ellipse(fx, s * 0.42, s * 0.1, s * 0.07, 0, 0, 7); g.fill(); g.stroke(); }
 
   // Ohren
-  ctx.fillStyle = T.c2;
-  for (const ex of [-s * 0.3, s * 0.3]) { ctx.beginPath(); ctx.ellipse(ex, -s * 0.28, s * 0.14, s * 0.12, 0, 0, 7); ctx.fill(); ctx.stroke(); }
+  g.fillStyle = T.c2;
+  for (const ex of [-s * 0.3, s * 0.3]) { g.beginPath(); g.ellipse(ex, -s * 0.28, s * 0.14, s * 0.12, 0, 0, 7); g.fill(); g.stroke(); }
 
   // Körper (Kartoffel)
-  const g = ctx.createLinearGradient(0, -s * 0.4, 0, s * 0.45);
-  g.addColorStop(0, T.c1); g.addColorStop(1, T.c2);
-  ctx.beginPath(); ctx.ellipse(0, 0, s * 0.44, s * 0.4, 0, 0, 7); ctx.fillStyle = g; ctx.fill(); ctx.stroke();
+  const grad = g.createLinearGradient(0, -s * 0.4, 0, s * 0.45);
+  grad.addColorStop(0, T.c1); grad.addColorStop(1, T.c2);
+  g.beginPath(); g.ellipse(0, 0, s * 0.44, s * 0.4, 0, 0, 7); g.fillStyle = grad; g.fill(); g.stroke();
   // helle Schnauze
-  ctx.beginPath(); ctx.ellipse(0, s * 0.12, s * 0.26, s * 0.2, 0, 0, 7); ctx.fillStyle = "rgba(255,255,255,0.5)"; ctx.fill();
+  g.beginPath(); g.ellipse(0, s * 0.12, s * 0.26, s * 0.2, 0, 0, 7); g.fillStyle = "rgba(255,255,255,0.5)"; g.fill();
 
   // Augen
   for (const ex of [-s * 0.16, s * 0.16]) {
-    ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(ex, -s * 0.05, s * 0.11, 0, 7); ctx.fill();
-    ctx.lineWidth = Math.max(1, s * 0.02); ctx.strokeStyle = "#123018"; ctx.stroke();
-    ctx.fillStyle = "#123018"; ctx.beginPath(); ctx.arc(ex + s * 0.02, -s * 0.03, s * 0.055, 0, 7); ctx.fill();
-    ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(ex, -s * 0.06, s * 0.02, 0, 7); ctx.fill();
+    g.fillStyle = "#fff"; g.beginPath(); g.arc(ex, -s * 0.05, s * 0.11, 0, 7); g.fill();
+    g.lineWidth = Math.max(1, s * 0.02); g.strokeStyle = "#123018"; g.stroke();
+    g.fillStyle = "#123018"; g.beginPath(); g.arc(ex + s * 0.02, -s * 0.03, s * 0.055, 0, 7); g.fill();
+    g.fillStyle = "#fff"; g.beginPath(); g.arc(ex, -s * 0.06, s * 0.02, 0, 7); g.fill();
   }
-  ctx.lineWidth = lw;
+  g.lineWidth = lw; g.strokeStyle = "#123018";
   // Nase
-  ctx.fillStyle = "#c8607f"; ctx.beginPath(); ctx.moveTo(-s * 0.05, s * 0.1); ctx.lineTo(s * 0.05, s * 0.1); ctx.lineTo(0, s * 0.16); ctx.closePath(); ctx.fill();
+  g.fillStyle = "#c8607f"; g.beginPath(); g.moveTo(-s * 0.05, s * 0.1); g.lineTo(s * 0.05, s * 0.1); g.lineTo(0, s * 0.16); g.closePath(); g.fill();
   // Zähnchen
-  ctx.fillStyle = "#fff"; roundRect(-s * 0.035, s * 0.16, s * 0.07, s * 0.08, s * 0.02); ctx.fill(); ctx.lineWidth = Math.max(1, s * 0.015); ctx.stroke();
+  g.fillStyle = "#fff"; g.beginPath(); g.rect(-s * 0.035, s * 0.16, s * 0.07, s * 0.08); g.fill(); g.lineWidth = Math.max(1, s * 0.015); g.stroke();
 
   // Prop-Emoji (Evolutions-Gag)
   if (T.prop) {
-    ctx.font = `${Math.round(s * 0.5)}px "Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif`;
-    ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.fillText(T.prop, s * 0.32, -s * 0.42);
+    g.font = `${Math.round(s * 0.5)}px "Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif`;
+    g.textAlign = "center"; g.textBaseline = "middle";
+    g.fillText(T.prop, s * 0.32, -s * 0.42);
   }
-  ctx.restore();
+  g.restore();
 }
 
 // ---------- Effekte ----------
 let coinsFx = [], golds = [], bursts = [], floaters = [], confetti = [];
 function spawnCoin(m) {
-  coinsFx.push({ x: mx(m), y: my(m) - msize * 0.5, val: coinVal(m.tier), t: 0, life: 5.5, vy: -12 - Math.random() * 8, r: msize * 0.28 });
+  coinsFx.push({ x: mx(m), y: my(m) - msize * 0.5, val: Math.round(coinVal(m.tier) * coinMult()), t: 0, life: 5.5, vy: -12 - Math.random() * 8, r: msize * 0.28 });
 }
 function spawnGold() {
   golds.push({ x: (0.15 + Math.random() * 0.7) * W, y: (0.15 + Math.random() * 0.7) * H, t: 0, life: 6, phase: Math.random() * 7 });
@@ -270,6 +302,14 @@ function frame(ts) {
     if (goldTimer <= 0 && golds.length === 0 && meeries.length > 0) { goldTimer = 25 + Math.random() * 20; spawnGold(); }
   }
 
+  // Auto-Sammler: Münz-Blasen nach kurzer Zeit von selbst einsammeln
+  if (!over && (up.magnet || 0) > 0) {
+    const md = magnetDelay();
+    for (let i = coinsFx.length - 1; i >= 0; i--) {
+      const c = coinsFx[i];
+      if (c.t >= md) { coins += c.val; if (floaters.length < 3) floater("+" + fmt(c.val), "#ffd23f", null, null); coinsFx.splice(i, 1); hudDirty = true; }
+    }
+  }
   // Effekt-Timer
   coinsFx = coinsFx.filter(c => (c.t += dt) < c.life);
   coinsFx.forEach(c => { c.y += c.vy * dt; c.vy += 20 * dt; if (c.vy > 6) c.vy = 6; });
@@ -279,6 +319,7 @@ function frame(ts) {
   confetti = confetti.filter(p => (p.life -= dt * 1.3) > 0);
   confetti.forEach(p => { p.x += p.vx; p.y += p.vy; p.vy += 0.3; p.rot += p.vr; });
 
+  if (hudDirty) { updateHUD(); hudDirty = false; }
   draw();
   requestAnimationFrame(frame);
 }
@@ -301,7 +342,7 @@ function draw() {
 
   // Meeries (nach y sortiert für Tiefe)
   const sorted = [...meeries].sort((a, b) => (a.held ? 1 : 0) - (b.held ? 1 : 0) || my(a) - my(b));
-  for (const m of sorted) drawMeeri(mx(m), my(m), msize, m.tier, animT + m.phase, m.pop);
+  for (const m of sorted) drawMeeri(ctx, mx(m), my(m), msize, m.tier, animT + m.phase, m.pop);
 
   // Münz-Blasen
   for (const c of coinsFx) {
@@ -447,7 +488,7 @@ function showAlbum() {
   const found = Object.keys(album).length;
   const cells = TIERS.map((T, i) => {
     const got = !!album[i];
-    return `<div class="album-cell ${got ? "" : "locked"}">
+    return `<div class="album-cell ${got ? "" : "locked"}" ${got ? `data-tier="${i}" role="button" tabindex="0"` : ""}>
       <span class="album-dot" style="background:${got ? T.c1 : "#c9c9c9"}">${got ? (T.prop || "🐹") : "❓"}<span class="lvl">${i + 1}</span></span>
       <span class="album-name">${got ? esc(T.name) : "???"}</span>
       <span class="album-desc">${got ? esc(T.desc) : "noch nicht entdeckt"}</span>
@@ -455,9 +496,10 @@ function showAlbum() {
   }).join("");
   const ov = mkOverlay(`
     <h2><span class="foil">Meeri-Album</span></h2>
-    <p class="sub">${found}/${TIERS.length} Evolutionen entdeckt</p>
+    <p class="sub">${found}/${TIERS.length} entdeckt · tippe ein Meeri zum Angeben 📤</p>
     <div class="album-grid">${cells}</div>
     <button class="btn-secondary" data-close="1">Schließen</button>`);
+  ov.querySelectorAll(".album-cell[data-tier]").forEach(el => el.onclick = () => reveal(Number(el.dataset.tier), false));
   ov.querySelector("[data-close]").onclick = () => ov.remove();
 }
 
@@ -471,6 +513,64 @@ function welcomeBack(gain, mins) {
     <button class="btn-primary" data-close="1">Juhu, weiter!</button>`);
   ov.dataset.dismiss = "0";
   ov.querySelector("[data-close]").onclick = () => ov.remove();
+}
+
+// Entdeck-/Angeber-Karte mit gezeichnetem Meeri + Teilen-Button
+function reveal(tier, isNew) {
+  const T = TIERS[tier];
+  const ov = mkOverlay(`
+    <h2><span class="foil">${isNew ? "Neu entdeckt!" : esc(T.name)}</span></h2>
+    ${isNew ? `<p class="sub" style="margin-bottom:6px">Evolution freigeschaltet:</p>` : ""}
+    <canvas class="reveal-canvas" width="200" height="200"></canvas>
+    <div class="reveal-name">${esc(T.name)} ${T.prop}</div>
+    <p class="sub">„${esc(T.desc)}"</p>
+    <button class="btn-primary" id="rv-share">📤 Angeben &amp; Teilen</button>
+    <button class="btn-secondary" id="rv-close">${isNew ? "Weiter wuseln" : "Schließen"}</button>`);
+  const cv = ov.querySelector(".reveal-canvas");
+  const g = cv.getContext("2d");
+  const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+  cv.width = 200 * dpr; cv.height = 200 * dpr; cv.style.width = "200px"; cv.style.height = "200px";
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  drawMeeri(g, 100, 104, 150, tier, 0, 0.6);
+  spawnConfetti(0.5, 0.35, T.c1);
+  GS.haptic([10, 30, 10]);
+  ov.querySelector("#rv-close").onclick = () => ov.remove();
+  ov.querySelector("#rv-share").onclick = async () => {
+    const r = await GS.share({
+      title: "MEERI-MANIA",
+      text: `Ich hab das ${T.name} ${T.prop} in MEERI-MANIA entdeckt! 🐹 Schaffst du auch die Galaxie-Meeri?`,
+      url: location.origin + "/meeri/",
+    });
+    if (r === "copied") toast("Link kopiert — jetzt angeben! 📤");
+  };
+}
+
+// Upgrade-Shop
+function showShop() {
+  const ov = mkOverlay(`
+    <h2><span class="foil">Meeri-Shop</span></h2>
+    <p class="sub">Rüste deine Wiese auf und werde reicher.</p>
+    <div id="shop-rows"></div>
+    <button class="btn-secondary" id="shop-close">Schließen</button>`);
+  const render = () => {
+    ov.querySelector("#shop-rows").innerHTML = UPGRADES.map((u, i) => {
+      const lvl = up[u.key] || 0, maxed = lvl >= u.max, cost = upCost(u);
+      const can = !maxed && coins >= cost;
+      return `<div class="shop-row">
+        <span class="shop-ic">${u.icon}</span>
+        <span class="shop-info"><b>${esc(u.name)} <span class="shop-lvl">Lv ${lvl}${maxed ? " (max)" : ""}</span></b><span class="shop-desc">${esc(u.desc(lvl))}</span></span>
+        <button class="shop-buy" data-i="${i}" ${can ? "" : "disabled"}>${maxed ? "max" : "🪙 " + fmt(cost)}</button>
+      </div>`;
+    }).join("");
+    ov.querySelectorAll(".shop-buy[data-i]").forEach(b => b.onclick = () => {
+      const u = UPGRADES[Number(b.dataset.i)], lvl = up[u.key] || 0, cost = upCost(u);
+      if (lvl >= u.max || coins < cost) return;
+      coins -= cost; up[u.key] = lvl + 1;
+      GS.sound.good(); GS.haptic(10); updateHUD(); saveSoon(); render();
+    });
+  };
+  render();
+  ov.querySelector("#shop-close").onclick = () => ov.remove();
 }
 
 function showMenu() {
@@ -497,10 +597,10 @@ function howTo(force) {
     force: !!force,
     title: "So geht MEERI-MANIA",
     steps: [
-      { icon: "🛒", text: "„+ Meeri kaufen“ setzt ein Meerschweinchen auf die Wiese (jeder Kauf wird teurer)." },
-      { icon: "🪙", text: "Meeries werfen Münz-Blasen ab — tippe sie an, um Münzen zu sammeln." },
+      { icon: "🪙", text: "Meeries werfen Münz-Blasen ab — tippe sie an. Mit dem 🧲 Auto-Sammler geht das später von allein." },
       { icon: "🔀", text: "Zieh zwei GLEICHE Meeries zusammen → sie evolvieren zur nächsten, absurderen Stufe!" },
-      { icon: "🌱", text: "Ist die Wiese voll: mergen oder „Wiese vergrößern“. Entdecke alle 16 im Album. ✨ Goldene Münze = Bonus!" },
+      { icon: "🛒", text: "Im Shop rüstest du auf: mehr Münzwert, schnellere Würfe, Auto-Sammler, Glücks-Wurf." },
+      { icon: "📖", text: "Neue Evolutionen landen im Album — tippe sie an, um sie zu teilen. Schaffst du die Galaxie-Meeri? 🌌" },
     ],
   });
 }
@@ -510,6 +610,7 @@ function howTo(force) {
 // ====================================================================
 document.getElementById("buy").onclick = buyMeeri;
 document.getElementById("expand").onclick = expandMeadow;
+document.getElementById("btn-shop").onclick = showShop;
 document.getElementById("btn-album").onclick = showAlbum;
 document.getElementById("btn-menu").onclick = showMenu;
 document.getElementById("btn-sound").onclick = () => { GS.sound.toggle(); GS.sound.click(); updateHUD(); };
