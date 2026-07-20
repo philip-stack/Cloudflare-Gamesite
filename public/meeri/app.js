@@ -203,6 +203,25 @@ function roundRect(x, y, w, h, r) {
   ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
 }
 
+// ---- Zeichen-Helfer ----
+function rrp(g, x, y, w, h, r) {
+  g.beginPath();
+  g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r);
+  g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r);
+  g.arcTo(x, y, x + w, y, r); g.closePath();
+}
+function starP(g, cx, cy, r, n, inner) {
+  g.beginPath();
+  for (let i = 0; i < n * 2; i++) {
+    const rad = i % 2 ? r * inner : r;
+    const a = -Math.PI / 2 + i * Math.PI / n;
+    const x = cx + Math.cos(a) * rad, y = cy + Math.sin(a) * rad;
+    i ? g.lineTo(x, y) : g.moveTo(x, y);
+  }
+  g.closePath();
+}
+function fst(g) { g.fill(); g.stroke(); }
+
 function drawMeeri(g, cx, cy, s, tier, t, pop) {
   const T = TIERS[tier];
   const sc = pop > 0 ? 1 + Math.sin(Math.min(1, pop) * Math.PI) * 0.25 : 1;
@@ -215,51 +234,300 @@ function drawMeeri(g, cx, cy, s, tier, t, pop) {
 
   // Aura bei hohen Stufen
   if (tier >= 9) {
-    const glow = g.createRadialGradient(0, 0, s * 0.2, 0, 0, s * 0.75);
-    const gc = tier >= 15 ? "rgba(184,146,255,0.55)" : tier >= 12 ? "rgba(122,167,255,0.5)" : "rgba(255,210,63,0.5)";
+    const glow = g.createRadialGradient(0, 0, s * 0.2, 0, 0, s * 0.78);
+    const gc = tier >= 15 ? "rgba(184,146,255,0.6)" : tier >= 12 ? "rgba(122,167,255,0.5)" : "rgba(255,210,63,0.5)";
     glow.addColorStop(0, gc); glow.addColorStop(1, "rgba(0,0,0,0)");
-    g.fillStyle = glow; g.beginPath(); g.arc(0, 0, s * 0.75, 0, 7); g.fill();
+    g.fillStyle = glow; g.beginPath(); g.arc(0, 0, s * 0.78, 0, 7); g.fill();
   }
+
+  // Rücken-Deko (Umhang, Flügel) HINTER dem Körper
+  featBack(g, s, tier, t, T);
 
   // Schatten
   g.save(); g.fillStyle = "rgba(0,0,0,0.18)";
   g.beginPath(); g.ellipse(0, s * 0.5, s * 0.42, s * 0.12, 0, 0, 7); g.fill(); g.restore();
 
+  g.lineWidth = lw; g.strokeStyle = "#123018";
   // Füße
   g.fillStyle = T.c2;
-  for (const fx of [-s * 0.22, s * 0.22]) { g.beginPath(); g.ellipse(fx, s * 0.42, s * 0.1, s * 0.07, 0, 0, 7); g.fill(); g.stroke(); }
-
+  for (const fx of [-s * 0.22, s * 0.22]) { g.beginPath(); g.ellipse(fx, s * 0.42, s * 0.1, s * 0.07, 0, 0, 7); fst(g); }
   // Ohren
-  g.fillStyle = T.c2;
-  for (const ex of [-s * 0.3, s * 0.3]) { g.beginPath(); g.ellipse(ex, -s * 0.28, s * 0.14, s * 0.12, 0, 0, 7); g.fill(); g.stroke(); }
+  for (const ex of [-s * 0.3, s * 0.3]) { g.beginPath(); g.ellipse(ex, -s * 0.28, s * 0.14, s * 0.12, 0, 0, 7); fst(g); }
 
-  // Körper (Kartoffel)
+  // Körper (Kartoffel) mit weichem Verlauf
   const grad = g.createLinearGradient(0, -s * 0.4, 0, s * 0.45);
   grad.addColorStop(0, T.c1); grad.addColorStop(1, T.c2);
-  g.beginPath(); g.ellipse(0, 0, s * 0.44, s * 0.4, 0, 0, 7); g.fillStyle = grad; g.fill(); g.stroke();
+  g.beginPath(); g.ellipse(0, 0, s * 0.44, s * 0.4, 0, 0, 7); g.fillStyle = grad; fst(g);
+  // Fell-Glanzlicht
+  g.save(); g.beginPath(); g.ellipse(0, 0, s * 0.44, s * 0.4, 0, 0, 7); g.clip();
+  g.fillStyle = "rgba(255,255,255,0.22)"; g.beginPath(); g.ellipse(-s * 0.14, -s * 0.2, s * 0.18, s * 0.12, -0.5, 0, 7); g.fill();
+  g.restore();
   // helle Schnauze
   g.beginPath(); g.ellipse(0, s * 0.12, s * 0.26, s * 0.2, 0, 0, 7); g.fillStyle = "rgba(255,255,255,0.5)"; g.fill();
 
-  // Augen
+  drawFace(g, s, tier, t);
+  featFront(g, s, tier, t, T);
+  g.restore();
+}
+
+// Gesicht mit stufenspezifischem Ausdruck
+function drawFace(g, s, tier, t) {
+  const lw = Math.max(2, s * 0.07);
+  g.lineWidth = lw; g.strokeStyle = "#123018";
+
+  if (tier === 10) { // Roboter — Rechteck-Display + Grill-Mund
+    g.fillStyle = "#0b1b12"; rrp(g, -s * 0.26, -s * 0.14, s * 0.52, s * 0.18, s * 0.04); fst(g);
+    const blink = 0.55 + 0.45 * Math.abs(Math.sin(t * 2.2));
+    g.fillStyle = `rgba(90,230,180,${blink})`;
+    for (const ex of [-s * 0.13, s * 0.13]) { g.beginPath(); g.arc(ex, -s * 0.05, s * 0.05, 0, 7); g.fill(); }
+    g.strokeStyle = "#123018"; g.lineWidth = Math.max(1, s * 0.022);
+    for (let i = 0; i < 3; i++) { g.beginPath(); g.moveTo(-s * 0.13, s * 0.12 + i * s * 0.045); g.lineTo(s * 0.13, s * 0.12 + i * s * 0.045); g.stroke(); }
+    return;
+  }
+  if (tier === 13) { // Alien — große schwarze Mandelaugen
+    g.fillStyle = "#0a0a12"; g.lineWidth = lw;
+    for (const ex of [-s * 0.17, s * 0.17]) {
+      g.save(); g.translate(ex, -s * 0.02); g.rotate(ex < 0 ? 0.5 : -0.5);
+      g.beginPath(); g.ellipse(0, 0, s * 0.085, s * 0.17, 0, 0, 7); fst(g);
+      g.fillStyle = "rgba(255,255,255,0.85)"; g.beginPath(); g.ellipse(-s * 0.02, -s * 0.06, s * 0.02, s * 0.045, 0, 0, 7); g.fill();
+      g.restore(); g.fillStyle = "#0a0a12";
+    }
+    g.strokeStyle = "#123018"; g.lineWidth = Math.max(1.5, s * 0.025);
+    g.beginPath(); g.arc(0, s * 0.14, s * 0.05, 0.2, Math.PI - 0.2); g.stroke();
+    return;
+  }
+
+  const cute = tier === 0;
+  const er = cute ? s * 0.13 : s * 0.11;
+  const eyeY = -s * 0.05;
   for (const ex of [-s * 0.16, s * 0.16]) {
-    g.fillStyle = "#fff"; g.beginPath(); g.arc(ex, -s * 0.05, s * 0.11, 0, 7); g.fill();
+    g.fillStyle = "#fff"; g.beginPath(); g.arc(ex, eyeY, er, 0, 7); g.fill();
     g.lineWidth = Math.max(1, s * 0.02); g.strokeStyle = "#123018"; g.stroke();
-    g.fillStyle = "#123018"; g.beginPath(); g.arc(ex + s * 0.02, -s * 0.03, s * 0.055, 0, 7); g.fill();
-    g.fillStyle = "#fff"; g.beginPath(); g.arc(ex, -s * 0.06, s * 0.02, 0, 7); g.fill();
+    g.fillStyle = (tier === 5 || tier === 15) ? "#2a1a4a" : "#123018";
+    g.beginPath(); g.arc(ex + s * 0.02, eyeY + s * 0.02, er * 0.5, 0, 7); g.fill();
+    g.fillStyle = "#fff"; g.beginPath(); g.arc(ex, eyeY - s * 0.01, er * 0.2, 0, 7); g.fill();
+  }
+  if (tier === 5 || tier === 15) { // Glüh-Augen
+    g.save(); g.globalCompositeOperation = "lighter";
+    g.fillStyle = tier === 15 ? "rgba(184,146,255,0.55)" : "rgba(155,123,255,0.55)";
+    for (const ex of [-s * 0.16, s * 0.16]) { g.beginPath(); g.arc(ex, eyeY, er * 1.3, 0, 7); g.fill(); }
+    g.restore();
   }
   g.lineWidth = lw; g.strokeStyle = "#123018";
   // Nase
   g.fillStyle = "#c8607f"; g.beginPath(); g.moveTo(-s * 0.05, s * 0.1); g.lineTo(s * 0.05, s * 0.1); g.lineTo(0, s * 0.16); g.closePath(); g.fill();
   // Zähnchen
   g.fillStyle = "#fff"; g.beginPath(); g.rect(-s * 0.035, s * 0.16, s * 0.07, s * 0.08); g.fill(); g.lineWidth = Math.max(1, s * 0.015); g.stroke();
+  g.lineWidth = lw;
 
-  // Prop-Emoji (Evolutions-Gag)
-  if (T.prop) {
-    g.font = `${Math.round(s * 0.5)}px "Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif`;
-    g.textAlign = "center"; g.textBaseline = "middle";
-    g.fillText(T.prop, s * 0.32, -s * 0.42);
+  // Böse Augenbrauen (Punk, Wikinger, Drache)
+  if (tier === 2 || tier === 4 || tier === 14) {
+    g.strokeStyle = "#123018"; g.lineWidth = Math.max(2, s * 0.045);
+    g.beginPath(); g.moveTo(-s * 0.28, -s * 0.2); g.lineTo(-s * 0.07, -s * 0.13); g.stroke();
+    g.beginPath(); g.moveTo(s * 0.28, -s * 0.2); g.lineTo(s * 0.07, -s * 0.13); g.stroke();
   }
-  g.restore();
+  // Baby-Bäckchen
+  if (cute) {
+    g.fillStyle = "rgba(255,120,150,0.5)";
+    for (const ex of [-s * 0.28, s * 0.28]) { g.beginPath(); g.arc(ex, s * 0.06, s * 0.06, 0, 7); g.fill(); }
+  }
+}
+
+// Deko HINTER dem Körper (Umhänge, Flügel)
+function featBack(g, s, tier, t, T) {
+  g.lineWidth = Math.max(2, s * 0.06); g.strokeStyle = "#123018"; g.lineJoin = "round";
+  if (tier === 9 || tier === 11) { // Umhang
+    g.fillStyle = tier === 9 ? "#c81f43" : "#2f6df0";
+    g.beginPath();
+    g.moveTo(-s * 0.22, -s * 0.2);
+    g.quadraticCurveTo(-s * 0.55, s * 0.1 + Math.sin(t * 3) * s * 0.03, -s * 0.34, s * 0.5);
+    g.lineTo(s * 0.34, s * 0.5);
+    g.quadraticCurveTo(s * 0.55, s * 0.1 - Math.sin(t * 3) * s * 0.03, s * 0.22, -s * 0.2);
+    g.closePath(); fst(g);
+    if (tier === 9) { // Fellkragen
+      g.fillStyle = "#fff";
+      for (let i = -2; i <= 2; i++) { g.beginPath(); g.arc(i * s * 0.11, -s * 0.2, s * 0.07, 0, 7); g.fill(); }
+    }
+  }
+  if (tier === 14) { // Drachenflügel
+    g.fillStyle = "#7a3ec8";
+    for (const dir of [-1, 1]) {
+      g.save(); g.scale(dir, 1);
+      const flap = Math.sin(t * 5) * s * 0.05;
+      g.beginPath();
+      g.moveTo(s * 0.2, -s * 0.1);
+      g.lineTo(s * 0.62, -s * 0.35 - flap);
+      g.lineTo(s * 0.58, -s * 0.02);
+      g.lineTo(s * 0.66, s * 0.02 + flap);
+      g.lineTo(s * 0.5, s * 0.12);
+      g.lineTo(s * 0.55, s * 0.22 + flap);
+      g.lineTo(s * 0.28, s * 0.15);
+      g.closePath(); fst(g);
+      g.restore();
+    }
+  }
+}
+
+// Deko VOR dem Körper (Hüte, Masken, Gegenstände) — macht jede Stufe einzigartig
+function featFront(g, s, tier, t, T) {
+  g.lineWidth = Math.max(2, s * 0.06); g.strokeStyle = "#123018"; g.lineJoin = "round"; g.lineCap = "round";
+  switch (tier) {
+    case 0: { // Baby — Haarlocke + Funkeln
+      g.strokeStyle = "#123018"; g.lineWidth = Math.max(2, s * 0.05);
+      g.beginPath(); g.moveTo(0, -s * 0.4); g.quadraticCurveTo(s * 0.1, -s * 0.56, -s * 0.03, -s * 0.6); g.stroke();
+      g.fillStyle = "#fff"; starP(g, s * 0.34, -s * 0.34, s * 0.07, 4, 0.4); g.fill();
+      break;
+    }
+    case 1: { // Struppel — wildes Fell + Blatt
+      g.fillStyle = T.c2;
+      const tufts = [[-0.35, -0.2], [-0.4, 0.05], [0.4, -0.15], [0.42, 0.1], [-0.15, -0.42], [0.15, -0.44]];
+      for (const [dx, dy] of tufts) {
+        g.beginPath(); g.moveTo(dx * s, dy * s);
+        g.lineTo(dx * s + s * 0.12 * Math.sign(dx || 1), dy * s - s * 0.06);
+        g.lineTo(dx * s + s * 0.04, dy * s + s * 0.08); g.closePath(); fst(g);
+      }
+      g.fillStyle = "#4caf50"; g.save(); g.translate(s * 0.05, -s * 0.44); g.rotate(0.5);
+      g.beginPath(); g.ellipse(0, 0, s * 0.06, s * 0.11, 0, 0, 7); fst(g); g.restore();
+      break;
+    }
+    case 2: { // Punk — Irokese + Zunge
+      const cols = ["#ff2d78", "#ffd23f", "#2ad1ff"];
+      for (let i = -2; i <= 2; i++) {
+        g.fillStyle = cols[(i + 2) % 3];
+        const h = s * (0.5 - Math.abs(i) * 0.06);
+        g.beginPath(); g.moveTo(i * s * 0.08 - s * 0.05, -s * 0.34);
+        g.lineTo(i * s * 0.08, -h); g.lineTo(i * s * 0.08 + s * 0.05, -s * 0.34);
+        g.closePath(); fst(g);
+      }
+      g.fillStyle = "#ff5a8a"; rrp(g, -s * 0.04, s * 0.2, s * 0.08, s * 0.1, s * 0.03); fst(g);
+      break;
+    }
+    case 3: { // Ritter — Helm mit Visier + Feder
+      g.fillStyle = "#b8c2cc";
+      g.beginPath(); g.moveTo(-s * 0.34, -s * 0.16); g.arc(0, -s * 0.16, s * 0.34, Math.PI, 0); g.closePath(); fst(g);
+      g.strokeStyle = "#123018"; g.lineWidth = Math.max(1.5, s * 0.03);
+      g.beginPath(); g.moveTo(0, -s * 0.46); g.lineTo(0, -s * 0.18); g.stroke();
+      g.fillStyle = "#e23"; g.beginPath(); g.moveTo(0, -s * 0.5); g.quadraticCurveTo(s * 0.16, -s * 0.74, s * 0.03, -s * 0.5); g.closePath(); fst(g);
+      break;
+    }
+    case 4: { // Wikinger — Helm mit Hörnern
+      g.fillStyle = "#9aa3ad";
+      g.beginPath(); g.moveTo(-s * 0.3, -s * 0.2); g.arc(0, -s * 0.2, s * 0.3, Math.PI, 0); g.closePath(); fst(g);
+      g.fillStyle = "#f2e6c8";
+      for (const dir of [-1, 1]) {
+        g.save(); g.scale(dir, 1);
+        g.beginPath(); g.moveTo(s * 0.22, -s * 0.28);
+        g.quadraticCurveTo(s * 0.46, -s * 0.34, s * 0.44, -s * 0.6);
+        g.quadraticCurveTo(s * 0.34, -s * 0.42, s * 0.18, -s * 0.38); g.closePath(); fst(g);
+        g.restore();
+      }
+      break;
+    }
+    case 5: { // Zauberer — Spitzhut + Funken
+      g.fillStyle = "#4b2c8f";
+      g.beginPath(); g.moveTo(-s * 0.3, -s * 0.34); g.lineTo(s * 0.12, -s * 0.8); g.lineTo(s * 0.16, -s * 0.34); g.closePath(); fst(g);
+      g.fillStyle = "#3a2270"; rrp(g, -s * 0.34, -s * 0.4, s * 0.56, s * 0.1, s * 0.04); fst(g);
+      g.fillStyle = "#ffd23f"; starP(g, -s * 0.04, -s * 0.52, s * 0.06, 5, 0.45); fst(g);
+      g.fillStyle = "#ffe066";
+      for (let i = 0; i < 3; i++) { const a = t * 2 + i * 2.1; g.beginPath(); g.arc(Math.cos(a) * s * 0.5, -s * 0.3 + Math.sin(a) * s * 0.2, s * 0.03, 0, 7); g.fill(); }
+      break;
+    }
+    case 6: { // Pirat — Bandana + Augenklappe
+      g.fillStyle = "#d33";
+      g.beginPath(); g.moveTo(-s * 0.34, -s * 0.24); g.quadraticCurveTo(0, -s * 0.46, s * 0.34, -s * 0.24);
+      g.lineTo(s * 0.34, -s * 0.34); g.quadraticCurveTo(0, -s * 0.52, -s * 0.34, -s * 0.32); g.closePath(); fst(g);
+      g.beginPath(); g.moveTo(-s * 0.32, -s * 0.28); g.lineTo(-s * 0.52, -s * 0.34); g.lineTo(-s * 0.46, -s * 0.14); g.closePath(); fst(g);
+      g.fillStyle = "#fff"; for (const dx of [-0.18, 0, 0.18]) { g.beginPath(); g.arc(dx * s, -s * 0.34, s * 0.02, 0, 7); g.fill(); }
+      g.fillStyle = "#111"; g.beginPath(); g.arc(-s * 0.16, -s * 0.05, s * 0.1, 0, 7); fst(g);
+      g.strokeStyle = "#111"; g.lineWidth = Math.max(1.5, s * 0.02); g.beginPath(); g.moveTo(-s * 0.24, -s * 0.17); g.lineTo(s * 0.3, -s * 0.24); g.stroke();
+      break;
+    }
+    case 7: { // Cowboy — Hut + Halstuch
+      g.fillStyle = "#a9762f";
+      g.beginPath(); g.ellipse(0, -s * 0.34, s * 0.42, s * 0.1, 0, 0, 7); fst(g);
+      g.beginPath(); g.moveTo(-s * 0.2, -s * 0.34); g.quadraticCurveTo(-s * 0.16, -s * 0.62, 0, -s * 0.62); g.quadraticCurveTo(s * 0.16, -s * 0.62, s * 0.2, -s * 0.34); g.closePath(); fst(g);
+      g.strokeStyle = "#6e4a1c"; g.lineWidth = Math.max(2, s * 0.03); g.beginPath(); g.moveTo(-s * 0.18, -s * 0.4); g.lineTo(s * 0.18, -s * 0.4); g.stroke();
+      g.fillStyle = "#d33"; g.strokeStyle = "#123018"; g.lineWidth = Math.max(2, s * 0.05);
+      g.beginPath(); g.moveTo(-s * 0.16, s * 0.28); g.lineTo(s * 0.16, s * 0.28); g.lineTo(0, s * 0.44); g.closePath(); fst(g);
+      break;
+    }
+    case 8: { // Ninja — Maske + Stirnband
+      g.fillStyle = "#2b2f38"; rrp(g, -s * 0.42, s * 0.02, s * 0.84, s * 0.22, s * 0.08); fst(g);
+      g.fillStyle = "#c0392b"; rrp(g, -s * 0.4, -s * 0.16, s * 0.8, s * 0.09, s * 0.02); fst(g);
+      g.beginPath(); g.moveTo(s * 0.36, -s * 0.12); g.lineTo(s * 0.6, -s * 0.02 + Math.sin(t * 6) * s * 0.05); g.lineTo(s * 0.58, -s * 0.16); g.closePath(); fst(g);
+      g.beginPath(); g.moveTo(s * 0.36, -s * 0.06); g.lineTo(s * 0.58, s * 0.12 + Math.sin(t * 6 + 1) * s * 0.05); g.lineTo(s * 0.5, -s * 0.02); g.closePath(); fst(g);
+      break;
+    }
+    case 9: { // König — Krone
+      g.fillStyle = "#ffd23f";
+      g.beginPath(); g.moveTo(-s * 0.28, -s * 0.3); g.lineTo(-s * 0.28, -s * 0.5);
+      g.lineTo(-s * 0.14, -s * 0.38); g.lineTo(0, -s * 0.56); g.lineTo(s * 0.14, -s * 0.38);
+      g.lineTo(s * 0.28, -s * 0.5); g.lineTo(s * 0.28, -s * 0.3); g.closePath(); fst(g);
+      g.fillStyle = "#e2385a"; for (const dx of [-0.14, 0, 0.14]) { g.beginPath(); g.arc(dx * s, -s * 0.34, s * 0.03, 0, 7); fst(g); }
+      break;
+    }
+    case 10: { // Roboter — Antenne + Nieten
+      g.strokeStyle = "#123018"; g.lineWidth = Math.max(2, s * 0.04);
+      g.beginPath(); g.moveTo(0, -s * 0.4); g.lineTo(0, -s * 0.56); g.stroke();
+      g.fillStyle = (Math.sin(t * 6) > 0) ? "#ff5a5a" : "#ffd23f"; g.beginPath(); g.arc(0, -s * 0.6, s * 0.06, 0, 7); fst(g);
+      g.fillStyle = "#8fa3b5"; for (const ex of [-0.34, 0.34]) { g.beginPath(); g.arc(ex * s, 0, s * 0.05, 0, 7); fst(g); }
+      break;
+    }
+    case 11: { // Superheld — Maske + Bruststern
+      g.fillStyle = "#1746c8";
+      g.beginPath();
+      g.moveTo(-s * 0.3, -s * 0.14); g.quadraticCurveTo(0, -s * 0.04, s * 0.3, -s * 0.14);
+      g.quadraticCurveTo(s * 0.3, s * 0.02, s * 0.16, s * 0.02);
+      g.lineTo(s * 0.1, -s * 0.05); g.lineTo(-s * 0.1, -s * 0.05); g.lineTo(-s * 0.16, s * 0.02);
+      g.quadraticCurveTo(-s * 0.3, s * 0.02, -s * 0.3, -s * 0.14); g.closePath(); fst(g);
+      g.fillStyle = "#ffd23f"; starP(g, 0, s * 0.24, s * 0.1, 5, 0.45); fst(g);
+      break;
+    }
+    case 12: { // Astronaut — Glashelm
+      g.save();
+      g.fillStyle = "rgba(150,210,255,0.28)"; g.strokeStyle = "#123018"; g.lineWidth = Math.max(2, s * 0.05);
+      g.beginPath(); g.arc(0, -s * 0.06, s * 0.42, 0, 7); fst(g);
+      g.strokeStyle = "rgba(255,255,255,0.7)"; g.lineWidth = Math.max(2, s * 0.04);
+      g.beginPath(); g.arc(-s * 0.14, -s * 0.16, s * 0.2, Math.PI * 1.1, Math.PI * 1.6); g.stroke();
+      g.restore();
+      g.strokeStyle = "#123018"; g.lineWidth = Math.max(2, s * 0.03); g.beginPath(); g.moveTo(s * 0.3, -s * 0.36); g.lineTo(s * 0.4, -s * 0.5); g.stroke();
+      g.fillStyle = "#ff5a5a"; g.beginPath(); g.arc(s * 0.4, -s * 0.52, s * 0.04, 0, 7); fst(g);
+      break;
+    }
+    case 13: { // Alien — Antennen
+      g.strokeStyle = "#123018"; g.lineWidth = Math.max(2, s * 0.035);
+      for (const dir of [-1, 1]) {
+        g.beginPath(); g.moveTo(dir * s * 0.12, -s * 0.38);
+        g.quadraticCurveTo(dir * s * 0.3, -s * 0.56, dir * s * 0.2, -s * 0.64); g.stroke();
+        g.fillStyle = "#9fffcf"; g.beginPath(); g.arc(dir * s * 0.2, -s * 0.66, s * 0.05, 0, 7); fst(g);
+      }
+      break;
+    }
+    case 14: { // Drache — Hörner + Rückenzacken + Feuer
+      g.fillStyle = "#f2e6c8";
+      for (const dir of [-1, 1]) {
+        g.beginPath(); g.moveTo(dir * s * 0.14, -s * 0.34);
+        g.quadraticCurveTo(dir * s * 0.28, -s * 0.5, dir * s * 0.34, -s * 0.6);
+        g.quadraticCurveTo(dir * s * 0.2, -s * 0.46, dir * s * 0.06, -s * 0.4); g.closePath(); fst(g);
+      }
+      g.fillStyle = "#c85f14";
+      for (let i = -1; i <= 1; i++) { g.beginPath(); g.moveTo(i * s * 0.16 - s * 0.05, -s * 0.34); g.lineTo(i * s * 0.16, -s * 0.5); g.lineTo(i * s * 0.16 + s * 0.05, -s * 0.34); g.closePath(); fst(g); }
+      const fl = 1 + Math.sin(t * 12) * 0.15;
+      g.fillStyle = "#ff9c1a"; g.beginPath(); g.moveTo(s * 0.02, s * 0.14); g.quadraticCurveTo(s * 0.42 * fl, s * 0.04, s * 0.5 * fl, s * 0.2); g.quadraticCurveTo(s * 0.36, s * 0.34, s * 0.02, s * 0.24); g.closePath(); g.fill();
+      g.fillStyle = "#ffe066"; g.beginPath(); g.moveTo(s * 0.06, s * 0.16); g.quadraticCurveTo(s * 0.28 * fl, s * 0.12, s * 0.36 * fl, s * 0.2); g.quadraticCurveTo(s * 0.26, s * 0.28, s * 0.06, s * 0.22); g.closePath(); g.fill();
+      break;
+    }
+    case 15: { // Galaxie — Sternenfell + Orbit
+      g.fillStyle = "#fff";
+      for (let i = 0; i < 7; i++) {
+        const a = i * 1.3, rr = s * (0.14 + (i % 3) * 0.09);
+        starP(g, Math.cos(a) * rr, Math.sin(a) * rr * 0.9, s * 0.03, 4, 0.4); g.fill();
+      }
+      g.fillStyle = "#ffe0ff";
+      for (let i = 0; i < 2; i++) { const a = t * 1.5 + i * Math.PI; g.beginPath(); g.arc(Math.cos(a) * s * 0.55, Math.sin(a) * s * 0.5, s * 0.04, 0, 7); g.fill(); }
+      break;
+    }
+  }
 }
 
 // ---------- Effekte ----------
@@ -329,15 +597,31 @@ function draw() {
   // Wiese
   roundRect(1.5, 1.5, W - 3, H - 3, 16);
   const g = ctx.createLinearGradient(0, 0, 0, H);
-  g.addColorStop(0, "#3fbf63"); g.addColorStop(1, "#2a9c4c");
+  g.addColorStop(0, "#5fd07f"); g.addColorStop(0.55, "#37b058"); g.addColorStop(1, "#218a44");
   ctx.fillStyle = g; ctx.fill(); ctx.lineWidth = 3.5; ctx.strokeStyle = "#123018"; ctx.stroke();
-  // Grasbüschel-Deko
   ctx.save(); roundRect(1.5, 1.5, W - 3, H - 3, 16); ctx.clip();
-  ctx.strokeStyle = "rgba(255,255,255,0.12)"; ctx.lineWidth = 2;
-  for (let i = 0; i < 10; i++) {
-    const gx = ((i * 137) % 100) / 100 * W, gy = ((i * 91) % 100) / 100 * H;
-    ctx.beginPath(); ctx.moveTo(gx, gy); ctx.lineTo(gx - 4, gy - 8); ctx.moveTo(gx, gy); ctx.lineTo(gx + 4, gy - 8); ctx.stroke();
+  // Sonnen-Lichtfleck oben
+  const sun = ctx.createRadialGradient(W * 0.3, H * 0.12, 0, W * 0.3, H * 0.12, W * 0.65);
+  sun.addColorStop(0, "rgba(255,255,255,0.18)"); sun.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = sun; ctx.fillRect(0, 0, W, H);
+  // Grasbüschel
+  ctx.strokeStyle = "rgba(255,255,255,0.11)"; ctx.lineWidth = 2; ctx.lineCap = "round";
+  for (let i = 0; i < 16; i++) {
+    const gx = ((i * 137) % 100) / 100 * W, gy = ((i * 79) % 100) / 100 * H;
+    ctx.beginPath(); ctx.moveTo(gx, gy); ctx.lineTo(gx - 4, gy - 9); ctx.moveTo(gx, gy); ctx.lineTo(gx, gy - 12); ctx.moveTo(gx, gy); ctx.lineTo(gx + 4, gy - 9); ctx.stroke();
   }
+  // Blümchen
+  const fcol = ["#ff6f91", "#ffd23f", "#ffffff", "#b892ff"];
+  for (let i = 0; i < 7; i++) {
+    const fx = ((i * 173 + 40) % 100) / 100 * W, fy = ((i * 111 + 66) % 100) / 100 * H;
+    ctx.fillStyle = fcol[i % fcol.length];
+    for (let p = 0; p < 5; p++) { const a = p / 5 * Math.PI * 2; ctx.beginPath(); ctx.arc(fx + Math.cos(a) * 4.2, fy + Math.sin(a) * 4.2, 2.7, 0, 7); ctx.fill(); }
+    ctx.fillStyle = "#ffd23f"; ctx.beginPath(); ctx.arc(fx, fy, 2.4, 0, 7); ctx.fill();
+  }
+  // Vignette unten für Tiefe
+  const vg = ctx.createLinearGradient(0, H * 0.62, 0, H);
+  vg.addColorStop(0, "rgba(0,40,15,0)"); vg.addColorStop(1, "rgba(0,40,15,0.22)");
+  ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
   ctx.restore();
 
   // Meeries (nach y sortiert für Tiefe)
