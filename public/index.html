@@ -384,25 +384,7 @@
         <span class="app-arrow">→</span>
       </a>
 
-      <a class="app-card" href="/galopp/?daily=1" style="--i:5" id="daily-card">
-        <span class="app-icon">🗓️</span>
-        <span class="app-info">
-          <span class="app-name">Tages-Challenge</span>
-          <span class="app-desc" style="display:block">Galopp — heute läuft jede:r dieselbe Strecke. Wer hält den Tagesrekord?<span class="app-rec daily-lead" id="daily-lead"></span></span>
-        </span>
-        <span class="app-arrow">→</span>
-      </a>
-
-      <a class="app-card" href="/galopp/?weekly=1" style="--i:6" id="weekly-card">
-        <span class="app-icon">📅</span>
-        <span class="app-info">
-          <span class="app-name">Wochen-Challenge</span>
-          <span class="app-desc" style="display:block">Galopp — eine Strecke für die ganze Woche. Perfekt, wenn's mal nicht täglich klappt.<span class="app-rec daily-lead" id="weekly-lead"></span></span>
-        </span>
-        <span class="app-arrow">→</span>
-      </a>
-
-      <a class="app-card" href="/wumms/" style="--i:7">
+      <a class="app-card" href="/wumms/" style="--i:5">
         <span class="app-icon">🦝</span>
         <span class="app-info">
           <span class="app-name">WUMMS!</span>
@@ -412,7 +394,7 @@
       </a>
 
       <!-- Nächste App: Block kopieren, href und --i anpassen -->
-      <a class="app-card soon" href="#" style="--i:8" aria-disabled="true">
+      <a class="app-card soon" href="#" style="--i:6" aria-disabled="true">
         <span class="app-icon">✨</span>
         <span class="app-info">
           <span class="app-name">Nächste App<span class="badge">bald</span></span>
@@ -512,22 +494,6 @@
         }).catch(() => {});
       }
     }
-
-    // --- Tages-Challenge: heutige:r Führende:r ---
-    fetch("/api/scores/galopp?daily=1").then(x => x.json()).then(d => {
-      const lead = (d.top || [])[0];
-      $("#daily-lead").textContent = lead
-        ? `👑 Heute vorn: ${lead.name} (${lead.score})`
-        : "Noch niemand gelaufen — sei die/der Erste!";
-    }).catch(() => {});
-
-    // --- Wochen-Challenge: Führende:r dieser Woche ---
-    fetch("/api/scores/galopp?weekly=1").then(x => x.json()).then(d => {
-      const lead = (d.top || [])[0];
-      $("#weekly-lead").textContent = lead
-        ? `👑 Diese Woche vorn: ${lead.name} (${lead.score})`
-        : "Noch niemand gelaufen — sei die/der Erste!";
-    }).catch(() => {});
 
     // --- Install-Hinweis (nicht in der installierten App, abschaltbar) ---
     const standalone = matchMedia("(display-mode: standalone)").matches || navigator.standalone;

@@ -30,9 +30,10 @@ der Rahmen passt sich an.
 **Plattform-Features:**
 
 - **Tages- & Wochen-Challenge** (Galopp): Alle laufen dieselbe, per Datum-
-  bzw. Wochen-Seed erzeugte Strecke — je mit eigener Bestenliste. Karten auf
-  der Landing Page. WUMMS! hat ebenfalls eine **Tages-Challenge** (`?daily=1`,
-  fester Seed für Teile- und Bösewicht-Abfolge).
+  bzw. Wochen-Seed erzeugte Strecke — je mit eigener Bestenliste. Direkt im
+  **Galopp-Startmenü** wählbar (🗓️/📅). WUMMS! hat ebenfalls eine
+  **Tages-Challenge** (`?daily=1`, fester Seed für Teile- und Bösewicht-Abfolge),
+  im WUMMS!-Menü wählbar.
 - **Meilensteine** (Galopp, Sternensturm, Komet, WUMMS!): Abzeichen für Lauf-
   und Lebenszeit-Erfolge, lokal gespeichert, im Spielmenü einsehbar.
 - **Skins** (Galopp, Komet, Sternensturm): freispielbare Farbvarianten der
