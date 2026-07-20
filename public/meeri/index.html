@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#1f7a3d">
+  <title>MEERI-MANIA — Meerschweinchen-Evolution</title>
+  <meta name="description" content="MEERI-MANIA: Merge-Idle-Spiel mit Meerschweinchen. Zwei gleiche Meeries zusammenziehen, immer absurdere Evolutionen entdecken, Münzen sammeln und die Wiese ausbauen.">
+  <link rel="stylesheet" href="/fonts/fonts.css">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/icons/icon-180.png">
+  <link rel="icon" href="/favicon.ico" sizes="any">
+  <link rel="icon" type="image/png" href="/icons/icon-32.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <script src="/theme.js"></script>
+  <link rel="stylesheet" href="style.css?v=1">
+</head>
+<body>
+  <div id="app">
+    <div class="topbar">
+      <a class="btn-back" href="/" aria-label="Zurück">←</a>
+      <h1 class="game-title" id="title">MEERI<span class="bang">-MANIA</span></h1>
+      <button class="ic-btn" id="btn-sound" title="Ton an/aus">🔊</button>
+      <button class="ic-btn" data-theme-toggle aria-label="Hell/Dunkel"></button>
+    </div>
+
+    <div class="hud">
+      <div class="coins">🪙 <b id="coins">0</b></div>
+      <div class="hud-right">
+        <span class="cap" id="cap">0/0</span>
+        <span class="rate" id="rate"></span>
+      </div>
+    </div>
+
+    <div class="meadow-wrap">
+      <canvas id="meadow"></canvas>
+    </div>
+
+    <div class="controls">
+      <button class="ctrl-btn buy" id="buy"><span class="cb-top">+ Meeri kaufen</span><span class="cb-cost" id="buy-cost">🪙 10</span></button>
+      <button class="ctrl-btn exp" id="expand"><span class="cb-top">🌱 Wiese vergrößern</span><span class="cb-cost" id="exp-cost">🪙 100</span></button>
+    </div>
+
+    <div class="foot">
+      <button class="foot-btn" id="btn-album">📖 Meeri-Album</button>
+      <button class="foot-btn" id="btn-menu">☰ Menü</button>
+    </div>
+  </div>
+
+  <script src="/shared.js"></script>
+  <script src="app.js?v=1"></script>
+</body>
+</html>

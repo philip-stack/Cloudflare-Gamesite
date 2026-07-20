@@ -1,0 +1,531 @@
+// ====================================================================
+// MEERI-MANIA — Merge-Idle mit Meerschweinchen.
+//  - Meeries tapsen frei auf der Wiese und werfen Münz-Blasen ab (antippen).
+//  - Zwei gleiche Meeries zusammenziehen → nächste (absurdere) Evolution.
+//  - "+ Meeri kaufen" (Kosten steigen), Wiese mit Münzen vergrößern.
+//  - Offline-Einnahmen, dezente goldene Meeries, Meeri-Album als Ziel.
+//  - Alles lokal gespeichert (localStorage), kein Server nötig.
+// ====================================================================
+"use strict";
+
+// ---------- Evolutionsstufen (absurd steigernd) ----------
+const TIERS = [
+  { name: "Baby-Meeri",        prop: "",     c1: "#e8c9a0", c2: "#c9a877", desc: "Frisch geboren, flauschig und ahnungslos." },
+  { name: "Struppel-Meeri",    prop: "🌿",   c1: "#cf9f6a", c2: "#a97f4c", desc: "Hat sich im Gras gewälzt. Sieht wild aus." },
+  { name: "Punk-Meeri",        prop: "🎸",   c1: "#ff7ab0", c2: "#d8558c", desc: "Laut, frech, Irokese aus Fell." },
+  { name: "Ritter-Meeri",      prop: "⚔️",   c1: "#a9b7c6", c2: "#7d8b9c", desc: "Für Ehre und Salatblätter!" },
+  { name: "Wikinger-Meeri",    prop: "🪓",   c1: "#c98a4b", c2: "#9c6733", desc: "Segelt über die Wiese, plündert Gurken." },
+  { name: "Zauber-Meeri",      prop: "🪄",   c1: "#9b7bff", c2: "#6f4fd6", desc: "Zaubert Heu aus dem Nichts." },
+  { name: "Piraten-Meeri",     prop: "🏴‍☠️", c1: "#6b6f76", c2: "#464b52", desc: "Arrr! Wo ist der Möhren-Schatz?" },
+  { name: "Cowboy-Meeri",      prop: "🤠",   c1: "#d9a441", c2: "#a97c25", desc: "Der schnellste Knabberer im Westen." },
+  { name: "Ninja-Meeri",       prop: "🥷",   c1: "#4a4f5a", c2: "#2b2f38", desc: "Lautlos. Tödlich. Süß." },
+  { name: "König-Meeri",       prop: "👑",   c1: "#ffd23f", c2: "#d1a318", desc: "Herrscher über Wiese und Napf." },
+  { name: "Roboter-Meeri",     prop: "🤖",   c1: "#9fb3c8", c2: "#6f8397", desc: "Piep bopp. Läuft auf Salat-Akku." },
+  { name: "Superhelden-Meeri", prop: "🦸",   c1: "#ff4d6d", c2: "#c81f43", desc: "Rettet die Wiese im Umhang." },
+  { name: "Astro-Meeri",       prop: "🚀",   c1: "#7aa7ff", c2: "#4a72d0", desc: "Zum Mond und zurück zum Napf." },
+  { name: "Alien-Meeri",       prop: "👽",   c1: "#57e39b", c2: "#1f9d5c", desc: "Kommt in Frieden. Und wegen Gemüse." },
+  { name: "Drachen-Meeri",     prop: "🐉",   c1: "#ff8a3d", c2: "#c85f14", desc: "Speit Feuer, kuschelt trotzdem gern." },
+  { name: "Galaxie-Meeri",     prop: "🌌",   c1: "#b892ff", c2: "#7d55d6", desc: "Das Universum in Fellform. Endstufe!" },
+];
+const MAXT = TIERS.length - 1;
+const coinVal = t => Math.round(Math.pow(2.1, t)) || 1;
+
+// ---------- Wirtschaft ----------
+const BUY_BASE = 10, BUY_GROW = 1.18;
+const CAP_START = 6, CAP_STEP = 3, CAP_MAXLEVEL = 8;
+const EXP_BASE = 100, EXP_GROW = 2.2;
+const DROP_MIN = 3.2, DROP_MAX = 6.0;   // Sekunden zwischen Münz-Blasen je Meeri
+const OFFLINE_EFF = 0.4, OFFLINE_CAP_H = 3;
+
+// ---------- Zustand ----------
+const SAVE = "meeri_save_v1";
+let coins, meeries, capLevel, buyCount, album, lastSeen, uid;
+let over = false;
+
+function capacity() { return CAP_START + capLevel * CAP_STEP; }
+function buyCost() { return Math.round(BUY_BASE * Math.pow(BUY_GROW, buyCount)); }
+function expCost() { return Math.round(EXP_BASE * Math.pow(EXP_GROW, capLevel)); }
+
+function fresh() {
+  coins = 0; meeries = []; capLevel = 0; buyCount = 0; album = {}; uid = 1;
+  lastSeen = Date.now();
+}
+function load() {
+  try {
+    const s = JSON.parse(localStorage.getItem(SAVE) || "null");
+    if (!s) { fresh(); return false; }
+    coins = Number(s.coins) || 0;
+    capLevel = Math.min(CAP_MAXLEVEL, Number(s.capLevel) || 0);
+    buyCount = Number(s.buyCount) || 0;
+    album = s.album || {};
+    uid = Number(s.uid) || 1;
+    lastSeen = Number(s.lastSeen) || Date.now();
+    meeries = (s.meeries || []).map(m => ({
+      id: uid++, tier: Math.max(0, Math.min(MAXT, m.tier | 0)),
+      x: m.x || 0.5, y: m.y || 0.5,
+      vx: (Math.random() - 0.5), vy: (Math.random() - 0.5),
+      phase: Math.random() * 7, nextDrop: rndDrop(), held: false,
+    }));
+    return true;
+  } catch { fresh(); return false; }
+}
+let saveTimer = null;
+function save() {
+  lastSeen = Date.now();
+  try {
+    localStorage.setItem(SAVE, JSON.stringify({
+      coins, capLevel, buyCount, album, uid, lastSeen,
+      meeries: meeries.map(m => ({ tier: m.tier, x: m.x, y: m.y })),
+    }));
+  } catch {}
+}
+function saveSoon() { clearTimeout(saveTimer); saveTimer = setTimeout(save, 600); }
+
+const rndDrop = () => DROP_MIN + Math.random() * (DROP_MAX - DROP_MIN);
+
+// ---------- Meeri-Verwaltung ----------
+function discover(tier) {
+  if (!album[tier]) {
+    album[tier] = new Date().toISOString();
+    toast(`📖 Neu im Album: ${TIERS[tier].name}!`);
+    GS.sound.great();
+  }
+}
+function spawnMeeri(tier, x, y) {
+  const m = {
+    id: uid++, tier, x: x ?? (0.2 + Math.random() * 0.6), y: y ?? (0.2 + Math.random() * 0.6),
+    vx: (Math.random() - 0.5), vy: (Math.random() - 0.5),
+    phase: Math.random() * 7, nextDrop: rndDrop(), held: false, pop: 0.001,
+  };
+  meeries.push(m);
+  discover(tier);
+  return m;
+}
+function buyMeeri() {
+  if (over) return;
+  if (meeries.length >= capacity()) { toast("Wiese voll — vergrößern oder mergen!"); return; }
+  const c = buyCost();
+  if (coins < c) { toast("Zu wenig Münzen"); return; }
+  coins -= c; buyCount++;
+  spawnMeeri(0);
+  GS.sound.click(); GS.haptic(8);
+  updateHUD(); saveSoon();
+}
+function expandMeadow() {
+  if (capLevel >= CAP_MAXLEVEL) { toast("Wiese ist schon riesig!"); return; }
+  const c = expCost();
+  if (coins < c) { toast("Zu wenig Münzen"); return; }
+  coins -= c; capLevel++;
+  GS.sound.good(); GS.haptic([10, 30]); burst("PLATZ!", "#57e39b");
+  updateHUD(); saveSoon();
+}
+function mergeInto(target, src) {
+  if (target.tier >= MAXT) { toast("Endstufe erreicht! 🌌"); return false; }
+  target.tier++; target.pop = 0.001;
+  meeries = meeries.filter(m => m.id !== src.id);
+  discover(target.tier);
+  coins += coinVal(target.tier) * 3;              // kleiner Merge-Bonus
+  burst(target.tier >= MAXT ? "GALAXIE!" : "EVOLVE!", "#ffd23f");
+  floater("+" + fmt(coinVal(target.tier) * 3), "#ffd23f", target.x, target.y);
+  spawnConfetti(target.x, target.y, TIERS[target.tier].c1);
+  GS.sound.great(); GS.haptic([12, 40, 12]);
+  updateHUD(); saveSoon();
+  return true;
+}
+
+// ---------- Offline-Einnahmen ----------
+function passivePerSec() {
+  let s = 0;
+  for (const m of meeries) s += coinVal(m.tier) / ((DROP_MIN + DROP_MAX) / 2);
+  return s;
+}
+function applyOffline() {
+  const elapsed = Math.max(0, (Date.now() - lastSeen) / 1000);
+  if (elapsed < 30 || !meeries.length) return;
+  const rate = passivePerSec() * OFFLINE_EFF;
+  const gain = Math.floor(rate * Math.min(elapsed, OFFLINE_CAP_H * 3600));
+  if (gain <= 0) return;
+  coins += gain;
+  const mins = Math.floor(Math.min(elapsed, OFFLINE_CAP_H * 3600) / 60);
+  setTimeout(() => welcomeBack(gain, mins), 400);
+}
+
+// ====================================================================
+// Rendering
+// ====================================================================
+const canvas = document.getElementById("meadow");
+const ctx = canvas.getContext("2d");
+let W = 320, H = 320, msize = 54;
+
+function layout() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+  const wrap = canvas.parentElement;
+  W = (wrap && wrap.clientWidth) || 320;
+  H = Math.max(200, (wrap && wrap.clientHeight) || 320);
+  canvas.style.width = W + "px"; canvas.style.height = H + "px";
+  canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  msize = Math.max(40, Math.min(76, Math.min(W, H) / 6));
+}
+
+// Meeri-Position in Pixel (x,y sind 0..1 relativ, Rand einhalten)
+function mx(m) { const pad = msize * 0.6; return pad + m.x * (W - pad * 2); }
+function my(m) { const pad = msize * 0.6; return pad + m.y * (H - pad * 2); }
+
+function roundRect(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+}
+
+function drawMeeri(cx, cy, s, tier, t, pop) {
+  const T = TIERS[tier];
+  const sc = pop > 0 ? 1 + Math.sin(Math.min(1, pop) * Math.PI) * 0.25 : 1;
+  const wob = Math.sin(t * 4 + tier) * s * 0.02;
+  ctx.save();
+  ctx.translate(cx, cy + wob);
+  ctx.scale(sc, sc);
+  const lw = Math.max(2, s * 0.07);
+  ctx.lineWidth = lw; ctx.strokeStyle = "#123018"; ctx.lineJoin = "round"; ctx.lineCap = "round";
+
+  // Schatten
+  ctx.save(); ctx.fillStyle = "rgba(0,0,0,0.18)";
+  ctx.beginPath(); ctx.ellipse(0, s * 0.5, s * 0.42, s * 0.12, 0, 0, 7); ctx.fill(); ctx.restore();
+
+  // Füße
+  ctx.fillStyle = T.c2;
+  for (const fx of [-s * 0.22, s * 0.22]) { ctx.beginPath(); ctx.ellipse(fx, s * 0.42, s * 0.1, s * 0.07, 0, 0, 7); ctx.fill(); ctx.stroke(); }
+
+  // Ohren
+  ctx.fillStyle = T.c2;
+  for (const ex of [-s * 0.3, s * 0.3]) { ctx.beginPath(); ctx.ellipse(ex, -s * 0.28, s * 0.14, s * 0.12, 0, 0, 7); ctx.fill(); ctx.stroke(); }
+
+  // Körper (Kartoffel)
+  const g = ctx.createLinearGradient(0, -s * 0.4, 0, s * 0.45);
+  g.addColorStop(0, T.c1); g.addColorStop(1, T.c2);
+  ctx.beginPath(); ctx.ellipse(0, 0, s * 0.44, s * 0.4, 0, 0, 7); ctx.fillStyle = g; ctx.fill(); ctx.stroke();
+  // helle Schnauze
+  ctx.beginPath(); ctx.ellipse(0, s * 0.12, s * 0.26, s * 0.2, 0, 0, 7); ctx.fillStyle = "rgba(255,255,255,0.5)"; ctx.fill();
+
+  // Augen
+  for (const ex of [-s * 0.16, s * 0.16]) {
+    ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(ex, -s * 0.05, s * 0.11, 0, 7); ctx.fill();
+    ctx.lineWidth = Math.max(1, s * 0.02); ctx.strokeStyle = "#123018"; ctx.stroke();
+    ctx.fillStyle = "#123018"; ctx.beginPath(); ctx.arc(ex + s * 0.02, -s * 0.03, s * 0.055, 0, 7); ctx.fill();
+    ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(ex, -s * 0.06, s * 0.02, 0, 7); ctx.fill();
+  }
+  ctx.lineWidth = lw;
+  // Nase
+  ctx.fillStyle = "#c8607f"; ctx.beginPath(); ctx.moveTo(-s * 0.05, s * 0.1); ctx.lineTo(s * 0.05, s * 0.1); ctx.lineTo(0, s * 0.16); ctx.closePath(); ctx.fill();
+  // Zähnchen
+  ctx.fillStyle = "#fff"; roundRect(-s * 0.035, s * 0.16, s * 0.07, s * 0.08, s * 0.02); ctx.fill(); ctx.lineWidth = Math.max(1, s * 0.015); ctx.stroke();
+
+  // Prop-Emoji (Evolutions-Gag)
+  if (T.prop) {
+    ctx.font = `${Math.round(s * 0.5)}px "Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif`;
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(T.prop, s * 0.32, -s * 0.42);
+  }
+  ctx.restore();
+}
+
+// ---------- Effekte ----------
+let coinsFx = [], golds = [], bursts = [], floaters = [], confetti = [];
+function spawnCoin(m) {
+  coinsFx.push({ x: mx(m), y: my(m) - msize * 0.5, val: coinVal(m.tier), t: 0, life: 5.5, vy: -12 - Math.random() * 8, r: msize * 0.28 });
+}
+function spawnGold() {
+  golds.push({ x: (0.15 + Math.random() * 0.7) * W, y: (0.15 + Math.random() * 0.7) * H, t: 0, life: 6, phase: Math.random() * 7 });
+}
+function burst(text, col) { bursts.push({ text, col, x: W / 2, y: H * 0.4, t: 0, life: 0.9 }); }
+function floater(text, col, rx, ry) { floaters.push({ text, col, x: rx != null ? mx({ x: rx }) : W / 2, y: ry != null ? my({ y: ry }) : H * 0.5, t: 0, life: 1.1 }); }
+function spawnConfetti(rx, ry, col) {
+  const x = mx({ x: rx }), y = my({ y: ry });
+  const cols = [col, "#ffd23f", "#ff5a8a", "#57e39b", "#fff"];
+  for (let i = 0; i < 14; i++) confetti.push({ x, y, vx: (Math.random() - 0.5) * 6, vy: -Math.random() * 6 - 2, life: 1, size: msize * 0.12, col: cols[i % cols.length], rot: Math.random() * 7, vr: (Math.random() - 0.5) * 0.5 });
+}
+
+// ---------- Loop ----------
+let lastT = 0, animT = 0, goldTimer = 8;
+function frame(ts) {
+  const dt = Math.min(0.05, (ts - lastT) / 1000 || 0); lastT = ts; animT += dt;
+
+  if (!over) {
+    // Meeries bewegen + Münzen abwerfen
+    for (const m of meeries) {
+      if (m.pop) { m.pop += dt * 2.2; if (m.pop >= 1) m.pop = 0; }
+      if (m.held) continue;
+      m.x += m.vx * dt * 0.06; m.y += m.vy * dt * 0.06;
+      if (m.x < 0.02) { m.x = 0.02; m.vx = Math.abs(m.vx); }
+      if (m.x > 0.98) { m.x = 0.98; m.vx = -Math.abs(m.vx); }
+      if (m.y < 0.02) { m.y = 0.02; m.vy = Math.abs(m.vy); }
+      if (m.y > 0.98) { m.y = 0.98; m.vy = -Math.abs(m.vy); }
+      if (Math.random() < dt * 0.4) { m.vx = (Math.random() - 0.5); m.vy = (Math.random() - 0.5); }
+      m.nextDrop -= dt;
+      if (m.nextDrop <= 0) { m.nextDrop = rndDrop(); spawnCoin(m); }
+    }
+    // Goldenes Meeri
+    goldTimer -= dt;
+    if (goldTimer <= 0 && golds.length === 0 && meeries.length > 0) { goldTimer = 25 + Math.random() * 20; spawnGold(); }
+  }
+
+  // Effekt-Timer
+  coinsFx = coinsFx.filter(c => (c.t += dt) < c.life);
+  coinsFx.forEach(c => { c.y += c.vy * dt; c.vy += 20 * dt; if (c.vy > 6) c.vy = 6; });
+  golds = golds.filter(g => (g.t += dt) < g.life);
+  bursts = bursts.filter(b => (b.t += dt) < b.life);
+  floaters = floaters.filter(f => (f.t += dt) < f.life);
+  confetti = confetti.filter(p => (p.life -= dt * 1.3) > 0);
+  confetti.forEach(p => { p.x += p.vx; p.y += p.vy; p.vy += 0.3; p.rot += p.vr; });
+
+  draw();
+  requestAnimationFrame(frame);
+}
+
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  // Wiese
+  roundRect(1.5, 1.5, W - 3, H - 3, 16);
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, "#3fbf63"); g.addColorStop(1, "#2a9c4c");
+  ctx.fillStyle = g; ctx.fill(); ctx.lineWidth = 3.5; ctx.strokeStyle = "#123018"; ctx.stroke();
+  // Grasbüschel-Deko
+  ctx.save(); roundRect(1.5, 1.5, W - 3, H - 3, 16); ctx.clip();
+  ctx.strokeStyle = "rgba(255,255,255,0.12)"; ctx.lineWidth = 2;
+  for (let i = 0; i < 10; i++) {
+    const gx = ((i * 137) % 100) / 100 * W, gy = ((i * 91) % 100) / 100 * H;
+    ctx.beginPath(); ctx.moveTo(gx, gy); ctx.lineTo(gx - 4, gy - 8); ctx.moveTo(gx, gy); ctx.lineTo(gx + 4, gy - 8); ctx.stroke();
+  }
+  ctx.restore();
+
+  // Meeries (nach y sortiert für Tiefe)
+  const sorted = [...meeries].sort((a, b) => (a.held ? 1 : 0) - (b.held ? 1 : 0) || my(a) - my(b));
+  for (const m of sorted) drawMeeri(mx(m), my(m), msize, m.tier, animT + m.phase, m.pop);
+
+  // Münz-Blasen
+  for (const c of coinsFx) {
+    const k = c.t / c.life; ctx.save(); ctx.globalAlpha = k > 0.8 ? (1 - k) / 0.2 : 1;
+    ctx.translate(c.x, c.y);
+    ctx.beginPath(); ctx.arc(0, 0, c.r, 0, 7); ctx.fillStyle = "#ffd23f"; ctx.fill();
+    ctx.lineWidth = Math.max(2, c.r * 0.16); ctx.strokeStyle = "#123018"; ctx.stroke();
+    ctx.fillStyle = "#b97c10"; ctx.font = `800 ${c.r * 0.9}px sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText("🪙", 0, 1);
+    ctx.restore();
+  }
+  // Goldenes Meeri
+  for (const gg of golds) {
+    const bob = Math.sin((animT + gg.phase) * 3) * 6;
+    const k = gg.t / gg.life; ctx.save(); ctx.globalAlpha = k > 0.85 ? (1 - k) / 0.15 : 1;
+    ctx.translate(gg.x, gg.y + bob);
+    ctx.shadowColor = "rgba(255,210,63,0.9)"; ctx.shadowBlur = 20;
+    ctx.font = `${msize * 0.9}px "Segoe UI Emoji","Apple Color Emoji",sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText("🪙", 0, 0); ctx.shadowBlur = 0;
+    ctx.font = `${msize * 0.5}px "Segoe UI Emoji",sans-serif`; ctx.fillText("✨", msize * 0.35, -msize * 0.35);
+    ctx.restore();
+  }
+  // Konfetti
+  for (const p of confetti) {
+    ctx.save(); ctx.globalAlpha = Math.max(0, p.life); ctx.translate(p.x, p.y); ctx.rotate(p.rot);
+    ctx.fillStyle = p.col; ctx.strokeStyle = "#123018"; ctx.lineWidth = 1.2;
+    roundRect(-p.size / 2, -p.size / 2, p.size, p.size, p.size * 0.25); ctx.fill(); ctx.stroke(); ctx.restore();
+  }
+  // Floater
+  for (const f of floaters) {
+    const k = f.t / f.life; ctx.save(); ctx.globalAlpha = 1 - k;
+    ctx.font = `800 ${msize * 0.42}px ${uiFont()}`; ctx.textAlign = "center"; ctx.lineWidth = 4; ctx.strokeStyle = "#123018"; ctx.fillStyle = f.col;
+    ctx.strokeText(f.text, f.x, f.y - k * msize); ctx.fillText(f.text, f.x, f.y - k * msize); ctx.restore();
+  }
+  // Bursts
+  for (const b of bursts) {
+    const k = b.t / b.life; const sc = k < 0.3 ? (k / 0.3) * 1.15 : 1.15 - (k - 0.3) * 0.2;
+    ctx.save(); ctx.globalAlpha = Math.max(0, 1 - k); ctx.translate(b.x, b.y); ctx.rotate(-0.06); ctx.scale(sc, sc);
+    ctx.font = `900 italic ${msize * 0.9}px ${uiFont()}`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.lineWidth = 7; ctx.strokeStyle = "#123018"; ctx.strokeText(b.text, 0, 0);
+    ctx.fillStyle = b.col; ctx.fillText(b.text, 0, 0); ctx.restore();
+  }
+}
+function uiFont() { return `${getComputedStyle(document.documentElement).getPropertyValue("--font-ui").trim() || "Outfit"}, sans-serif`; }
+
+// ====================================================================
+// Eingabe
+// ====================================================================
+let drag = null;
+function pos(e) { const r = canvas.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; }
+function meeriAt(x, y) {
+  for (let i = meeries.length - 1; i >= 0; i--) { const m = meeries[i]; if (Math.hypot(x - mx(m), y - my(m)) < msize * 0.5) return m; }
+  return null;
+}
+canvas.addEventListener("pointerdown", e => {
+  if (over) return;
+  const { x, y } = pos(e);
+  // Goldenes Meeri antippen
+  for (const gg of golds) {
+    if (Math.hypot(x - gg.x, y - gg.y) < msize * 0.6) {
+      const bonus = Math.max(20, Math.round(passivePerSec() * 60) + coinVal(topTier()) * 5);
+      coins += bonus; golds = golds.filter(z => z !== gg);
+      floater("+" + fmt(bonus), "#ffd23f", null, null); burst("BONUS!", "#ffd23f");
+      GS.sound.win(); GS.haptic([10, 30, 10]); updateHUD(); saveSoon(); return;
+    }
+  }
+  // Münz-Blase einsammeln
+  for (let i = coinsFx.length - 1; i >= 0; i--) {
+    const c = coinsFx[i];
+    if (Math.hypot(x - c.x, y - c.y) < c.r + 8) {
+      coins += c.val; coinsFx.splice(i, 1);
+      floater("+" + fmt(c.val), "#ffd23f", null, null);
+      GS.sound.tone(560 + Math.random() * 120, 0.06, { type: "triangle", gain: 0.06 }); GS.haptic(5);
+      updateHUD(); saveSoon(); return;
+    }
+  }
+  // Meeri aufnehmen
+  const m = meeriAt(x, y);
+  if (m) { drag = m; m.held = true; canvas.setPointerCapture(e.pointerId); GS.haptic(6); }
+});
+canvas.addEventListener("pointermove", e => {
+  if (!drag) return;
+  const { x, y } = pos(e); const pad = msize * 0.6;
+  drag.x = Math.max(0, Math.min(1, (x - pad) / (W - pad * 2)));
+  drag.y = Math.max(0, Math.min(1, (y - pad) / (H - pad * 2)));
+});
+function drop() {
+  if (!drag) return;
+  const d = drag; drag = null; d.held = false;
+  // Ziel-Meeri gleicher Stufe finden
+  let target = null, best = msize * 0.7;
+  for (const m of meeries) {
+    if (m.id === d.id || m.tier !== d.tier) continue;
+    const dist = Math.hypot(mx(m) - mx(d), my(m) - my(d));
+    if (dist < best) { best = dist; target = m; }
+  }
+  if (target) mergeInto(target, d);
+  else saveSoon();
+}
+canvas.addEventListener("pointerup", drop);
+canvas.addEventListener("pointercancel", () => { if (drag) { drag.held = false; drag = null; } });
+
+// ====================================================================
+// HUD & UI
+// ====================================================================
+function fmt(n) {
+  n = Math.floor(n);
+  if (n >= 1e9) return (n / 1e9).toFixed(2) + "B";
+  if (n >= 1e6) return (n / 1e6).toFixed(2) + "M";
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + "k";
+  return String(n);
+}
+function topTier() { return meeries.reduce((a, m) => Math.max(a, m.tier), 0); }
+function updateHUD() {
+  document.getElementById("coins").textContent = fmt(coins);
+  document.getElementById("cap").textContent = `🐹 ${meeries.length}/${capacity()}`;
+  document.getElementById("rate").textContent = meeries.length ? `~${fmt(passivePerSec())}/s` : "kauf ein Meeri!";
+  const buy = document.getElementById("buy"), exp = document.getElementById("expand");
+  document.getElementById("buy-cost").textContent = "🪙 " + fmt(buyCost());
+  const full = meeries.length >= capacity();
+  buy.disabled = coins < buyCost() || full;
+  document.getElementById("buy").querySelector(".cb-top").textContent = full ? "Wiese voll!" : "+ Meeri kaufen";
+  if (capLevel >= CAP_MAXLEVEL) { exp.disabled = true; document.getElementById("exp-cost").textContent = "max"; }
+  else { document.getElementById("exp-cost").textContent = "🪙 " + fmt(expCost()); exp.disabled = coins < expCost(); }
+  document.getElementById("btn-sound").textContent = GS.sound.on() ? "🔊" : "🔇";
+}
+
+function toast(msg) {
+  document.querySelectorAll(".meeri-toast").forEach(t => t.remove());
+  const t = document.createElement("div"); t.className = "meeri-toast"; t.textContent = msg;
+  t.style.cssText = "position:fixed;left:50%;bottom:calc(84px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:200;background:#123018;color:#fff;padding:10px 18px;border-radius:999px;font-weight:800;font-size:0.9rem;box-shadow:0 0 0 2px #fff8ec inset;max-width:90vw;text-align:center";
+  document.body.appendChild(t); setTimeout(() => t.remove(), 2200);
+}
+
+function mkOverlay(html) {
+  const ov = document.createElement("div"); ov.className = "overlay";
+  ov.innerHTML = `<div class="panel">${html}</div>`;
+  ov.onclick = e => { if (e.target === ov && ov.dataset.dismiss !== "0") ov.remove(); };
+  document.body.appendChild(ov); return ov;
+}
+
+function showAlbum() {
+  const found = Object.keys(album).length;
+  const cells = TIERS.map((T, i) => {
+    const got = !!album[i];
+    return `<div class="album-cell ${got ? "" : "locked"}">
+      <span class="album-dot" style="background:${got ? T.c1 : "#c9c9c9"}">${got ? (T.prop || "🐹") : "❓"}<span class="lvl">${i + 1}</span></span>
+      <span class="album-name">${got ? esc(T.name) : "???"}</span>
+      <span class="album-desc">${got ? esc(T.desc) : "noch nicht entdeckt"}</span>
+    </div>`;
+  }).join("");
+  const ov = mkOverlay(`
+    <h2><span class="foil">Meeri-Album</span></h2>
+    <p class="sub">${found}/${TIERS.length} Evolutionen entdeckt</p>
+    <div class="album-grid">${cells}</div>
+    <button class="btn-secondary" data-close="1">Schließen</button>`);
+  ov.querySelector("[data-close]").onclick = () => ov.remove();
+}
+
+function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+
+function welcomeBack(gain, mins) {
+  const ov = mkOverlay(`
+    <h2><span class="foil">Willkommen zurück!</span></h2>
+    <p class="sub">Deine Meeries haben fleißig weitergesammelt${mins > 0 ? ` (~${mins} Min.)` : ""}.</p>
+    <div class="big-num">🪙 +${fmt(gain)}</div>
+    <button class="btn-primary" data-close="1">Juhu, weiter!</button>`);
+  ov.dataset.dismiss = "0";
+  ov.querySelector("[data-close]").onclick = () => ov.remove();
+}
+
+function showMenu() {
+  const ov = mkOverlay(`
+    <h2><span class="foil">MEERI-MANIA</span></h2>
+    <p class="sub">Kaufe Meeries, zieh gleiche zusammen und entdecke alle Evolutionen!</p>
+    <button class="btn-primary" id="m-close">▶ Weiter wuseln</button>
+    <div class="menu-grid">
+      <button class="btn-secondary" id="m-album">📖 Album</button>
+      <button class="btn-secondary" id="m-how">❓ Anleitung</button>
+      <button class="btn-secondary full" id="m-reset">🗑️ Neu starten</button>
+    </div>`);
+  ov.querySelector("#m-close").onclick = () => ov.remove();
+  ov.querySelector("#m-album").onclick = () => { ov.remove(); showAlbum(); };
+  ov.querySelector("#m-how").onclick = () => howTo(true);
+  ov.querySelector("#m-reset").onclick = () => {
+    if (confirm("Wirklich komplett neu starten? Aller Fortschritt geht verloren.")) {
+      fresh(); save(); ov.remove(); spawnMeeri(0); updateHUD(); toast("Neue Wiese!");
+    }
+  };
+}
+function howTo(force) {
+  GS.onboard("meeri", {
+    force: !!force,
+    title: "So geht MEERI-MANIA",
+    steps: [
+      { icon: "🛒", text: "„+ Meeri kaufen“ setzt ein Meerschweinchen auf die Wiese (jeder Kauf wird teurer)." },
+      { icon: "🪙", text: "Meeries werfen Münz-Blasen ab — tippe sie an, um Münzen zu sammeln." },
+      { icon: "🔀", text: "Zieh zwei GLEICHE Meeries zusammen → sie evolvieren zur nächsten, absurderen Stufe!" },
+      { icon: "🌱", text: "Ist die Wiese voll: mergen oder „Wiese vergrößern“. Entdecke alle 16 im Album. ✨ Goldene Münze = Bonus!" },
+    ],
+  });
+}
+
+// ====================================================================
+// Verdrahtung & Start
+// ====================================================================
+document.getElementById("buy").onclick = buyMeeri;
+document.getElementById("expand").onclick = expandMeadow;
+document.getElementById("btn-album").onclick = showAlbum;
+document.getElementById("btn-menu").onclick = showMenu;
+document.getElementById("btn-sound").onclick = () => { GS.sound.toggle(); GS.sound.click(); updateHUD(); };
+
+let rt = null;
+window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(layout, 120); });
+window.addEventListener("orientationchange", () => setTimeout(layout, 250));
+document.addEventListener("visibilitychange", () => { if (document.hidden) save(); });
+window.addEventListener("pagehide", save);
+setInterval(save, 15000);
+
+GS.markPlayed("meeri");
+const had = load();
+layout();
+if (!had || meeries.length === 0) { if (!had) fresh(); spawnMeeri(0); }
+else applyOffline();
+updateHUD();
+requestAnimationFrame(frame);
+howTo(false);

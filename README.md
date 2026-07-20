@@ -17,6 +17,7 @@ statisches HTML/CSS/JS in `public/`, dazu Pages Functions als API und eine
 | 🚀 **Sternensturm** | `/sternensturm/` | Roguelite-Space-Shooter — Wellen, Upgrades, NOVA, Bosse |
 | 🦄 **Galopp** | `/galopp/` | Temple-Run-artiger Endless-Runner — springen, ducken, abbiegen, und das wütende Einhorn nicht aufholen lassen |
 | 🦝 **WUMMS!** | `/wumms/` | Comic-Block-Puzzle mit Tier-Helden — Blöcke aufs 8×8-Feld legen, Reihen abräumen, Helden-Ultimates (Bombe/Laser/Nuke) zünden, Combo-Ketten bauen und den Bösewicht zurückschlagen, der Reihen von unten hochschiebt |
+| 🐹 **MEERI-MANIA** | `/meeri/` | Merge-Idle mit Meerschweinchen — Meeries kaufen, gleiche zusammenziehen für immer absurdere Evolutionen (Baby → Punk → Ritter → … → Drachen → Galaxie), Münz-Blasen antippen, Wiese ausbauen, Offline-Einnahmen, alle 16 im Meeri-Album entdecken. Rein lokal (kein Server) |
 
 Alle Spiele sind mobile-first (Touch-Gesten), haben aber auch
 Tastatur-Steuerung. Funkelfeld, Komet, Sternensturm, Galopp und WUMMS! teilen
@@ -112,7 +113,8 @@ wuerfelpoker/
 │   ├── komet/
 │   ├── sternensturm/
 │   ├── galopp/
-│   └── wumms/                 Comic-Block-Puzzle mit Tier-Helden
+│   ├── wumms/                 Comic-Block-Puzzle mit Tier-Helden
+│   └── meeri/                 Merge-Idle mit Meerschweinchen (MEERI-MANIA)
 ├── functions/api/             Cloudflare Pages Functions
 │   ├── _util.js               gemeinsame Helfer (json, Codes, Spiel laden)
 │   ├── health.js
