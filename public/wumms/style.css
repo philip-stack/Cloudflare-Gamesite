@@ -2,6 +2,8 @@
    WUMMS! — Comic-Block-Puzzle mit Tier-Helden
    ================================================================== */
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+/* hidden muss immer gewinnen — sonst überschreibt z. B. .arm-banner{display:flex} das Ausblenden */
+[hidden] { display: none !important; }
 
 :root {
   --bg0: #141022;

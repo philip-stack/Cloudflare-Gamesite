@@ -16,10 +16,11 @@ statisches HTML/CSS/JS in `public/`, dazu Pages Functions als API und eine
 | ☄️ **Komet** | `/komet/` | One-Touch-Arcade — am Lichtseil von Stern zu Stern schwingen |
 | 🚀 **Sternensturm** | `/sternensturm/` | Roguelite-Space-Shooter — Wellen, Upgrades, NOVA, Bosse |
 | 🦄 **Galopp** | `/galopp/` | Temple-Run-artiger Endless-Runner — springen, ducken, abbiegen, und das wütende Einhorn nicht aufholen lassen |
+| 🦝 **WUMMS!** | `/wumms/` | Comic-Block-Puzzle mit Tier-Helden — Blöcke aufs 8×8-Feld legen, Reihen abräumen, Helden-Ultimates (Bombe/Laser/Nuke) zünden, Combo-Ketten bauen und den Bösewicht zurückschlagen, der Reihen von unten hochschiebt |
 
 Alle Spiele sind mobile-first (Touch-Gesten), haben aber auch
-Tastatur-Steuerung. Funkelfeld, Komet, Sternensturm und Galopp teilen sich
-eine globale Bestenliste pro Spiel (Top 50, pro Name zählt der Highscore).
+Tastatur-Steuerung. Funkelfeld, Komet, Sternensturm, Galopp und WUMMS! teilen
+sich eine globale Bestenliste pro Spiel (Top 50, pro Name zählt der Highscore).
 
 Die ganze Seite kann zwischen **Hell- und Dunkelmodus** umgeschaltet werden
 (🌙/☀️-Button in jeder App); die Wahl gilt app-übergreifend und wird auf dem
@@ -30,12 +31,13 @@ der Rahmen passt sich an.
 
 - **Tages- & Wochen-Challenge** (Galopp): Alle laufen dieselbe, per Datum-
   bzw. Wochen-Seed erzeugte Strecke — je mit eigener Bestenliste. Karten auf
-  der Landing Page.
-- **Meilensteine** (Galopp, Sternensturm, Komet): Abzeichen für Lauf- und
-  Lebenszeit-Erfolge, lokal gespeichert, im Spielmenü einsehbar.
+  der Landing Page. WUMMS! hat ebenfalls eine **Tages-Challenge** (`?daily=1`,
+  fester Seed für Teile- und Bösewicht-Abfolge).
+- **Meilensteine** (Galopp, Sternensturm, Komet, WUMMS!): Abzeichen für Lauf-
+  und Lebenszeit-Erfolge, lokal gespeichert, im Spielmenü einsehbar.
 - **Skins** (Galopp, Komet, Sternensturm): freispielbare Farbvarianten der
   Spielfigur, an die Zahl der Abzeichen gekoppelt, im Menü wählbar. Funkelfeld
-  hat eigene Skins.
+  hat eigene Skins; WUMMS! schaltet über Abzeichen **Tier-Helden** frei.
 - **Onboarding**: Beim ersten Start jedes Spiels ein kurzer Steuerungs-Hinweis.
 - **Teilen-Button** in jedem Game-Over (Web-Share mit Zwischenablage-Fallback);
   Würfelpoker lädt per **QR-Code** zum Beitreten ein (eigener QR-Encoder in
@@ -108,7 +110,8 @@ wuerfelpoker/
 │   ├── funkelfeld/
 │   ├── komet/
 │   ├── sternensturm/
-│   └── galopp/
+│   ├── galopp/
+│   └── wumms/                 Comic-Block-Puzzle mit Tier-Helden
 ├── functions/api/             Cloudflare Pages Functions
 │   ├── _util.js               gemeinsame Helfer (json, Codes, Spiel laden)
 │   ├── health.js
