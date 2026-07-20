@@ -94,7 +94,15 @@ function randomPiece() {
   const cells = SHAPES[ri(SHAPES.length)];
   return { cells, sp: ri(SPECIES.length) };
 }
-function dealTray() { tray = [randomPiece(), randomPiece(), randomPiece()]; }
+function dealTray() {
+  // Fair: möglichst ein Tray ziehen, in dem mindestens ein Teil passt.
+  // Nur wenn das Brett wirklich zu voll ist, bleibt es beim letzten Versuch
+  // (dann folgt ein ehrliches Game Over).
+  for (let attempt = 0; attempt < 12; attempt++) {
+    tray = [randomPiece(), randomPiece(), randomPiece()];
+    if (anyMoveLeft()) return;
+  }
+}
 
 // ---------- Platzierbarkeit ----------
 function canPlaceAt(piece, r0, c0) {
@@ -143,10 +151,10 @@ function placePiece(slot, r0, c0) {
   threat += 1;
   if (threat >= THREAT_MAX) { threat = 0; villainShove(); }
 
-  if (!over) {
-    if (tray.every(p => !p)) dealTray();
-    if (!anyMoveLeft()) return gameOver();
-  }
+  // Neue Teile nachlegen, dann EINE klare Game-Over-Prüfung: nur wenn wirklich
+  // kein Teil mehr passt.
+  if (tray.every(p => !p)) dealTray();
+  if (!anyMoveLeft()) return gameOver();
 
   if (score > best) { best = score; localStorage.setItem("wumms_best", String(best)); }
   updateHUD();
@@ -175,11 +183,12 @@ function clearLines() {
 }
 
 function villainShove() {
+  // Kein Platz oben? Dann ist der Bösewicht blockiert — er schiebt nicht und
+  // niemand stirbt. Das Spiel endet ausschließlich, wenn kein Teil mehr passt.
+  if (grid[0].some(Boolean)) return;
   shoves++; stats.shoves = shoves;
   // Schwierigkeit zieht langsam an: kürzeres Intervall, dichtere Reihe
   THREAT_MAX = Math.max(4, 7 - Math.floor(shoves / 3));
-  // Overflow-Prüfung: oberste Reihe muss frei sein
-  if (grid[0].some(Boolean)) return gameOver();
   for (let r = 0; r < N - 1; r++) grid[r] = grid[r + 1];
   const fill = Math.min(7, 4 + Math.floor(shoves / 2));
   const cols = [...Array(N).keys()];
@@ -523,7 +532,8 @@ canvas.addEventListener("pointercancel", () => { drag = null; });
 function updateHUD() {
   document.getElementById("score").textContent = score;
   document.getElementById("pow-fill").style.width = (pow / POW_MAX * 100) + "%";
-  document.getElementById("threat-fill").style.width = (threat / THREAT_MAX * 100) + "%";
+  document.getElementById("threat-fill").style.width = Math.min(100, threat / THREAT_MAX * 100) + "%";
+  document.getElementById("threat-wrap").classList.toggle("danger", threat >= THREAT_MAX - 1);
   document.getElementById("pow-wrap").classList.toggle("ready", pow >= POW_MAX);
   const powBtn = document.getElementById("pow-btn");
   powBtn.hidden = !(pow >= POW_MAX) || !!armed || over;

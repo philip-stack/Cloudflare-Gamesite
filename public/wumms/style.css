@@ -131,6 +131,8 @@ body {
 }
 .meter-pow.ready { box-shadow: 0 0 0 2px var(--gold) inset, 0 0 18px -2px var(--gold-glow); animation: meter-pulse 0.9s ease-in-out infinite; }
 @keyframes meter-pulse { 50% { box-shadow: 0 0 0 2px var(--gold) inset, 0 0 26px 2px var(--gold-glow); } }
+.meter-threat.danger { box-shadow: 0 0 0 2px #ff4d6d inset; animation: threat-pulse 0.5s ease-in-out infinite; }
+@keyframes threat-pulse { 50% { box-shadow: 0 0 0 2px #ff4d6d inset, 0 0 20px 1px rgba(255,77,109,0.6); } }
 
 /* ---------- Power-Button / Arm-Banner ---------- */
 .pow-btn {
