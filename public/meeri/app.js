@@ -87,7 +87,16 @@ function load() {
     return true;
   } catch { fresh(); return false; }
 }
-let saveTimer = null;
+let saveTimer = null, storageOK = true, storageWarned = false;
+// iOS Safari sperrt localStorage im Privat-Modus (setItem wirft) — dann warnen wir sichtbar.
+function testStorage() {
+  try {
+    localStorage.setItem("__meeri_test__", "1");
+    const ok = localStorage.getItem("__meeri_test__") === "1";
+    localStorage.removeItem("__meeri_test__");
+    return ok;
+  } catch { return false; }
+}
 function save() {
   lastSeen = Date.now();
   try {
@@ -95,7 +104,11 @@ function save() {
       coins, capLevel, buyCount, album, uid, up, lastSeen,
       meeries: meeries.map(m => ({ tier: m.tier, x: m.x, y: m.y })),
     }));
-  } catch {}
+    storageOK = true;
+  } catch {
+    storageOK = false;
+    if (!storageWarned) { storageWarned = true; toast("⚠️ Speichern nicht möglich (Privater Modus?) — Fortschritt geht beim Schließen verloren."); }
+  }
 }
 function saveSoon() { clearTimeout(saveTimer); saveTimer = setTimeout(save, 600); }
 
@@ -907,9 +920,15 @@ window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(layo
 window.addEventListener("orientationchange", () => setTimeout(layout, 250));
 document.addEventListener("visibilitychange", () => { if (document.hidden) save(); });
 window.addEventListener("pagehide", save);
+window.addEventListener("blur", save);   // iOS: pagehide feuert nicht immer zuverlässig
 setInterval(save, 15000);
 
+// Browser bitten, den Speicher nicht automatisch zu löschen (iOS/ITP-Eviction)
+if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+
 GS.markPlayed("meeri");
+storageOK = testStorage();
+if (!storageOK) setTimeout(() => toast("⚠️ Fortschritt kann nicht gespeichert werden (Privater Modus?)."), 900);
 const had = load();
 layout();
 if (!had || meeries.length === 0) { if (!had) fresh(); spawnMeeri(0); }
