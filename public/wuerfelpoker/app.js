@@ -69,7 +69,7 @@ function lsLoad() {
   try { return JSON.parse(localStorage.getItem(LS_LOCAL) || "[]").map(migrateLocal); }
   catch { return []; }
 }
-function lsSave(list) { localStorage.setItem(LS_LOCAL, JSON.stringify(list)); }
+function lsSave(list) { try { localStorage.setItem(LS_LOCAL, JSON.stringify(list)); } catch (_) {} }
 function lsGet(id) { return lsLoad().find(g => g.id === id) || null; }
 function lsPut(game) {
   const list = lsLoad();
@@ -86,10 +86,10 @@ function sharedRefs() {
 function addSharedRef(ref) {
   const list = sharedRefs().filter(r => r.id !== ref.id);
   list.unshift({ id: ref.id, code: ref.code });
-  localStorage.setItem(LS_SHARED, JSON.stringify(list));
+  try { localStorage.setItem(LS_SHARED, JSON.stringify(list)); } catch (_) {}
 }
 function removeSharedRef(id) {
-  localStorage.setItem(LS_SHARED, JSON.stringify(sharedRefs().filter(r => r.id !== id)));
+  try { localStorage.setItem(LS_SHARED, JSON.stringify(sharedRefs().filter(r => r.id !== id))); } catch (_) {}
 }
 
 // ---------- Datenzugriff (lokal oder Server, gleiche Schnittstelle) ----------

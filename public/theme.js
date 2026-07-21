@@ -41,6 +41,29 @@
   apply(get());
 
   // ------------------------------------------------------------------
+  // Persistenter Speicher (gilt für die ganze Herkunft/Origin).
+  // iOS/Safari & Browser mit ITP löschen localStorage sonst nach einiger
+  // Zeit automatisch — das trifft alle Spielstände der Seite. Einmal je
+  // Seitenaufruf bitten wir den Browser, den Speicher zu behalten.
+  // ------------------------------------------------------------------
+  try {
+    if (navigator.storage && navigator.storage.persist && navigator.storage.persisted) {
+      navigator.storage.persisted().then(p => { if (!p) navigator.storage.persist().catch(() => {}); }).catch(() => {});
+    }
+  } catch (_) {}
+
+  // Prüft einmalig, ob localStorage wirklich schreibbar ist (im privaten
+  // Modus wirft setItem). Spiele können window.gsStorageOK abfragen.
+  window.gsStorageOK = (function () {
+    try {
+      localStorage.setItem("__gs_test__", "1");
+      const ok = localStorage.getItem("__gs_test__") === "1";
+      localStorage.removeItem("__gs_test__");
+      return ok;
+    } catch (_) { return false; }
+  })();
+
+  // ------------------------------------------------------------------
   // Zuverlässige Viewport-Höhe (--app-h).
   // Auf manchen mobilen Browsern löst 100dvh beim ersten Laden auf die
   // GROSSE Höhe (ohne Adressleiste) auf, sodass Vollbild-Layouts unten

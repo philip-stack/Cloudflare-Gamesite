@@ -462,7 +462,7 @@ async function gameOver() {
   const score = finalScore();
   const newBadges = GS.badges.record("komet", { meters: score - sparkCount * 5, sparks: sparkCount, score });
   const isRecord = score > best && score > 0;
-  if (isRecord) { best = score; localStorage.setItem("km_best", best); sound.fanfare(); }
+  if (isRecord) { best = score; try { localStorage.setItem("km_best", best); } catch (_) {} sound.fanfare(); }
 
   const overlay = document.createElement("div");
   overlay.className = "overlay";

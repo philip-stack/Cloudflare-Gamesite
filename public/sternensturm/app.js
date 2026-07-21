@@ -1101,7 +1101,7 @@ function updateHud() {
   $("#hud-wave").textContent = wave || "–";
   const hearts = "♥".repeat(Math.max(0, player ? player.hp : 3));
   $("#hud-hearts").textContent = (player && player.shield > 0 ? "🛡" : "") + hearts;
-  if (score > best) { best = score; localStorage.setItem("ss_best", best); }
+  if (score > best) { best = score; try { localStorage.setItem("ss_best", best); } catch (_) {} }
 }
 
 // ---------- Loop ----------

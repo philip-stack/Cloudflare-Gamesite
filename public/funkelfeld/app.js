@@ -111,7 +111,7 @@ function addKarat(points) {
   if (points <= 0) return;
   const before = levelInfo(karat).lvl;
   karat += points;
-  localStorage.setItem("bb_karat", karat);
+  try { localStorage.setItem("bb_karat", karat); } catch (_) {}
   const info = levelInfo(karat);
   if (info.lvl > before) {
     setTimeout(() => {
@@ -125,7 +125,7 @@ function addKarat(points) {
 
 // ---------- Persistenz (laufendes Spiel überlebt Reload) ----------
 function saveState() {
-  localStorage.setItem("bb_state", JSON.stringify({ board, gems, tray, score, combo, undoLeft, run }));
+  try { localStorage.setItem("bb_state", JSON.stringify({ board, gems, tray, score, combo, undoLeft, run })); } catch (_) {}
 }
 function loadState() {
   try {
@@ -484,7 +484,7 @@ function renderTray() {
 
 function updateHud() {
   $("#score").textContent = score;
-  if (score > best) { best = score; localStorage.setItem("bb_best", best); }
+  if (score > best) { best = score; try { localStorage.setItem("bb_best", best); } catch (_) {} }
   $("#best").textContent = best;
   const chip = $("#combo-chip");
   if (combo >= 2) { chip.classList.remove("off"); $("#combo-n").textContent = "x" + combo; }

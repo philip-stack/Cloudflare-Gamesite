@@ -1900,7 +1900,7 @@ function showMenu() {
 async function gameOver() {
   const newBadges = GS.badges.record("galopp", { meters: Math.floor(meters), coins, turns: turnCount, score });
   const isRecord = score >= best && score > 0;
-  if (score > best) { best = score; localStorage.setItem("galopp_best", best); }
+  if (score > best) { best = score; try { localStorage.setItem("galopp_best", best); } catch (_) {} }
   if (isRecord) sound.fanfare();
 
   const overlay = document.createElement("div");

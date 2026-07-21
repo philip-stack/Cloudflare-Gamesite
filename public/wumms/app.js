@@ -164,7 +164,7 @@ function placePiece(slot, r0, c0) {
   if (tray.every(p => !p)) dealTray();
   if (!anyMoveLeft()) return gameOver();
 
-  if (score > best) { best = score; localStorage.setItem("wumms_best", String(best)); }
+  if (score > best) { best = score; try { localStorage.setItem("wumms_best", String(best)); } catch (_) {} }
   updateHUD();
 }
 
@@ -261,7 +261,7 @@ function execUltimate(r, c) {
   pow = 0; stats.ultimates++;
   combo = 0;
   GS.sound.win(); GS.haptic([15, 30, 15]); shake(6);
-  if (score > best) { best = score; localStorage.setItem("wumms_best", String(best)); }
+  if (score > best) { best = score; try { localStorage.setItem("wumms_best", String(best)); } catch (_) {} }
   if (!anyMoveLeft() && tray.some(Boolean)) { updateHUD(); return gameOver(); }
   updateHUD();
 }
