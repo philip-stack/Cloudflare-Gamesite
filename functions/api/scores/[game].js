@@ -52,7 +52,7 @@ const GAMES = {
     daily: true,
   },
   meeri: {
-    // Score = Goldene Möhren (Prestige-Währung); rein lokales Idle-Spiel,
+    // Score = Goldene Karotten (Prestige-Währung); rein lokales Idle-Spiel,
     // daher großzügige Obergrenze und keine strenge Plausiprüfung.
     max: 1_000_000_000,
   },

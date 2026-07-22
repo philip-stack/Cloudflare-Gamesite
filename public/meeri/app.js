@@ -16,7 +16,7 @@ const TIERS = [
   { name: "Ritter-Meeri",      prop: "⚔️",   c1: "#a9b7c6", c2: "#7d8b9c", desc: "Für Ehre und Salatblätter!" },
   { name: "Wikinger-Meeri",    prop: "🪓",   c1: "#c98a4b", c2: "#9c6733", desc: "Segelt über die Wiese, plündert Gurken." },
   { name: "Zauber-Meeri",      prop: "🪄",   c1: "#9b7bff", c2: "#6f4fd6", desc: "Zaubert Heu aus dem Nichts." },
-  { name: "Piraten-Meeri",     prop: "🏴‍☠️", c1: "#6b6f76", c2: "#464b52", desc: "Arrr! Wo ist der Möhren-Schatz?" },
+  { name: "Piraten-Meeri",     prop: "🏴‍☠️", c1: "#6b6f76", c2: "#464b52", desc: "Arrr! Wo ist der Karotten-Schatz?" },
   { name: "Cowboy-Meeri",      prop: "🤠",   c1: "#d9a441", c2: "#a97c25", desc: "Der schnellste Knabberer im Westen." },
   { name: "Ninja-Meeri",       prop: "🥷",   c1: "#4a4f5a", c2: "#2b2f38", desc: "Lautlos. Tödlich. Süß." },
   { name: "König-Meeri",       prop: "👑",   c1: "#ffd23f", c2: "#d1a318", desc: "Herrscher über Wiese und Napf." },
@@ -68,14 +68,14 @@ const upCost = u => Math.round(u.base * Math.pow(u.grow, up[u.key] || 0));
 
 // ---------- Prestige ("Wiese einstampfen") ----------
 // Ab Zauber-Meeri (Stufe 5) lohnt sich der Neustart: man tauscht die Wiese
-// gegen Goldene Möhren 🥕 ein und gibt sie im Möhren-Shop für dauerhafte
+// gegen Goldene Karotten 🥕 ein und gibt sie im Karotten-Shop für dauerhafte
 // Perks aus (Münz-Boost, Startkapital, Offline, Auto-Merge, Auto-Kauf).
 const PRESTIGE_MIN = 5;                       // erst ab dieser Spitzenstufe möglich
 const carrotGain = p => p < PRESTIGE_MIN ? 0 : Math.floor(Math.pow(1.8, p - 4));
 
-// Möhren-Shop (Kosten & Wirkung in Goldenen Möhren)
+// Karotten-Shop (Kosten & Wirkung in Goldenen Karotten)
 const PSHOP = [
-  { key: "boost",   icon: "🪙", name: "Möhren-Boost",   base: 1,  grow: 1.6, max: 60,
+  { key: "boost",   icon: "🪙", name: "Karotten-Boost",   base: 1,  grow: 1.6, max: 60,
     desc: l => `+${l * 10}% Münzen für immer` },
   { key: "capital", icon: "💰", name: "Startkapital",   base: 2,  grow: 2.0, max: 25,
     desc: l => l ? `Start nach Prestige mit 🪙 ${fmt(startCapital())}` : "aus" },
@@ -148,7 +148,7 @@ function fresh() {
   carrots = 0; peak = 0; biome = "wiese"; biomesOwned = ["wiese"]; pp = newPp(); shinies = {};
   daily = null; lastLogin = ""; streak = 0; stats = newStats();
 }
-// Nur die laufende Wiese zurücksetzen — Möhren, Perks, Album, Biome & Aufgaben bleiben.
+// Nur die laufende Wiese zurücksetzen — Karotten, Perks, Album, Biome & Aufgaben bleiben.
 function resetRun() {
   coins = 0; meeries = []; capLevel = 0; buyCount = 0; uid = 1;
   up = newUp(); peak = 0; lastSeen = Date.now();
@@ -357,7 +357,7 @@ function doPrestige() {
   GS.sound.win(); GS.haptic([15, 50, 15, 50]);
   checkBadges();
   updateHUD(); save();
-  toast(`🥕 +${gain} Goldene Möhren! Gib sie im Möhren-Shop aus.`);
+  toast(`🥕 +${gain} Goldene Karotten! Gib sie im Karotten-Shop aus.`);
 }
 
 // ---------- Offline-Einnahmen ----------
@@ -802,9 +802,10 @@ function fireEvent() {
   const kinds = ["feast", "double", "lucky"];
   const kind = kinds[Math.floor(Math.random() * kinds.length)];
   if (kind === "feast") {
-    burst("FUTTER-REGEN!", "#57e39b"); toast("🌽 Futter-Regen — schnapp dir die Münzen!");
+    burst("FUTTER-REGEN!", "#57e39b"); toast("🌽 Futter-Regen — sammle die Münzen ein!");
     const val = Math.max(5, Math.round(passivePerSec() * 2.5) || 5);
-    for (let i = 0; i < 16; i++) coinsFx.push({ x: (0.1 + Math.random() * 0.8) * W, y: -20 - Math.random() * 60, val, t: 0, life: 6.5, vy: 10 + Math.random() * 10, r: msize * 0.24 });
+    // Münzen direkt auf der Wiese verteilen (antippbar / vom Auto-Sammler einsammelbar)
+    for (let i = 0; i < 16; i++) coinsFx.push({ x: (0.12 + Math.random() * 0.76) * W, y: (0.18 + Math.random() * 0.6) * H, val, t: 0, life: 7, vy: -6 - Math.random() * 8, r: msize * 0.24 });
   } else if (kind === "double") {
     eventMult = 2; eventMultT = 30;
     burst("DOPPEL-MÜNZEN!", "#ffd23f"); toast("✨ 30 Sek. doppelte Münzen!");
@@ -1107,7 +1108,7 @@ function updateHUD() {
   if (capLevel >= CAP_MAXLEVEL) { exp.disabled = true; document.getElementById("exp-cost").textContent = "max"; }
   else { document.getElementById("exp-cost").textContent = "🪙 " + fmt(expCost()); exp.disabled = coins < expCost(); }
   document.getElementById("btn-sound").textContent = GS.sound.on() ? "🔊" : "🔇";
-  // Möhren-Chip
+  // Karotten-Chip
   const chip = document.getElementById("carrots-chip");
   if (chip) { if (carrots > 0) { chip.hidden = false; document.getElementById("carrots").textContent = fmt(carrots); } else chip.hidden = true; }
   // Menü-Punkt, wenn eine Tagesaufgabe abholbereit ODER Prestige möglich ist
@@ -1237,33 +1238,33 @@ function showPrestige() {
   const canDo = gain > 0;
   const ov = mkOverlay(`
     <h2><span class="foil">Wiese einstampfen</span></h2>
-    <p class="sub">Fang neu an und sammle <b>Goldene Möhren 🥕</b> — die gibst du im <b>Möhren-Shop</b> für dauerhafte Perks aus.</p>
+    <p class="sub">Fang neu an und sammle <b>Goldene Karotten 🥕</b> — die gibst du im <b>Karotten-Shop</b> für dauerhafte Perks aus.</p>
     <div class="prestige-box">
-      <div class="pr-row"><span>Aktuelle Möhren</span><b>🥕 ${fmt(carrots)}</b></div>
+      <div class="pr-row"><span>Aktuelle Karotten</span><b>🥕 ${fmt(carrots)}</b></div>
       <div class="pr-row"><span>Höchste Stufe (diese Wiese)</span><b>${esc(TIERS[Math.min(MAXT, peak)].name)}${peak > MAXT ? " ✦" + (peak - MAXT) : ""}</b></div>
       <div class="pr-row big"><span>Du bekommst</span><b class="${canDo ? "good" : ""}">🥕 +${fmt(gain)}</b></div>
     </div>
     ${canDo
-      ? `<p class="sub dim">Möhren, Perks, Album, Biome & Aufgaben bleiben — Meeries, Münzen & Shop-Upgrades werden zurückgesetzt.</p>`
+      ? `<p class="sub dim">Karotten, Perks, Album, Biome & Aufgaben bleiben — Meeries, Münzen & Shop-Upgrades werden zurückgesetzt.</p>`
       : `<p class="sub dim">Bring erst ein Meeri mindestens auf <b>${esc(TIERS[PRESTIGE_MIN].name)}</b> (Stufe ${PRESTIGE_MIN + 1}), dann lohnt sich das Einstampfen.</p>`}
-    <button class="btn-primary" id="pr-go" ${canDo ? "" : "disabled"}>🥕 Einstampfen &amp; ${fmt(gain)} Möhren holen</button>
-    <button class="btn-secondary" id="pr-shop">🥕 Möhren-Shop (${fmt(carrots)})</button>
+    <button class="btn-primary" id="pr-go" ${canDo ? "" : "disabled"}>🥕 Einstampfen &amp; ${fmt(gain)} Karotten holen</button>
+    <button class="btn-secondary" id="pr-shop">🥕 Karotten-Shop (${fmt(carrots)})</button>
     <button class="btn-secondary" id="pr-close">Doch nicht</button>`);
   ov.querySelector("#pr-close").onclick = () => ov.remove();
   ov.querySelector("#pr-shop").onclick = () => { ov.remove(); showPShop(); };
   ov.querySelector("#pr-go").onclick = () => {
     if (!canDo) return;
-    if (!confirm(`Wiese einstampfen und ${gain} Goldene Möhren holen? Meeries & Münzen dieser Wiese gehen dabei verloren.`)) return;
+    if (!confirm(`Wiese einstampfen und ${gain} Goldene Karotten holen? Meeries & Münzen dieser Wiese gehen dabei verloren.`)) return;
     ov.remove(); doPrestige();
   };
 }
 
-// Möhren-Shop (Perks mit Goldenen Möhren kaufen)
+// Karotten-Shop (Perks mit Goldenen Karotten kaufen)
 function showPShop() {
   const ov = mkOverlay(`
-    <h2><span class="foil">Möhren-Shop</span></h2>
-    <p class="sub">Gib Goldene Möhren für <b>dauerhafte</b> Perks aus — sie überstehen jedes Einstampfen.</p>
-    <div class="bonus-line">🥕 Möhren: <b id="ps-carrots">${fmt(carrots)}</b></div>
+    <h2><span class="foil">Karotten-Shop</span></h2>
+    <p class="sub">Gib Goldene Karotten für <b>dauerhafte</b> Perks aus — sie überstehen jedes Einstampfen.</p>
+    <div class="bonus-line">🥕 Karotten: <b id="ps-carrots">${fmt(carrots)}</b></div>
     <div id="pshop-rows"></div>
     <button class="btn-secondary" id="ps-close">Schließen</button>`);
   const render = () => {
@@ -1385,7 +1386,7 @@ const BADGES = [
   { id: "shiny",      icon: "✨", name: "Schillernd",       desc: "Ein schillerndes Meeri finden",    test: s => s.shiny >= 1 },
   { id: "shinyall",   icon: "🌈", name: "Regenbogen-Jäger", desc: "Alle Schillern-Varianten finden",  test: s => s.shiny >= VARIANTS.length },
   { id: "prestige1",  icon: "🥕", name: "Neuanfang",        desc: "Zum ersten Mal einstampfen",       test: s => s.prestiges >= 1 },
-  { id: "prestige10", icon: "🥕", name: "Möhren-Baron",     desc: "10× einstampfen",                  test: s => s.prestiges >= 10 },
+  { id: "prestige10", icon: "🥕", name: "Karotten-Baron",     desc: "10× einstampfen",                  test: s => s.prestiges >= 10 },
   { id: "streak7",    icon: "🔥", name: "Treue Seele",      desc: "7 Tage in Folge spielen",          test: s => s.streak >= 7 },
   { id: "rich",       icon: "🪙", name: "Reich",            desc: "1 Mio. Münzen verdienen",          test: s => s.coins >= 1e6 },
 ];
@@ -1443,7 +1444,7 @@ async function openBoard() {
     if (name) { try { localStorage.setItem("bb_name", name); } catch (_) {} }
   }
   if (name && carrots > 0) await GS.submitScore("meeri", carrots).catch(() => {});
-  GS.showLeaderboard({ game: "meeri", title: "Bestenliste", sub: "Meiste Goldene Möhren 🥕 weltweit" });
+  GS.showLeaderboard({ game: "meeri", title: "Bestenliste", sub: "Meiste Goldene Karotten 🥕 weltweit" });
 }
 
 // ---------- Ganze Wiese als Bild teilen ----------
@@ -1557,7 +1558,7 @@ function showMenu() {
     else if (id === "share") go(shareMeadow);
     else if (id === "music") { toggleAmbient(); render(); }
     else if (id === "reset") {
-      if (confirm("Wirklich komplett neu starten? Aller Fortschritt (auch Möhren, Album & Erfolge) geht verloren.")) {
+      if (confirm("Wirklich komplett neu starten? Aller Fortschritt (auch Karotten, Album & Erfolge) geht verloren.")) {
         fresh(); save(); ov.remove(); spawnMeeri(0); ensureDaily(false); updateHUD(); toast("Neue Wiese!");
       }
     }
@@ -1580,7 +1581,7 @@ function howTo(force) {
       { icon: "🔀", text: "Zieh zwei GLEICHE Meeries zusammen → sie evolvieren zur nächsten, absurderen Stufe!" },
       { icon: "🛒", text: "Im Shop rüstest du auf: mehr Münzwert, schnellere Würfe, Auto-Sammler, Glücks-Wurf." },
       { icon: "📖", text: "Neue Evolutionen landen im Album (+3% Münzen je Stufe) — tippe sie an, um sie zu teilen." },
-      { icon: "🥕", text: "Stampf die Wiese beim Prestige ein und tausche sie gegen Goldene Möhren, die für immer alle Münzen erhöhen. Dazu Themen-Wiesen freischalten. Schaffst du die Galaxie-Meeri? 🌌" },
+      { icon: "🥕", text: "Stampf die Wiese beim Prestige ein und tausche sie gegen Goldene Karotten, die für immer alle Münzen erhöhen. Dazu Themen-Wiesen freischalten. Schaffst du die Galaxie-Meeri? 🌌" },
     ],
   });
 }
