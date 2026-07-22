@@ -13,9 +13,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - name: Syntaxprüfung aller JS-Dateien
-        run: node tests/check.mjs
-      - name: QR-Encoder-Tests
-        run: node tests/qr.test.js
-      - name: Scores-API-Tests
-        run: node tests/api.test.mjs
+      # Läuft die komplette Suite aus package.json (Syntax, QR, Scores-API,
+      # Cloud-API, Wumms- & Meeri-Logik) — bleibt so automatisch aktuell.
+      - name: Alle Tests
+        run: npm test
