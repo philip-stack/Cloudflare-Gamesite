@@ -22,6 +22,14 @@ import { json } from "../_util.js";
 const GAMES = {
   funkelfeld: {
     max: 500_000,
+    // Punkte entstehen aus geräumten Linien (× Combo) + Funkelsteinen.
+    // Die Obergrenze pro Linie/Stein ist bewusst großzügig — echte Läufe
+    // bleiben stets darunter, blind hochgesetzte Fake-Scores nicht.
+    check: (score, m) =>
+      Number.isFinite(m.lines) && Number.isFinite(m.combo) && Number.isFinite(m.gems) &&
+      m.lines >= 0 && m.lines <= 20_000 && m.combo >= 0 && m.combo <= 200 &&
+      m.gems >= 0 && m.gems <= 20_000 &&
+      score <= m.lines * (m.combo + 1) * 400 + m.gems * 50 + 3_000,
   },
   komet: {
     max: 100_000,
@@ -50,10 +58,17 @@ const GAMES = {
   wumms: {
     max: 2_000_000,
     daily: true,
+    // Punkte aus geräumten Linien (× Combo) + Angriffen (shoves).
+    // Großzügige Obergrenze, die echte Läufe nie erreichen — nur Fakes.
+    check: (score, m) =>
+      Number.isFinite(m.lines) && Number.isFinite(m.combo) && Number.isFinite(m.shoves) &&
+      m.lines >= 0 && m.lines <= 20_000 && m.combo >= 0 && m.combo <= 200 &&
+      m.shoves >= 0 && m.shoves <= 20_000 &&
+      score <= m.lines * (m.combo + 1) * 500 + m.shoves * 30 + 3_000,
   },
   meeri: {
-    // Score = Goldene Karotten (Prestige-Währung); rein lokales Idle-Spiel,
-    // daher großzügige Obergrenze und keine strenge Plausiprüfung.
+    // Score = Goldene Karotten (Prestige-Währung); rein lokales Idle-Spiel
+    // ohne Server-Formel. Schutz hier: Obergrenze + Lauf-Token + Rate-Limit.
     max: 1_000_000_000,
   },
 };
@@ -74,7 +89,10 @@ function modeCond(mode) {
 }
 
 // ---- Lauf-Token (HMAC-signierter Seed) ----
-const SECRET_FALLBACK = "gamesite-run-seed-2026-c7f1a9";
+// In Produktion ist SCORE_SECRET als Pages-Secret gesetzt (nur dort bekannt).
+// Der Fallback ist NUR für lokale Entwicklung — er darf nie die echte
+// Signatur ersetzen, sonst ließen sich Tokens fälschen.
+const SECRET_FALLBACK = "gamesite-dev-only-seed-do-not-use-in-prod";
 function secret(env) { return (env && env.SCORE_SECRET) || SECRET_FALLBACK; }
 
 async function hmacHex(key, msg) {

@@ -186,6 +186,13 @@
       filter: saturate(0.4);
     }
     .app-card.is-last { box-shadow: 0 0 0 1.5px var(--gold, #e8c15a) inset, 0 12px 30px -12px rgba(0,0,0,0.5); }
+    .app-card.profile {
+      background: linear-gradient(175deg, rgba(232,193,90,0.16), rgba(232,193,90,0.05));
+      box-shadow: 0 0 0 1px var(--edge) inset, 0 10px 28px -14px rgba(0,0,0,0.55);
+      margin-bottom: 6px;
+    }
+    .app-card.profile .app-icon { background: rgba(232,193,90,0.2); }
+    .prof-stat { color: var(--gold); font-weight: 700; }
     .last-tag {
       display: inline-block;
       margin-top: 4px;
@@ -338,72 +345,9 @@
       <p class="tagline">Wähle eine App</p>
     </header>
 
-    <nav class="apps">
-      <a class="app-card" href="/wuerfelpoker/" style="--i:0">
-        <span class="app-icon">🎲</span>
-        <span class="app-info">
-          <span class="app-name">Würfelpoker</span>
-          <span class="app-desc" style="display:block">Escalero-Verrechnungsblatt — lokal spielen oder mit Beitritts-Code teilen</span>
-        </span>
-        <span class="app-arrow">→</span>
-      </a>
-
-      <a class="app-card" href="/funkelfeld/" style="--i:1">
-        <span class="app-icon">💎</span>
-        <span class="app-info">
-          <span class="app-name">Funkelfeld</span>
-          <span class="app-desc" style="display:block">8×8-Puzzle — Funkelsteine sammeln, Combos jagen, Skins freispielen, weltweite Bestenliste</span>
-        </span>
-        <span class="app-arrow">→</span>
-      </a>
-
-      <a class="app-card" href="/komet/" style="--i:2">
-        <span class="app-icon">☄️</span>
-        <span class="app-info">
-          <span class="app-name">Komet</span>
-          <span class="app-desc" style="display:block">One-Touch-Arcade — am Lichtseil von Stern zu Stern schwingen, Funken sammeln, Distanzrekord jagen</span>
-        </span>
-        <span class="app-arrow">→</span>
-      </a>
-
-      <a class="app-card" href="/sternensturm/" style="--i:3">
-        <span class="app-icon">🚀</span>
-        <span class="app-info">
-          <span class="app-name">Sternensturm</span>
-          <span class="app-desc" style="display:block">Roguelite-Space-Shooter — Wellen überstehen, Upgrades wählen, NOVA zünden, Bosse zerlegen</span>
-        </span>
-        <span class="app-arrow">→</span>
-      </a>
-
-      <a class="app-card" href="/galopp/" style="--i:4">
-        <span class="app-icon">🦄</span>
-        <span class="app-info">
-          <span class="app-name">Galopp</span>
-          <span class="app-desc" style="display:block">Endless-Runner — du hast den Zuckerkristall geklaut und ein wütendes Einhorn im Nacken: springen, ducken, Spur wechseln</span>
-        </span>
-        <span class="app-arrow">→</span>
-      </a>
-
-      <a class="app-card" href="/wumms/" style="--i:5">
-        <span class="app-icon">🦝</span>
-        <span class="app-info">
-          <span class="app-name">WUMMS!</span>
-          <span class="app-desc" style="display:block">Comic-Block-Puzzle mit Tier-Helden — Blöcke legen, Reihen abräumen, Helden-Power zünden und den Bösewicht zurückschlagen</span>
-        </span>
-        <span class="app-arrow">→</span>
-      </a>
-
-      <a class="app-card" href="/meeri/" style="--i:6">
-        <span class="app-icon">🐹</span>
-        <span class="app-info">
-          <span class="app-name">MEERI-MANIA</span>
-          <span class="app-desc" style="display:block">Merge-Idle mit Meerschweinchen — gleiche Meeries zusammenziehen, immer absurdere Evolutionen entdecken, Münzen sammeln und die Wiese ausbauen</span>
-        </span>
-        <span class="app-arrow">→</span>
-      </a>
-
-      <!-- Nächste App: Block kopieren, href und --i anpassen -->
-      <a class="app-card soon" href="#" style="--i:7" aria-disabled="true">
+    <!-- Karten werden aus der zentralen Registry (/games.js) erzeugt -->
+    <nav class="apps" id="apps">
+      <a class="app-card soon" href="#" style="--i:99" aria-disabled="true">
         <span class="app-icon">✨</span>
         <span class="app-info">
           <span class="app-name">Nächste App<span class="badge">bald</span></span>
@@ -427,6 +371,7 @@
     </footer>
   </main>
 
+  <script src="/games.js"></script>
   <script>
   // ================= Landing-Dynamik =================
   (function () {
@@ -435,6 +380,39 @@
       "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
     })[c]);
     const myName = (localStorage.getItem("bb_name") || "").trim();
+    const GAMES = window.GAMES || [];
+    const nav = document.querySelector(".apps");
+    const soon = nav.querySelector(".app-card.soon");
+
+    // --- Spielkarten aus der zentralen Registry erzeugen ---
+    GAMES.forEach((g, i) => {
+      nav.insertAdjacentHTML("beforeend", window.gameCardHTML(g, i));
+      nav.appendChild(soon);   // "bald"-Karte bleibt am Ende
+    });
+
+    // --- Profil-Karte ganz oben (Gesamtüberblick) ---
+    try {
+      let badgeSum = 0;
+      GAMES.filter(g => g.gsBadges).forEach(g => {
+        try { badgeSum += Object.keys(JSON.parse(localStorage.getItem("gs_badges_" + g.key) || "{}").earned || {}).length; } catch {}
+      });
+      const recordCount = GAMES.filter(g => g.bestKey && Number(localStorage.getItem(g.bestKey) || 0) > 0).length;
+      const prof = document.createElement("a");
+      prof.className = "app-card profile";
+      prof.style.setProperty("--i", 0);
+      prof.href = "/profil/";
+      const sub = myName
+        ? `${esc(myName)} · <span class="prof-stat">🏅 ${badgeSum} Abzeichen</span> · ${recordCount} Rekorde`
+        : "Name, Abzeichen, Weltränge & dein Spieleabend-Level";
+      prof.innerHTML = `
+        <span class="app-icon">👤</span>
+        <span class="app-info">
+          <span class="app-name">Mein Profil</span>
+          <span class="app-desc" style="display:block">${sub}</span>
+        </span>
+        <span class="app-arrow">→</span>`;
+      nav.insertBefore(prof, nav.firstElementChild);
+    } catch {}
 
     // --- Weiterspielen: laufendes Würfelpoker-Spiel prominent anbieten ---
     try {
@@ -460,14 +438,9 @@
     // --- Zuletzt gespielt: nach oben holen und markieren ---
     try {
       const last = localStorage.getItem("gs_last_game");
-      const hrefMap = {
-        wuerfelpoker: "/wuerfelpoker/", funkelfeld: "/funkelfeld/",
-        komet: "/komet/", sternensturm: "/sternensturm/", galopp: "/galopp/",
-        wumms: "/wumms/", meeri: "/meeri/",
-      };
-      if (last && hrefMap[last]) {
-        const card = document.querySelector(`.app-card[href="${hrefMap[last]}"]`);
-        const nav = document.querySelector(".apps");
+      const lastGame = GAMES.find(g => g.key === last);
+      if (lastGame) {
+        const card = document.querySelector(`.app-card[data-game="${last}"]`);
         if (card && nav) {
           card.classList.add("is-last");
           const tag = document.createElement("span");
@@ -480,24 +453,18 @@
       }
     } catch { /* egal */ }
 
-    // --- Eigene Rekorde + Weltrang pro Spiel ---
-    const RECORDS = [
-      { href: "/funkelfeld/", game: "funkelfeld", key: "bb_best" },
-      { href: "/komet/", game: "komet", key: "km_best" },
-      { href: "/sternensturm/", game: "sternensturm", key: "ss_best" },
-      { href: "/galopp/", game: "galopp", key: "galopp_best" },
-      { href: "/wumms/", game: "wumms", key: "wumms_best" },
-    ];
-    for (const r of RECORDS) {
-      const best = Number(localStorage.getItem(r.key) || 0);
-      const info = document.querySelector(`.app-card[href="${r.href}"] .app-desc`);
+    // --- Eigene Rekorde + Weltrang pro Spiel (aus der Registry) ---
+    for (const g of GAMES) {
+      if (!g.bestKey) continue;
+      const best = Number(localStorage.getItem(g.bestKey) || 0);
+      const info = document.querySelector(`.app-card[data-game="${g.key}"] .app-desc`);
       if (!info || !best) continue;
       const el = document.createElement("span");
       el.className = "app-rec";
-      el.textContent = `🏅 Dein Rekord: ${best}`;
+      el.textContent = `🏅 Dein Rekord: ${best.toLocaleString("de-AT")}`;
       info.appendChild(el);
-      if (myName) {
-        fetch("/api/scores/" + r.game).then(x => x.json()).then(d => {
+      if (myName && g.scored) {
+        fetch("/api/scores/" + g.key).then(x => x.json()).then(d => {
           const i = (d.top || []).findIndex(row => row.name.toLowerCase() === myName.toLowerCase());
           if (i >= 0) el.textContent += ` · Weltrang #${i + 1}`;
         }).catch(() => {});

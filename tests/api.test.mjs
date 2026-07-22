@@ -69,8 +69,14 @@ r = await post({ name: "Tester", score: 150, device, token: await getToken(), we
 assert("Weekly Post (201)", r.status === 201);
 assert("Weekly-Bucket getrennt", env.DB._rows.some(x => x.game === "galopp:weekly"));
 
-r = await post({ name: "Tester", score: 5000, device, token: await getToken("funkelfeld") }, "funkelfeld");
-assert("Funkelfeld Post (201)", r.status === 201);
+r = await post({ name: "Tester", score: 5000, device, token: await getToken("funkelfeld"), meta: { lines: 20, combo: 5, gems: 4 } }, "funkelfeld");
+assert("Funkelfeld Post mit Meta (201)", r.status === 201);
+r = await post({ name: "Tester", score: 500000, device, token: await getToken("funkelfeld"), meta: { lines: 1, combo: 1, gems: 0 } }, "funkelfeld");
+assert("Funkelfeld unplausibler Score abgelehnt (400)", r.status === 400);
+r = await post({ name: "Tester", score: 40000, device, token: await getToken("wumms"), meta: { lines: 30, combo: 6, shoves: 3 } }, "wumms");
+assert("Wumms Post mit Meta (201)", r.status === 201);
+r = await post({ name: "Tester", score: 2000000, device, token: await getToken("wumms"), meta: { lines: 2, combo: 1, shoves: 0 } }, "wumms");
+assert("Wumms unplausibler Score abgelehnt (400)", r.status === 400);
 
 console.log("\n" + (ok ? "API-TESTS OK" : "API-TESTS FEHLGESCHLAGEN"));
 process.exit(ok ? 0 : 1);

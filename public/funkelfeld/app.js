@@ -91,6 +91,19 @@ const $ = sel => document.querySelector(sel);
 const boardEl = $("#board");
 const fxEl = $("#fx-layer");
 
+// ---------- Meilensteine (gemeinsames Abzeichen-System) ----------
+GS.badges.define("funkelfeld", [
+  { id: "first", icon: "🧩", name: "Erste Runde", desc: "Spiel dein erstes Funkelfeld", test: (s, t) => t.runs >= 1 },
+  { id: "s500", icon: "✨", name: "Aufgewärmt", desc: "500 Punkte in einer Runde", test: s => s.score >= 500 },
+  { id: "s2000", icon: "💎", name: "Funkel-Profi", desc: "2.000 Punkte in einer Runde", test: s => s.score >= 2000 },
+  { id: "s5000", icon: "👑", name: "Funkel-Meister", desc: "5.000 Punkte in einer Runde", test: s => s.score >= 5000 },
+  { id: "combo5", icon: "🔥", name: "Combo x5", desc: "Fünfer-Combo schaffen", test: s => s.combo >= 5 },
+  { id: "combo8", icon: "🌋", name: "Combo x8", desc: "Achter-Combo schaffen", test: s => s.combo >= 8 },
+  { id: "clear", icon: "🧹", name: "Blitzblank", desc: "Das Brett komplett leerräumen", test: s => s.clears >= 1 },
+  { id: "gems200", icon: "🔷", name: "Steinesammler", desc: "Insgesamt 200 Funkelsteine abgeräumt", test: (s, t) => (t.sum_gems || 0) >= 200 },
+  { id: "runs25", icon: "🎖️", name: "Stammgast", desc: "25 Runden gespielt", test: (s, t) => t.runs >= 25 },
+]);
+
 function getName() { return (localStorage.getItem("bb_name") || "").trim(); }
 
 // ---------- Karat & Ränge (Lebenszeit-Fortschritt) ----------
@@ -721,6 +734,11 @@ async function gameOver() {
   if (isRecord) confetti();
   localStorage.removeItem("bb_state");
 
+  // Meilensteine verbuchen (neue Abzeichen unten als Chips zeigen)
+  const newBadges = GS.badges.record("funkelfeld", {
+    score, lines: run.lines, combo: run.bestCombo, gems: run.gems, clears: run.clears,
+  });
+
   const overlay = document.createElement("div");
   overlay.className = "overlay";
   overlay.innerHTML = `
@@ -735,15 +753,18 @@ async function gameOver() {
         ${run.clears ? `<span>✨ ${run.clears}× leergeräumt</span>` : ""}
       </div>
       <div class="go-karat">${(() => { const i = levelInfo(karat); return `💎 ${i.rank} · Level ${i.lvl} · noch ${i.need - i.cur} Karat bis Level ${i.lvl + 1}`; })()}</div>
+      ${GS.badges.chipsHtml(newBadges)}
       <div class="go-rank" id="go-rank"></div>
       <div id="go-name-area"></div>
       <button class="btn-primary" id="go-again">Nochmal spielen</button>
       <button class="btn-secondary" id="go-top">🏆 Bestenliste ansehen</button>
+      <button class="btn-secondary" id="go-badges">🏅 Meilensteine (${GS.badges.earnedCount("funkelfeld")}/9)</button>
     </div>`;
   document.body.appendChild(overlay);
 
   overlay.querySelector("#go-again").onclick = () => { overlay.remove(); newGame(); };
   overlay.querySelector("#go-top").onclick = () => showLeaderboard();
+  overlay.querySelector("#go-badges").onclick = () => GS.badges.show("funkelfeld", "Meilensteine");
 
   GS.scoreFlow(overlay.querySelector("#go-name-area"), overlay.querySelector("#go-rank"), {
     game: "funkelfeld", score,
@@ -800,6 +821,7 @@ function showNameDialog(intro = false) {
 
 // ---------- UI-Verdrahtung ----------
 $("#btn-top").onclick = () => showLeaderboard();
+$("#btn-badges").onclick = () => GS.badges.show("funkelfeld", "Meilensteine");
 $("#btn-name").onclick = () => showNameDialog();
 $("#btn-undo").onclick = () => undoMove();
 $("#btn-restart").onclick = () => {

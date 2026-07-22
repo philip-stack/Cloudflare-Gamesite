@@ -1586,6 +1586,7 @@ async function openBoard() {
     name = (prompt("Name für die Bestenliste (max. 16 Zeichen):") || "").trim().slice(0, 16);
     if (name) { try { localStorage.setItem("bb_name", name); } catch (_) {} }
   }
+  if (carrots > 0) { try { localStorage.setItem("meeri_best", String(Math.max(carrots, Number(localStorage.getItem("meeri_best") || 0)))); } catch (_) {} }
   if (name && carrots > 0) await GS.submitScore("meeri", carrots).catch(() => {});
   GS.showLeaderboard({ game: "meeri", title: "Bestenliste", sub: "Meiste Goldene Karotten 🥕 weltweit" });
 }
