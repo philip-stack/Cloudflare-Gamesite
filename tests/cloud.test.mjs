@@ -11,6 +11,7 @@ const assert = (name, cond) => { if (cond) console.log("OK  ", name); else { con
 // Minimal-Mock: eine Map code → {data, updated_at}, versteht die 3 SQLs.
 function mockDB() {
   const store = new Map();
+  const rate = new Map();   // Rate-Limit-Zähler pro Schlüssel
   return {
     prepare(sql) {
       return {
@@ -20,10 +21,15 @@ function mockDB() {
           if (/INSERT INTO cloud_saves/.test(this.sql)) {
             const [code, data, device] = this.args;
             store.set(code, { data, device: device || null, updated_at: "2026-07-22T00:00:00Z" });
+          } else if (/INSERT INTO rate/.test(this.sql)) {
+            rate.set(this.args[0], (rate.get(this.args[0]) || 0) + 1);
           }
           return {};
         },
         async first() {
+          if (/COUNT\(\*\) AS n FROM rate/.test(this.sql)) {
+            return { n: rate.get(this.args[0]) || 0 };
+          }
           if (/SELECT updated_at, device FROM cloud_saves/.test(this.sql)) {
             const r = store.get(this.args[0]); return r ? { updated_at: r.updated_at, device: r.device } : null;
           }
@@ -81,6 +87,15 @@ assert("Ungültiger Code (400)", r.status === 400);
 // Unbekannter Code
 r = await get("ZZZZZZZZ");
 assert("Unbekannter Code (404)", r.status === 404);
+
+// Rate-Limit: nach vielen Schreib-Anfragen greift 429 (frische DB/IP)
+const env2 = { DB: mockDB() };
+const post2 = async body => (await mod.onRequestPost({
+  request: new Request("https://x/api/cloud", { method: "POST", body: JSON.stringify(body) }), env: env2,
+})).status;
+let limited = false;
+for (let i = 0; i < 45; i++) { if (await post2({ data: { n: String(i) } }) === 429) { limited = true; break; } }
+assert("Rate-Limit greift (429)", limited);
 
 console.log("\n" + (ok ? "CLOUD-TESTS OK" : "CLOUD-TESTS FEHLGESCHLAGEN"));
 process.exit(ok ? 0 : 1);

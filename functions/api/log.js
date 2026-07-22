@@ -1,4 +1,4 @@
-import { json } from "./_util.js";
+import { json, clientIp, rateLimit } from "./_util.js";
 
 // ====================================================================
 // Anonymer Fehler-Melder. Der Client (theme.js) schickt bei einem
@@ -17,6 +17,11 @@ import { json } from "./_util.js";
 const KEEP = 1000;
 
 export async function onRequestPost({ request, env }) {
+  // Drossel gegen Log-Fluten: max. 40 Meldungen pro Minute und IP
+  if (!(await rateLimit(env, "log:" + clientIp(request), 40, 60))) {
+    return json({ ok: false }, 429);
+  }
+
   const b = await request.json().catch(() => ({}));
   const msg = String(b.msg || "").slice(0, 300).trim();
   if (!msg) return json({ ok: false }, 400);

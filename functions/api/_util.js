@@ -7,6 +7,29 @@ export function json(data, status = 200) {
   return Response.json(data, { status });
 }
 
+// Client-IP hinter Cloudflare (Fallbacks für lokale Tests)
+export function clientIp(request) {
+  return request.headers.get("CF-Connecting-IP") ||
+    (request.headers.get("x-forwarded-for") || "").split(",")[0].trim() ||
+    "0.0.0.0";
+}
+
+// Einfaches Rate-Limit über die gemeinsame Tabelle `rate`.
+// true  = Anfrage erlaubt (unter dem Limit), false = drosseln.
+// Fehlertolerant: bei DB-Problemen wird NIE blockiert.
+export async function rateLimit(env, key, max, windowSec) {
+  try {
+    const row = await env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM rate WHERE k = ? AND at > datetime('now', ?)"
+    ).bind(key, `-${windowSec} seconds`).first();
+    if (row && row.n >= max) return false;
+    await env.DB.prepare("INSERT INTO rate (k) VALUES (?)").bind(key).run();
+    // gelegentlich alte Einträge wegräumen (kleine Tabelle halten)
+    await env.DB.prepare("DELETE FROM rate WHERE at < datetime('now', '-1 day')").run();
+    return true;
+  } catch { return true; }
+}
+
 // 6-stelliger Beitritts-Code ohne verwechselbare Zeichen (0/O, 1/I/L)
 const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 export function makeCode() {

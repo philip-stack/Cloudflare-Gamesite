@@ -1,4 +1,4 @@
-import { json } from "./_util.js";
+import { json, clientIp, rateLimit } from "./_util.js";
 
 // ====================================================================
 // Cloud-Backup der Spielstände (plattformweit).
@@ -27,6 +27,11 @@ function newCode() {
 }
 
 export async function onRequestPost({ request, env }) {
+  // Schreib-Drossel: max. 40 Sicherungen pro Minute und IP
+  if (!(await rateLimit(env, "cloudw:" + clientIp(request), 40, 60))) {
+    return json({ error: "Zu viele Sicherungen — kurz warten" }, 429);
+  }
+
   const b = await request.json().catch(() => ({}));
 
   let code = String(b.code || "").trim().toUpperCase();
@@ -54,6 +59,11 @@ export async function onRequestPost({ request, env }) {
 }
 
 export async function onRequestGet({ request, env }) {
+  // Lese-Drossel: bremst das Durchprobieren von Codes (max. 60/min/IP)
+  if (!(await rateLimit(env, "cloudr:" + clientIp(request), 60, 60))) {
+    return json({ error: "Zu viele Anfragen — kurz warten" }, 429);
+  }
+
   const code = String(new URL(request.url).searchParams.get("code") || "").trim().toUpperCase();
   if (!CODE_RE.test(code)) return json({ error: "Ungültiger Code" }, 400);
 

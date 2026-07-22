@@ -65,6 +65,13 @@ CREATE TABLE IF NOT EXISTS cloud_saves (
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Rate-Limit-Buckets (Details: rateLimit() in functions/api/_util.js)
+CREATE TABLE IF NOT EXISTS rate (
+  k  TEXT NOT NULL,
+  at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_rate_k_at ON rate(k, at);
+
 -- Anonymer Fehler-Melder (Details: functions/api/log.js)
 CREATE TABLE IF NOT EXISTS error_log (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
