@@ -49,13 +49,40 @@ const UPGRADES = [
     desc: l => `${Math.round(Math.min(0.6, l * 0.06) * 100)}% Chance: gekauftes Meeri startet höher` },
 ];
 const upCost = u => Math.round(u.base * Math.pow(u.grow, up[u.key] || 0));
-const coinMult = () => 1 + 0.25 * (up.coin || 0);
+
+// ---------- Prestige ("Wiese einstampfen") ----------
+// Ab Zauber-Meeri (Stufe 5) lohnt sich der Neustart: man tauscht die Wiese
+// gegen Goldene Möhren 🥕 ein, die dauerhaft alle Münzen multiplizieren.
+const PRESTIGE_MIN = 5;                       // erst ab dieser Spitzenstufe möglich
+const carrotGain = p => p < PRESTIGE_MIN ? 0 : Math.floor(Math.pow(1.8, p - 4));
+const prestigeMult = () => 1 + carrots * 0.05;   // +5 % Münzen je Möhre
+
+// ---------- Album-Sammelbonus ----------
+const albumBonus = () => 1 + Object.keys(album).length * 0.03;   // +3 % je entdeckter Stufe
+
+// ---------- Biome / Themen-Wiesen ----------
+// Jede gekaufte Wiese gibt +5 % Münzen (dauerhaft) und einen eigenen Look.
+const BIOMES = [
+  { key: "wiese",  icon: "🌱", name: "Frühlingswiese", cost: 0,
+    light: ["#5fd07f", "#37b058", "#218a44"], dark: ["#2f6d42", "#215233", "#163a24"], accent: "flowers" },
+  { key: "strand", icon: "🏖️", name: "Sonnenstrand",   cost: 8000,
+    light: ["#ffe6a8", "#ffd27f", "#e9b25a"], dark: ["#6b5a3a", "#4e422a", "#352c1c"], accent: "shells" },
+  { key: "space",  icon: "🌌", name: "Weltraum",        cost: 120000,
+    light: ["#3a2b6b", "#241a4a", "#140f2e"], dark: ["#241a4a", "#160f33", "#0a0720"], accent: "stars" },
+  { key: "vulkan", icon: "🌋", name: "Vulkan",          cost: 2000000,
+    light: ["#7a2a1e", "#571a12", "#33100b"], dark: ["#4a1810", "#33100b", "#1c0805"], accent: "embers" },
+];
+const biomeBonus = () => 1 + Math.max(0, biomesOwned.length - 1) * 0.05;
+const biomeDef = () => BIOMES.find(b => b.key === biome) || BIOMES[0];
+
+const coinMult = () => (1 + 0.25 * (up.coin || 0)) * prestigeMult() * albumBonus() * biomeBonus();
 const magnetDelay = () => (up.magnet || 0) > 0 ? Math.max(0.3, 2.6 - up.magnet * 0.5) : Infinity;
 const luckChance = () => Math.min(0.6, (up.luck || 0) * 0.06);
 
 // ---------- Zustand ----------
 const SAVE = "meeri_save_v1";
 let coins, meeries, capLevel, buyCount, album, lastSeen, uid, up;
+let carrots, peak, biome, biomesOwned;   // Prestige & Biome (überleben Prestige)
 let over = false, hudDirty = false;
 
 function capacity() { return CAP_START + capLevel * CAP_STEP; }
@@ -66,6 +93,12 @@ function newUp() { return { coin: 0, speed: 0, magnet: 0, luck: 0 }; }
 function fresh() {
   coins = 0; meeries = []; capLevel = 0; buyCount = 0; album = {}; uid = 1;
   up = newUp(); lastSeen = Date.now();
+  carrots = 0; peak = 0; biome = "wiese"; biomesOwned = ["wiese"];
+}
+// Nur die laufende Wiese zurücksetzen — Möhren, Album & Biome bleiben.
+function resetRun() {
+  coins = 0; meeries = []; capLevel = 0; buyCount = 0; uid = 1;
+  up = newUp(); peak = 0; lastSeen = Date.now();
 }
 function load() {
   try {
@@ -78,12 +111,18 @@ function load() {
     uid = Number(s.uid) || 1;
     up = Object.assign(newUp(), s.up || {});
     lastSeen = Number(s.lastSeen) || Date.now();
+    carrots = Number(s.carrots) || 0;
+    peak = Number(s.peak) || 0;
+    biome = typeof s.biome === "string" && BIOMES.some(b => b.key === s.biome) ? s.biome : "wiese";
+    biomesOwned = Array.isArray(s.biomesOwned) && s.biomesOwned.length ? s.biomesOwned.filter(k => BIOMES.some(b => b.key === k)) : ["wiese"];
+    if (!biomesOwned.includes("wiese")) biomesOwned.unshift("wiese");
     meeries = (s.meeries || []).map(m => ({
       id: uid++, tier: Math.max(0, Math.min(MAXT, m.tier | 0)),
       x: m.x || 0.5, y: m.y || 0.5,
       vx: (Math.random() - 0.5), vy: (Math.random() - 0.5),
       phase: Math.random() * 7, nextDrop: rndDrop(), held: false,
     }));
+    peak = Math.max(peak, meeries.reduce((a, m) => Math.max(a, m.tier), 0));
     return true;
   } catch { fresh(); return false; }
 }
@@ -102,6 +141,7 @@ function save() {
   try {
     localStorage.setItem(SAVE, JSON.stringify({
       coins, capLevel, buyCount, album, uid, up, lastSeen,
+      carrots, peak, biome, biomesOwned,
       meeries: meeries.map(m => ({ tier: m.tier, x: m.x, y: m.y })),
     }));
     storageOK = true;
@@ -131,6 +171,7 @@ function spawnMeeri(tier, x, y) {
     phase: Math.random() * 7, nextDrop: rndDrop(), held: false, pop: 0.001,
   };
   meeries.push(m);
+  if (tier > peak) peak = tier;
   discover(tier);
   return m;
 }
@@ -158,15 +199,30 @@ function mergeInto(target, src) {
   if (target.tier >= MAXT) { toast("Endstufe erreicht! 🌌"); return false; }
   target.tier++; target.pop = 0.001;
   meeries = meeries.filter(m => m.id !== src.id);
+  if (target.tier > peak) peak = target.tier;
   const bonus = Math.round(coinVal(target.tier) * 3 * coinMult());   // kleiner Merge-Bonus
   coins += bonus;
   discover(target.tier);
   burst(target.tier >= MAXT ? "GALAXIE!" : "EVOLVE!", "#ffd23f");
   floater("+" + fmt(bonus), "#ffd23f", target.x, target.y);
   spawnConfetti(target.x, target.y, TIERS[target.tier].c1);
+  shake(target.tier >= 8 ? 8 : 4);   // Kamerawackeln, stärker bei High-Tier
   GS.sound.great(); GS.haptic([12, 40, 12]);
   updateHUD(); saveSoon();
   return true;
+}
+
+// ---------- Prestige ----------
+function doPrestige() {
+  const gain = carrotGain(peak);
+  if (gain <= 0) return;
+  carrots += gain;
+  resetRun();
+  spawnMeeri(0);
+  burst("EINGESTAMPFT!", "#ff9c3d"); shake(10);
+  GS.sound.win(); GS.haptic([15, 50, 15, 50]);
+  updateHUD(); save();
+  toast(`🥕 +${gain} Goldene Möhren! Jetzt +${Math.round((prestigeMult() - 1) * 100)}% Münzen für immer.`);
 }
 
 // ---------- Offline-Einnahmen ----------
@@ -545,6 +601,8 @@ function featFront(g, s, tier, t, T) {
 
 // ---------- Effekte ----------
 let coinsFx = [], golds = [], bursts = [], floaters = [], confetti = [];
+let shakeMag = 0;
+function shake(m) { shakeMag = Math.max(shakeMag, m); }
 function spawnCoin(m) {
   coinsFx.push({ x: mx(m), y: my(m) - msize * 0.5, val: Math.round(coinVal(m.tier) * coinMult()), t: 0, life: 5.5, vy: -12 - Math.random() * 8, r: msize * 0.28 });
 }
@@ -599,6 +657,7 @@ function frame(ts) {
   floaters = floaters.filter(f => (f.t += dt) < f.life);
   confetti = confetti.filter(p => (p.life -= dt * 1.3) > 0);
   confetti.forEach(p => { p.x += p.vx; p.y += p.vy; p.vy += 0.3; p.rot += p.vr; });
+  if (shakeMag > 0) { shakeMag = Math.max(0, shakeMag - dt * 40); }
 
   if (hudDirty) { updateHUD(); hudDirty = false; }
   draw();
@@ -607,38 +666,40 @@ function frame(ts) {
 
 function draw() {
   ctx.clearRect(0, 0, W, H);
+  ctx.save();
+  if (shakeMag > 0.3) ctx.translate((Math.random() - 0.5) * shakeMag, (Math.random() - 0.5) * shakeMag);
   const light = document.documentElement.dataset.theme !== "dark";
-  // Wiese (theme-abhängig: sonnig hell vs. abendlich gedämpft)
+  const B = biomeDef();
+  const pal = light ? B.light : B.dark;
+  // Boden (biome- & theme-abhängig)
   roundRect(1.5, 1.5, W - 3, H - 3, 16);
   const g = ctx.createLinearGradient(0, 0, 0, H);
-  if (light) { g.addColorStop(0, "#5fd07f"); g.addColorStop(0.55, "#37b058"); g.addColorStop(1, "#218a44"); }
-  else { g.addColorStop(0, "#2f6d42"); g.addColorStop(0.55, "#215233"); g.addColorStop(1, "#163a24"); }
+  g.addColorStop(0, pal[0]); g.addColorStop(0.55, pal[1]); g.addColorStop(1, pal[2]);
   ctx.fillStyle = g; ctx.fill(); ctx.lineWidth = 3.5; ctx.strokeStyle = "#123018"; ctx.stroke();
   ctx.save(); roundRect(1.5, 1.5, W - 3, H - 3, 16); ctx.clip();
-  // Licht von oben (Sonne bzw. Mond)
+  // Licht von oben
   const sun = ctx.createRadialGradient(W * 0.3, H * 0.12, 0, W * 0.3, H * 0.12, W * 0.65);
   const sunA = light ? 0.18 : 0.1;
   sun.addColorStop(0, `rgba(255,255,255,${sunA})`); sun.addColorStop(1, "rgba(255,255,255,0)");
   ctx.fillStyle = sun; ctx.fillRect(0, 0, W, H);
-  // Grasbüschel
-  ctx.strokeStyle = light ? "rgba(255,255,255,0.11)" : "rgba(255,255,255,0.07)"; ctx.lineWidth = 2; ctx.lineCap = "round";
-  for (let i = 0; i < 16; i++) {
-    const gx = ((i * 137) % 100) / 100 * W, gy = ((i * 79) % 100) / 100 * H;
-    ctx.beginPath(); ctx.moveTo(gx, gy); ctx.lineTo(gx - 4, gy - 9); ctx.moveTo(gx, gy); ctx.lineTo(gx, gy - 12); ctx.moveTo(gx, gy); ctx.lineTo(gx + 4, gy - 9); ctx.stroke();
-  }
-  // Blümchen
-  const fcol = ["#ff6f91", "#ffd23f", "#ffffff", "#b892ff"];
-  for (let i = 0; i < 7; i++) {
-    const fx = ((i * 173 + 40) % 100) / 100 * W, fy = ((i * 111 + 66) % 100) / 100 * H;
-    ctx.fillStyle = fcol[i % fcol.length];
-    for (let p = 0; p < 5; p++) { const a = p / 5 * Math.PI * 2; ctx.beginPath(); ctx.arc(fx + Math.cos(a) * 4.2, fy + Math.sin(a) * 4.2, 2.7, 0, 7); ctx.fill(); }
-    ctx.fillStyle = "#ffd23f"; ctx.beginPath(); ctx.arc(fx, fy, 2.4, 0, 7); ctx.fill();
-  }
+  drawBiomeDeco(B.accent, light);
   // Vignette unten für Tiefe
   const vg = ctx.createLinearGradient(0, H * 0.62, 0, H);
-  vg.addColorStop(0, "rgba(0,30,12,0)"); vg.addColorStop(1, light ? "rgba(0,40,15,0.22)" : "rgba(0,20,8,0.4)");
+  vg.addColorStop(0, "rgba(0,20,12,0)"); vg.addColorStop(1, light ? "rgba(0,30,15,0.2)" : "rgba(0,10,6,0.42)");
   ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
   ctx.restore();
+
+  // Merge-Highlight: passende Partner leuchten, wenn man ein Meeri hält
+  if (drag) {
+    for (const m of meeries) {
+      if (m.id === drag.id || m.tier !== drag.tier) continue;
+      const pulse = 0.5 + 0.5 * Math.sin(animT * 8);
+      ctx.save(); ctx.globalAlpha = 0.5 + pulse * 0.4;
+      ctx.strokeStyle = "#ffe066"; ctx.lineWidth = 3 + pulse * 2;
+      ctx.beginPath(); ctx.arc(mx(m), my(m), msize * (0.58 + pulse * 0.06), 0, 7); ctx.stroke();
+      ctx.restore();
+    }
+  }
 
   // Meeries (nach y sortiert für Tiefe)
   const sorted = [...meeries].sort((a, b) => (a.held ? 1 : 0) - (b.held ? 1 : 0) || my(a) - my(b));
@@ -684,6 +745,63 @@ function draw() {
     ctx.font = `900 italic ${msize * 0.9}px ${uiFont()}`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
     ctx.lineWidth = 7; ctx.strokeStyle = "#123018"; ctx.strokeText(b.text, 0, 0);
     ctx.fillStyle = b.col; ctx.fillText(b.text, 0, 0); ctx.restore();
+  }
+  ctx.restore();   // Shake-Wrapper schließen
+}
+
+// Biome-spezifische Deko im Hintergrund (deterministisch platziert)
+function drawBiomeDeco(accent, light) {
+  if (accent === "flowers") {
+    ctx.strokeStyle = light ? "rgba(255,255,255,0.11)" : "rgba(255,255,255,0.07)"; ctx.lineWidth = 2; ctx.lineCap = "round";
+    for (let i = 0; i < 16; i++) {
+      const gx = ((i * 137) % 100) / 100 * W, gy = ((i * 79) % 100) / 100 * H;
+      ctx.beginPath(); ctx.moveTo(gx, gy); ctx.lineTo(gx - 4, gy - 9); ctx.moveTo(gx, gy); ctx.lineTo(gx, gy - 12); ctx.moveTo(gx, gy); ctx.lineTo(gx + 4, gy - 9); ctx.stroke();
+    }
+    const fcol = ["#ff6f91", "#ffd23f", "#ffffff", "#b892ff"];
+    for (let i = 0; i < 7; i++) {
+      const fx = ((i * 173 + 40) % 100) / 100 * W, fy = ((i * 111 + 66) % 100) / 100 * H;
+      ctx.fillStyle = fcol[i % fcol.length];
+      for (let p = 0; p < 5; p++) { const a = p / 5 * Math.PI * 2; ctx.beginPath(); ctx.arc(fx + Math.cos(a) * 4.2, fy + Math.sin(a) * 4.2, 2.7, 0, 7); ctx.fill(); }
+      ctx.fillStyle = "#ffd23f"; ctx.beginPath(); ctx.arc(fx, fy, 2.4, 0, 7); ctx.fill();
+    }
+  } else if (accent === "shells") {
+    // Muscheln + Wellenlinien am Strand
+    ctx.strokeStyle = "rgba(255,255,255,0.18)"; ctx.lineWidth = 2.5;
+    for (let i = 0; i < 4; i++) {
+      const wy = H * (0.75 + i * 0.05);
+      ctx.beginPath();
+      for (let x = 0; x <= W; x += 12) { const yy = wy + Math.sin(x * 0.05 + i) * 4; x ? ctx.lineTo(x, yy) : ctx.moveTo(x, yy); }
+      ctx.stroke();
+    }
+    for (let i = 0; i < 6; i++) {
+      const sx = ((i * 151 + 30) % 100) / 100 * W, sy = ((i * 97 + 50) % 100) / 100 * H * 0.7;
+      ctx.fillStyle = i % 2 ? "#ff9aa8" : "#fff3d6"; ctx.strokeStyle = "rgba(120,80,40,0.5)"; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(sx, sy, 5, Math.PI, 0); ctx.closePath(); ctx.fill(); ctx.stroke();
+    }
+  } else if (accent === "stars") {
+    for (let i = 0; i < 40; i++) {
+      const sx = ((i * 149) % 100) / 100 * W, sy = ((i * 83) % 100) / 100 * H;
+      const tw = 0.4 + 0.6 * Math.abs(Math.sin(animT * 2 + i));
+      ctx.globalAlpha = tw; ctx.fillStyle = i % 7 === 0 ? "#ffd6f5" : "#ffffff";
+      ctx.beginPath(); ctx.arc(sx, sy, i % 5 === 0 ? 1.8 : 1, 0, 7); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    // ferner Planet
+    ctx.fillStyle = "rgba(180,146,255,0.5)"; ctx.beginPath(); ctx.arc(W * 0.78, H * 0.2, 16, 0, 7); ctx.fill();
+  } else if (accent === "embers") {
+    // aufsteigende Glut-Funken
+    for (let i = 0; i < 22; i++) {
+      const ex = ((i * 127) % 100) / 100 * W;
+      const ey = H - ((animT * 40 + i * 60) % (H * 0.9));
+      ctx.globalAlpha = 0.4 + 0.5 * Math.abs(Math.sin(animT * 3 + i));
+      ctx.fillStyle = i % 3 === 0 ? "#ffd23f" : "#ff7a2d";
+      ctx.beginPath(); ctx.arc(ex, ey, 1.6, 0, 7); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    // Glut am Boden
+    const gl = ctx.createLinearGradient(0, H, 0, H * 0.7);
+    gl.addColorStop(0, "rgba(255,90,20,0.35)"); gl.addColorStop(1, "rgba(255,90,20,0)");
+    ctx.fillStyle = gl; ctx.fillRect(0, 0, W, H);
   }
 }
 function uiFont() { return `${getComputedStyle(document.documentElement).getPropertyValue("--font-ui").trim() || "Outfit"}, sans-serif`; }
@@ -768,6 +886,12 @@ function updateHUD() {
   if (capLevel >= CAP_MAXLEVEL) { exp.disabled = true; document.getElementById("exp-cost").textContent = "max"; }
   else { document.getElementById("exp-cost").textContent = "🪙 " + fmt(expCost()); exp.disabled = coins < expCost(); }
   document.getElementById("btn-sound").textContent = GS.sound.on() ? "🔊" : "🔇";
+  // Möhren-Chip
+  const chip = document.getElementById("carrots-chip");
+  if (chip) { if (carrots > 0) { chip.hidden = false; document.getElementById("carrots").textContent = fmt(carrots); } else chip.hidden = true; }
+  // Prestige-Button hervorheben, wenn möglich
+  const pb = document.getElementById("btn-prestige");
+  if (pb) pb.classList.toggle("ready", carrotGain(peak) > 0);
 }
 
 function toast(msg) {
@@ -797,6 +921,7 @@ function showAlbum() {
   const ov = mkOverlay(`
     <h2><span class="foil">Meeri-Album</span></h2>
     <p class="sub">${found}/${TIERS.length} entdeckt · tippe ein Meeri zum Angeben 📤</p>
+    <div class="bonus-line">📖 Sammelbonus: <b>+${Math.round((albumBonus() - 1) * 100)}% Münzen</b> <span class="dim">(+3% je Stufe)</span></div>
     <div class="album-grid">${cells}</div>
     <button class="btn-secondary" data-close="1">Schließen</button>`);
   ov.querySelectorAll(".album-cell[data-tier]").forEach(el => el.onclick = () => reveal(Number(el.dataset.tier), false));
@@ -850,9 +975,11 @@ function showShop() {
   const ov = mkOverlay(`
     <h2><span class="foil">Meeri-Shop</span></h2>
     <p class="sub">Rüste deine Wiese auf und werde reicher.</p>
+    <div class="bonus-line">🪙 Münz-Bonus gesamt: <b id="shop-mult">×${coinMult().toFixed(2)}</b></div>
     <div id="shop-rows"></div>
     <button class="btn-secondary" id="shop-close">Schließen</button>`);
   const render = () => {
+    const mm = ov.querySelector("#shop-mult"); if (mm) mm.textContent = "×" + coinMult().toFixed(2);
     ov.querySelector("#shop-rows").innerHTML = UPGRADES.map((u, i) => {
       const lvl = up[u.key] || 0, maxed = lvl >= u.max, cost = upCost(u);
       const can = !maxed && coins >= cost;
@@ -873,18 +1000,85 @@ function showShop() {
   ov.querySelector("#shop-close").onclick = () => ov.remove();
 }
 
+// Prestige-Overlay ("Wiese einstampfen")
+function showPrestige() {
+  const gain = carrotGain(peak);
+  const nextMult = 1 + (carrots + gain) * 0.05;
+  const canDo = gain > 0;
+  const ov = mkOverlay(`
+    <h2><span class="foil">Wiese einstampfen</span></h2>
+    <p class="sub">Fang neu an und tausche deinen Fortschritt gegen <b>Goldene Möhren 🥕</b>, die <b>für immer</b> alle Münzen erhöhen.</p>
+    <div class="prestige-box">
+      <div class="pr-row"><span>Aktuelle Möhren</span><b>🥕 ${fmt(carrots)}</b></div>
+      <div class="pr-row"><span>Höchste Stufe (diese Wiese)</span><b>${esc(TIERS[Math.min(MAXT, peak)].name)}</b></div>
+      <div class="pr-row big"><span>Du bekommst</span><b class="${canDo ? "good" : ""}">🥕 +${fmt(gain)}</b></div>
+      <div class="pr-row"><span>Münz-Bonus danach</span><b>×${nextMult.toFixed(2)}</b></div>
+    </div>
+    ${canDo
+      ? `<p class="sub dim">Möhren, Album & Biome bleiben — Meeries, Münzen & Shop-Upgrades werden zurückgesetzt.</p>`
+      : `<p class="sub dim">Bring erst ein Meeri mindestens auf <b>${esc(TIERS[PRESTIGE_MIN].name)}</b> (Stufe ${PRESTIGE_MIN + 1}), dann lohnt sich das Einstampfen.</p>`}
+    <button class="btn-primary" id="pr-go" ${canDo ? "" : "disabled"}>🥕 Einstampfen &amp; ${fmt(gain)} Möhren holen</button>
+    <button class="btn-secondary" id="pr-close">Doch nicht</button>`);
+  ov.querySelector("#pr-close").onclick = () => ov.remove();
+  ov.querySelector("#pr-go").onclick = () => {
+    if (!canDo) return;
+    if (!confirm(`Wiese einstampfen und ${gain} Goldene Möhren holen? Meeries & Münzen dieser Wiese gehen dabei verloren.`)) return;
+    ov.remove(); doPrestige();
+  };
+}
+
+// Biome-Auswahl / -Shop
+function showBiomes() {
+  const ov = mkOverlay(`
+    <h2><span class="foil">Themen-Wiesen</span></h2>
+    <p class="sub">Jede gekaufte Wiese gibt dauerhaft <b>+5% Münzen</b> — und sieht anders aus.</p>
+    <div class="bonus-line">🗺️ Wiesen-Bonus: <b>+${Math.round((biomeBonus() - 1) * 100)}%</b></div>
+    <div id="biome-rows"></div>
+    <button class="btn-secondary" id="bio-close">Schließen</button>`);
+  const render = () => {
+    ov.querySelector("#biome-rows").innerHTML = BIOMES.map((b, i) => {
+      const owned = biomesOwned.includes(b.key), active = biome === b.key;
+      const canBuy = !owned && coins >= b.cost;
+      const btn = active ? `<button class="shop-buy" disabled>aktiv</button>`
+        : owned ? `<button class="shop-buy" data-sel="${b.key}">wählen</button>`
+        : `<button class="shop-buy" data-buy="${b.key}" ${canBuy ? "" : "disabled"}>🪙 ${fmt(b.cost)}</button>`;
+      return `<div class="shop-row ${active ? "active" : ""}">
+        <span class="shop-ic">${b.icon}</span>
+        <span class="shop-info"><b>${esc(b.name)}</b><span class="shop-desc">${owned ? (active ? "gerade ausgewählt" : "im Besitz") : "+5% Münzen dauerhaft"}</span></span>
+        ${btn}
+      </div>`;
+    }).join("");
+    ov.querySelectorAll("[data-buy]").forEach(b => b.onclick = () => {
+      const def = BIOMES.find(x => x.key === b.dataset.buy);
+      if (!def || biomesOwned.includes(def.key) || coins < def.cost) return;
+      coins -= def.cost; biomesOwned.push(def.key); biome = def.key;
+      GS.sound.win(); GS.haptic([10, 30, 10]); burst("NEUE WIESE!", "#57e39b");
+      updateHUD(); saveSoon(); render();
+    });
+    ov.querySelectorAll("[data-sel]").forEach(b => b.onclick = () => {
+      biome = b.dataset.sel; GS.sound.good(); GS.haptic(8); saveSoon(); render();
+    });
+  };
+  render();
+  ov.querySelector("#bio-close").onclick = () => ov.remove();
+}
+
 function showMenu() {
   const ov = mkOverlay(`
     <h2><span class="foil">MEERI-MANIA</span></h2>
     <p class="sub">Kaufe Meeries, zieh gleiche zusammen und entdecke alle Evolutionen!</p>
     <button class="btn-primary" id="m-close">▶ Weiter wuseln</button>
     <div class="menu-grid">
+      <button class="btn-secondary" id="m-biome">🗺️ Wiesen</button>
       <button class="btn-secondary" id="m-album">📖 Album</button>
+      <button class="btn-secondary" id="m-prestige">🥕 Prestige</button>
       <button class="btn-secondary" id="m-how">❓ Anleitung</button>
       <button class="btn-secondary full" id="m-reset">🗑️ Neu starten</button>
     </div>`);
   ov.querySelector("#m-close").onclick = () => ov.remove();
+  ov.querySelector("#m-biome").onclick = () => { ov.remove(); showBiomes(); };
   ov.querySelector("#m-album").onclick = () => { ov.remove(); showAlbum(); };
+  ov.querySelector("#m-prestige").onclick = () => { ov.remove(); showPrestige(); };
   ov.querySelector("#m-how").onclick = () => howTo(true);
   ov.querySelector("#m-reset").onclick = () => {
     if (confirm("Wirklich komplett neu starten? Aller Fortschritt geht verloren.")) {
@@ -900,7 +1094,8 @@ function howTo(force) {
       { icon: "🪙", text: "Meeries werfen Münz-Blasen ab — tippe sie an. Mit dem 🧲 Auto-Sammler geht das später von allein." },
       { icon: "🔀", text: "Zieh zwei GLEICHE Meeries zusammen → sie evolvieren zur nächsten, absurderen Stufe!" },
       { icon: "🛒", text: "Im Shop rüstest du auf: mehr Münzwert, schnellere Würfe, Auto-Sammler, Glücks-Wurf." },
-      { icon: "📖", text: "Neue Evolutionen landen im Album — tippe sie an, um sie zu teilen. Schaffst du die Galaxie-Meeri? 🌌" },
+      { icon: "📖", text: "Neue Evolutionen landen im Album (+3% Münzen je Stufe) — tippe sie an, um sie zu teilen." },
+      { icon: "🥕", text: "Stampf die Wiese beim Prestige ein und tausche sie gegen Goldene Möhren, die für immer alle Münzen erhöhen. Dazu Themen-Wiesen freischalten. Schaffst du die Galaxie-Meeri? 🌌" },
     ],
   });
 }
@@ -912,6 +1107,7 @@ document.getElementById("buy").onclick = buyMeeri;
 document.getElementById("expand").onclick = expandMeadow;
 document.getElementById("btn-shop").onclick = showShop;
 document.getElementById("btn-album").onclick = showAlbum;
+document.getElementById("btn-prestige").onclick = showPrestige;
 document.getElementById("btn-menu").onclick = showMenu;
 document.getElementById("btn-sound").onclick = () => { GS.sound.toggle(); GS.sound.click(); updateHUD(); };
 

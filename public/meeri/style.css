@@ -66,6 +66,12 @@ body {
   background: var(--card); border-radius: 12px; padding: 7px 14px;
   box-shadow: 0 0 0 2px var(--ink-black) inset; font-size: 1.3rem; font-weight: 800;
 }
+.carrots {
+  display: flex; align-items: center; gap: 6px; flex-shrink: 0;
+  background: linear-gradient(160deg, #ffb347, #ff8c1a); color: #4a2600;
+  border-radius: 12px; padding: 7px 12px; font-size: 1.05rem; font-weight: 800;
+  box-shadow: 0 0 0 2px var(--ink-black) inset;
+}
 .hud-right { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
 .cap { font-weight: 800; font-size: 0.95rem; }
 .rate { font-size: 0.72rem; color: var(--muted); font-weight: 700; }
@@ -97,7 +103,14 @@ body {
   background: var(--card-hi); color: var(--ink); cursor: pointer;
   box-shadow: 0 0 0 2px var(--ink-black) inset;
 }
+.foot-btn { white-space: nowrap; font-size: 0.86rem; padding: 11px 6px; }
 .foot-btn:active { transform: scale(0.97); }
+/* Prestige-Button leuchtet, wenn Einstampfen möglich ist */
+.foot-btn.ready {
+  background: linear-gradient(160deg, #ffb347, #ff8c1a); color: #4a2600;
+  animation: prestige-glow 1.3s ease-in-out infinite;
+}
+@keyframes prestige-glow { 50% { box-shadow: 0 0 0 2px var(--ink-black) inset, 0 0 14px 2px rgba(255,160,40,0.8); } }
 
 /* ============ Overlays / Panels (Comic-Papier) ============ */
 .overlay {
@@ -169,6 +182,24 @@ body {
 .shop-buy:active { transform: translateY(2px); box-shadow: 0 0 0 2px #123018 inset, 0 1px 0 #b97c10; }
 .shop-buy:disabled { opacity: 0.4; filter: grayscale(0.5); cursor: not-allowed; box-shadow: 0 0 0 2px #123018 inset; transform: none; }
 
+/* Bonus-Zeile (Album/Shop/Biome) */
+.bonus-line {
+  background: rgba(20,50,24,0.06); border-radius: 12px; padding: 9px 12px; margin: 4px 0 12px;
+  font-size: 0.92rem; font-weight: 700;
+}
+.bonus-line b { color: #1f7a3d; }
+.bonus-line .dim { color: #5c7a64; font-weight: 600; font-size: 0.82rem; }
+
+/* Prestige */
+.prestige-box {
+  background: rgba(20,50,24,0.06); border-radius: 14px; padding: 6px 12px; margin: 4px 0 12px;
+}
+.pr-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 7px 0; font-size: 0.92rem; border-bottom: 1px solid rgba(20,50,24,0.1); }
+.pr-row:last-child { border-bottom: 0; }
+.pr-row.big { font-size: 1.05rem; }
+.pr-row b.good { color: #1f9d5c; }
+.shop-row.active { box-shadow: 0 0 0 2.5px #1f9d5c inset; }
+
 /* Entdeck-/Angeber-Karte */
 .reveal-canvas { display: block; margin: 6px auto 2px; animation: reveal-bob 1.6s ease-in-out infinite; }
 @keyframes reveal-bob { 50% { transform: translateY(-6px); } }
@@ -195,6 +226,12 @@ body {
   box-shadow: 0 0 0 2px rgba(255,255,255,0.1) inset;
 }
 :root[data-theme="dark"] .album-cell.locked { opacity: 0.4; }
+:root[data-theme="dark"] .bonus-line,
+:root[data-theme="dark"] .prestige-box { background: rgba(255,255,255,0.07); }
+:root[data-theme="dark"] .bonus-line b { color: #7ee8a4; }
+:root[data-theme="dark"] .bonus-line .dim { color: #9cc2a6; }
+:root[data-theme="dark"] .pr-row { border-bottom-color: rgba(255,255,255,0.12); }
+:root[data-theme="dark"] .pr-row b.good { color: #7ee8a4; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.001s !important; transition-duration: 0.01s !important; }
