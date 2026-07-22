@@ -100,14 +100,24 @@ const albumBonus = () => 1 + Object.keys(album).length * 0.03;   // +3 % je entd
 // ---------- Biome / Themen-Wiesen ----------
 // Jede gekaufte Wiese gibt +5 % Münzen (dauerhaft) und einen eigenen Look.
 const BIOMES = [
-  { key: "wiese",  icon: "🌱", name: "Frühlingswiese", cost: 0,
+  { key: "wiese",       icon: "🌱", name: "Frühlingswiese", cost: 0,
     light: ["#5fd07f", "#37b058", "#218a44"], dark: ["#2f6d42", "#215233", "#163a24"], accent: "flowers" },
-  { key: "strand", icon: "🏖️", name: "Sonnenstrand",   cost: 8000,
+  { key: "strand",      icon: "🏖️", name: "Sonnenstrand",   cost: 8_000,
     light: ["#ffe6a8", "#ffd27f", "#e9b25a"], dark: ["#6b5a3a", "#4e422a", "#352c1c"], accent: "shells" },
-  { key: "space",  icon: "🌌", name: "Weltraum",        cost: 120000,
-    light: ["#3a2b6b", "#241a4a", "#140f2e"], dark: ["#241a4a", "#160f33", "#0a0720"], accent: "stars" },
-  { key: "vulkan", icon: "🌋", name: "Vulkan",          cost: 2000000,
+  { key: "dschungel",   icon: "🌴", name: "Dschungel",       cost: 40_000,
+    light: ["#4bbf6a", "#2f8a49", "#1c5e32"], dark: ["#1f5230", "#163f26", "#0c2818"], accent: "jungle" },
+  { key: "wueste",      icon: "🏜️", name: "Wüste",           cost: 200_000,
+    light: ["#ffd98a", "#f0b45a", "#d98a3a"], dark: ["#6a5330", "#4e3d20", "#332714"], accent: "sand" },
+  { key: "schnee",      icon: "❄️", name: "Schneeland",      cost: 800_000,
+    light: ["#eaf6ff", "#cfe6f7", "#a6cbe6"], dark: ["#3a4a5a", "#2a3846", "#1b2732"], accent: "snow" },
+  { key: "vulkan",      icon: "🌋", name: "Vulkan",          cost: 2_000_000,
     light: ["#7a2a1e", "#571a12", "#33100b"], dark: ["#4a1810", "#33100b", "#1c0805"], accent: "embers" },
+  { key: "unterwasser", icon: "🐠", name: "Unterwasser",     cost: 12_000_000,
+    light: ["#4fc7e8", "#2f9fd0", "#155f9e"], dark: ["#123f5a", "#0c2c44", "#06182a"], accent: "bubbles" },
+  { key: "candy",       icon: "🍭", name: "Zuckerland",      cost: 60_000_000,
+    light: ["#ffd0ec", "#ff9ecf", "#f56fb0"], dark: ["#5a2b47", "#421f34", "#2c1422"], accent: "candy" },
+  { key: "space",       icon: "🌌", name: "Weltraum",        cost: 300_000_000,
+    light: ["#3a2b6b", "#241a4a", "#140f2e"], dark: ["#241a4a", "#160f33", "#0a0720"], accent: "stars" },
 ];
 const biomeBonus = () => 1 + Math.max(0, biomesOwned.length - 1) * 0.05;
 const biomeDef = () => BIOMES.find(b => b.key === biome) || BIOMES[0];
@@ -1070,7 +1080,59 @@ function drawBiomeDeco(accent, light) {
     const gl = ctx.createLinearGradient(0, H, 0, H * 0.7);
     gl.addColorStop(0, "rgba(255,90,20,0.35)"); gl.addColorStop(1, "rgba(255,90,20,0)");
     ctx.fillStyle = gl; ctx.fillRect(0, 0, W, H);
+  } else if (accent === "jungle") {
+    // schwebende Blätter, die herabsinken und pendeln
+    for (let i = 0; i < 14; i++) {
+      const lx = ((i * 113) % 100) / 100 * W + Math.sin(animT * 0.8 + i) * 16;
+      const ly = ((animT * 22 + i * 47) % (H + 30)) - 15;
+      ctx.save(); ctx.translate(lx, ly); ctx.rotate(Math.sin(animT + i) * 0.6);
+      ctx.fillStyle = i % 2 ? "rgba(60,180,90,0.5)" : "rgba(40,140,70,0.5)";
+      ctx.beginPath(); ctx.ellipse(0, 0, 7, 3, 0, 0, 7); ctx.fill(); ctx.restore();
+    }
+  } else if (accent === "sand") {
+    // Sand-Rippel + Kakteen
+    ctx.strokeStyle = "rgba(200,150,80,0.35)"; ctx.lineWidth = 2;
+    for (let i = 1; i < 5; i++) { ctx.beginPath(); for (let x = 0; x <= W; x += 12) { const yy = H * (0.55 + i * 0.1) + Math.sin(x * 0.04 + i) * 4; x ? ctx.lineTo(x, yy) : ctx.moveTo(x, yy); } ctx.stroke(); }
+    const cactus = (x, y, h) => { ctx.fillStyle = "#3f9e5a"; ctx.strokeStyle = "#123018"; ctx.lineWidth = 1.5; rrpc(x - 3, y - h, 6, h, 3); ctx.fill(); ctx.stroke(); rrpc(x - 3, y - h * 0.6, -8, 5, 2.5); ctx.fill(); ctx.stroke(); rrpc(x + 3, y - h * 0.75, 8, 5, 2.5); ctx.fill(); ctx.stroke(); };
+    cactus(W * 0.2, H * 0.8, 26); cactus(W * 0.78, H * 0.7, 20);
+  } else if (accent === "snow") {
+    // Schneeflocken
+    for (let i = 0; i < 26; i++) {
+      const sx = ((i * 97) % 100) / 100 * W + Math.sin(animT * 1.2 + i) * 10;
+      const sy = ((animT * 26 + i * 41) % (H + 20)) - 10;
+      ctx.globalAlpha = 0.8; ctx.fillStyle = "#fff";
+      ctx.beginPath(); ctx.arc(sx, sy, i % 4 === 0 ? 2.4 : 1.5, 0, 7); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  } else if (accent === "bubbles") {
+    // aufsteigende Luftblasen + Algen
+    ctx.strokeStyle = "rgba(40,160,90,0.5)"; ctx.lineWidth = 4; ctx.lineCap = "round";
+    for (const bx of [W * 0.15, W * 0.85]) { ctx.beginPath(); ctx.moveTo(bx, H); for (let y = H; y > H * 0.55; y -= 10) ctx.lineTo(bx + Math.sin(y * 0.05 + animT * 2) * 8, y); ctx.stroke(); }
+    for (let i = 0; i < 16; i++) {
+      const bx = ((i * 131) % 100) / 100 * W + Math.sin(animT + i) * 6;
+      const by = H - ((animT * 30 + i * 53) % (H + 20));
+      ctx.globalAlpha = 0.5; ctx.strokeStyle = "rgba(255,255,255,0.8)"; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(bx, by, 2 + (i % 3), 0, 7); ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  } else if (accent === "candy") {
+    // schwebende Zuckerstreusel
+    const cc = ["#ff6f91", "#ffd23f", "#7ad1ff", "#b892ff", "#fff"];
+    for (let i = 0; i < 22; i++) {
+      const cx2 = ((i * 107) % 100) / 100 * W + Math.sin(animT + i) * 8;
+      const cy2 = ((animT * 16 + i * 45) % (H + 20)) - 10;
+      ctx.save(); ctx.translate(cx2, cy2); ctx.rotate(i + animT);
+      ctx.fillStyle = cc[i % cc.length]; rrpc(-4, -1.5, 8, 3, 1.5); ctx.fill(); ctx.restore();
+    }
   }
+}
+// kleiner Rechteck-Pfad-Helfer für Deko (ctx)
+function rrpc(x, y, w, h, r) {
+  if (w < 0) { x += w; w = -w; }
+  ctx.beginPath();
+  ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
 }
 function uiFont() { return `${getComputedStyle(document.documentElement).getPropertyValue("--font-ui").trim() || "Outfit"}, sans-serif`; }
 
@@ -1192,8 +1254,11 @@ function showAlbum() {
   const found = Object.keys(album).length;
   const cells = TIERS.map((T, i) => {
     const got = !!album[i];
+    const inner = got
+      ? `<span class="album-dot" style="background:${T.c1}"><canvas class="album-cv" data-tier="${i}"></canvas><span class="lvl">${i + 1}</span></span>`
+      : `<span class="album-dot" style="background:#c9c9c9">❓<span class="lvl">${i + 1}</span></span>`;
     return `<div class="album-cell ${got ? "" : "locked"}" ${got ? `data-tier="${i}" role="button" tabindex="0"` : ""}>
-      <span class="album-dot" style="background:${got ? T.c1 : "#c9c9c9"}">${got ? (T.prop || "🐹") : "❓"}<span class="lvl">${i + 1}</span></span>
+      ${inner}
       <span class="album-name">${got ? esc(T.name) : "???"}</span>
       <span class="album-desc">${got ? esc(T.desc) : "noch nicht entdeckt"}</span>
     </div>`;
@@ -1207,6 +1272,26 @@ function showAlbum() {
     <button class="btn-secondary" data-close="1">Schließen</button>`);
   ov.querySelectorAll(".album-cell[data-tier]").forEach(el => el.onclick = () => reveal(Number(el.dataset.tier), false));
   ov.querySelector("[data-close]").onclick = () => ov.remove();
+  // Animierte Album-Meeris (laufen fröhlich auf der Stelle)
+  const S = 52, dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+  const cvs = [...ov.querySelectorAll(".album-cv")].map(c => {
+    c.width = S * dpr; c.height = S * dpr; c.style.width = S + "px"; c.style.height = S + "px";
+    const g = c.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return { g, tier: Number(c.dataset.tier), node: c, ph: Math.random() * 7 };
+  });
+  if (cvs.length) {
+    const tick = () => {
+      if (!document.body.contains(cvs[0].node)) return;
+      const t = performance.now() / 1000;
+      for (const c of cvs) {
+        c.g.clearRect(0, 0, S, S);
+        const anim = { step: t * 6 + c.ph, moving: true, tilt: Math.sin(t * 2.5 + c.ph) * 0.06, face: 1, id: c.tier };
+        drawMeeri(c.g, S / 2, S * 0.6, 34, c.tier, t + c.ph, 0, 0, null, anim);
+      }
+      requestAnimationFrame(tick);
+    };
+    tick();
+  }
 }
 
 function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
@@ -1518,10 +1603,15 @@ function shareMeadow() {
 
 // Biome-Auswahl als gezeichnete, animierte Welt-Karte
 const BIOME_POS = {
-  space:  { top: "10%", left: "50%" },
-  wiese:  { top: "52%", left: "22%" },
-  vulkan: { top: "45%", left: "78%" },
-  strand: { top: "83%", left: "50%" },
+  space:       { top: "7%",  left: "52%" },
+  candy:       { top: "19%", left: "20%" },
+  schnee:      { top: "31%", left: "14%" },
+  dschungel:   { top: "47%", left: "37%" },
+  wiese:       { top: "55%", left: "16%" },
+  wueste:      { top: "51%", left: "64%" },
+  vulkan:      { top: "43%", left: "86%" },
+  strand:      { top: "85%", left: "33%" },
+  unterwasser: { top: "86%", left: "68%" },
 };
 // Feste Sternpositionen (kein Flackern durch Zufall pro Frame)
 const MAP_STARS = Array.from({ length: 46 }, (_, i) => ({ x: ((i * 89 + 13) % 100) / 100, y: ((i * 53 + 7) % 100) / 100, big: i % 7 === 0, pink: i % 9 === 0 }));
@@ -1564,9 +1654,15 @@ function drawWorldMap(g, W, H, t) {
   g.lineTo(0, landTop + 12);
   for (let x = 0; x <= W; x += 16) g.lineTo(x, landTop + 12 + Math.sin(x * 0.025 + 1) * 9);
   g.lineTo(W, seaTop); g.closePath(); g.fill();
-  // Bäumchen links
+  // Schneeberg links (für das Schneeland)
+  g.save(); g.translate(W * 0.14, landTop + 8);
+  g.fillStyle = "#8a97a8"; g.beginPath(); g.moveTo(-30, 40); g.lineTo(0, -34); g.lineTo(30, 40); g.closePath(); g.fill();
+  g.strokeStyle = "#123018"; g.lineWidth = 1.5; g.stroke();
+  g.fillStyle = "#fff"; g.beginPath(); g.moveTo(-12, -6); g.lineTo(0, -34); g.lineTo(12, -6); g.quadraticCurveTo(6, -2, 2, -8); g.quadraticCurveTo(-3, -1, -12, -6); g.closePath(); g.fill();
+  g.restore();
+  // Bäumchen
   const tree = (x, y) => { g.fillStyle = "#7a4a24"; g.fillRect(x - 2, y, 4, 10); g.fillStyle = "#2f9e4f"; g.beginPath(); g.arc(x, y - 4, 9, 0, 7); g.fill(); g.strokeStyle = "#123018"; g.lineWidth = 1.5; g.stroke(); };
-  tree(W * 0.12, landTop + 30); tree(W * 0.32, landTop + 40);
+  tree(W * 0.34, landTop + 42); tree(W * 0.46, landTop + 36);
   // Vulkan rechts
   g.save(); g.translate(W * 0.78, landTop + 14);
   g.fillStyle = "#6e4b30"; g.beginPath(); g.moveTo(-36, seaTop - landTop - 14); g.lineTo(-10, -6); g.lineTo(10, -6); g.lineTo(36, seaTop - landTop - 14); g.closePath(); g.fill();

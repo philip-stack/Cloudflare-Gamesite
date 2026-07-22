@@ -174,8 +174,9 @@ body {
   box-shadow: 0 0 0 2px rgba(18,48,24,0.15) inset;
 }
 .album-cell.locked { opacity: 0.5; filter: grayscale(0.6); }
-.album-dot { width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; font-size: 1.5rem; box-shadow: 0 0 0 2.5px #123018 inset; position: relative; }
-.album-dot .lvl { position: absolute; bottom: -6px; right: -4px; font-size: 0.62rem; font-weight: 800; background: #123018; color: #fff; border-radius: 999px; padding: 1px 6px; }
+.album-dot { width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center; font-size: 1.5rem; box-shadow: 0 0 0 2.5px #123018 inset; position: relative; }
+.album-cv { display: block; width: 52px; height: 52px; }
+.album-dot .lvl { position: absolute; bottom: -4px; right: -4px; font-size: 0.62rem; font-weight: 800; background: #123018; color: #fff; border-radius: 999px; padding: 1px 6px; z-index: 2; }
 .album-name { font-weight: 800; font-size: 0.78rem; line-height: 1.1; }
 .album-desc { color: #5c7a64; font-size: 0.68rem; line-height: 1.25; }
 
@@ -222,21 +223,21 @@ body {
 
 /* Welt-Karte (Biome-Auswahl) */
 .biome-map {
-  position: relative; width: 100%; height: 270px; border-radius: 16px; overflow: hidden;
+  position: relative; width: 100%; height: 340px; border-radius: 16px; overflow: hidden;
   margin: 4px 0 14px; box-shadow: 0 0 0 2.5px #123018 inset; background: #070512;
 }
 .map-cv { position: absolute; inset: 0; width: 100%; height: 100%; }
 .biome-spot {
   position: absolute; z-index: 2; transform: translate(-50%, -50%);
-  display: flex; flex-direction: column; align-items: center; gap: 1px;
+  display: flex; flex-direction: column; align-items: center; gap: 0;
   border: 0; background: rgba(255,255,255,0.16); cursor: pointer; font-family: inherit;
-  padding: 6px 8px; border-radius: 14px; color: #fff;
-  box-shadow: 0 0 0 2.5px #123018, 0 3px 6px rgba(0,0,0,0.4);
+  padding: 4px 6px; border-radius: 12px; color: #fff;
+  box-shadow: 0 0 0 2px #123018, 0 3px 6px rgba(0,0,0,0.4);
   backdrop-filter: blur(2px);
 }
-.biome-spot .bs-ic { font-size: 1.7rem; line-height: 1; }
-.biome-spot .bs-name { font-weight: 800; font-size: 0.72rem; text-shadow: 0 1px 2px rgba(0,0,0,0.6); white-space: nowrap; }
-.biome-spot .bs-tag { font-weight: 800; font-size: 0.66rem; padding: 1px 7px; border-radius: 999px; background: rgba(0,0,0,0.45); }
+.biome-spot .bs-ic { font-size: 1.4rem; line-height: 1.1; }
+.biome-spot .bs-name { font-weight: 800; font-size: 0.64rem; text-shadow: 0 1px 2px rgba(0,0,0,0.6); white-space: nowrap; }
+.biome-spot .bs-tag { font-weight: 800; font-size: 0.6rem; padding: 0 6px; border-radius: 999px; background: rgba(0,0,0,0.45); }
 .biome-spot.active { box-shadow: 0 0 0 3px #ffd23f, 0 0 14px 2px rgba(255,210,63,0.8); background: rgba(255,255,255,0.28); }
 .biome-spot.active .bs-tag { background: #1f9d5c; }
 .biome-spot.locked { filter: grayscale(0.35); }
