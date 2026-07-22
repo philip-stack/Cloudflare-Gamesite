@@ -1322,7 +1322,16 @@ function reveal(tier, isNew) {
   const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
   cv.width = 200 * dpr; cv.height = 200 * dpr; cv.style.width = "200px"; cv.style.height = "200px";
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
-  drawMeeri(g, 100, 104, 150, tier, 0, 0.6);
+  // Animierter, laufender Meeri (dreht sich ab und zu um)
+  const tick = () => {
+    if (!document.body.contains(cv)) return;
+    const tt = performance.now() / 1000;
+    const anim = { step: tt * 6, moving: true, tilt: Math.sin(tt * 2.5) * 0.06, face: Math.sin(tt * 0.7) > 0 ? 1 : -1, id: tier };
+    g.clearRect(0, 0, 200, 200);
+    drawMeeri(g, 100, 122, 140, tier, tt, 0, 0, null, anim);
+    requestAnimationFrame(tick);
+  };
+  tick();
   spawnConfetti(0.5, 0.35, T.c1);
   GS.haptic([10, 30, 10]);
   ov.querySelector("#rv-close").onclick = () => ov.remove();
@@ -1603,15 +1612,15 @@ function shareMeadow() {
 
 // Biome-Auswahl als gezeichnete, animierte Welt-Karte
 const BIOME_POS = {
-  space:       { top: "7%",  left: "52%" },
-  candy:       { top: "19%", left: "20%" },
-  schnee:      { top: "31%", left: "14%" },
-  dschungel:   { top: "47%", left: "37%" },
-  wiese:       { top: "55%", left: "16%" },
-  wueste:      { top: "51%", left: "64%" },
-  vulkan:      { top: "43%", left: "86%" },
-  strand:      { top: "85%", left: "33%" },
-  unterwasser: { top: "86%", left: "68%" },
+  space:       { top: "8%",  left: "50%" },
+  candy:       { top: "19%", left: "80%" },
+  schnee:      { top: "33%", left: "13%" },
+  dschungel:   { top: "50%", left: "31%" },
+  wiese:       { top: "60%", left: "14%" },
+  wueste:      { top: "62%", left: "67%" },
+  vulkan:      { top: "42%", left: "90%" },
+  strand:      { top: "86%", left: "32%" },
+  unterwasser: { top: "87%", left: "68%" },
 };
 // Feste Sternpositionen (kein Flackern durch Zufall pro Frame)
 const MAP_STARS = Array.from({ length: 46 }, (_, i) => ({ x: ((i * 89 + 13) % 100) / 100, y: ((i * 53 + 7) % 100) / 100, big: i % 7 === 0, pink: i % 9 === 0 }));
@@ -1647,6 +1656,12 @@ function drawWorldMap(g, W, H, t) {
   const cloud = (cx, cy, sc2) => { g.save(); g.translate(cx, cy); g.scale(sc2, sc2); g.fillStyle = "rgba(255,255,255,0.9)"; [[-12, 0, 9], [0, -4, 12], [13, 0, 9]].forEach(c => { g.beginPath(); g.arc(c[0], c[1], c[2], 0, 7); g.fill(); }); g.fillRect(-12, -2, 25, 8); g.restore(); };
   cloud((t * 12) % (W + 60) - 30, spaceH + 16, 0.8);
   cloud((t * 8 + W * 0.5) % (W + 60) - 30, landTop - 14, 1);
+  // Zucker-Wölkchen (rosa) oben rechts + Lolli
+  g.save(); g.translate(W * 0.8, H * 0.19 + Math.sin(t * 1.5) * 3);
+  g.fillStyle = "rgba(255,170,210,0.95)"; [[-11, 0, 8], [0, -4, 11], [12, 0, 8]].forEach(c => { g.beginPath(); g.arc(c[0], c[1], c[2], 0, 7); g.fill(); }); g.fillRect(-11, -2, 23, 8);
+  g.strokeStyle = "#fff"; g.lineWidth = 2; g.beginPath(); g.moveTo(2, 6); g.lineTo(2, 16); g.stroke();
+  g.fillStyle = "#ff6f91"; g.strokeStyle = "#fff"; g.lineWidth = 1.5; g.beginPath(); g.arc(2, 18, 4, 0, 7); g.fill(); g.stroke();
+  g.restore();
   // --- Land ---
   let ld = g.createLinearGradient(0, landTop, 0, seaTop);
   ld.addColorStop(0, "#84d493"); ld.addColorStop(1, "#3ca85a");
@@ -1660,11 +1675,21 @@ function drawWorldMap(g, W, H, t) {
   g.strokeStyle = "#123018"; g.lineWidth = 1.5; g.stroke();
   g.fillStyle = "#fff"; g.beginPath(); g.moveTo(-12, -6); g.lineTo(0, -34); g.lineTo(12, -6); g.quadraticCurveTo(6, -2, 2, -8); g.quadraticCurveTo(-3, -1, -12, -6); g.closePath(); g.fill();
   g.restore();
-  // Bäumchen
+  // Bäumchen (links, auf der Wiese)
   const tree = (x, y) => { g.fillStyle = "#7a4a24"; g.fillRect(x - 2, y, 4, 10); g.fillStyle = "#2f9e4f"; g.beginPath(); g.arc(x, y - 4, 9, 0, 7); g.fill(); g.strokeStyle = "#123018"; g.lineWidth = 1.5; g.stroke(); };
-  tree(W * 0.34, landTop + 42); tree(W * 0.46, landTop + 36);
-  // Vulkan rechts
-  g.save(); g.translate(W * 0.78, landTop + 14);
+  tree(W * 0.3, landTop + 46); tree(W * 0.42, landTop + 40);
+  // Wüsten-Sandfleck (rechte Landhälfte)
+  g.save();
+  g.fillStyle = "#f0c878"; g.beginPath(); g.ellipse(W * 0.67, seaTop - 20, 74, 30, 0, 0, 7); g.fill();
+  g.strokeStyle = "rgba(190,140,70,0.55)"; g.lineWidth = 2;
+  for (let i = 1; i <= 2; i++) { g.beginPath(); for (let x = -70; x <= 70; x += 10) { const yy = seaTop - 20 + i * 8 + Math.sin(x * 0.06) * 3; (x === -70) ? g.moveTo(W * 0.67 + x, yy) : g.lineTo(W * 0.67 + x, yy); } g.stroke(); }
+  // kleiner Kaktus im Sand
+  g.translate(W * 0.62, seaTop - 26); g.fillStyle = "#3f9e5a"; g.strokeStyle = "#123018"; g.lineWidth = 1.5;
+  g.beginPath(); g.rect(-3, -16, 6, 20); g.fill(); g.stroke();
+  g.beginPath(); g.rect(-9, -8, 6, 4); g.fill(); g.stroke(); g.beginPath(); g.rect(3, -12, 6, 4); g.fill(); g.stroke();
+  g.restore();
+  // Vulkan (ganz rechts)
+  g.save(); g.translate(W * 0.88, landTop + 14);
   g.fillStyle = "#6e4b30"; g.beginPath(); g.moveTo(-36, seaTop - landTop - 14); g.lineTo(-10, -6); g.lineTo(10, -6); g.lineTo(36, seaTop - landTop - 14); g.closePath(); g.fill();
   g.strokeStyle = "#123018"; g.lineWidth = 1.5; g.stroke();
   const lf = 0.55 + 0.45 * Math.abs(Math.sin(t * 4));

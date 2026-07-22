@@ -266,8 +266,7 @@ body {
 }
 
 /* Entdeck-/Angeber-Karte */
-.reveal-canvas { display: block; margin: 6px auto 2px; animation: reveal-bob 1.6s ease-in-out infinite; }
-@keyframes reveal-bob { 50% { transform: translateY(-6px); } }
+.reveal-canvas { display: block; margin: 6px auto 2px; }
 .reveal-name { font-weight: 900; font-size: 1.25rem; margin: 2px 0; }
 
 /* ============ Dark Mode für Overlays / Panels ============ */
