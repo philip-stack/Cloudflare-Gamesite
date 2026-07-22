@@ -56,6 +56,18 @@
       const data = await res.json().catch(() => ({}));
       if (res.status === 409) return { error: data.error || "Name vergeben", nameTaken: true };
       if (!res.ok) return { error: data.error || "Fehler" };
+      // Persönlicher Rekord? Für ein kleines Konfetti-Willkommen im Hub merken.
+      try { if (data && Number(data.best) > 0 && score >= Number(data.best)) localStorage.setItem("gs_celebrate", String(Date.now())); } catch {}
+      // Läuft ein Spieleabend-Raum? Ergebnis zusätzlich dorthin melden.
+      try {
+        const pc = (localStorage.getItem("gs_party_code") || "").trim().toUpperCase();
+        if (pc && /^[A-Z0-9]{6}$/.test(pc) && Number.isInteger(score)) {
+          fetch("/api/party", {
+            method: "POST", headers: { "Content-Type": "application/json" }, keepalive: true,
+            body: JSON.stringify({ action: "submit", code: pc, name, game, score }),
+          }).catch(() => {});
+        }
+      } catch {}
       return data;
     } catch {
       return null;

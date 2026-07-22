@@ -122,6 +122,22 @@
       50% { background-position: 100% 50%; }
     }
     .hero .tagline { color: var(--muted); margin-top: 10px; font-size: 0.98rem; }
+    .mascot {
+      font-size: 2.6rem; line-height: 1; margin: 6px 0 2px; cursor: pointer; user-select: none;
+      display: inline-block; animation: mascot-bob 2.8s ease-in-out infinite;
+    }
+    .mascot.hop { animation: mascot-hop 0.5s var(--ease-spring); }
+    @keyframes mascot-bob { 0%,100% { transform: translateY(0) rotate(-3deg); } 50% { transform: translateY(-7px) rotate(3deg); } }
+    @keyframes mascot-hop { 0% { transform: translateY(0) scale(1); } 40% { transform: translateY(-22px) scale(1.15); } 100% { transform: translateY(0) scale(1); } }
+    /* Schnee (nur im Dezember eingeblendet) */
+    .snow { position: fixed; inset: 0; pointer-events: none; z-index: 2; overflow: hidden; }
+    .snow i { position: absolute; top: -12px; color: #fff; opacity: 0.85; animation: snow-fall linear infinite; }
+    [data-theme="light"] .snow i { color: #cfe0ee; }
+    @keyframes snow-fall { to { transform: translateY(105vh) rotate(360deg); } }
+    /* Konfetti bei frischem Rekord */
+    .confetti-wrap { position: fixed; inset: 0; pointer-events: none; z-index: 30; overflow: hidden; }
+    .confetti-wrap i { position: absolute; width: 9px; height: 14px; border-radius: 2px; top: -20px; animation: confetti-fall linear forwards; }
+    @keyframes confetti-fall { to { transform: translateY(105vh) rotate(720deg); opacity: 0.9; } }
 
     .apps { display: flex; flex-direction: column; gap: 14px; }
 
@@ -209,6 +225,12 @@
     }
     .app-card.challenge .app-icon { background: rgba(90,208,127,0.18); }
     .chal-done { color: #57e39b; font-weight: 700; }
+    .app-card.party {
+      background: linear-gradient(175deg, rgba(182,120,255,0.16), rgba(182,120,255,0.04));
+      box-shadow: 0 0 0 1px rgba(182,120,255,0.3) inset, 0 10px 28px -14px rgba(0,0,0,0.55);
+      margin-bottom: 6px;
+    }
+    .app-card.party .app-icon { background: rgba(182,120,255,0.2); }
     .game-search {
       width: 100%; margin-bottom: 14px; padding: 13px 16px;
       font-family: inherit; font-size: 0.95rem;
@@ -365,7 +387,8 @@
 
   <main>
     <header class="hero">
-      <span class="overline">Was spielen wir?</span>
+      <span class="overline" id="greeting">Was spielen wir?</span>
+      <div class="mascot" id="mascot" title="Hallo!">🐹</div>
       <h1>Spieleabend</h1>
       <p class="tagline">Wähle eine App</p>
     </header>
@@ -430,8 +453,9 @@
       prof.className = "app-card profile";
       prof.style.setProperty("--i", 0);
       prof.href = "/profil/";
+      const titleName = (localStorage.getItem("gs_title_name") || "").trim();
       const sub = myName
-        ? `${esc(myName)} · <span class="prof-stat">🏅 ${badgeSum} Abzeichen</span> · ${recordCount} Rekorde`
+        ? `${titleName ? `<span class="prof-stat">„${esc(titleName)}"</span> · ` : ""}${esc(myName)} · 🏅 ${badgeSum} · ${recordCount} Rekorde`
         : "Name, Abzeichen, Weltränge & dein Spieleabend-Level";
       const avatar = (localStorage.getItem("gs_avatar") || "").trim() || "👤";
       prof.innerHTML = `
@@ -531,6 +555,26 @@
       }
     } catch {}
 
+    // --- Spieleabend-Raum: Einladung zum Party-Modus ---
+    try {
+      const inRoom = (localStorage.getItem("gs_party_code") || "").trim();
+      const party = document.createElement("a");
+      party.className = "app-card party";
+      party.style.setProperty("--i", 0);
+      party.href = "/party/";
+      party.innerHTML = `
+        <span class="app-icon">🎉</span>
+        <span class="app-info">
+          <span class="app-name">Spieleabend-Raum</span>
+          <span class="app-desc" style="display:block">${inRoom
+            ? `Aktiver Raum <b>${esc(inRoom.toUpperCase())}</b> — zur Wertung →`
+            : "Mit Freunden zusammen spielen: ein Raum, mehrere Spiele, ein Sieger des Abends 👑"}</span>
+        </span>
+        <span class="app-arrow">→</span>`;
+      const firstGame = nav.querySelector(".app-card[data-game]");
+      nav.insertBefore(party, firstGame || null);
+    } catch {}
+
     // --- Suche/Filter über die Spielkarten ---
     try {
       const search = document.getElementById("game-search");
@@ -542,6 +586,46 @@
           card.style.display = hit ? "" : "none";
         });
       });
+    } catch {}
+
+    // --- Lebendiger Hub: Gruß, Maskottchen, Deko, Rekord-Konfetti ---
+    try {
+      const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+      const now = new Date(), h = now.getHours();
+      const greet = h < 5 ? "Gute Nacht" : h < 11 ? "Guten Morgen" : h < 17 ? "Schönen Tag" : h < 22 ? "Guten Abend" : "Gute Nacht";
+      const gEl = document.getElementById("greeting");
+      if (gEl) gEl.textContent = (myName ? `${greet}, ${myName}` : greet) + " —";
+
+      // Maskottchen hüpft beim Antippen
+      const m = document.getElementById("mascot");
+      if (m) m.onclick = () => { m.classList.remove("hop"); void m.offsetWidth; m.classList.add("hop"); };
+
+      // Schnee im Dezember
+      if (!reduce && now.getMonth() === 11) {
+        const s = document.createElement("div"); s.className = "snow";
+        let html = "";
+        for (let i = 0; i < 24; i++) {
+          html += `<i style="left:${Math.random() * 100}%;font-size:${8 + Math.random() * 10}px;animation-duration:${6 + Math.random() * 8}s;animation-delay:${-Math.random() * 10}s">❄</i>`;
+        }
+        s.innerHTML = html; document.body.appendChild(s);
+      }
+
+      // Konfetti, wenn gerade ein Rekord aufgestellt wurde
+      const cel = Number(localStorage.getItem("gs_celebrate") || 0);
+      if (cel) {
+        localStorage.removeItem("gs_celebrate");
+        if (!reduce && Date.now() - cel < 60000) {
+          const w = document.createElement("div"); w.className = "confetti-wrap";
+          const cols = ["#e8c15a", "#ff6f91", "#57e39b", "#5b9cff", "#b678ff", "#ffd23f"];
+          let html = "";
+          for (let i = 0; i < 70; i++) {
+            html += `<i style="left:${Math.random() * 100}%;background:${cols[i % cols.length]};animation-duration:${2 + Math.random() * 2}s;animation-delay:${Math.random() * 0.6}s;transform:rotate(${Math.random() * 360}deg)"></i>`;
+          }
+          w.innerHTML = html; document.body.appendChild(w);
+          if (gEl) gEl.textContent = "🎉 Neuer Rekord!";
+          setTimeout(() => w.remove(), 5200);
+        }
+      }
     } catch {}
 
     // --- Install-Hinweis (nicht in der installierten App, abschaltbar) ---

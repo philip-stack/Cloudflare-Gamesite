@@ -68,8 +68,10 @@
       animation:spin 6s linear infinite; pointer-events:none; }
     @keyframes spin { to { transform:rotate(360deg); } }
     .avatar-hint { color:var(--muted); font-size:0.72rem; margin-bottom:6px; letter-spacing:0.03em; }
-    .frame-link { border:0; background:transparent; color:var(--gold); font:600 0.78rem var(--font-ui); cursor:pointer;
-      margin-bottom:10px; padding:2px 6px; }
+    .ptitle { font-family:var(--font-display); font-style:italic; color:var(--gold); font-size:0.95rem; margin-top:2px; min-height:1.1em; }
+    .chip-row { display:flex; gap:8px; justify-content:center; margin-top:8px; margin-bottom:6px; }
+    .frame-link { border:0; background:var(--card); color:var(--gold); font:600 0.78rem var(--font-ui); cursor:pointer;
+      padding:6px 12px; border-radius:999px; box-shadow:0 0 0 1px var(--edge-soft) inset; }
     .frame-lvl { font-size:0.68rem; color:var(--muted); }
 
     /* --- Emoji-Auswahl --- */
@@ -126,6 +128,18 @@
     .cloud-status.err { color:#e0645a; }
     .cloud-saved { font-size:0.78rem; color:var(--muted); margin-bottom:12px; }
     .cloud-saved b { color:var(--ink); font-weight:600; }
+    .friend-add { display:flex; gap:8px; margin-bottom:12px; }
+    .friend-add input { flex:1; padding:11px 12px; border:0; border-radius:12px; font:inherit; background:var(--card);
+      color:var(--ink); box-shadow:0 0 0 1px var(--edge-soft) inset; }
+    .friend-add input:focus { outline:none; box-shadow:0 0 0 1.5px var(--gold) inset; }
+    .friend-add .btn-secondary { width:auto; padding:11px 16px; }
+    .friend { background:var(--card); border-radius:14px; padding:12px 14px; margin-bottom:8px; box-shadow:0 0 0 1px var(--edge-soft) inset; }
+    .friend-head { display:flex; align-items:center; gap:8px; margin-bottom:6px; }
+    .friend-head b { flex:1; font-size:1rem; }
+    .friend-head .rm { border:0; background:transparent; color:var(--muted); cursor:pointer; font-size:1rem; }
+    .friend-cmp { display:flex; flex-direction:column; gap:3px; font-size:0.82rem; color:var(--muted); }
+    .friend-cmp .lead { color:var(--gold); font-weight:700; }
+    .friend-cmp .win { color:#57e39b; }
 
     /* --- Spiel-Zeilen --- */
     .rows { display:flex; flex-direction:column; gap:10px; }
@@ -162,8 +176,12 @@
     <div class="hero-card">
       <button class="avatar" id="avatar" title="Profilbild wählen">👤</button>
       <div class="avatar-hint" id="avatar-hint">Tippen zum Wählen</div>
-      <button class="frame-link" id="frame-btn">🖼️ Rahmen wählen</button>
       <div id="name-line"></div>
+      <div class="ptitle" id="ptitle"></div>
+      <div class="chip-row">
+        <button class="frame-link" id="frame-btn">🖼️ Rahmen</button>
+        <button class="frame-link" id="title-btn">🎖️ Titel</button>
+      </div>
       <div class="lvl-line" id="lvl-line">Spieleabend-Level 1</div>
       <div class="xpbar"><div class="xpfill" id="xpfill" style="width:0%"></div></div>
       <div class="xpsub" id="xpsub"></div>
@@ -185,6 +203,16 @@
         <button class="btn-secondary" id="cloud-load">⬇️ Von Code laden</button>
       </div>
       <div class="cloud-status" id="cloud-status"></div>
+    </div>
+
+    <div class="sec-title">🤼 Freunde & Rivalen</div>
+    <div class="cloud-card">
+      <p class="cloud-info">Füge Freunde per Name hinzu (ihr Bestenlisten-Name) und vergleiche eure Rekorde.</p>
+      <div class="friend-add">
+        <input type="text" id="friend-input" maxlength="16" placeholder="Name des Freundes" autocomplete="off">
+        <button class="btn-secondary" id="friend-add">Hinzufügen</button>
+      </div>
+      <div id="friends"></div>
     </div>
 
     <div class="sec-title">Deine Spiele</div>
@@ -258,6 +286,20 @@
       { id: "rubin", name: "Rubin", req: 12, col: "#ff5e7a" },
       { id: "regenbogen", name: "Regenbogen", req: 16, rainbow: true },
     ];
+    // --- Titel (durch Level/Abzeichen freigeschaltet) ---
+    const TITLES = [
+      { id: "none", name: "— kein Titel —", ok: () => true, need: "" },
+      { id: "neuling", name: "Neuling", ok: () => true, need: "" },
+      { id: "sammler", name: "Sammler:in", ok: () => badgeSum >= 5, need: "5 Abzeichen" },
+      { id: "veteran", name: "Veteran:in", ok: () => level >= 5, need: "Level 5" },
+      { id: "champion", name: "Champion", ok: () => badgeSum >= 10, need: "10 Abzeichen" },
+      { id: "meister", name: "Spieleabend-Meister:in", ok: () => level >= 10, need: "Level 10" },
+      { id: "legende", name: "Lebende Legende", ok: () => level >= 15 && badgeSum >= 20, need: "Level 15 + 20 Abzeichen" },
+    ];
+    const getTitle = () => localStorage.getItem("gs_title") || "none";
+    const setTitle = v => { try { localStorage.setItem("gs_title", v); } catch {} };
+    const titleName = () => { const t = TITLES.find(x => x.id === getTitle()); return (t && t.id !== "none" && t.ok()) ? t.name : ""; };
+
     const getFrame = () => localStorage.getItem("gs_frame") || "none";
     const setFrame = v => { try { localStorage.setItem("gs_frame", v); } catch {} };
     const frameUnlocked = f => level >= (f.req || 1);
@@ -285,8 +327,40 @@
         const v = (prompt("Dein Name für alle Bestenlisten (max. 16 Zeichen):", n) || "").trim().slice(0, 16);
         if (v) { try { localStorage.setItem("bb_name", v); } catch {} renderName(); }
       };
+      const tn = titleName();
+      $("#ptitle").textContent = tn ? `„${tn}"` : "";
+      try { tn ? localStorage.setItem("gs_title_name", tn) : localStorage.removeItem("gs_title_name"); } catch {}
     };
     renderName();
+
+    // Titel-Auswahl-Overlay
+    $("#title-btn").onclick = () => {
+      const cur = getTitle();
+      const ovl = document.createElement("div");
+      ovl.className = "ovl";
+      ovl.innerHTML = `
+        <div class="ovl-panel">
+          <h2>Titel wählen</h2>
+          <p class="sub">Erspiel dir Titel über Level & Abzeichen — aktuell Level ${level}, ${badgeSum} Abzeichen</p>
+          <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px;text-align:left">
+            ${TITLES.map(t => {
+              const un = t.ok();
+              return `<button class="grow" data-t="${t.id}" ${un ? "" : "disabled"} style="width:100%;border:0;cursor:${un ? "pointer" : "not-allowed"};${un ? "" : "opacity:0.45"};${t.id === cur ? "box-shadow:0 0 0 2px var(--gold) inset" : ""}">
+                <span class="gmeta"><span class="gn">${t.name}</span>${t.need ? `<span class="gsub"><span>${un ? "" : "🔒 "}${t.need}</span></span>` : ""}</span>
+                <span class="arr">${t.id === cur ? "✓" : ""}</span>
+              </button>`;
+            }).join("")}
+          </div>
+          <button class="btn-secondary" id="t-close">Schließen</button>
+        </div>`;
+      document.body.appendChild(ovl);
+      const close = () => ovl.remove();
+      ovl.onclick = e => { if (e.target === ovl) close(); };
+      ovl.querySelector("#t-close").onclick = close;
+      ovl.querySelectorAll("button[data-t]:not([disabled])").forEach(b => {
+        b.onclick = () => { setTitle(b.dataset.t); renderName(); close(); };
+      });
+    };
 
     // --- Emoji-Auswahl-Overlay ---
     $("#avatar").onclick = () => {
@@ -476,6 +550,54 @@
     $("#cloud-copy").onclick = async () => {
       try { await navigator.clipboard.writeText(savedCode()); setStatus("Code kopiert", "ok"); } catch {}
     };
+
+    // --- Freunde & Rivalen ---
+    const getFriends = () => { try { return JSON.parse(localStorage.getItem("gs_friends") || "[]"); } catch { return []; } };
+    const setFriends = a => { try { localStorage.setItem("gs_friends", JSON.stringify(a.slice(0, 20))); } catch {} };
+    const scoredGames = GAMES.filter(g => g.scored);
+
+    const renderFriends = () => {
+      const box = $("#friends");
+      const friends = getFriends();
+      if (!friends.length) { box.innerHTML = `<p class="cloud-info" style="margin:0">Noch keine Freunde hinzugefügt.</p>`; return; }
+      box.innerHTML = friends.map(f => `
+        <div class="friend" data-f="${esc(f)}">
+          <div class="friend-head"><b>${esc(f)}</b><button class="rm" title="Entfernen">✕</button></div>
+          <div class="friend-cmp"><span class="cloud-info" style="margin:0">Lade Vergleich …</span></div>
+        </div>`).join("");
+      box.querySelectorAll(".friend").forEach(el => {
+        const f = el.dataset.f;
+        el.querySelector(".rm").onclick = () => { setFriends(getFriends().filter(x => x !== f)); renderFriends(); };
+        compareFriend(f, el.querySelector(".friend-cmp"));
+      });
+    };
+
+    async function compareFriend(friend, cmpEl) {
+      const lines = [];
+      for (const g of scoredGames) {
+        const mine = num(localStorage.getItem(g.bestKey));
+        let theirs = 0;
+        try {
+          const r = await fetch(`/api/scores/${g.key}?player=${encodeURIComponent(friend)}`);
+          if (r.ok) theirs = num((await r.json()).best);
+        } catch {}
+        if (mine <= 0 && theirs <= 0) continue;
+        const iWin = mine >= theirs;
+        lines.push(`<span>${g.icon} <b>${esc(g.name)}</b>: <span class="${iWin ? "win" : ""}">du ${fmt(mine)}</span> · <span class="${!iWin ? "lead" : ""}">${esc(friend)} ${fmt(theirs)}</span> ${iWin ? "✅" : "🔥"}</span>`);
+      }
+      cmpEl.innerHTML = lines.length ? lines.join("") : `<span class="cloud-info" style="margin:0">Noch keine gemeinsamen Rekorde.</span>`;
+    }
+
+    $("#friend-add").onclick = () => {
+      const v = $("#friend-input").value.trim().slice(0, 16);
+      if (!v) return;
+      if (v.toLowerCase() === getName().toLowerCase()) { alert("Das bist ja du 🙂"); return; }
+      const fr = getFriends();
+      if (!fr.some(x => x.toLowerCase() === v.toLowerCase())) fr.push(v);
+      setFriends(fr); $("#friend-input").value = ""; renderFriends();
+    };
+    $("#friend-input").onkeydown = e => { if (e.key === "Enter") $("#friend-add").click(); };
+    renderFriends();
 
     // --- Profil teilen ---
     $("#share-btn").onclick = async () => {

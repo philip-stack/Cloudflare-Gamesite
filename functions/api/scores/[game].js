@@ -142,6 +142,24 @@ export async function onRequestGet({ request, env, params }) {
     daily: url.searchParams.get("daily") === "1",
     weekly: url.searchParams.get("weekly") === "1",
   });
+
+  // Einzel-Abfrage eines Spielers (für Freunde-Vergleich): Bestwert + Rang
+  const player = url.searchParams.get("player");
+  if (player) {
+    const nm = String(player).trim().slice(0, 16);
+    const cond = modeCond(mode);
+    const best = (await env.DB.prepare(
+      `SELECT MAX(score) AS m FROM scores WHERE game = ? AND LOWER(name) = LOWER(?)${cond}`
+    ).bind(keyFor(game, mode), nm).first()).m;
+    let rank = null;
+    if (best != null) {
+      rank = (await env.DB.prepare(
+        `SELECT COUNT(*) + 1 AS r FROM (SELECT MAX(score) AS m FROM scores WHERE game = ?${cond} GROUP BY LOWER(name)) WHERE m > ?`
+      ).bind(keyFor(game, mode), best).first()).r;
+    }
+    return json({ player: nm, best: best || 0, rank });
+  }
+
   const rows = (await env.DB.prepare(topQuery(mode)).bind(keyFor(game, mode)).all()).results;
   return json({ top: rows });
 }

@@ -65,6 +65,27 @@ CREATE TABLE IF NOT EXISTS cloud_saves (
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Spieleabend-Raum / Party (Details: functions/api/party.js)
+CREATE TABLE IF NOT EXISTS party (
+  code       TEXT PRIMARY KEY,            -- 6-stelliger Raum-Code
+  games      TEXT NOT NULL,               -- JSON-Array der gewählten Spiele
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS party_member (
+  code      TEXT NOT NULL,
+  name      TEXT NOT NULL,
+  joined_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (code, name)
+);
+CREATE TABLE IF NOT EXISTS party_score (
+  code       TEXT NOT NULL,
+  name       TEXT NOT NULL,
+  game       TEXT NOT NULL,
+  score      INTEGER NOT NULL,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (code, name, game)
+);
+
 -- Rate-Limit-Buckets (Details: rateLimit() in functions/api/_util.js)
 CREATE TABLE IF NOT EXISTS rate (
   k  TEXT NOT NULL,
