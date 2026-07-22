@@ -206,6 +206,15 @@ body {
 .dbar { display: block; height: 6px; border-radius: 999px; background: rgba(20,50,24,0.14); margin: 4px 0; overflow: hidden; }
 .dbar-fill { display: block; height: 100%; background: linear-gradient(90deg, #43c463, #8be79a); border-radius: 999px; }
 
+/* Speicher-Code */
+.save-code {
+  width: 100%; margin: 4px 0 12px; padding: 10px; border-radius: 12px; resize: none;
+  font-family: monospace; font-size: 0.72rem; word-break: break-all;
+  background: rgba(20,50,24,0.06); color: #1c3524; border: 0;
+  box-shadow: 0 0 0 2px rgba(18,48,24,0.15) inset;
+}
+:root[data-theme="dark"] .save-code { background: rgba(255,255,255,0.06); color: #eafce9; box-shadow: 0 0 0 2px rgba(255,255,255,0.1) inset; }
+
 /* Menü-Punkt (Aufgabe abholbereit) */
 .mdot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #ff4d6d; vertical-align: middle; margin-left: 2px; }
 .foot-btn.has-dot { position: relative; }

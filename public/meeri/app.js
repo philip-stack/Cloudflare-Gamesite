@@ -31,8 +31,18 @@ const MAXT = TIERS.length - 1;
 const coinVal = t => Math.round(Math.pow(2.1, t)) || 1;
 // Endgame: Galaxie-Meeries (oberste Stufe) lassen sich zu Kosmos-Stufen (gl)
 // weiter verschmelzen — der Münzwert wächst dann pro Kosmos-Stufe weiter.
-const coinValM = m => coinVal(m.tier) * (m.tier >= MAXT ? Math.pow(2.6, m.gl || 0) : 1);
+const coinValM = m => coinVal(m.tier) * (m.tier >= MAXT ? Math.pow(2.6, m.gl || 0) : 1) * variantMult(m.variant);
 const effTier = m => m.tier + (m.tier >= MAXT ? (m.gl || 0) : 0);   // für Prestige-Wert
+
+// ---------- Schillernde (seltene) Varianten ----------
+const VARIANTS = [
+  { id: "gold",    name: "Goldenes",   icon: "🥇", chance: 0.020, mult: 2, glow: "#ffd23f" },
+  { id: "ghost",   name: "Geister",    icon: "👻", chance: 0.012, mult: 2, glow: "#bcd0ff" },
+  { id: "rainbow", name: "Regenbogen", icon: "🌈", chance: 0.006, mult: 3, glow: "#ff6f91" },
+];
+const variantDef = id => VARIANTS.find(v => v.id === id) || null;
+const variantMult = id => { const v = variantDef(id); return v ? v.mult : 1; };
+function rollVariant() { for (const v of VARIANTS) if (Math.random() < v.chance) return v.id; return null; }
 
 // ---------- Wirtschaft ----------
 const BUY_BASE = 10, BUY_GROW = 1.18;
@@ -100,7 +110,8 @@ const BIOMES = [
 const biomeBonus = () => 1 + Math.max(0, biomesOwned.length - 1) * 0.05;
 const biomeDef = () => BIOMES.find(b => b.key === biome) || BIOMES[0];
 
-const coinMult = () => (1 + 0.25 * (up.coin || 0)) * prestigeMult() * albumBonus() * biomeBonus();
+let eventMult = 1;   // temporärer Multiplikator durch Zufalls-Events
+const coinMult = () => (1 + 0.25 * (up.coin || 0)) * prestigeMult() * albumBonus() * biomeBonus() * eventMult;
 const magnetDelay = () => (up.magnet || 0) > 0 ? Math.max(0.3, 2.6 - up.magnet * 0.5) : Infinity;
 const luckChance = () => Math.min(0.6, (up.luck || 0) * 0.06);
 
@@ -118,7 +129,7 @@ const dailyReward = () => Math.max(400, Math.round(passivePerSec() * 150));
 // ---------- Zustand ----------
 const SAVE = "meeri_save_v1";
 let coins, meeries, capLevel, buyCount, album, lastSeen, uid, up;
-let carrots, peak, biome, biomesOwned, pp;        // Prestige/Biome (überleben Prestige)
+let carrots, peak, biome, biomesOwned, pp, shinies;   // Prestige/Biome/Schillernde (überleben Prestige)
 let daily, lastLogin, streak, stats;              // Aufgaben, Login, Statistik
 let over = false, hudDirty = false;
 
@@ -132,7 +143,7 @@ function newStats() { return { merges: 0, buys: 0, coins: 0, prestiges: 0, play:
 function fresh() {
   coins = 0; meeries = []; capLevel = 0; buyCount = 0; album = {}; uid = 1;
   up = newUp(); lastSeen = Date.now();
-  carrots = 0; peak = 0; biome = "wiese"; biomesOwned = ["wiese"]; pp = newPp();
+  carrots = 0; peak = 0; biome = "wiese"; biomesOwned = ["wiese"]; pp = newPp(); shinies = {};
   daily = null; lastLogin = ""; streak = 0; stats = newStats();
 }
 // Nur die laufende Wiese zurücksetzen — Möhren, Perks, Album, Biome & Aufgaben bleiben.
@@ -157,12 +168,14 @@ function load() {
     biomesOwned = Array.isArray(s.biomesOwned) && s.biomesOwned.length ? s.biomesOwned.filter(k => BIOMES.some(b => b.key === k)) : ["wiese"];
     if (!biomesOwned.includes("wiese")) biomesOwned.unshift("wiese");
     pp = Object.assign(newPp(), s.pp || {});
+    shinies = s.shinies || {};
     daily = s.daily || null;
     lastLogin = s.lastLogin || "";
     streak = Number(s.streak) || 0;
     stats = Object.assign(newStats(), s.stats || {});
     meeries = (s.meeries || []).map(m => ({
       id: uid++, tier: Math.max(0, Math.min(MAXT, m.tier | 0)), gl: Math.max(0, m.gl | 0),
+      variant: variantDef(m.variant) ? m.variant : null,
       x: m.x || 0.5, y: m.y || 0.5,
       vx: (Math.random() - 0.5), vy: (Math.random() - 0.5),
       phase: Math.random() * 7, nextDrop: rndDrop(), held: false,
@@ -186,8 +199,8 @@ function save() {
   try {
     localStorage.setItem(SAVE, JSON.stringify({
       coins, capLevel, buyCount, album, uid, up, lastSeen,
-      carrots, peak, biome, biomesOwned, pp, daily, lastLogin, streak, stats,
-      meeries: meeries.map(m => ({ tier: m.tier, gl: m.gl || 0, x: m.x, y: m.y })),
+      carrots, peak, biome, biomesOwned, pp, shinies, daily, lastLogin, streak, stats,
+      meeries: meeries.map(m => ({ tier: m.tier, gl: m.gl || 0, x: m.x, y: m.y, variant: m.variant || null })),
     }));
     storageOK = true;
   } catch {
@@ -217,7 +230,7 @@ function ensureDaily(popup) {
     const bonus = Math.max(500, Math.round(passivePerSec() * 200 * (1 + streak * 0.15)));
     const carrotB = streak % 5 === 0 ? Math.max(1, Math.floor(streak / 5)) : 0;
     coins += bonus; carrots += carrotB; stats.coins += bonus;
-    save();
+    save(); checkBadges();
     if (popup) setTimeout(() => loginPopup(bonus, carrotB), 500);
   }
 }
@@ -243,19 +256,29 @@ function discover(tier) {
     dailyTick("discover", 1);
     if (tier >= 2) setTimeout(() => reveal(tier, true), 120);   // cooles Meeri → große Karte
     else toast(`📖 Neu im Album: ${TIERS[tier].name}!`);
-    saveSoon();
+    checkBadges(); saveSoon();
   }
 }
-function spawnMeeri(tier, x, y) {
+function spawnMeeri(tier, x, y, variant) {
   const m = {
-    id: uid++, tier, gl: 0, x: x ?? (0.2 + Math.random() * 0.6), y: y ?? (0.2 + Math.random() * 0.6),
+    id: uid++, tier, gl: 0, variant: variant || null,
+    x: x ?? (0.2 + Math.random() * 0.6), y: y ?? (0.2 + Math.random() * 0.6),
     vx: (Math.random() - 0.5), vy: (Math.random() - 0.5),
     phase: Math.random() * 7, nextDrop: rndDrop(), held: false, pop: 0.001,
   };
   meeries.push(m);
   if (tier > peak) peak = tier;
   discover(tier);
+  if (m.variant) discoverShiny(m.variant);
   return m;
+}
+function discoverShiny(id) {
+  if (shinies[id]) return;
+  shinies[id] = new Date().toISOString();
+  const v = variantDef(id);
+  GS.sound.win(); GS.haptic([12, 40, 12]);
+  toast(`${v.icon} SCHILLERND! Ein ${v.name} Meeri entdeckt!`);
+  checkBadges(); saveSoon();
 }
 function buyMeeri(silent) {
   if (over) return false;
@@ -265,7 +288,7 @@ function buyMeeri(silent) {
   coins -= c; buyCount++;
   if (stats) stats.buys++;
   const startTier = (Math.random() < luckChance()) ? 1 : 0;   // Glücks-Wurf
-  const m = spawnMeeri(startTier);
+  const m = spawnMeeri(startTier, undefined, undefined, rollVariant());
   if (startTier > 0) { floater("🍀", "#57e39b", m.x, m.y); GS.sound.good(); } else if (!silent) GS.sound.click();
   if (!silent) GS.haptic(8);
   dailyTick("buy", 1);
@@ -286,6 +309,7 @@ function mergeInto(target, src) {
   if (endgame) { target.gl = (target.gl || 0) + 1; }   // Kosmos-Stufe hoch
   else { target.tier++; }
   target.pop = 0.001;
+  if (!target.variant && src.variant) { target.variant = src.variant; discoverShiny(src.variant); }  // Schillern vererben
   meeries = meeries.filter(m => m.id !== src.id);
   peak = Math.max(peak, effTier(target));
   if (stats) { stats.merges++; stats.bestEff = Math.max(stats.bestEff, effTier(target)); }
@@ -299,6 +323,7 @@ function mergeInto(target, src) {
   dailyTick("merge", 1);
   if (endgame) { GS.sound.win(); toast(`🌌 Kosmos-Stufe ${target.gl}! Galaxie-Meeri wird noch mächtiger.`); }
   GS.sound.great(); GS.haptic([12, 40, 12]);
+  checkBadges();
   updateHUD(); saveSoon();
   return true;
 }
@@ -325,6 +350,7 @@ function doPrestige() {
   spawnMeeri(0);
   burst("EINGESTAMPFT!", "#ff9c3d"); shake(10);
   GS.sound.win(); GS.haptic([15, 50, 15, 50]);
+  checkBadges();
   updateHUD(); save();
   toast(`🥕 +${gain} Goldene Möhren! Gib sie im Möhren-Shop aus.`);
 }
@@ -396,9 +422,10 @@ function starP(g, cx, cy, r, n, inner) {
 }
 function fst(g) { g.fill(); g.stroke(); }
 
-function drawMeeri(g, cx, cy, s, tier, t, pop, gl) {
+function drawMeeri(g, cx, cy, s, tier, t, pop, gl, variant) {
   gl = gl || 0;
   const T = TIERS[tier];
+  const vd = variantDef(variant);
   const sc = pop > 0 ? 1 + Math.sin(Math.min(1, pop) * Math.PI) * 0.25 : 1;
   const wob = Math.sin(t * 4 + tier) * s * 0.02;
   g.save();
@@ -413,6 +440,21 @@ function drawMeeri(g, cx, cy, s, tier, t, pop, gl) {
     const gc = tier >= 15 ? "rgba(184,146,255,0.6)" : tier >= 12 ? "rgba(122,167,255,0.5)" : "rgba(255,210,63,0.5)";
     glow.addColorStop(0, gc); glow.addColorStop(1, "rgba(0,0,0,0)");
     g.fillStyle = glow; g.beginPath(); g.arc(0, 0, s * (0.78 + Math.min(gl, 6) * 0.05), 0, 7); g.fill();
+  }
+
+  // Schillernder Glüh-Ring (seltene Variante)
+  if (vd) {
+    const pr = 0.6 + 0.4 * Math.sin(t * 4);
+    g.save();
+    if (variant === "rainbow") {
+      const rg = g.createLinearGradient(-s * 0.5, 0, s * 0.5, 0);
+      rg.addColorStop(0, "#ff5a8a"); rg.addColorStop(0.5, "#ffd23f"); rg.addColorStop(1, "#57e39b");
+      g.strokeStyle = rg;
+    } else g.strokeStyle = vd.glow;
+    g.globalAlpha = 0.5 + pr * 0.4; g.lineWidth = s * 0.06;
+    g.beginPath(); g.arc(0, 0, s * 0.52, 0, 7); g.stroke();
+    g.restore();
+    if (variant === "ghost") { g.globalAlpha = 0.75; }   // Geister leicht transparent
   }
 
   // Rücken-Deko (Umhang, Flügel) HINTER dem Körper
@@ -442,6 +484,14 @@ function drawMeeri(g, cx, cy, s, tier, t, pop, gl) {
 
   drawFace(g, s, tier, t);
   featFront(g, s, tier, t, T);
+
+  // Schillern-Symbol
+  if (vd) {
+    g.globalAlpha = 1;
+    g.font = `${Math.round(s * 0.34)}px "Segoe UI Emoji","Apple Color Emoji",sans-serif`;
+    g.textAlign = "center"; g.textBaseline = "middle";
+    g.fillText(vd.icon, -s * 0.34, -s * 0.34);
+  }
 
   // Kosmos-Stufe (Endgame): Sternen-Badge mit Nummer
   if (gl > 0) {
@@ -734,6 +784,28 @@ function spawnConfetti(rx, ry, col) {
   for (let i = 0; i < 14; i++) confetti.push({ x, y, vx: (Math.random() - 0.5) * 6, vy: -Math.random() * 6 - 2, life: 1, size: msize * 0.12, col: cols[i % cols.length], rot: Math.random() * 7, vr: (Math.random() - 0.5) * 0.5 });
 }
 
+// ---------- Zufalls-Events ----------
+let eventT = 75, eventMultT = 0;
+function fireEvent() {
+  if (!meeries.length) return;
+  const kinds = ["feast", "double", "lucky"];
+  const kind = kinds[Math.floor(Math.random() * kinds.length)];
+  if (kind === "feast") {
+    burst("FUTTER-REGEN!", "#57e39b"); toast("🌽 Futter-Regen — schnapp dir die Münzen!");
+    const val = Math.max(5, Math.round(passivePerSec() * 2.5) || 5);
+    for (let i = 0; i < 16; i++) coinsFx.push({ x: (0.1 + Math.random() * 0.8) * W, y: -20 - Math.random() * 60, val, t: 0, life: 6.5, vy: 10 + Math.random() * 10, r: msize * 0.24 });
+  } else if (kind === "double") {
+    eventMult = 2; eventMultT = 30;
+    burst("DOPPEL-MÜNZEN!", "#ffd23f"); toast("✨ 30 Sek. doppelte Münzen!");
+  } else {
+    const t = Math.max(0, Math.min(MAXT, topTier() - 1));
+    if (meeries.length < capacity()) { const m = spawnMeeri(t, undefined, undefined, rollVariant()); floater("GRATIS!", "#57e39b", m.x, m.y); }
+    else earn(Math.round(passivePerSec() * 30) + 50);
+    burst("WILDES MEERI!", "#8be79a"); toast("🐹 Ein wildes Meeri gesellt sich dazu!");
+  }
+  GS.sound.great(); GS.haptic([10, 30, 10]);
+}
+
 // ---------- Loop ----------
 let lastT = 0, animT = 0, goldTimer = 8, autoMergeT = 0, autoBuyT = 0, playAcc = 0;
 function frame(ts) {
@@ -756,6 +828,10 @@ function frame(ts) {
     // Goldenes Meeri
     goldTimer -= dt;
     if (goldTimer <= 0 && golds.length === 0 && meeries.length > 0) { goldTimer = 25 + Math.random() * 20; spawnGold(); }
+    // Zufalls-Events
+    eventT -= dt;
+    if (eventT <= 0) { eventT = 90 + Math.random() * 90; fireEvent(); }
+    if (eventMultT > 0) { eventMultT -= dt; if (eventMultT <= 0) { eventMult = 1; hudDirty = true; } }
     // Spielzeit-Statistik
     playAcc += dt; if (playAcc >= 1 && stats) { stats.play += Math.floor(playAcc); playAcc -= Math.floor(playAcc); }
     // Auto-Merge-Perk: gleiche Meeries automatisch verschmelzen
@@ -832,7 +908,7 @@ function draw() {
 
   // Meeries (nach y sortiert für Tiefe)
   const sorted = [...meeries].sort((a, b) => (a.held ? 1 : 0) - (b.held ? 1 : 0) || my(a) - my(b));
-  for (const m of sorted) drawMeeri(ctx, mx(m), my(m), msize, m.tier, animT + m.phase, m.pop, m.gl || 0);
+  for (const m of sorted) drawMeeri(ctx, mx(m), my(m), msize, m.tier, animT + m.phase, m.pop, m.gl || 0, m.variant);
 
   // Münz-Blasen
   for (const c of coinsFx) {
@@ -995,12 +1071,14 @@ canvas.addEventListener("pointercancel", () => { if (drag) { drag.held = false; 
 // ====================================================================
 // HUD & UI
 // ====================================================================
+const NUM_SUFFIX = ["", "k", "M", "B", "T", "Qa", "Qi", "Sx", "Sp", "Oc", "No", "Dc"];
 function fmt(n) {
   n = Math.floor(n);
-  if (n >= 1e9) return (n / 1e9).toFixed(2) + "B";
-  if (n >= 1e6) return (n / 1e6).toFixed(2) + "M";
-  if (n >= 1e3) return (n / 1e3).toFixed(1) + "k";
-  return String(n);
+  if (n < 1000) return String(n);
+  const tier = Math.floor(Math.log10(Math.abs(n)) / 3);
+  if (tier >= NUM_SUFFIX.length) return n.toExponential(2).replace("+", "");
+  const scaled = n / Math.pow(10, tier * 3);
+  return scaled.toFixed(scaled < 10 ? 2 : scaled < 100 ? 1 : 0) + NUM_SUFFIX[tier];
 }
 function topTier() { return meeries.reduce((a, m) => Math.max(a, m.tier), 0); }
 function updateHUD() {
@@ -1051,6 +1129,7 @@ function showAlbum() {
     <h2><span class="foil">Meeri-Album</span></h2>
     <p class="sub">${found}/${TIERS.length} entdeckt · tippe ein Meeri zum Angeben 📤</p>
     <div class="bonus-line">📖 Sammelbonus: <b>+${Math.round((albumBonus() - 1) * 100)}% Münzen</b> <span class="dim">(+3% je Stufe)</span></div>
+    <div class="bonus-line">✨ Schillernd: <b>${Object.keys(shinies).length}/${VARIANTS.length}</b> <span class="dim">${VARIANTS.map(v => shinies[v.id] ? v.icon : "▫️").join(" ")}</span></div>
     <div class="album-grid">${cells}</div>
     <button class="btn-secondary" data-close="1">Schließen</button>`);
   ov.querySelectorAll(".album-cell[data-tier]").forEach(el => el.onclick = () => reveal(Number(el.dataset.tier), false));
@@ -1267,6 +1346,80 @@ function ambientLoop() {
   setTimeout(ambientLoop, 4500 + Math.random() * 5000);
 }
 
+// ---------- Erfolge / Achievements ----------
+const BADGES = [
+  { id: "firstmerge", icon: "🔀", name: "Erster Merge",     desc: "Verschmelze zwei Meeries",         test: s => s.merges >= 1 },
+  { id: "merge100",   icon: "🔀", name: "Merge-Meister",    desc: "100 Merges insgesamt",             test: s => s.merges >= 100 },
+  { id: "merge1000",  icon: "🌀", name: "Merge-Legende",    desc: "1000 Merges insgesamt",            test: s => s.merges >= 1000 },
+  { id: "ninja",      icon: "🥷", name: "Leise & süß",      desc: "Ein Ninja-Meeri erreichen",        test: s => s.bestEff >= 8 },
+  { id: "koenig",     icon: "👑", name: "Königlich",        desc: "Ein König-Meeri erreichen",        test: s => s.bestEff >= 9 },
+  { id: "galaxie",    icon: "🌌", name: "Bis zur Galaxie",  desc: "Die Galaxie-Meeri erreichen",      test: s => s.bestEff >= 15 },
+  { id: "kosmos5",    icon: "✦",  name: "Kosmos ✦5",        desc: "Kosmos-Stufe 5 erreichen",         test: s => s.bestEff >= 20 },
+  { id: "album",      icon: "📖", name: "Sammler",          desc: "Alle 16 Evolutionen entdecken",    test: s => s.album >= 16 },
+  { id: "shiny",      icon: "✨", name: "Schillernd",       desc: "Ein schillerndes Meeri finden",    test: s => s.shiny >= 1 },
+  { id: "shinyall",   icon: "🌈", name: "Regenbogen-Jäger", desc: "Alle Schillern-Varianten finden",  test: s => s.shiny >= VARIANTS.length },
+  { id: "prestige1",  icon: "🥕", name: "Neuanfang",        desc: "Zum ersten Mal einstampfen",       test: s => s.prestiges >= 1 },
+  { id: "prestige10", icon: "🥕", name: "Möhren-Baron",     desc: "10× einstampfen",                  test: s => s.prestiges >= 10 },
+  { id: "streak7",    icon: "🔥", name: "Treue Seele",      desc: "7 Tage in Folge spielen",          test: s => s.streak >= 7 },
+  { id: "rich",       icon: "🪙", name: "Reich",            desc: "1 Mio. Münzen verdienen",          test: s => s.coins >= 1e6 },
+];
+GS.badges.define("meeri", BADGES);
+function badgeSnapshot() {
+  return {
+    merges: stats.merges, buys: stats.buys, coins: stats.coins, prestiges: stats.prestiges,
+    bestEff: stats.bestEff, carrots, streak,
+    album: Object.keys(album).length, shiny: Object.keys(shinies).length,
+  };
+}
+function checkBadges() {
+  const newly = GS.badges.record("meeri", badgeSnapshot());
+  for (const d of newly) toast(`🏅 Erfolg: ${d.icon} ${d.name}`);
+}
+
+// ---------- Speicher-Code (Export / Import) ----------
+function showSaveCode() {
+  let code = "";
+  try { code = btoa(unescape(encodeURIComponent(localStorage.getItem(SAVE) || "{}"))); } catch (_) {}
+  const ov = mkOverlay(`
+    <h2><span class="foil">Speicher-Code</span></h2>
+    <p class="sub">Sichere deinen Fortschritt oder übertrage ihn auf ein anderes Gerät. Code kopieren = Backup.</p>
+    <textarea class="save-code" readonly rows="4">${esc(code)}</textarea>
+    <button class="btn-primary" id="sc-copy">📋 Code kopieren</button>
+    <button class="btn-secondary" id="sc-import">📥 Code einfügen &amp; laden</button>
+    <button class="btn-secondary" id="sc-close">Schließen</button>`);
+  ov.querySelector("#sc-copy").onclick = async () => {
+    const ta = ov.querySelector(".save-code"); ta.select();
+    try { await navigator.clipboard.writeText(ta.value); toast("📋 Code kopiert!"); }
+    catch { document.execCommand("copy"); toast("📋 Code kopiert!"); }
+  };
+  ov.querySelector("#sc-import").onclick = () => {
+    const inp = prompt("Speicher-Code hier einfügen:");
+    if (!inp) return;
+    try {
+      const jsonStr = decodeURIComponent(escape(atob(inp.trim())));
+      const obj = JSON.parse(jsonStr);
+      if (!obj || typeof obj !== "object") throw 0;
+      if (!confirm("Aktuellen Fortschritt durch den Code ersetzen?")) return;
+      localStorage.setItem(SAVE, jsonStr);
+      toast("✅ Geladen! Wird neu gestartet …");
+      setTimeout(() => location.reload(), 800);
+    } catch { toast("❌ Ungültiger Code."); }
+  };
+  ov.querySelector("#sc-close").onclick = () => ov.remove();
+}
+
+// ---------- Bestenliste ----------
+async function openBoard() {
+  let name = "";
+  try { name = (localStorage.getItem("bb_name") || "").trim(); } catch (_) {}
+  if (!name) {
+    name = (prompt("Name für die Bestenliste (max. 16 Zeichen):") || "").trim().slice(0, 16);
+    if (name) { try { localStorage.setItem("bb_name", name); } catch (_) {} }
+  }
+  if (name && carrots > 0) await GS.submitScore("meeri", carrots).catch(() => {});
+  GS.showLeaderboard({ game: "meeri", title: "Bestenliste", sub: "Meiste Goldene Möhren 🥕 weltweit" });
+}
+
 // ---------- Ganze Wiese als Bild teilen ----------
 function shareMeadow() {
   try {
@@ -1333,8 +1486,11 @@ function showMenu() {
       <button class="btn-secondary" id="m-biome">🗺️ Wiesen</button>
       <button class="btn-secondary" id="m-album">📖 Album</button>
       <button class="btn-secondary" id="m-prestige">🥕 Prestige</button>
+      <button class="btn-secondary" id="m-badges">🏅 Erfolge</button>
       <button class="btn-secondary" id="m-stats">📊 Statistik</button>
+      <button class="btn-secondary" id="m-board">🌍 Bestenliste</button>
       <button class="btn-secondary" id="m-share">📸 Wiese teilen</button>
+      <button class="btn-secondary" id="m-code">💾 Speicher-Code</button>
       <button class="btn-secondary" id="m-ambient">${ambientOn ? "🔇 Ambiente aus" : "🐦 Ambiente an"}</button>
       <button class="btn-secondary" id="m-how">❓ Anleitung</button>
       <button class="btn-secondary full" id="m-reset">🗑️ Neu starten</button>
@@ -1344,8 +1500,11 @@ function showMenu() {
   ov.querySelector("#m-biome").onclick = () => { ov.remove(); showBiomes(); };
   ov.querySelector("#m-album").onclick = () => { ov.remove(); showAlbum(); };
   ov.querySelector("#m-prestige").onclick = () => { ov.remove(); showPrestige(); };
+  ov.querySelector("#m-badges").onclick = () => { ov.remove(); GS.badges.show("meeri", "Erfolge"); };
   ov.querySelector("#m-stats").onclick = () => { ov.remove(); showStats(); };
+  ov.querySelector("#m-board").onclick = () => { ov.remove(); openBoard(); };
   ov.querySelector("#m-share").onclick = () => { ov.remove(); shareMeadow(); };
+  ov.querySelector("#m-code").onclick = () => { ov.remove(); showSaveCode(); };
   ov.querySelector("#m-ambient").onclick = e => { toggleAmbient(); e.target.textContent = ambientOn ? "🔇 Ambiente aus" : "🐦 Ambiente an"; };
   ov.querySelector("#m-how").onclick = () => howTo(true);
   ov.querySelector("#m-reset").onclick = () => {

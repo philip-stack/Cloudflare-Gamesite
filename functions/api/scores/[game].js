@@ -51,6 +51,11 @@ const GAMES = {
     max: 2_000_000,
     daily: true,
   },
+  meeri: {
+    // Score = Goldene Möhren (Prestige-Währung); rein lokales Idle-Spiel,
+    // daher großzügige Obergrenze und keine strenge Plausiprüfung.
+    max: 1_000_000_000,
+  },
 };
 
 // Modus aus Query/Body ableiten und gegen die Spiel-Config prüfen.
