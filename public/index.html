@@ -193,6 +193,22 @@
     }
     .app-card.profile .app-icon { background: rgba(232,193,90,0.2); }
     .prof-stat { color: var(--gold); font-weight: 700; }
+    .app-card.challenge {
+      background: linear-gradient(175deg, rgba(90,208,127,0.14), rgba(90,208,127,0.03));
+      box-shadow: 0 0 0 1px rgba(90,208,127,0.28) inset, 0 10px 28px -14px rgba(0,0,0,0.55);
+      margin-bottom: 6px;
+    }
+    .app-card.challenge .app-icon { background: rgba(90,208,127,0.18); }
+    .chal-done { color: #57e39b; font-weight: 700; }
+    .game-search {
+      width: 100%; margin-bottom: 14px; padding: 13px 16px;
+      font-family: inherit; font-size: 0.95rem;
+      border: 0; border-radius: 14px;
+      background: var(--card); color: var(--ink);
+      box-shadow: 0 0 0 1px var(--edge-soft) inset;
+    }
+    .game-search:focus { outline: none; box-shadow: 0 0 0 1.5px var(--gold) inset; }
+    .game-search::placeholder { color: var(--muted); }
     .last-tag {
       display: inline-block;
       margin-top: 4px;
@@ -345,6 +361,8 @@
       <p class="tagline">Wähle eine App</p>
     </header>
 
+    <input type="search" id="game-search" class="game-search" placeholder="🔍 Spiel suchen …" autocomplete="off" aria-label="Spiel suchen">
+
     <!-- Karten werden aus der zentralen Registry (/games.js) erzeugt -->
     <nav class="apps" id="apps">
       <a class="app-card soon" href="#" style="--i:8" aria-disabled="true">
@@ -473,6 +491,43 @@
         }).catch(() => {});
       }
     }
+
+    // --- Heutige Challenge: deterministisches "Spiel des Tages" ---
+    try {
+      if (GAMES.length) {
+        const d = new Date();
+        const today = `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+        let h = 0; for (let i = 0; i < today.length; i++) h = (h * 31 + today.charCodeAt(i)) >>> 0;
+        const g = GAMES[h % GAMES.length];
+        const done = localStorage.getItem("gs_challenge_done") === today;
+        const chal = document.createElement("a");
+        chal.className = "app-card challenge";
+        chal.style.setProperty("--i", 0);
+        chal.href = g.href;
+        chal.onclick = () => { try { localStorage.setItem("gs_challenge_done", today); } catch {} };
+        chal.innerHTML = `
+          <span class="app-icon">🎯</span>
+          <span class="app-info">
+            <span class="app-name">Heutige Challenge</span>
+            <span class="app-desc" style="display:block">Spiel des Tages: <b>${esc(g.name)}</b> ${g.icon}${done ? ` · <span class="chal-done">✓ heute gespielt</span>` : ""}</span>
+          </span>
+          <span class="app-arrow">→</span>`;
+        nav.insertBefore(chal, nav.firstElementChild);
+      }
+    } catch {}
+
+    // --- Suche/Filter über die Spielkarten ---
+    try {
+      const search = document.getElementById("game-search");
+      if (search) search.addEventListener("input", () => {
+        const q = search.value.trim().toLowerCase();
+        document.querySelectorAll(".app-card[data-game]").forEach(card => {
+          const g = GAMES.find(x => x.key === card.dataset.game);
+          const hit = !q || !g || (g.name + " " + g.desc).toLowerCase().includes(q);
+          card.style.display = hit ? "" : "none";
+        });
+      });
+    } catch {}
 
     // --- Install-Hinweis (nicht in der installierten App, abschaltbar) ---
     const standalone = matchMedia("(display-mode: standalone)").matches || navigator.standalone;

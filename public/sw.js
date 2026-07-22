@@ -2,11 +2,27 @@
 // Service Worker der Gamesite (PWA).
 // Strategie: Netz zuerst, Cache als Fallback — online ist also immer
 // alles aktuell, offline funktionieren bereits besuchte Spiele weiter.
+// Zusätzlich wird die App-Shell beim Installieren vorab gecacht, damit
+// der Hub auch beim allerersten Offline-Aufruf erscheint.
 // API-Anfragen (/api/…) werden nie gecacht.
 // ====================================================================
-const CACHE = "gamesite-v42";
+const CACHE = "gamesite-v43";
 
-self.addEventListener("install", () => self.skipWaiting());
+// Kern-Dateien, die den Hub tragen (klein, lohnt sich vorzucachen).
+const SHELL = [
+  "/", "/games.js", "/shared.js", "/theme.js", "/manifest.webmanifest",
+  "/profil/", "/fonts/fonts.css",
+  "/icons/icon-192.png", "/icons/icon-512.png",
+];
+
+self.addEventListener("install", e => {
+  e.waitUntil(
+    caches.open(CACHE)
+      // einzeln cachen: ein fehlendes Asset darf die Installation nicht killen
+      .then(c => Promise.allSettled(SHELL.map(u => c.add(u))))
+      .then(() => self.skipWaiting())
+  );
+});
 
 self.addEventListener("activate", e => {
   e.waitUntil(
@@ -31,6 +47,15 @@ self.addEventListener("fetch", e => {
         }
         return res;
       })
-      .catch(() => caches.match(e.request, { ignoreSearch: true }))
+      .catch(async () => {
+        const hit = await caches.match(e.request, { ignoreSearch: true });
+        if (hit) return hit;
+        // Offline und nichts im Cache: bei Seitennavigation den Hub zeigen
+        if (e.request.mode === "navigate") {
+          const shell = await caches.match("/");
+          if (shell) return shell;
+        }
+        return Response.error();
+      })
   );
 });

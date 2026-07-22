@@ -102,6 +102,19 @@
 
     .sec-title { font-family:var(--font-display); font-weight:700; font-size:1.05rem; margin:8px 2px 12px; }
 
+    /* --- Cloud-Speicher --- */
+    .cloud-card { background:var(--card); border-radius:var(--radius); padding:16px; margin-bottom:20px;
+      box-shadow:0 0 0 1px var(--edge-soft) inset; }
+    .cloud-info { color:var(--muted); font-size:0.86rem; line-height:1.45; margin-bottom:12px; }
+    .cloud-code { font-size:0.9rem; margin-bottom:12px; padding:10px 12px; border-radius:12px;
+      background:rgba(232,193,90,0.12); box-shadow:0 0 0 1px var(--edge) inset; }
+    .cloud-code b { font-family:var(--font-display); letter-spacing:0.12em; font-size:1.1rem; color:var(--gold); }
+    .cloud-code button { border:0; background:transparent; cursor:pointer; font-size:1rem; padding:2px 4px; }
+    .cloud-btns { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+    .cloud-status { margin-top:10px; font-size:0.82rem; color:var(--muted); min-height:1em; text-align:center; }
+    .cloud-status.ok { color:var(--gold); }
+    .cloud-status.err { color:#e0645a; }
+
     /* --- Spiel-Zeilen --- */
     .rows { display:flex; flex-direction:column; gap:10px; }
     .grow {
@@ -149,8 +162,21 @@
       <div class="stat"><b id="s-records">0</b><span>Rekorde</span></div>
     </div>
 
+    <div class="sec-title">☁️ Cloud-Speicher</div>
+    <div class="cloud-card">
+      <p class="cloud-info">Sichere alle Spielstände, Rekorde &amp; Abzeichen mit einem Code — und hol sie auf jedem Gerät zurück.</p>
+      <div class="cloud-code" id="cloud-code" hidden>Dein Code: <b id="cloud-code-val"></b> <button id="cloud-copy" title="Kopieren">📋</button></div>
+      <div class="cloud-btns">
+        <button class="btn-secondary" id="cloud-save">⬆️ Jetzt sichern</button>
+        <button class="btn-secondary" id="cloud-load">⬇️ Von Code laden</button>
+      </div>
+      <div class="cloud-status" id="cloud-status"></div>
+    </div>
+
     <div class="sec-title">Deine Spiele</div>
     <div class="rows" id="rows"></div>
+
+    <button class="btn-secondary" id="share-btn" style="margin-top:18px">📤 Profil teilen</button>
 
     <footer>
       <a href="/">← Zurück zur Übersicht</a>
@@ -285,6 +311,73 @@
         }).catch(() => {});
       }
     });
+
+    // --- Cloud-Speicher (Backup/Wiederherstellen über Code) ---
+    const statusEl = $("#cloud-status");
+    const setStatus = (msg, kind = "") => { statusEl.className = "cloud-status " + kind; statusEl.textContent = msg; };
+    const showCode = code => {
+      $("#cloud-code-val").textContent = code;
+      $("#cloud-code").hidden = false;
+    };
+    const savedCode = () => (localStorage.getItem("gs_sync_code") || "").trim().toUpperCase();
+    if (savedCode()) showCode(savedCode());
+
+    // Kompletter localStorage-Schnappschuss (klein — reicht locker unter dem Cap)
+    const snapshot = () => {
+      const o = {};
+      for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); o[k] = localStorage.getItem(k); }
+      return o;
+    };
+
+    $("#cloud-save").onclick = async () => {
+      setStatus("Sichere …");
+      try {
+        const res = await fetch("/api/cloud", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ code: savedCode() || undefined, data: snapshot() }),
+        });
+        const d = await res.json().catch(() => ({}));
+        if (!res.ok) return setStatus(d.error || "Sichern fehlgeschlagen", "err");
+        try { localStorage.setItem("gs_sync_code", d.code); } catch {}
+        showCode(d.code);
+        setStatus("✔ Gesichert! Notiere dir den Code für andere Geräte.", "ok");
+      } catch { setStatus("Keine Verbindung", "err"); }
+    };
+
+    $("#cloud-load").onclick = async () => {
+      const code = (prompt("Backup-Code eingeben (von deinem anderen Gerät):", savedCode()) || "").trim().toUpperCase();
+      if (!code) return;
+      if (!/^[A-Z0-9]{6,12}$/.test(code)) return setStatus("Ungültiger Code", "err");
+      setStatus("Lade …");
+      try {
+        const res = await fetch("/api/cloud?code=" + encodeURIComponent(code));
+        const d = await res.json().catch(() => ({}));
+        if (!res.ok) return setStatus(d.error || "Nicht gefunden", "err");
+        const data = typeof d.data === "string" ? JSON.parse(d.data) : d.data;
+        if (!data || typeof data !== "object") return setStatus("Backup unlesbar", "err");
+        if (!confirm("Backup laden? Der aktuelle Stand auf diesem Gerät wird überschrieben.")) { setStatus(""); return; }
+        for (const [k, v] of Object.entries(data)) { try { localStorage.setItem(k, v); } catch {} }
+        try { localStorage.setItem("gs_sync_code", code); } catch {}
+        setStatus("✔ Geladen! Seite wird neu geladen …", "ok");
+        setTimeout(() => location.reload(), 900);
+      } catch { setStatus("Keine Verbindung", "err"); }
+    };
+
+    $("#cloud-copy").onclick = async () => {
+      try { await navigator.clipboard.writeText(savedCode()); setStatus("Code kopiert", "ok"); } catch {}
+    };
+
+    // --- Profil teilen ---
+    $("#share-btn").onclick = async () => {
+      const n = getName() || "Ich";
+      const text = `${n} auf dem Spieleabend: 🎮 Level ${level} · 🏅 ${badgeSum} Abzeichen · ${recordCount} Rekorde. Spiel mit!`;
+      const url = location.origin + "/";
+      const full = `${text}\n${url}`;
+      try {
+        if (navigator.share) { await navigator.share({ title: "Spieleabend", text: full }); return; }
+      } catch { return; }
+      try { await navigator.clipboard.writeText(full); alert("In die Zwischenablage kopiert!"); } catch {}
+    };
   })();
   </script>
 </body>

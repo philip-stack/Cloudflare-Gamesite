@@ -56,3 +56,10 @@ CREATE TABLE IF NOT EXISTS scores (
 
 CREATE INDEX IF NOT EXISTS idx_scores_game_score ON scores(game, score);
 CREATE INDEX IF NOT EXISTS idx_scores_device ON scores(device, created_at);
+
+-- Cloud-Backup der Spielstände (plattformweit, Details: functions/api/cloud.js)
+CREATE TABLE IF NOT EXISTS cloud_saves (
+  code       TEXT PRIMARY KEY,            -- portabler 8-stelliger Backup-Code
+  data       TEXT NOT NULL,               -- localStorage-Schnappschuss (JSON)
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
