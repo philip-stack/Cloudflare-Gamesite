@@ -427,17 +427,29 @@ function starP(g, cx, cy, r, n, inner) {
 }
 function fst(g) { g.fill(); g.stroke(); }
 
-function drawMeeri(g, cx, cy, s, tier, t, pop, gl, variant) {
+function drawMeeri(g, cx, cy, s, tier, t, pop, gl, variant, m) {
   gl = gl || 0;
   const T = TIERS[tier];
   const vd = variantDef(variant);
   const sc = pop > 0 ? 1 + Math.sin(Math.min(1, pop) * Math.PI) * 0.25 : 1;
-  const wob = Math.sin(t * 4 + tier) * s * 0.02;
+  // Lauf-Animation aus Meeri-Daten (falls vorhanden)
+  const step = m ? (m.step || 0) : 0;
+  const moving = m ? m.moving : false;
+  const tilt = m ? (m.tilt || 0) : 0;
+  const hop = moving ? Math.abs(Math.sin(step)) : 0;          // Hüpfen beim Laufen
+  const breathe = moving ? 0 : Math.sin(t * 2.4) * 0.02;      // sanftes Atmen im Stand
+  const wob = Math.sin(t * 4 + tier) * s * 0.015;
+  const sqx = 1 + (moving ? (1 - hop) * 0.06 : 0) + breathe;  // Squash & Stretch
+  const sqy = 1 - (moving ? (1 - hop) * 0.06 : 0) - breathe;
   g.save();
-  g.translate(cx, cy + wob);
-  g.scale(sc, sc);
+  g.translate(cx, cy + wob - hop * s * 0.14);
+  g.rotate(tilt);
+  g.scale(sc * sqx, sc * sqy);
   const lw = Math.max(2, s * 0.07);
   g.lineWidth = lw; g.strokeStyle = "#123018"; g.lineJoin = "round"; g.lineCap = "round";
+  // Fuß-Hub für den Schritt-Zyklus (abwechselnd)
+  const footL = moving ? Math.max(0, Math.sin(step)) * s * 0.1 : 0;
+  const footR = moving ? Math.max(0, Math.sin(step + Math.PI)) * s * 0.1 : 0;
 
   // Aura bei hohen Stufen (Kosmos-Stufen leuchten stärker)
   if (tier >= 9) {
@@ -470,9 +482,10 @@ function drawMeeri(g, cx, cy, s, tier, t, pop, gl, variant) {
   g.beginPath(); g.ellipse(0, s * 0.5, s * 0.42, s * 0.12, 0, 0, 7); g.fill(); g.restore();
 
   g.lineWidth = lw; g.strokeStyle = "#123018";
-  // Füße
+  // Füße (heben sich abwechselnd beim Laufen)
   g.fillStyle = T.c2;
-  for (const fx of [-s * 0.22, s * 0.22]) { g.beginPath(); g.ellipse(fx, s * 0.42, s * 0.1, s * 0.07, 0, 0, 7); fst(g); }
+  g.beginPath(); g.ellipse(-s * 0.22, s * 0.42 - footL, s * 0.1, s * 0.07, 0, 0, 7); fst(g);
+  g.beginPath(); g.ellipse(s * 0.22, s * 0.42 - footR, s * 0.1, s * 0.07, 0, 0, 7); fst(g);
   // Ohren
   for (const ex of [-s * 0.3, s * 0.3]) { g.beginPath(); g.ellipse(ex, -s * 0.28, s * 0.14, s * 0.12, 0, 0, 7); fst(g); }
 
@@ -827,6 +840,12 @@ function frame(ts) {
     // Meeries bewegen + Münzen abwerfen
     for (const m of meeries) {
       if (m.pop) { m.pop += dt * 2.2; if (m.pop >= 1) m.pop = 0; }
+      // Lauf-Animation: Schritt-Zyklus, Bewegungsstatus, Neigung
+      const sp = Math.hypot(m.vx, m.vy);
+      m.moving = !m.held && sp > 0.06;
+      m.step = (m.step || 0) + (m.moving ? sp * dt * 11 : dt * 2);
+      const tgtTilt = m.held ? 0 : (m.moving ? Math.max(-0.2, Math.min(0.2, m.vx * 0.38)) : 0);
+      m.tilt = (m.tilt || 0) + (tgtTilt - (m.tilt || 0)) * Math.min(1, dt * 6);
       if (m.held) continue;
       m.x += m.vx * dt * 0.06; m.y += m.vy * dt * 0.06;
       if (m.x < 0.02) { m.x = 0.02; m.vx = Math.abs(m.vx); }
@@ -921,7 +940,7 @@ function draw() {
 
   // Meeries (nach y sortiert für Tiefe)
   const sorted = [...meeries].sort((a, b) => (a.held ? 1 : 0) - (b.held ? 1 : 0) || my(a) - my(b));
-  for (const m of sorted) drawMeeri(ctx, mx(m), my(m), msize, m.tier, animT + m.phase, m.pop, m.gl || 0, m.variant);
+  for (const m of sorted) drawMeeri(ctx, mx(m), my(m), msize, m.tier, animT + m.phase, m.pop, m.gl || 0, m.variant, m);
 
   // Münz-Blasen
   for (const c of coinsFx) {
@@ -1467,36 +1486,41 @@ function shareMeadow() {
   }
 }
 
-// Biome-Auswahl / -Shop
+// Biome-Auswahl als kleine Welt-Karte (Weltall oben, Land in der Mitte, Meer unten)
+const BIOME_POS = {
+  space:  { top: "8%",  left: "50%" },
+  wiese:  { top: "48%", left: "24%" },
+  vulkan: { top: "44%", left: "77%" },
+  strand: { top: "80%", left: "52%" },
+};
 function showBiomes() {
   const ov = mkOverlay(`
-    <h2><span class="foil">Themen-Wiesen</span></h2>
-    <p class="sub">Jede gekaufte Wiese gibt dauerhaft <b>+5% Münzen</b> — und sieht anders aus.</p>
+    <h2><span class="foil">Welt-Karte</span></h2>
+    <p class="sub">Tippe einen Ort an — jede Wiese gibt dauerhaft <b>+5% Münzen</b>.</p>
     <div class="bonus-line">🗺️ Wiesen-Bonus: <b>+${Math.round((biomeBonus() - 1) * 100)}%</b></div>
-    <div id="biome-rows"></div>
+    <div class="biome-map" id="biome-map"><span class="map-sun">☀️</span></div>
     <button class="btn-secondary" id="bio-close">Schließen</button>`);
+  const map = ov.querySelector("#biome-map");
   const render = () => {
-    ov.querySelector("#biome-rows").innerHTML = BIOMES.map((b, i) => {
+    map.querySelectorAll(".biome-spot").forEach(e => e.remove());
+    BIOMES.forEach(b => {
+      const p = BIOME_POS[b.key] || { top: "50%", left: "50%" };
       const owned = biomesOwned.includes(b.key), active = biome === b.key;
-      const canBuy = !owned && coins >= b.cost;
-      const btn = active ? `<button class="shop-buy" disabled>aktiv</button>`
-        : owned ? `<button class="shop-buy" data-sel="${b.key}">wählen</button>`
-        : `<button class="shop-buy" data-buy="${b.key}" ${canBuy ? "" : "disabled"}>🪙 ${fmt(b.cost)}</button>`;
-      return `<div class="shop-row ${active ? "active" : ""}">
-        <span class="shop-ic">${b.icon}</span>
-        <span class="shop-info"><b>${esc(b.name)}</b><span class="shop-desc">${owned ? (active ? "gerade ausgewählt" : "im Besitz") : "+5% Münzen dauerhaft"}</span></span>
-        ${btn}
-      </div>`;
-    }).join("");
-    ov.querySelectorAll("[data-buy]").forEach(b => b.onclick = () => {
-      const def = BIOMES.find(x => x.key === b.dataset.buy);
-      if (!def || biomesOwned.includes(def.key) || coins < def.cost) return;
-      coins -= def.cost; biomesOwned.push(def.key); biome = def.key;
-      GS.sound.win(); GS.haptic([10, 30, 10]); burst("NEUE WIESE!", "#57e39b");
-      updateHUD(); saveSoon(); render();
-    });
-    ov.querySelectorAll("[data-sel]").forEach(b => b.onclick = () => {
-      biome = b.dataset.sel; GS.sound.good(); GS.haptic(8); saveSoon(); render();
+      const el = document.createElement("button");
+      el.className = `biome-spot ${active ? "active" : ""} ${owned ? "owned" : "locked"}`;
+      el.style.top = p.top; el.style.left = p.left;
+      el.innerHTML = `<span class="bs-ic">${b.icon}</span><span class="bs-name">${esc(b.name)}</span>` +
+        `<span class="bs-tag">${active ? "✓ aktiv" : owned ? "wählen" : "🪙 " + fmt(b.cost)}</span>`;
+      el.onclick = () => {
+        if (active) return;
+        if (owned) { biome = b.key; GS.sound.good(); GS.haptic(8); saveSoon(); render(); }
+        else if (coins >= b.cost) {
+          coins -= b.cost; biomesOwned.push(b.key); biome = b.key;
+          GS.sound.win(); GS.haptic([10, 30, 10]); burst("NEUE WIESE!", "#57e39b");
+          updateHUD(); saveSoon(); render();
+        } else toast(`Zu wenig Münzen — kostet 🪙 ${fmt(b.cost)}`);
+      };
+      map.appendChild(el);
     });
   };
   render();

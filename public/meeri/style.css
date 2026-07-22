@@ -220,6 +220,33 @@ body {
 .shop-buy.carrot { background: linear-gradient(160deg, #ffb347, #ff8c1a); color: #4a2600; box-shadow: 0 0 0 2px #123018 inset, 0 3px 0 #a85c10; }
 .shop-buy.carrot:active { box-shadow: 0 0 0 2px #123018 inset, 0 1px 0 #a85c10; }
 
+/* Welt-Karte (Biome-Auswahl) */
+.biome-map {
+  position: relative; width: 100%; height: 270px; border-radius: 16px; overflow: hidden;
+  margin: 4px 0 14px; box-shadow: 0 0 0 2.5px #123018 inset;
+  background:
+    radial-gradient(circle at 78% 46%, rgba(255,120,40,0.35) 0 8%, rgba(255,120,40,0) 22%),
+    linear-gradient(#080618 0%, #241a4a 14%, #4a72d0 25%, #a9e0ff 31%,
+      #7bd08a 39%, #46c266 64%, #2ea6e6 71%, #1a72c4 100%);
+}
+.map-sun { position: absolute; top: 6px; right: 10px; font-size: 1.5rem; filter: drop-shadow(0 0 6px rgba(255,210,60,0.7)); }
+.biome-spot {
+  position: absolute; transform: translate(-50%, -50%);
+  display: flex; flex-direction: column; align-items: center; gap: 1px;
+  border: 0; background: rgba(255,255,255,0.16); cursor: pointer; font-family: inherit;
+  padding: 6px 8px; border-radius: 14px; color: #fff;
+  box-shadow: 0 0 0 2.5px #123018, 0 3px 6px rgba(0,0,0,0.4);
+  backdrop-filter: blur(2px);
+}
+.biome-spot .bs-ic { font-size: 1.7rem; line-height: 1; }
+.biome-spot .bs-name { font-weight: 800; font-size: 0.72rem; text-shadow: 0 1px 2px rgba(0,0,0,0.6); white-space: nowrap; }
+.biome-spot .bs-tag { font-weight: 800; font-size: 0.66rem; padding: 1px 7px; border-radius: 999px; background: rgba(0,0,0,0.45); }
+.biome-spot.active { box-shadow: 0 0 0 3px #ffd23f, 0 0 14px 2px rgba(255,210,63,0.8); background: rgba(255,255,255,0.28); }
+.biome-spot.active .bs-tag { background: #1f9d5c; }
+.biome-spot.locked { filter: grayscale(0.35); }
+.biome-spot.locked .bs-tag { background: rgba(184,120,20,0.9); color: #fff; }
+.biome-spot:active { transform: translate(-50%, -50%) scale(0.94); }
+
 /* Tagesaufgaben-Fortschritt */
 .dbar { display: block; height: 6px; border-radius: 999px; background: rgba(20,50,24,0.14); margin: 4px 0; overflow: hidden; }
 .dbar-fill { display: block; height: 100%; background: linear-gradient(90deg, #43c463, #8be79a); border-radius: 999px; }
