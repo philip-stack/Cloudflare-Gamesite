@@ -45,10 +45,12 @@ const variantMult = id => { const v = variantDef(id); return v ? v.mult : 1; };
 function rollVariant() { for (const v of VARIANTS) if (Math.random() < v.chance) return v.id; return null; }
 
 // ---------- Wirtschaft ----------
+// Balance: etwas flüssigerer Einstieg (schnellere Würfe, mehr Startplatz),
+// sanftere Ausbau-Kurve — spätes Spiel bleibt durch Merges/Prestige spannend.
 const BUY_BASE = 10, BUY_GROW = 1.18;
-const CAP_START = 6, CAP_STEP = 3, CAP_MAXLEVEL = 8;
-const EXP_BASE = 100, EXP_GROW = 2.2;
-const DROP_MIN = 3.2, DROP_MAX = 6.0;   // Sekunden zwischen Münz-Blasen je Meeri
+const CAP_START = 7, CAP_STEP = 3, CAP_MAXLEVEL = 8;
+const EXP_BASE = 80, EXP_GROW = 2.05;
+const DROP_MIN = 2.8, DROP_MAX = 5.0;   // Sekunden zwischen Münz-Blasen je Meeri
 const OFFLINE_EFF = 0.4, OFFLINE_CAP_H = 3;
 
 // ---------- Upgrade-Shop ----------
@@ -320,6 +322,8 @@ function mergeInto(target, src) {
   floater("+" + fmt(bonus), "#ffd23f", target.x, target.y);
   spawnConfetti(target.x, target.y, endgame ? "#b892ff" : TIERS[target.tier].c1);
   shake(target.tier >= 8 ? 8 : 4);   // Kamerawackeln, stärker bei High-Tier
+  if (target.tier >= 6 || endgame) flash(0.35);   // Aufblitzen bei größeren Evolutionen
+  pulseCoins();
   dailyTick("merge", 1);
   if (endgame) { GS.sound.win(); toast(`🌌 Kosmos-Stufe ${target.gl}! Galaxie-Meeri wird noch mächtiger.`); }
   GS.sound.great(); GS.haptic([12, 40, 12]);
@@ -768,8 +772,14 @@ function featFront(g, s, tier, t, T) {
 
 // ---------- Effekte ----------
 let coinsFx = [], golds = [], bursts = [], floaters = [], confetti = [];
-let shakeMag = 0;
+let shakeMag = 0, flashT = 0;
 function shake(m) { shakeMag = Math.max(shakeMag, m); }
+function flash(a) { flashT = Math.max(flashT, a); }
+function pulseCoins() {
+  const el = document.getElementById("coins");
+  if (!el) return;
+  el.classList.remove("bump"); void el.offsetWidth; el.classList.add("bump");
+}
 function spawnCoin(m) {
   coinsFx.push({ x: mx(m), y: my(m) - msize * 0.5, val: Math.round(coinValM(m) * coinMult()), t: 0, life: 5.5, vy: -12 - Math.random() * 8, r: msize * 0.28 });
 }
@@ -863,6 +873,7 @@ function frame(ts) {
   confetti = confetti.filter(p => (p.life -= dt * 1.3) > 0);
   confetti.forEach(p => { p.x += p.vx; p.y += p.vy; p.vy += 0.3; p.rot += p.vr; });
   if (shakeMag > 0) { shakeMag = Math.max(0, shakeMag - dt * 40); }
+  if (flashT > 0) { flashT = Math.max(0, flashT - dt * 1.2); }
 
   if (hudDirty) { updateHUD(); hudDirty = false; }
   draw();
@@ -951,6 +962,7 @@ function draw() {
     ctx.lineWidth = 7; ctx.strokeStyle = "#123018"; ctx.strokeText(b.text, 0, 0);
     ctx.fillStyle = b.col; ctx.fillText(b.text, 0, 0); ctx.restore();
   }
+  if (flashT > 0.01) { ctx.save(); ctx.globalAlpha = Math.min(0.6, flashT); ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, W, H); ctx.restore(); }
   ctx.restore();   // Shake-Wrapper schließen
 }
 
@@ -1029,6 +1041,7 @@ canvas.addEventListener("pointerdown", e => {
       const bonus = Math.max(20, Math.round(passivePerSec() * 60) + coinVal(topTier()) * 5);
       earn(bonus); golds = golds.filter(z => z !== gg);
       floater("+" + fmt(bonus), "#ffd23f", null, null); burst("BONUS!", "#ffd23f");
+      flash(0.25); pulseCoins();
       GS.sound.win(); GS.haptic([10, 30, 10]); updateHUD(); saveSoon(); return;
     }
   }
@@ -1096,11 +1109,20 @@ function updateHUD() {
   // Möhren-Chip
   const chip = document.getElementById("carrots-chip");
   if (chip) { if (carrots > 0) { chip.hidden = false; document.getElementById("carrots").textContent = fmt(carrots); } else chip.hidden = true; }
-  // Menü-Punkt, wenn eine Tagesaufgabe abholbereit ist
+  // Menü-Punkt, wenn eine Tagesaufgabe abholbereit ODER Prestige möglich ist
   const mb = document.getElementById("btn-menu");
-  if (mb) mb.classList.toggle("has-dot", dailyClaimable());
+  if (mb) mb.classList.toggle("has-dot", dailyClaimable() || carrotGain(peak) > 0);
+  // Sanfte Einstiegs-Tipps (je einmal)
+  if (coins >= 50 && !(up.coin || up.speed || up.magnet || up.luck)) hint("shop", "🛒 Genug Münzen für dein erstes Upgrade — schau in den Shop!");
+  if (peak >= PRESTIGE_MIN) hint("prestige", "🥕 Prestige ist jetzt verfügbar (Menü → Fortschritt): Wiese einstampfen für dauerhafte Boni!");
 }
 
+// Einmaliger Kontext-Tipp (pro Schlüssel nur einmal gezeigt)
+function hint(key, msg) {
+  const k = "meeri_hint_" + key;
+  try { if (localStorage.getItem(k)) return; localStorage.setItem(k, "1"); } catch (_) {}
+  toast(msg);
+}
 function toast(msg) {
   document.querySelectorAll(".meeri-toast").forEach(t => t.remove());
   const t = document.createElement("div"); t.className = "meeri-toast"; t.textContent = msg;
@@ -1334,16 +1356,19 @@ try { ambientOn = localStorage.getItem("meeri_ambient") === "1"; } catch (_) {}
 function toggleAmbient() {
   ambientOn = !ambientOn;
   try { localStorage.setItem("meeri_ambient", ambientOn ? "1" : "0"); } catch (_) {}
-  if (ambientOn) GS.sound.tone(880, 0.09, { type: "sine", gain: 0.05 });
-  toast(ambientOn ? "🐦 Ambiente an" : "🔇 Ambiente aus");
+  if (ambientOn) [523.3, 659.3, 784.0].forEach((f, i) => GS.sound.tone(f, 0.5, { type: "sine", gain: 0.03, delay: i * 0.05 }));
+  toast(ambientOn ? "🎵 Musik an" : "🔇 Musik aus");
 }
+// Sanfte, langsam wechselnde Akkorde + gelegentliches Zwitschern (Hintergrundmusik)
+const AMBIENT_CHORDS = [[261.6, 329.6, 392.0], [293.7, 349.2, 440.0], [329.6, 392.0, 493.9], [349.2, 440.0, 523.3]];
+let ambientChord = 0;
 function ambientLoop() {
   if (ambientOn && !document.hidden && GS.sound.on()) {
-    const f = 700 + Math.random() * 500;
-    GS.sound.tone(f, 0.09, { type: "sine", gain: 0.04 });
-    setTimeout(() => GS.sound.tone(f * 1.33, 0.07, { type: "sine", gain: 0.03 }), 120);
+    const ch = AMBIENT_CHORDS[ambientChord % AMBIENT_CHORDS.length]; ambientChord++;
+    ch.forEach((f, i) => GS.sound.tone(f, 2.6, { type: "sine", gain: 0.022, delay: i * 0.05 }));
+    if (Math.random() < 0.5) setTimeout(() => GS.sound.tone(900 + Math.random() * 400, 0.09, { type: "sine", gain: 0.03 }), 700);
   }
-  setTimeout(ambientLoop, 4500 + Math.random() * 5000);
+  setTimeout(ambientLoop, 3400 + Math.random() * 1600);
 }
 
 // ---------- Erfolge / Achievements ----------
@@ -1477,41 +1502,72 @@ function showBiomes() {
 }
 
 function showMenu() {
+  const TABS = [
+    { id: "play", icon: "🎮", name: "Spielen" },
+    { id: "coll", icon: "📚", name: "Sammlung" },
+    { id: "prog", icon: "🥕", name: "Fortschritt" },
+    { id: "more", icon: "⚙️", name: "Mehr" },
+  ];
+  let cur = "play";
   const ov = mkOverlay(`
-    <h2><span class="foil">MEERI-MANIA</span></h2>
-    <p class="sub">Kaufe Meeries, zieh gleiche zusammen und entdecke alle Evolutionen!</p>
-    <button class="btn-primary" id="m-close">▶ Weiter wuseln</button>
-    <div class="menu-grid">
-      <button class="btn-secondary" id="m-daily">📅 Aufgaben${dailyClaimable() ? ' <span class="mdot"></span>' : ""}</button>
-      <button class="btn-secondary" id="m-biome">🗺️ Wiesen</button>
-      <button class="btn-secondary" id="m-album">📖 Album</button>
-      <button class="btn-secondary" id="m-prestige">🥕 Prestige</button>
-      <button class="btn-secondary" id="m-badges">🏅 Erfolge</button>
-      <button class="btn-secondary" id="m-stats">📊 Statistik</button>
-      <button class="btn-secondary" id="m-board">🌍 Bestenliste</button>
-      <button class="btn-secondary" id="m-share">📸 Wiese teilen</button>
-      <button class="btn-secondary" id="m-code">💾 Speicher-Code</button>
-      <button class="btn-secondary" id="m-ambient">${ambientOn ? "🔇 Ambiente aus" : "🐦 Ambiente an"}</button>
-      <button class="btn-secondary" id="m-how">❓ Anleitung</button>
-      <button class="btn-secondary full" id="m-reset">🗑️ Neu starten</button>
-    </div>`);
-  ov.querySelector("#m-close").onclick = () => ov.remove();
-  ov.querySelector("#m-daily").onclick = () => { ov.remove(); showDaily(); };
-  ov.querySelector("#m-biome").onclick = () => { ov.remove(); showBiomes(); };
-  ov.querySelector("#m-album").onclick = () => { ov.remove(); showAlbum(); };
-  ov.querySelector("#m-prestige").onclick = () => { ov.remove(); showPrestige(); };
-  ov.querySelector("#m-badges").onclick = () => { ov.remove(); GS.badges.show("meeri", "Erfolge"); };
-  ov.querySelector("#m-stats").onclick = () => { ov.remove(); showStats(); };
-  ov.querySelector("#m-board").onclick = () => { ov.remove(); openBoard(); };
-  ov.querySelector("#m-share").onclick = () => { ov.remove(); shareMeadow(); };
-  ov.querySelector("#m-code").onclick = () => { ov.remove(); showSaveCode(); };
-  ov.querySelector("#m-ambient").onclick = e => { toggleAmbient(); e.target.textContent = ambientOn ? "🔇 Ambiente aus" : "🐦 Ambiente an"; };
-  ov.querySelector("#m-how").onclick = () => howTo(true);
-  ov.querySelector("#m-reset").onclick = () => {
-    if (confirm("Wirklich komplett neu starten? Aller Fortschritt geht verloren.")) {
-      fresh(); save(); ov.remove(); spawnMeeri(0); updateHUD(); toast("Neue Wiese!");
+    <h2><span class="foil">Menü</span></h2>
+    <div class="menu-tabs">${TABS.map(t => `<button class="mtab" data-tab="${t.id}"><span class="mt-ic">${t.icon}</span><span>${t.name}</span></button>`).join("")}</div>
+    <div id="menu-body"></div>
+    <button class="btn-primary" id="m-close">▶ Weiter wuseln</button>`);
+  const B = (id, label) => `<button class="btn-secondary" data-act="${id}">${label}</button>`;
+  const bodies = {
+    play: () => `<div class="menu-grid">
+      ${B("shop", "🛒 Shop")}
+      ${B("biome", "🗺️ Wiesen")}
+      ${B("daily", `📅 Aufgaben${dailyClaimable() ? ' <span class="mdot"></span>' : ""}`)}
+      ${B("how", "❓ Anleitung")}
+    </div>`,
+    coll: () => `<div class="menu-grid">
+      ${B("album", "📖 Album")}
+      ${B("badges", `🏅 Erfolge <span class="dim2">${GS.badges.earnedCount("meeri")}/${BADGES.length}</span>`)}
+      ${B("stats", "📊 Statistik")}
+      ${B("board", "🌍 Bestenliste")}
+    </div>`,
+    prog: () => `<div class="menu-grid">
+      ${peak >= PRESTIGE_MIN
+        ? B("prestige", `🥕 Prestige${carrotGain(peak) > 0 ? ' <span class="mdot"></span>' : ""}`)
+        : `<button class="btn-secondary" disabled>🥕 Prestige <span class="dim2">ab ${esc(TIERS[PRESTIGE_MIN].name)}</span></button>`}
+      ${B("code", "💾 Speicher-Code")}
+    </div>`,
+    more: () => `<div class="menu-grid">
+      ${B("share", "📸 Wiese teilen")}
+      ${B("music", ambientOn ? "🔇 Musik aus" : "🎵 Musik an")}
+      ${B("reset", "🗑️ Neu starten")}
+    </div>`,
+  };
+  const act = id => {
+    const go = fn => { ov.remove(); fn(); };
+    if (id === "shop") go(showShop);
+    else if (id === "biome") go(showBiomes);
+    else if (id === "daily") go(showDaily);
+    else if (id === "how") { ov.remove(); howTo(true); }
+    else if (id === "album") go(showAlbum);
+    else if (id === "badges") { ov.remove(); GS.badges.show("meeri", "Erfolge"); }
+    else if (id === "stats") go(showStats);
+    else if (id === "board") go(openBoard);
+    else if (id === "prestige") go(showPrestige);
+    else if (id === "code") go(showSaveCode);
+    else if (id === "share") go(shareMeadow);
+    else if (id === "music") { toggleAmbient(); render(); }
+    else if (id === "reset") {
+      if (confirm("Wirklich komplett neu starten? Aller Fortschritt (auch Möhren, Album & Erfolge) geht verloren.")) {
+        fresh(); save(); ov.remove(); spawnMeeri(0); ensureDaily(false); updateHUD(); toast("Neue Wiese!");
+      }
     }
   };
+  const render = () => {
+    ov.querySelectorAll(".mtab").forEach(b => b.classList.toggle("sel", b.dataset.tab === cur));
+    ov.querySelector("#menu-body").innerHTML = bodies[cur]();
+    ov.querySelectorAll("[data-act]").forEach(b => b.onclick = () => act(b.dataset.act));
+  };
+  ov.querySelectorAll(".mtab").forEach(b => b.onclick = () => { cur = b.dataset.tab; render(); });
+  ov.querySelector("#m-close").onclick = () => ov.remove();
+  render();
 }
 function howTo(force) {
   GS.onboard("meeri", {
