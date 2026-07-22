@@ -133,7 +133,7 @@ const SAVE = "meeri_save_v1";
 let coins, meeries, capLevel, buyCount, album, lastSeen, uid, up;
 let carrots, peak, biome, biomesOwned, pp, shinies;   // Prestige/Biome/Schillernde (überleben Prestige)
 let daily, lastLogin, streak, stats;              // Aufgaben, Login, Statistik
-let over = false, hudDirty = false;
+let over = false, hudDirty = false, prestigeSeen = false;
 
 function capacity() { return CAP_START + capLevel * CAP_STEP; }
 function buyCost() { return Math.round(BUY_BASE * Math.pow(BUY_GROW, buyCount)); }
@@ -349,6 +349,7 @@ function doPrestige() {
   if (gain <= 0) return;
   carrots += gain;
   if (stats) stats.prestiges++;
+  prestigeSeen = false;   // nach erneutem Aufstieg wieder auf Prestige hinweisen
   resetRun();
   coins = startCapital();          // Startkapital-Perk
   spawnMeeri(0);
@@ -1111,7 +1112,7 @@ function updateHUD() {
   if (chip) { if (carrots > 0) { chip.hidden = false; document.getElementById("carrots").textContent = fmt(carrots); } else chip.hidden = true; }
   // Menü-Punkt, wenn eine Tagesaufgabe abholbereit ODER Prestige möglich ist
   const mb = document.getElementById("btn-menu");
-  if (mb) mb.classList.toggle("has-dot", dailyClaimable() || carrotGain(peak) > 0);
+  if (mb) mb.classList.toggle("has-dot", dailyClaimable() || (carrotGain(peak) > 0 && !prestigeSeen));
   // Sanfte Einstiegs-Tipps (je einmal)
   if (coins >= 50 && !(up.coin || up.speed || up.magnet || up.luck)) hint("shop", "🛒 Genug Münzen für dein erstes Upgrade — schau in den Shop!");
   if (peak >= PRESTIGE_MIN) hint("prestige", "🥕 Prestige ist jetzt verfügbar (Menü → Fortschritt): Wiese einstampfen für dauerhafte Boni!");
@@ -1509,6 +1510,7 @@ function showMenu() {
     { id: "more", icon: "⚙️", name: "Mehr" },
   ];
   let cur = "play";
+  prestigeSeen = true; updateHUD();   // Prestige-Hinweis am Menü-Knopf quittieren
   const ov = mkOverlay(`
     <h2><span class="foil">Menü</span></h2>
     <div class="menu-tabs">${TABS.map(t => `<button class="mtab" data-tab="${t.id}"><span class="mt-ic">${t.icon}</span><span>${t.name}</span></button>`).join("")}</div>

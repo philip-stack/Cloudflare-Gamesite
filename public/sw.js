@@ -4,7 +4,7 @@
 // alles aktuell, offline funktionieren bereits besuchte Spiele weiter.
 // API-Anfragen (/api/…) werden nie gecacht.
 // ====================================================================
-const CACHE = "gamesite-v31";
+const CACHE = "gamesite-v32";
 
 self.addEventListener("install", () => self.skipWaiting());
 
