@@ -404,8 +404,9 @@
       const sub = myName
         ? `${esc(myName)} · <span class="prof-stat">🏅 ${badgeSum} Abzeichen</span> · ${recordCount} Rekorde`
         : "Name, Abzeichen, Weltränge & dein Spieleabend-Level";
+      const avatar = (localStorage.getItem("gs_avatar") || "").trim() || "👤";
       prof.innerHTML = `
-        <span class="app-icon">👤</span>
+        <span class="app-icon">${avatar}</span>
         <span class="app-info">
           <span class="app-name">Mein Profil</span>
           <span class="app-desc" style="display:block">${sub}</span>

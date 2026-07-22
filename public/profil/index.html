@@ -55,8 +55,34 @@
       box-shadow:0 0 0 1px var(--edge) inset, 0 10px 28px -14px rgba(0,0,0,0.55);
       text-align:center;
     }
-    .avatar { width:72px; height:72px; margin:0 auto 10px; border-radius:50%; display:grid; place-items:center;
-      font-size:2.3rem; background:rgba(232,193,90,0.18); box-shadow:0 0 0 1px var(--edge) inset; }
+    .avatar { width:80px; height:80px; margin:0 auto 6px; border-radius:50%; display:grid; place-items:center;
+      font-size:2.5rem; line-height:1; border:0; cursor:pointer; color:var(--ink);
+      background:rgba(232,193,90,0.18); box-shadow:0 0 0 2px var(--gold) inset, 0 6px 18px -8px rgba(0,0,0,0.5);
+      transition:transform 0.15s var(--ease-spring); }
+    .avatar:active { transform:scale(0.93); }
+    .avatar-hint { color:var(--muted); font-size:0.72rem; margin-bottom:10px; letter-spacing:0.03em; }
+
+    /* --- Emoji-Auswahl --- */
+    .ovl { position:fixed; inset:0; z-index:50; display:grid; place-items:center; padding:18px;
+      background:rgba(6,10,7,0.6); backdrop-filter:blur(6px); animation:fade 0.2s ease; }
+    @keyframes fade { from { opacity:0; } }
+    .ovl-panel { width:100%; max-width:400px; border-radius:var(--radius); padding:20px 18px;
+      background:linear-gradient(175deg,var(--card-hi),var(--card));
+      box-shadow:0 0 0 1px var(--edge) inset, 0 20px 50px -20px rgba(0,0,0,0.7); text-align:center;
+      max-height:82vh; overflow-y:auto; }
+    .ovl-panel h2 { font-family:var(--font-display); font-style:italic; font-weight:800; font-size:1.4rem; margin-bottom:4px;
+      background:var(--foil); background-size:250% 100%; -webkit-background-clip:text; background-clip:text; color:transparent; }
+    .ovl-panel .sub { color:var(--muted); font-size:0.85rem; margin-bottom:14px; }
+    .emoji-grid { display:grid; grid-template-columns:repeat(6,1fr); gap:8px; margin-bottom:16px; }
+    .emoji-grid button { aspect-ratio:1; border:0; border-radius:12px; cursor:pointer; font-size:1.5rem; line-height:1;
+      background:var(--card); color:var(--ink); box-shadow:0 0 0 1px var(--edge-soft) inset;
+      transition:transform 0.1s, box-shadow 0.15s; display:grid; place-items:center; }
+    .emoji-grid button:active { transform:scale(0.9); }
+    .emoji-grid button.sel { box-shadow:0 0 0 2px var(--gold) inset; background:rgba(232,193,90,0.16); }
+    .btn-secondary { width:100%; padding:13px; border:0; border-radius:14px; cursor:pointer; font-family:inherit;
+      font-size:0.95rem; font-weight:600; background:var(--card); color:var(--ink);
+      box-shadow:0 0 0 1px var(--edge-soft) inset; }
+    .btn-secondary:active { transform:scale(0.98); }
     .pname { font-family:var(--font-display); font-weight:700; font-size:1.55rem; }
     .pname .edit { font-size:0.85rem; margin-left:8px; cursor:pointer; opacity:0.6; }
     .noname { color:var(--muted); font-size:0.95rem; }
@@ -109,7 +135,8 @@
     </div>
 
     <div class="hero-card">
-      <div class="avatar" id="avatar">👤</div>
+      <button class="avatar" id="avatar" title="Profilbild wählen">👤</button>
+      <div class="avatar-hint" id="avatar-hint">Tippen zum Wählen</div>
       <div id="name-line"></div>
       <div class="lvl-line" id="lvl-line">Spieleabend-Level 1</div>
       <div class="xpbar"><div class="xpfill" id="xpfill" style="width:0%"></div></div>
@@ -152,7 +179,6 @@
       if (localStorage.getItem("gs_onboard_" + g.key)) return true;
       if (g.key === "meeri" && localStorage.getItem("meeri_save_v1")) return true;
       if (g.key === "wuerfelpoker" && localStorage.getItem("wp_local_games")) return true;
-      if (g.key === "kochstudio" && localStorage.getItem("koch_last")) return true;
       return false;
     };
 
@@ -173,10 +199,20 @@
     $("#s-games").textContent = playedCount;
     $("#s-records").textContent = recordCount;
 
-    // --- Name (bearbeitbar) ---
+    // --- Profilbild (Emoji) ---
+    const AVATARS = [
+      "🎲","💎","☄️","🚀","🦄","🦝","🐹","🃏","🎯","🕹️","👾","🤖",
+      "👑","🌟","🔥","🍀","🎩","🦊","🐼","🐲","🦁","🐯","🐸","🐙",
+      "🦉","🌈","⭐","🎮","🍄","🧙","🦖","🎪",
+    ];
+    const getAvatar = () => localStorage.getItem("gs_avatar") || "";
+    const setAvatar = v => { try { v ? localStorage.setItem("gs_avatar", v) : localStorage.removeItem("gs_avatar"); } catch {} };
+
+    // --- Name + Avatar (bearbeitbar) ---
     const renderName = () => {
-      const n = getName();
-      $("#avatar").textContent = n ? n[0].toUpperCase() : "👤";
+      const n = getName(), av = getAvatar();
+      $("#avatar").textContent = av || (n ? n[0].toUpperCase() : "👤");
+      $("#avatar-hint").textContent = av ? "Tippen zum Ändern" : "Tippen für Profilbild";
       $("#name-line").innerHTML = n
         ? `<div class="pname">${esc(n)}<span class="edit" id="edit-name" title="Name ändern">✏️</span></div>`
         : `<div class="noname">Noch kein Name — <a href="#" id="edit-name" style="color:var(--gold)">jetzt festlegen</a><br><small>(gilt für Bestenlisten aller Spiele)</small></div>`;
@@ -188,6 +224,31 @@
       };
     };
     renderName();
+
+    // --- Emoji-Auswahl-Overlay ---
+    $("#avatar").onclick = () => {
+      const cur = getAvatar();
+      const ovl = document.createElement("div");
+      ovl.className = "ovl";
+      ovl.innerHTML = `
+        <div class="ovl-panel">
+          <h2>Profilbild wählen</h2>
+          <p class="sub">Ein Emoji, das zu dir passt</p>
+          <div class="emoji-grid">
+            ${AVATARS.map(e => `<button data-e="${e}" class="${e === cur ? "sel" : ""}">${e}</button>`).join("")}
+          </div>
+          <button class="btn-secondary" id="av-clear" style="margin-bottom:8px">Kein Emoji (Anfangsbuchstabe)</button>
+          <button class="btn-secondary" id="av-close">Schließen</button>
+        </div>`;
+      document.body.appendChild(ovl);
+      const close = () => ovl.remove();
+      ovl.onclick = e => { if (e.target === ovl) close(); };
+      ovl.querySelector("#av-close").onclick = close;
+      ovl.querySelector("#av-clear").onclick = () => { setAvatar(""); renderName(); close(); };
+      ovl.querySelectorAll(".emoji-grid button").forEach(b => {
+        b.onclick = () => { setAvatar(b.dataset.e); renderName(); close(); };
+      });
+    };
 
     // --- Spiel-Zeilen ---
     const rowsEl = $("#rows");

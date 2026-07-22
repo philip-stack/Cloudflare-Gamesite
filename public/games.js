@@ -57,11 +57,8 @@
       desc: "Merge-Idle mit Meerschweinchen — gleiche Meeries zusammenziehen, immer absurdere Evolutionen entdecken, Münzen sammeln und die Wiese ausbauen",
       bestKey: "meeri_best", scored: true, gsBadges: false, daily: false, weekly: false,
     },
-    {
-      key: "kochstudio", name: "Kochstudio", icon: "🍳", href: "/kochstudio/",
-      desc: "KI-Rezepte aus dem, was im Kühlschrank ist — mit Schritt-für-Schritt-Anleitung und passenden Rezept-Links",
-      bestKey: null, scored: false, gsBadges: false, daily: false, weekly: false, tool: true,
-    },
+    // Hinweis: /kochstudio/ ist bewusst NICHT hier registriert — es bleibt
+    // abgekapselt und nur direkt unter /kochstudio/ erreichbar.
   ];
 
   const esc = s => String(s).replace(/[&<>"']/g, c => ({
