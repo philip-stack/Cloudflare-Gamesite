@@ -889,9 +889,6 @@ function updateHUD() {
   // Möhren-Chip
   const chip = document.getElementById("carrots-chip");
   if (chip) { if (carrots > 0) { chip.hidden = false; document.getElementById("carrots").textContent = fmt(carrots); } else chip.hidden = true; }
-  // Prestige-Button hervorheben, wenn möglich
-  const pb = document.getElementById("btn-prestige");
-  if (pb) pb.classList.toggle("ready", carrotGain(peak) > 0);
 }
 
 function toast(msg) {
@@ -1107,7 +1104,6 @@ document.getElementById("buy").onclick = buyMeeri;
 document.getElementById("expand").onclick = expandMeadow;
 document.getElementById("btn-shop").onclick = showShop;
 document.getElementById("btn-album").onclick = showAlbum;
-document.getElementById("btn-prestige").onclick = showPrestige;
 document.getElementById("btn-menu").onclick = showMenu;
 document.getElementById("btn-sound").onclick = () => { GS.sound.toggle(); GS.sound.click(); updateHUD(); };
 
