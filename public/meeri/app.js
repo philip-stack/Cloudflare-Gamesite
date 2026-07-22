@@ -1612,15 +1612,15 @@ function shareMeadow() {
 
 // Biome-Auswahl als gezeichnete, animierte Welt-Karte
 const BIOME_POS = {
-  space:       { top: "8%",  left: "50%" },
-  candy:       { top: "19%", left: "80%" },
-  schnee:      { top: "33%", left: "13%" },
-  dschungel:   { top: "50%", left: "31%" },
-  wiese:       { top: "60%", left: "14%" },
-  wueste:      { top: "62%", left: "67%" },
-  vulkan:      { top: "42%", left: "90%" },
-  strand:      { top: "86%", left: "32%" },
-  unterwasser: { top: "87%", left: "68%" },
+  space:       { top: "9%",  left: "48%" },
+  candy:       { top: "22%", left: "82%" },
+  schnee:      { top: "46%", left: "13%" },
+  wiese:       { top: "58%", left: "28%" },
+  dschungel:   { top: "50%", left: "49%" },
+  wueste:      { top: "64%", left: "70%" },
+  vulkan:      { top: "50%", left: "90%" },
+  strand:      { top: "80%", left: "44%" },
+  unterwasser: { top: "89%", left: "74%" },
 };
 // Feste Sternpositionen (kein Flackern durch Zufall pro Frame)
 const MAP_STARS = Array.from({ length: 46 }, (_, i) => ({ x: ((i * 89 + 13) % 100) / 100, y: ((i * 53 + 7) % 100) / 100, big: i % 7 === 0, pink: i % 9 === 0 }));
@@ -1629,86 +1629,130 @@ function drawWorldMap(g, W, H, t) {
   const spaceH = H * 0.30, seaTop = H * 0.72, landTop = H * 0.42;
   // --- Weltraum ---
   let sp = g.createLinearGradient(0, 0, 0, spaceH + 24);
-  sp.addColorStop(0, "#070512"); sp.addColorStop(1, "#2c2060");
+  sp.addColorStop(0, "#070512"); sp.addColorStop(0.6, "#1a1246"); sp.addColorStop(1, "#3a2a72");
   g.fillStyle = sp; g.fillRect(0, 0, W, spaceH + 24);
   for (const st of MAP_STARS) {
     const tw = 0.35 + 0.65 * Math.abs(Math.sin(t * 2 + st.x * 20));
     g.globalAlpha = tw; g.fillStyle = st.pink ? "#ffd6f5" : "#fff";
     g.beginPath(); g.arc(st.x * W, st.y * spaceH, st.big ? 1.8 : 1, 0, 7); g.fill();
   }
+  // Sternschnuppe (zieht langsam durch)
+  const shX = (t * 60) % (W + 120) - 60, shY = spaceH * 0.2 + shX * 0.12;
+  g.globalAlpha = 0.8; g.strokeStyle = "rgba(255,255,255,0.85)"; g.lineWidth = 1.6;
+  g.beginPath(); g.moveTo(shX, shY); g.lineTo(shX - 16, shY - 5); g.stroke();
   g.globalAlpha = 1;
-  // Ringplanet + Mond
+  // Ringplanet (mit Schattierung) + Mond mit Kratern
   g.save(); g.translate(W * 0.2, spaceH * 0.42);
-  g.fillStyle = "#b892ff"; g.beginPath(); g.arc(0, 0, 12, 0, 7); g.fill();
-  g.save(); g.rotate(-0.5); g.scale(1, 0.34); g.strokeStyle = "rgba(255,255,255,0.65)"; g.lineWidth = 2.4; g.beginPath(); g.arc(0, 0, 21, 0, 7); g.stroke(); g.restore();
+  let pg = g.createRadialGradient(-4, -4, 2, 0, 0, 14);
+  pg.addColorStop(0, "#d4b8ff"); pg.addColorStop(1, "#8a5fe0");
+  g.fillStyle = pg; g.beginPath(); g.arc(0, 0, 12, 0, 7); g.fill();
+  g.save(); g.rotate(-0.5); g.scale(1, 0.34); g.strokeStyle = "rgba(255,255,255,0.7)"; g.lineWidth = 2.4; g.beginPath(); g.arc(0, 0, 21, 0, 7); g.stroke(); g.restore();
   g.restore();
   g.fillStyle = "#f2f0d8"; g.beginPath(); g.arc(W * 0.8, spaceH * 0.32, 8, 0, 7); g.fill();
+  g.fillStyle = "rgba(180,175,150,0.6)"; g.beginPath(); g.arc(W * 0.8 - 2, spaceH * 0.32 - 2, 2, 0, 7); g.arc(W * 0.8 + 3, spaceH * 0.32 + 2, 1.4, 0, 7); g.fill();
   // --- Himmel ---
   let sk = g.createLinearGradient(0, spaceH, 0, seaTop);
-  sk.addColorStop(0, "#7db8ff"); sk.addColorStop(1, "#c7ecff");
+  sk.addColorStop(0, "#8ec4ff"); sk.addColorStop(0.6, "#bfe6ff"); sk.addColorStop(1, "#e6f7ff");
   g.fillStyle = sk; g.fillRect(0, spaceH, W, seaTop - spaceH);
-  // Sonne mit Strahlen
-  g.save(); g.translate(W * 0.85, spaceH + (landTop - spaceH) * 0.4);
+  // Sonne mit Strahlen + Glow
+  g.save(); g.translate(W * 0.86, spaceH + (landTop - spaceH) * 0.4);
+  let sg = g.createRadialGradient(0, 0, 4, 0, 0, 34); sg.addColorStop(0, "rgba(255,225,120,0.55)"); sg.addColorStop(1, "rgba(255,225,120,0)");
+  g.fillStyle = sg; g.beginPath(); g.arc(0, 0, 34, 0, 7); g.fill();
   g.strokeStyle = "rgba(255,205,50,0.6)"; g.lineWidth = 2.5;
   for (let i = 0; i < 12; i++) { const a = i / 12 * Math.PI * 2 + t * 0.25; const r = 15 + 3 * Math.sin(t * 3 + i); g.beginPath(); g.moveTo(Math.cos(a) * 13, Math.sin(a) * 13); g.lineTo(Math.cos(a) * (13 + r), Math.sin(a) * (13 + r)); g.stroke(); }
   g.fillStyle = "#ffd23f"; g.beginPath(); g.arc(0, 0, 12, 0, 7); g.fill(); g.restore();
+  // Vögelchen (kleine V's, driften)
+  g.strokeStyle = "rgba(60,70,90,0.5)"; g.lineWidth = 1.6;
+  for (let i = 0; i < 3; i++) {
+    const bx = ((t * 16 + i * 90) % (W + 80)) - 40, by = spaceH + 26 + i * 9 + Math.sin(t + i) * 3, wsz = 4 + i;
+    g.beginPath(); g.moveTo(bx - wsz, by); g.quadraticCurveTo(bx, by - wsz * 0.7, bx + wsz, by); g.stroke();
+  }
   // Wolken (driften)
-  const cloud = (cx, cy, sc2) => { g.save(); g.translate(cx, cy); g.scale(sc2, sc2); g.fillStyle = "rgba(255,255,255,0.9)"; [[-12, 0, 9], [0, -4, 12], [13, 0, 9]].forEach(c => { g.beginPath(); g.arc(c[0], c[1], c[2], 0, 7); g.fill(); }); g.fillRect(-12, -2, 25, 8); g.restore(); };
+  const cloud = (cx, cy, sc2) => { g.save(); g.translate(cx, cy); g.scale(sc2, sc2); g.fillStyle = "rgba(255,255,255,0.92)"; [[-12, 0, 9], [0, -4, 12], [13, 0, 9]].forEach(c => { g.beginPath(); g.arc(c[0], c[1], c[2], 0, 7); g.fill(); }); g.fillRect(-12, -2, 25, 8); g.restore(); };
   cloud((t * 12) % (W + 60) - 30, spaceH + 16, 0.8);
   cloud((t * 8 + W * 0.5) % (W + 60) - 30, landTop - 14, 1);
-  // Zucker-Wölkchen (rosa) oben rechts + Lolli
-  g.save(); g.translate(W * 0.8, H * 0.19 + Math.sin(t * 1.5) * 3);
+  // Zucker-Wölkchen (rosa) oben rechts + Lolli (für Zuckerland)
+  g.save(); g.translate(W * 0.82, H * 0.22 + Math.sin(t * 1.5) * 3);
   g.fillStyle = "rgba(255,170,210,0.95)"; [[-11, 0, 8], [0, -4, 11], [12, 0, 8]].forEach(c => { g.beginPath(); g.arc(c[0], c[1], c[2], 0, 7); g.fill(); }); g.fillRect(-11, -2, 23, 8);
   g.strokeStyle = "#fff"; g.lineWidth = 2; g.beginPath(); g.moveTo(2, 6); g.lineTo(2, 16); g.stroke();
   g.fillStyle = "#ff6f91"; g.strokeStyle = "#fff"; g.lineWidth = 1.5; g.beginPath(); g.arc(2, 18, 4, 0, 7); g.fill(); g.stroke();
   g.restore();
   // --- Land ---
   let ld = g.createLinearGradient(0, landTop, 0, seaTop);
-  ld.addColorStop(0, "#84d493"); ld.addColorStop(1, "#3ca85a");
+  ld.addColorStop(0, "#8fdd9c"); ld.addColorStop(1, "#33a052");
   g.fillStyle = ld; g.beginPath(); g.moveTo(0, seaTop);
   g.lineTo(0, landTop + 12);
   for (let x = 0; x <= W; x += 16) g.lineTo(x, landTop + 12 + Math.sin(x * 0.025 + 1) * 9);
   g.lineTo(W, seaTop); g.closePath(); g.fill();
+  // sanfte Hügel-Schattierung
+  g.fillStyle = "rgba(20,90,40,0.14)"; g.beginPath(); g.moveTo(0, seaTop);
+  for (let x = 0; x <= W; x += 16) g.lineTo(x, landTop + 30 + Math.sin(x * 0.02 + 2) * 12); g.lineTo(W, seaTop); g.closePath(); g.fill();
   // Schneeberg links (für das Schneeland)
   g.save(); g.translate(W * 0.14, landTop + 8);
   g.fillStyle = "#8a97a8"; g.beginPath(); g.moveTo(-30, 40); g.lineTo(0, -34); g.lineTo(30, 40); g.closePath(); g.fill();
   g.strokeStyle = "#123018"; g.lineWidth = 1.5; g.stroke();
   g.fillStyle = "#fff"; g.beginPath(); g.moveTo(-12, -6); g.lineTo(0, -34); g.lineTo(12, -6); g.quadraticCurveTo(6, -2, 2, -8); g.quadraticCurveTo(-3, -1, -12, -6); g.closePath(); g.fill();
   g.restore();
-  // Bäumchen (links, auf der Wiese)
-  const tree = (x, y) => { g.fillStyle = "#7a4a24"; g.fillRect(x - 2, y, 4, 10); g.fillStyle = "#2f9e4f"; g.beginPath(); g.arc(x, y - 4, 9, 0, 7); g.fill(); g.strokeStyle = "#123018"; g.lineWidth = 1.5; g.stroke(); };
-  tree(W * 0.3, landTop + 46); tree(W * 0.42, landTop + 40);
+  // Frühlingswiese: Blümchen (links-mitte, um die Wiese)
+  const flower = (x, y, col) => { g.fillStyle = col; for (let k = 0; k < 5; k++) { const a = k / 5 * Math.PI * 2; g.beginPath(); g.arc(x + Math.cos(a) * 2.4, y + Math.sin(a) * 2.4, 1.6, 0, 7); g.fill(); } g.fillStyle = "#ffd23f"; g.beginPath(); g.arc(x, y, 1.4, 0, 7); g.fill(); };
+  const FLOWERS = [[0.22, 0.60, "#ff7ba8"], [0.3, 0.66, "#fff"], [0.26, 0.55, "#ffd23f"], [0.34, 0.6, "#c79bff"], [0.19, 0.66, "#ff7ba8"]];
+  FLOWERS.forEach(f => flower(W * f[0], landTop + (seaTop - landTop) * (f[1] - 0.42) / 0.3 + 4, f[2]));
+  // Dschungel (Mitte): dichte, dunkle Rundkronen + Liane
+  g.save();
+  const jx = W * 0.49, jBase = seaTop - 6;
+  // Baumstämme
+  g.fillStyle = "#5c3a1c"; g.fillRect(jx - 12, jBase - 22, 4, 24); g.fillRect(jx + 8, jBase - 18, 4, 20); g.fillRect(jx - 1, jBase - 30, 5, 32);
+  // gestaffelte Kronen (dunkelgrün)
+  const canopy = (cx, cy, r, col) => { g.fillStyle = col; g.strokeStyle = "#0f3018"; g.lineWidth = 1.4; g.beginPath(); g.arc(cx, cy, r, 0, 7); g.fill(); g.stroke(); };
+  canopy(jx - 10, jBase - 24, 10, "#1f7a3d");
+  canopy(jx + 10, jBase - 20, 9, "#25914a");
+  canopy(jx + 1, jBase - 34, 13, "#2aa054");
+  canopy(jx - 2, jBase - 28, 8, "#34b35f");
+  // Liane mit Blatt (schwingt)
+  g.strokeStyle = "#2f7d3a"; g.lineWidth = 1.6; g.beginPath(); g.moveTo(jx + 12, jBase - 30); g.quadraticCurveTo(jx + 18 + Math.sin(t * 1.5) * 3, jBase - 18, jx + 15, jBase - 6); g.stroke();
+  g.fillStyle = "#3ca85a"; g.beginPath(); g.ellipse(jx + 15, jBase - 5, 3.4, 1.8, 0.6, 0, 7); g.fill();
+  g.restore();
   // Wüsten-Sandfleck (rechte Landhälfte)
   g.save();
-  g.fillStyle = "#f0c878"; g.beginPath(); g.ellipse(W * 0.67, seaTop - 20, 74, 30, 0, 0, 7); g.fill();
+  let sand = g.createLinearGradient(0, seaTop - 44, 0, seaTop); sand.addColorStop(0, "#f7d99a"); sand.addColorStop(1, "#e6b45f");
+  g.fillStyle = sand; g.beginPath(); g.ellipse(W * 0.7, seaTop - 18, 76, 30, 0, 0, 7); g.fill();
   g.strokeStyle = "rgba(190,140,70,0.55)"; g.lineWidth = 2;
-  for (let i = 1; i <= 2; i++) { g.beginPath(); for (let x = -70; x <= 70; x += 10) { const yy = seaTop - 20 + i * 8 + Math.sin(x * 0.06) * 3; (x === -70) ? g.moveTo(W * 0.67 + x, yy) : g.lineTo(W * 0.67 + x, yy); } g.stroke(); }
-  // kleiner Kaktus im Sand
-  g.translate(W * 0.62, seaTop - 26); g.fillStyle = "#3f9e5a"; g.strokeStyle = "#123018"; g.lineWidth = 1.5;
+  for (let i = 1; i <= 2; i++) { g.beginPath(); for (let x = -72; x <= 72; x += 10) { const yy = seaTop - 18 + i * 8 + Math.sin(x * 0.06) * 3; (x === -72) ? g.moveTo(W * 0.7 + x, yy) : g.lineTo(W * 0.7 + x, yy); } g.stroke(); }
+  // Kaktus im Sand
+  g.translate(W * 0.65, seaTop - 24); g.fillStyle = "#3f9e5a"; g.strokeStyle = "#123018"; g.lineWidth = 1.5;
   g.beginPath(); g.rect(-3, -16, 6, 20); g.fill(); g.stroke();
   g.beginPath(); g.rect(-9, -8, 6, 4); g.fill(); g.stroke(); g.beginPath(); g.rect(3, -12, 6, 4); g.fill(); g.stroke();
   g.restore();
   // Vulkan (ganz rechts)
-  g.save(); g.translate(W * 0.88, landTop + 14);
+  g.save(); g.translate(W * 0.9, landTop + 14);
   g.fillStyle = "#6e4b30"; g.beginPath(); g.moveTo(-36, seaTop - landTop - 14); g.lineTo(-10, -6); g.lineTo(10, -6); g.lineTo(36, seaTop - landTop - 14); g.closePath(); g.fill();
   g.strokeStyle = "#123018"; g.lineWidth = 1.5; g.stroke();
   const lf = 0.55 + 0.45 * Math.abs(Math.sin(t * 4));
   g.fillStyle = `rgb(255,${Math.round(70 + 90 * lf)},20)`; g.beginPath(); g.ellipse(0, -6, 11, 4, 0, 0, 7); g.fill();
-  // Lava-Tropfen + Rauch
   g.fillStyle = "rgba(255,120,20,0.9)"; g.beginPath(); g.moveTo(-4, -6); g.quadraticCurveTo(-10, 6 + 6 * lf, -6, 14); g.quadraticCurveTo(-2, 6, -4, -6); g.fill();
   for (let i = 0; i < 3; i++) { const yy = -12 - ((t * 18 + i * 22) % 40); g.globalAlpha = Math.max(0, 0.5 - (-yy - 12) / 60); g.fillStyle = "#c9c9c9"; g.beginPath(); g.arc(Math.sin(t + i) * 4, yy, 4 + i, 0, 7); g.fill(); }
   g.globalAlpha = 1; g.restore();
   // --- Meer ---
   let se = g.createLinearGradient(0, seaTop, 0, H);
-  se.addColorStop(0, "#43b8ea"); se.addColorStop(1, "#1668b8");
+  se.addColorStop(0, "#5ccbf2"); se.addColorStop(1, "#0f5aa8");
   g.fillStyle = se; g.fillRect(0, seaTop, W, H - seaTop);
+  // Sonnen-Glitzer auf dem Wasser
+  g.globalAlpha = 0.5; g.strokeStyle = "#fff"; g.lineWidth = 1.4;
+  for (let i = 0; i < 5; i++) { const gy = seaTop + 8 + i * 9; const gw = 10 + 6 * Math.sin(t * 3 + i); g.beginPath(); g.moveTo(W * 0.86 - gw, gy); g.lineTo(W * 0.86 + gw, gy); g.stroke(); }
+  g.globalAlpha = 1;
   g.strokeStyle = "rgba(255,255,255,0.4)"; g.lineWidth = 2;
   for (let r = 0; r < 3; r++) { g.beginPath(); for (let x = 0; x <= W; x += 8) { const y = seaTop + 12 + r * 15 + Math.sin(x * 0.06 + t * 2 + r) * 3; x ? g.lineTo(x, y) : g.moveTo(x, y); } g.stroke(); }
+  // Fischchen (taucht auf, für Unterwasser)
+  g.save(); g.translate(W * 0.74 + Math.sin(t * 0.8) * 10, H * 0.9); g.fillStyle = "#ffb347";
+  g.beginPath(); g.ellipse(0, 0, 6, 3.4, 0, 0, 7); g.fill();
+  g.beginPath(); g.moveTo(5, 0); g.lineTo(10, -3); g.lineTo(10, 3); g.closePath(); g.fill();
+  g.fillStyle = "#fff"; g.beginPath(); g.arc(-3, -1, 1, 0, 7); g.fill(); g.restore();
   // Sandstrand + Palme
-  g.fillStyle = "#f2d9a0"; g.beginPath(); g.ellipse(W * 0.5, seaTop + 4, 64, 16, 0, 0, 7); g.fill();
-  g.save(); g.translate(W * 0.5 + 26, seaTop + 2);
+  g.fillStyle = "#f2d9a0"; g.beginPath(); g.ellipse(W * 0.44, seaTop + 4, 62, 16, 0, 0, 7); g.fill();
+  g.save(); g.translate(W * 0.44 + 24, seaTop + 2);
   g.strokeStyle = "#7a4a24"; g.lineWidth = 4; g.beginPath(); g.moveTo(0, 6); g.quadraticCurveTo(-4, -10, 2, -20); g.stroke();
   g.fillStyle = "#2f9e4f"; for (let i = 0; i < 5; i++) { const a = -0.4 + i * 0.5 + Math.sin(t * 1.5) * 0.05; g.save(); g.translate(2, -20); g.rotate(a); g.beginPath(); g.ellipse(9, 0, 10, 3, 0, 0, 7); g.fill(); g.restore(); }
+  g.fillStyle = "#8a5a2a"; g.beginPath(); g.arc(-2, -18, 2, 0, 7); g.arc(3, -18, 2, 0, 7); g.fill();
   g.restore();
 }
 function showBiomes() {
