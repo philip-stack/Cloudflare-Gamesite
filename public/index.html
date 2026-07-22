@@ -347,7 +347,7 @@
 
     <!-- Karten werden aus der zentralen Registry (/games.js) erzeugt -->
     <nav class="apps" id="apps">
-      <a class="app-card soon" href="#" style="--i:99" aria-disabled="true">
+      <a class="app-card soon" href="#" style="--i:8" aria-disabled="true">
         <span class="app-icon">✨</span>
         <span class="app-info">
           <span class="app-name">Nächste App<span class="badge">bald</span></span>
@@ -389,6 +389,8 @@
       nav.insertAdjacentHTML("beforeend", window.gameCardHTML(g, i));
       nav.appendChild(soon);   // "bald"-Karte bleibt am Ende
     });
+    // "bald"-Karte direkt nach den Spielen einblenden (sonst 99×90ms Verzögerung)
+    if (soon) soon.style.setProperty("--i", GAMES.length + 1);
 
     // --- Profil-Karte ganz oben (Gesamtüberblick) ---
     try {
