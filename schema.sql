@@ -61,6 +61,7 @@ CREATE INDEX IF NOT EXISTS idx_scores_device ON scores(device, created_at);
 CREATE TABLE IF NOT EXISTS cloud_saves (
   code       TEXT PRIMARY KEY,            -- portabler 8-stelliger Backup-Code
   data       TEXT NOT NULL,               -- localStorage-Schnappschuss (JSON)
+  device     TEXT,                        -- Kennung des zuletzt sichernden Geraets (writer)
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

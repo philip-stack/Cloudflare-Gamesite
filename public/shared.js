@@ -356,27 +356,31 @@
   // Sync-Code gesetzt ist (im Profil angelegt). Beim Verlassen der Seite
   // wird hochgeladen; beim Start wird ein NEUERER Stand von einem anderen
   // Gerät angeboten. Ohne Code passiert nichts.
-  const SYNC_VOLATILE = new Set([
-    "gs_sync_at", "gs_sync_code", "__gs_test__", "__meeri_test__",
-    "gamesite_theme", "gs_install_hint_off", "gs_challenge_done", "gs_last_game",
-  ]);
-  // Reihenfolge-unabhängiger Vergleich der "echten" Fortschrittsdaten
-  function stableSnap(o) {
-    return Object.keys(o).filter(k => !SYNC_VOLATILE.has(k)).sort()
-      .map(k => k + "=" + o[k]).join("");
-  }
   const cloud = {
     code() { return (localStorage.getItem("gs_sync_code") || "").trim().toUpperCase(); },
+    // Gerätelokale Schreiber-Kennung (NIE im Backup enthalten): damit lässt
+    // sich der eigene letzte Upload von dem eines anderen Geräts unterscheiden.
+    writerId() {
+      let w = localStorage.getItem("gs_cloud_writer");
+      if (!w) {
+        const a = new Uint8Array(12); crypto.getRandomValues(a);
+        w = [...a].map(b => "abcdefghijklmnopqrstuvwxyz0123456789"[b % 36]).join("");
+        try { localStorage.setItem("gs_cloud_writer", w); } catch {}
+      }
+      return w;
+    },
+    // Identitäts-/Sync-Bookkeeping gehört nicht ins geräteübergreifende Backup
+    _skip(k) { return /^(gs_sync|gs_cloud)/.test(k) || k === "__gs_test__" || k === "__meeri_test__"; },
     snapshot() {
       const o = {};
-      for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); o[k] = localStorage.getItem(k); }
+      for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (!this._skip(k)) o[k] = localStorage.getItem(k); }
       return o;
     },
     // Zuverlässig beim Verlassen (kein await möglich) → sendBeacon
     pushBeacon() {
       const code = this.code(); if (!code) return;
       try {
-        const body = JSON.stringify({ code, data: this.snapshot() });
+        const body = JSON.stringify({ code, data: this.snapshot(), writer: this.writerId() });
         if (navigator.sendBeacon && navigator.sendBeacon("/api/cloud", new Blob([body], { type: "application/json" }))) {
           localStorage.setItem("gs_sync_local_at", String(Date.now()));
         }
@@ -387,38 +391,38 @@
       try {
         const res = await fetch("/api/cloud", {
           method: "POST", headers: { "Content-Type": "application/json" }, keepalive: true,
-          body: JSON.stringify({ code, data: this.snapshot() }),
+          body: JSON.stringify({ code, data: this.snapshot(), writer: this.writerId() }),
         });
         const d = await res.json().catch(() => ({}));
         if (d.updated_at) { localStorage.setItem("gs_sync_at", d.updated_at); localStorage.setItem("gs_sync_local_at", String(Date.now())); }
         return d;
       } catch { return null; }
     },
-    // Beim Start: neueren Fremd-Stand erkennen und (nur bei echtem
-    // Unterschied) zum Laden anbieten. Eigene Uploads triggern nichts.
+    // Beim Start prüfen, ob der jüngste Cloud-Stand von einem ANDEREN
+    // Gerät stammt — nur dann zum Laden anbieten (eigener Upload = still).
     async syncOnLoad() {
       const code = this.code(); if (!code) return;
       try {
         const res = await fetch("/api/cloud?code=" + encodeURIComponent(code));
         if (!res.ok) return;
         const d = await res.json();
-        const localAt = localStorage.getItem("gs_sync_at") || "";
-        if (!d.updated_at || d.updated_at <= localAt) return;
+        if (!d.updated_at) return;
+        const me = this.writerId();
+        if (d.writer && d.writer === me) { localStorage.setItem("gs_sync_seen", d.updated_at); return; }
+        if (localStorage.getItem("gs_sync_seen") === d.updated_at) return;   // schon behandelt
         const data = typeof d.data === "string" ? JSON.parse(d.data) : (d.data || {});
-        if (stableSnap(data) === stableSnap(this.snapshot())) {
-          localStorage.setItem("gs_sync_at", d.updated_at);   // identisch → still übernehmen
-          return;
-        }
-        if (confirm("☁️ Auf einem anderen Gerät gibt es einen neueren Spielstand. Jetzt laden? (überschreibt den Stand auf diesem Gerät)")) {
+        if (confirm("☁️ Auf einem anderen Gerät gibt es einen neueren Spielstand. Jetzt hier laden? (überschreibt den aktuellen Stand auf diesem Gerät)")) {
           for (const [k, v] of Object.entries(data)) { try { localStorage.setItem(k, v); } catch {} }
+          localStorage.setItem("gs_sync_seen", d.updated_at);
           localStorage.setItem("gs_sync_at", d.updated_at);
+          localStorage.setItem("gs_sync_local_at", String(Date.now()));
           location.reload();
         } else {
-          localStorage.setItem("gs_sync_at", d.updated_at);   // nicht erneut nachfragen
+          localStorage.setItem("gs_sync_seen", d.updated_at);   // nicht erneut nachfragen
         }
       } catch {}
     },
-  };
+    };
 
   // ---------- Gemeinsame Styles (nutzen die CSS-Variablen der App) ----------
   const style = document.createElement("style");
@@ -476,16 +480,16 @@
     badges, skins, sound, haptic, onboard, share, markPlayed, cloud,
   };
 
-  // Auto-Backup verdrahten (nur wenn ein Sync-Code existiert): beim
-  // Verlassen der Seite automatisch hochladen. KEIN automatisches
-  // Nachfragen/Laden mehr — Wiederherstellen läuft manuell über das
-  // Profil (der frühere "neuerer Stand?"-Dialog war zu aufdringlich).
-  try {
+  // Auto-Sync verdrahten (nur wenn ein Sync-Code existiert): beim Verlassen
+  // automatisch sichern; beim Start einen neueren Stand eines ANDEREN Geraets
+  // zum Laden anbieten (robust ueber die Schreiber-Kennung, kein Spam).
+    try {
     if (cloud.code()) {
       document.addEventListener("visibilitychange", () => {
         if (document.visibilityState === "hidden") cloud.pushBeacon();
       });
       window.addEventListener("pagehide", () => cloud.pushBeacon());
+      setTimeout(() => cloud.syncOnLoad(), 900);
     }
   } catch {}
 })();

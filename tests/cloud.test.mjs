@@ -18,16 +18,16 @@ function mockDB() {
         bind(...a) { this.args = a; return this; },
         async run() {
           if (/INSERT INTO cloud_saves/.test(this.sql)) {
-            const [code, data] = this.args;
-            store.set(code, { data, updated_at: "2026-07-22T00:00:00Z" });
+            const [code, data, device] = this.args;
+            store.set(code, { data, device: device || null, updated_at: "2026-07-22T00:00:00Z" });
           }
           return {};
         },
         async first() {
-          if (/SELECT updated_at FROM cloud_saves/.test(this.sql)) {
-            const r = store.get(this.args[0]); return r ? { updated_at: r.updated_at } : null;
+          if (/SELECT updated_at, device FROM cloud_saves/.test(this.sql)) {
+            const r = store.get(this.args[0]); return r ? { updated_at: r.updated_at, device: r.device } : null;
           }
-          if (/SELECT data, updated_at FROM cloud_saves/.test(this.sql)) {
+          if (/SELECT data, updated_at, device FROM cloud_saves/.test(this.sql)) {
             return store.get(this.args[0]) || null;
           }
           return null;
@@ -48,13 +48,15 @@ const get = async code => {
 };
 
 // Neues Backup ohne Code → Server vergibt einen
-let r = await post({ data: { bb_name: "Tester", bb_best: "1234" } });
+let r = await post({ data: { bb_name: "Tester", bb_best: "1234" }, writer: "geraeta12" });
 assert("Backup gesichert (200) + Code vergeben", r.status === 200 && /^[A-Z0-9]{6,12}$/.test(r.data.code));
+assert("Writer gespeichert", r.data.writer === "geraeta12");
 const code = r.data.code;
 
-// Wiederherstellen
+// Wiederherstellen (inkl. Writer für die Geräte-Erkennung)
 r = await get(code);
 assert("Wiederherstellen (200)", r.status === 200 && typeof r.data.data === "string");
+assert("Writer beim Laden zurück", r.data.writer === "geraeta12");
 const restored = JSON.parse(r.data.data);
 assert("Daten stimmen", restored.bb_name === "Tester" && restored.bb_best === "1234");
 
@@ -67,6 +69,10 @@ assert("Überschrieben", JSON.parse(r.data.data).bb_name === "Neu");
 // Leeres Backup abgelehnt
 r = await post({ data: {} });
 assert("Leeres Backup abgelehnt (400)", r.status === 400);
+
+// Ungültige Schreiber-Kennung abgelehnt
+r = await post({ data: { x: "1" }, writer: "BAD WRITER!" });
+assert("Ungültiger Writer abgelehnt (400)", r.status === 400);
 
 // Ungültiger Code beim Laden
 r = await get("!!bad!!");

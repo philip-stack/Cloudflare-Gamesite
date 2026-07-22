@@ -410,10 +410,23 @@
     };
     renderSaved();
 
-    // Kompletter localStorage-Schnappschuss (klein — reicht locker unter dem Cap)
+    // Schreiber-Kennung (gerätelokal, NIE ins Backup) — für die robuste
+    // "von anderem Gerät?"-Erkennung beim Auto-Sync
+    const cloudWriter = () => {
+      let w = localStorage.getItem("gs_cloud_writer");
+      if (!w) {
+        const a = new Uint8Array(12); crypto.getRandomValues(a);
+        w = [...a].map(b => "abcdefghijklmnopqrstuvwxyz0123456789"[b % 36]).join("");
+        try { localStorage.setItem("gs_cloud_writer", w); } catch {}
+      }
+      return w;
+    };
+    // Schnappschuss OHNE Sync-/Identitäts-Bookkeeping (sonst wandert die
+    // Schreiber-Kennung mit und die Geräte-Erkennung bricht)
+    const skip = k => /^(gs_sync|gs_cloud)/.test(k) || k === "__gs_test__" || k === "__meeri_test__";
     const snapshot = () => {
       const o = {};
-      for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); o[k] = localStorage.getItem(k); }
+      for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (!skip(k)) o[k] = localStorage.getItem(k); }
       return o;
     };
 
@@ -422,13 +435,13 @@
       try {
         const res = await fetch("/api/cloud", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ code: savedCode() || undefined, data: snapshot() }),
+          body: JSON.stringify({ code: savedCode() || undefined, data: snapshot(), writer: cloudWriter() }),
         });
         const d = await res.json().catch(() => ({}));
         if (!res.ok) return setStatus(d.error || "Sichern fehlgeschlagen", "err");
         try {
           localStorage.setItem("gs_sync_code", d.code);
-          if (d.updated_at) localStorage.setItem("gs_sync_at", d.updated_at);
+          if (d.updated_at) { localStorage.setItem("gs_sync_at", d.updated_at); localStorage.setItem("gs_sync_seen", d.updated_at); }
           localStorage.setItem("gs_sync_local_at", String(Date.now()));
         } catch {}
         showCode(d.code);
@@ -449,8 +462,12 @@
         const data = typeof d.data === "string" ? JSON.parse(d.data) : d.data;
         if (!data || typeof data !== "object") return setStatus("Backup unlesbar", "err");
         if (!confirm("Backup laden? Der aktuelle Stand auf diesem Gerät wird überschrieben.")) { setStatus(""); return; }
-        for (const [k, v] of Object.entries(data)) { try { localStorage.setItem(k, v); } catch {} }
-        try { localStorage.setItem("gs_sync_code", code); if (d.updated_at) localStorage.setItem("gs_sync_at", d.updated_at); } catch {}
+        for (const [k, v] of Object.entries(data)) { try { if (!skip(k)) localStorage.setItem(k, v); } catch {} }
+        try {
+          localStorage.setItem("gs_sync_code", code);
+          if (d.updated_at) { localStorage.setItem("gs_sync_at", d.updated_at); localStorage.setItem("gs_sync_seen", d.updated_at); }
+          localStorage.setItem("gs_sync_local_at", String(Date.now()));
+        } catch {}
         setStatus("✔ Geladen! Seite wird neu geladen …", "ok");
         setTimeout(() => location.reload(), 900);
       } catch { setStatus("Keine Verbindung", "err"); }
