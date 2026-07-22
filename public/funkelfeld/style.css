@@ -725,7 +725,9 @@ body.skin-papier .blk::after { display: none; }
   background: rgba(224, 219, 201, 0.85);
   box-shadow: 0 0 0 1px rgba(138, 106, 28, 0.35) inset, 0 14px 40px -20px rgba(40, 50, 40, 0.45);
 }
-[data-theme="light"] .cell {
+/* Nur LEERE Zellen umfärben — gefüllte Blöcke (.blk) behalten ihre Gem-Farbe,
+   sonst überschreibt diese Regel im Hellmodus die Blockfarbe (höhere Spezifität). */
+[data-theme="light"] .cell:not(.blk) {
   background: rgba(35, 45, 35, 0.07);
   box-shadow: 0 1px 2px rgba(40, 50, 40, 0.14) inset;
 }
