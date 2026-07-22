@@ -377,7 +377,9 @@
       const code = this.code(); if (!code) return;
       try {
         const body = JSON.stringify({ code, data: this.snapshot() });
-        if (navigator.sendBeacon) navigator.sendBeacon("/api/cloud", new Blob([body], { type: "application/json" }));
+        if (navigator.sendBeacon && navigator.sendBeacon("/api/cloud", new Blob([body], { type: "application/json" }))) {
+          localStorage.setItem("gs_sync_local_at", String(Date.now()));
+        }
       } catch {}
     },
     async push() {
@@ -388,7 +390,7 @@
           body: JSON.stringify({ code, data: this.snapshot() }),
         });
         const d = await res.json().catch(() => ({}));
-        if (d.updated_at) localStorage.setItem("gs_sync_at", d.updated_at);
+        if (d.updated_at) { localStorage.setItem("gs_sync_at", d.updated_at); localStorage.setItem("gs_sync_local_at", String(Date.now())); }
         return d;
       } catch { return null; }
     },

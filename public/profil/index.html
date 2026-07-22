@@ -124,6 +124,8 @@
     .cloud-status { margin-top:10px; font-size:0.82rem; color:var(--muted); min-height:1em; text-align:center; }
     .cloud-status.ok { color:var(--gold); }
     .cloud-status.err { color:#e0645a; }
+    .cloud-saved { font-size:0.78rem; color:var(--muted); margin-bottom:12px; }
+    .cloud-saved b { color:var(--ink); font-weight:600; }
 
     /* --- Spiel-Zeilen --- */
     .rows { display:flex; flex-direction:column; gap:10px; }
@@ -177,6 +179,7 @@
     <div class="cloud-card">
       <p class="cloud-info">Sichere alle Spielstände, Rekorde &amp; Abzeichen mit einem Code — und hol sie auf jedem Gerät zurück.</p>
       <div class="cloud-code" id="cloud-code" hidden>Dein Code: <b id="cloud-code-val"></b> <button id="cloud-copy" title="Kopieren">📋</button></div>
+      <div class="cloud-saved" id="cloud-saved"></div>
       <div class="cloud-btns">
         <button class="btn-secondary" id="cloud-save">⬆️ Jetzt sichern</button>
         <button class="btn-secondary" id="cloud-load">⬇️ Von Code laden</button>
@@ -389,6 +392,24 @@
     const savedCode = () => (localStorage.getItem("gs_sync_code") || "").trim().toUpperCase();
     if (savedCode()) showCode(savedCode());
 
+    // "Zuletzt gesichert" anzeigen (lokaler Zeitstempel jedes Uploads,
+    // Fallback: Server-Zeitstempel in UTC)
+    const renderSaved = () => {
+      const el = $("#cloud-saved");
+      let d = null;
+      const ms = Number(localStorage.getItem("gs_sync_local_at") || 0);
+      if (ms > 0) d = new Date(ms);
+      else {
+        const at = localStorage.getItem("gs_sync_at");
+        if (at) d = new Date(at.replace(" ", "T") + "Z");   // Server-Zeit ist UTC
+      }
+      if (!savedCode()) { el.textContent = ""; return; }
+      el.innerHTML = (d && !isNaN(d))
+        ? `🕒 Zuletzt gesichert: <b>${d.toLocaleString("de-AT", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}</b>`
+        : "Noch nie gesichert";
+    };
+    renderSaved();
+
     // Kompletter localStorage-Schnappschuss (klein — reicht locker unter dem Cap)
     const snapshot = () => {
       const o = {};
@@ -405,8 +426,13 @@
         });
         const d = await res.json().catch(() => ({}));
         if (!res.ok) return setStatus(d.error || "Sichern fehlgeschlagen", "err");
-        try { localStorage.setItem("gs_sync_code", d.code); if (d.updated_at) localStorage.setItem("gs_sync_at", d.updated_at); } catch {}
+        try {
+          localStorage.setItem("gs_sync_code", d.code);
+          if (d.updated_at) localStorage.setItem("gs_sync_at", d.updated_at);
+          localStorage.setItem("gs_sync_local_at", String(Date.now()));
+        } catch {}
         showCode(d.code);
+        renderSaved();
         setStatus("✔ Gesichert! Notiere dir den Code für andere Geräte.", "ok");
       } catch { setStatus("Keine Verbindung", "err"); }
     };
