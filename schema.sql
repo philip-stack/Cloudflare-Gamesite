@@ -63,3 +63,13 @@ CREATE TABLE IF NOT EXISTS cloud_saves (
   data       TEXT NOT NULL,               -- localStorage-Schnappschuss (JSON)
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Anonymer Fehler-Melder (Details: functions/api/log.js)
+CREATE TABLE IF NOT EXISTS error_log (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  msg        TEXT NOT NULL,
+  page       TEXT,
+  ua         TEXT,
+  extra      TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);

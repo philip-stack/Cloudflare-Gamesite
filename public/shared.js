@@ -351,6 +351,73 @@
     try { localStorage.setItem("gs_last_game", game); } catch {}
   }
 
+  // ---------- Cloud-Auto-Sync ----------
+  // Sichert den localStorage-Schnappschuss automatisch, sobald ein
+  // Sync-Code gesetzt ist (im Profil angelegt). Beim Verlassen der Seite
+  // wird hochgeladen; beim Start wird ein NEUERER Stand von einem anderen
+  // Gerät angeboten. Ohne Code passiert nichts.
+  const SYNC_VOLATILE = new Set([
+    "gs_sync_at", "gs_sync_code", "__gs_test__", "__meeri_test__",
+    "gamesite_theme", "gs_install_hint_off", "gs_challenge_done", "gs_last_game",
+  ]);
+  // Reihenfolge-unabhängiger Vergleich der "echten" Fortschrittsdaten
+  function stableSnap(o) {
+    return Object.keys(o).filter(k => !SYNC_VOLATILE.has(k)).sort()
+      .map(k => k + "=" + o[k]).join("");
+  }
+  const cloud = {
+    code() { return (localStorage.getItem("gs_sync_code") || "").trim().toUpperCase(); },
+    snapshot() {
+      const o = {};
+      for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); o[k] = localStorage.getItem(k); }
+      return o;
+    },
+    // Zuverlässig beim Verlassen (kein await möglich) → sendBeacon
+    pushBeacon() {
+      const code = this.code(); if (!code) return;
+      try {
+        const body = JSON.stringify({ code, data: this.snapshot() });
+        if (navigator.sendBeacon) navigator.sendBeacon("/api/cloud", new Blob([body], { type: "application/json" }));
+      } catch {}
+    },
+    async push() {
+      const code = this.code(); if (!code) return null;
+      try {
+        const res = await fetch("/api/cloud", {
+          method: "POST", headers: { "Content-Type": "application/json" }, keepalive: true,
+          body: JSON.stringify({ code, data: this.snapshot() }),
+        });
+        const d = await res.json().catch(() => ({}));
+        if (d.updated_at) localStorage.setItem("gs_sync_at", d.updated_at);
+        return d;
+      } catch { return null; }
+    },
+    // Beim Start: neueren Fremd-Stand erkennen und (nur bei echtem
+    // Unterschied) zum Laden anbieten. Eigene Uploads triggern nichts.
+    async syncOnLoad() {
+      const code = this.code(); if (!code) return;
+      try {
+        const res = await fetch("/api/cloud?code=" + encodeURIComponent(code));
+        if (!res.ok) return;
+        const d = await res.json();
+        const localAt = localStorage.getItem("gs_sync_at") || "";
+        if (!d.updated_at || d.updated_at <= localAt) return;
+        const data = typeof d.data === "string" ? JSON.parse(d.data) : (d.data || {});
+        if (stableSnap(data) === stableSnap(this.snapshot())) {
+          localStorage.setItem("gs_sync_at", d.updated_at);   // identisch → still übernehmen
+          return;
+        }
+        if (confirm("☁️ Auf einem anderen Gerät gibt es einen neueren Spielstand. Jetzt laden? (überschreibt den Stand auf diesem Gerät)")) {
+          for (const [k, v] of Object.entries(data)) { try { localStorage.setItem(k, v); } catch {} }
+          localStorage.setItem("gs_sync_at", d.updated_at);
+          location.reload();
+        } else {
+          localStorage.setItem("gs_sync_at", d.updated_at);   // nicht erneut nachfragen
+        }
+      } catch {}
+    },
+  };
+
   // ---------- Gemeinsame Styles (nutzen die CSS-Variablen der App) ----------
   const style = document.createElement("style");
   style.textContent = `
@@ -404,6 +471,17 @@
 
   window.GS = {
     esc, deviceId, getName, setName, submitScore, scoreFlow, showLeaderboard,
-    badges, skins, sound, haptic, onboard, share, markPlayed,
+    badges, skins, sound, haptic, onboard, share, markPlayed, cloud,
   };
+
+  // Auto-Sync verdrahten (nur wenn ein Sync-Code existiert)
+  try {
+    if (cloud.code()) {
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "hidden") cloud.pushBeacon();
+      });
+      window.addEventListener("pagehide", () => cloud.pushBeacon());
+      setTimeout(() => cloud.syncOnLoad(), 800);
+    }
+  } catch {}
 })();

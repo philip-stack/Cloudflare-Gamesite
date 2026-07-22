@@ -60,7 +60,17 @@
       background:rgba(232,193,90,0.18); box-shadow:0 0 0 2px var(--gold) inset, 0 6px 18px -8px rgba(0,0,0,0.5);
       transition:transform 0.15s var(--ease-spring); }
     .avatar:active { transform:scale(0.93); }
-    .avatar-hint { color:var(--muted); font-size:0.72rem; margin-bottom:10px; letter-spacing:0.03em; }
+    .avatar.frame-rainbow { box-shadow:0 6px 18px -8px rgba(0,0,0,0.5); position:relative; }
+    .avatar.frame-rainbow::after { content:""; position:absolute; inset:-5px; border-radius:50%; padding:5px;
+      background:conic-gradient(#ff5e7a,#ffd23f,#4fd18b,#45cfd6,#5b9cff,#b678ff,#ff5e7a);
+      -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0); -webkit-mask-composite:xor;
+      mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0); mask-composite:exclude;
+      animation:spin 6s linear infinite; pointer-events:none; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+    .avatar-hint { color:var(--muted); font-size:0.72rem; margin-bottom:6px; letter-spacing:0.03em; }
+    .frame-link { border:0; background:transparent; color:var(--gold); font:600 0.78rem var(--font-ui); cursor:pointer;
+      margin-bottom:10px; padding:2px 6px; }
+    .frame-lvl { font-size:0.68rem; color:var(--muted); }
 
     /* --- Emoji-Auswahl --- */
     .ovl { position:fixed; inset:0; z-index:50; display:grid; place-items:center; padding:18px;
@@ -150,6 +160,7 @@
     <div class="hero-card">
       <button class="avatar" id="avatar" title="Profilbild wählen">👤</button>
       <div class="avatar-hint" id="avatar-hint">Tippen zum Wählen</div>
+      <button class="frame-link" id="frame-btn">🖼️ Rahmen wählen</button>
       <div id="name-line"></div>
       <div class="lvl-line" id="lvl-line">Spieleabend-Level 1</div>
       <div class="xpbar"><div class="xpfill" id="xpfill" style="width:0%"></div></div>
@@ -234,10 +245,33 @@
     const getAvatar = () => localStorage.getItem("gs_avatar") || "";
     const setAvatar = v => { try { v ? localStorage.setItem("gs_avatar", v) : localStorage.removeItem("gs_avatar"); } catch {} };
 
+    // --- Rahmen (durch Spieleabend-Level freigeschaltet) ---
+    const FRAMES = [
+      { id: "none", name: "Standard", req: 1 },
+      { id: "bronze", name: "Bronze", req: 2, col: "#cd7f32" },
+      { id: "silber", name: "Silber", req: 4, col: "#bfc7cf" },
+      { id: "gold", name: "Gold", req: 6, col: "#e8c15a" },
+      { id: "smaragd", name: "Smaragd", req: 9, col: "#4fd18b" },
+      { id: "rubin", name: "Rubin", req: 12, col: "#ff5e7a" },
+      { id: "regenbogen", name: "Regenbogen", req: 16, rainbow: true },
+    ];
+    const getFrame = () => localStorage.getItem("gs_frame") || "none";
+    const setFrame = v => { try { localStorage.setItem("gs_frame", v); } catch {} };
+    const frameUnlocked = f => level >= (f.req || 1);
+    const applyFrame = el => {
+      let f = FRAMES.find(x => x.id === getFrame()) || FRAMES[0];
+      if (!frameUnlocked(f)) f = FRAMES[0];              // gesperrt → Standard
+      el.classList.toggle("frame-rainbow", !!f.rainbow);
+      el.style.boxShadow = f.rainbow ? ""
+        : f.col ? `0 0 0 3px ${f.col}, 0 0 0 5px rgba(0,0,0,0.25), 0 6px 18px -8px rgba(0,0,0,0.5)`
+        : "";
+    };
+
     // --- Name + Avatar (bearbeitbar) ---
     const renderName = () => {
       const n = getName(), av = getAvatar();
       $("#avatar").textContent = av || (n ? n[0].toUpperCase() : "👤");
+      applyFrame($("#avatar"));
       $("#avatar-hint").textContent = av ? "Tippen zum Ändern" : "Tippen für Profilbild";
       $("#name-line").innerHTML = n
         ? `<div class="pname">${esc(n)}<span class="edit" id="edit-name" title="Name ändern">✏️</span></div>`
@@ -273,6 +307,39 @@
       ovl.querySelector("#av-clear").onclick = () => { setAvatar(""); renderName(); close(); };
       ovl.querySelectorAll(".emoji-grid button").forEach(b => {
         b.onclick = () => { setAvatar(b.dataset.e); renderName(); close(); };
+      });
+    };
+
+    // --- Rahmen-Auswahl-Overlay ---
+    $("#frame-btn").onclick = () => {
+      const cur = getFrame();
+      const ovl = document.createElement("div");
+      ovl.className = "ovl";
+      ovl.innerHTML = `
+        <div class="ovl-panel">
+          <h2>Rahmen wählen</h2>
+          <p class="sub">Durch dein Spieleabend-Level freischalten — aktuell Level ${level}</p>
+          <div class="emoji-grid" style="grid-template-columns:repeat(3,1fr)">
+            ${FRAMES.map(f => {
+              const un = frameUnlocked(f);
+              const ring = f.rainbow
+                ? "background:conic-gradient(#ff5e7a,#ffd23f,#4fd18b,#45cfd6,#5b9cff,#b678ff,#ff5e7a)"
+                : f.col ? `box-shadow:0 0 0 3px ${f.col} inset` : "box-shadow:0 0 0 2px var(--gold) inset";
+              return `<button data-f="${f.id}" class="${f.id === cur ? "sel" : ""}" ${un ? "" : "disabled"} style="flex-direction:column;gap:6px;${un ? "" : "opacity:0.45"}">
+                <span style="width:34px;height:34px;border-radius:50%;${ring}"></span>
+                <span style="font-size:0.72rem;font-weight:600">${f.name}</span>
+                <span class="frame-lvl">${un ? (f.id === cur ? "✓ aktiv" : "wählen") : "🔒 Lvl " + f.req}</span>
+              </button>`;
+            }).join("")}
+          </div>
+          <button class="btn-secondary" id="fr-close">Schließen</button>
+        </div>`;
+      document.body.appendChild(ovl);
+      const close = () => ovl.remove();
+      ovl.onclick = e => { if (e.target === ovl) close(); };
+      ovl.querySelector("#fr-close").onclick = close;
+      ovl.querySelectorAll(".emoji-grid button:not([disabled])").forEach(b => {
+        b.onclick = () => { setFrame(b.dataset.f); renderName(); close(); };
       });
     };
 
@@ -338,7 +405,7 @@
         });
         const d = await res.json().catch(() => ({}));
         if (!res.ok) return setStatus(d.error || "Sichern fehlgeschlagen", "err");
-        try { localStorage.setItem("gs_sync_code", d.code); } catch {}
+        try { localStorage.setItem("gs_sync_code", d.code); if (d.updated_at) localStorage.setItem("gs_sync_at", d.updated_at); } catch {}
         showCode(d.code);
         setStatus("✔ Gesichert! Notiere dir den Code für andere Geräte.", "ok");
       } catch { setStatus("Keine Verbindung", "err"); }
@@ -357,7 +424,7 @@
         if (!data || typeof data !== "object") return setStatus("Backup unlesbar", "err");
         if (!confirm("Backup laden? Der aktuelle Stand auf diesem Gerät wird überschrieben.")) { setStatus(""); return; }
         for (const [k, v] of Object.entries(data)) { try { localStorage.setItem(k, v); } catch {} }
-        try { localStorage.setItem("gs_sync_code", code); } catch {}
+        try { localStorage.setItem("gs_sync_code", code); if (d.updated_at) localStorage.setItem("gs_sync_at", d.updated_at); } catch {}
         setStatus("✔ Geladen! Seite wird neu geladen …", "ok");
         setTimeout(() => location.reload(), 900);
       } catch { setStatus("Keine Verbindung", "err"); }

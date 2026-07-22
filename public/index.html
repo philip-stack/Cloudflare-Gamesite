@@ -192,6 +192,15 @@
       margin-bottom: 6px;
     }
     .app-card.profile .app-icon { background: rgba(232,193,90,0.2); }
+    .app-icon.frame-rainbow { position: relative; }
+    .app-icon.frame-rainbow::after {
+      content: ""; position: absolute; inset: -3px; border-radius: 16px; padding: 3px;
+      background: conic-gradient(#ff5e7a,#ffd23f,#4fd18b,#45cfd6,#5b9cff,#b678ff,#ff5e7a);
+      -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor;
+      mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); mask-composite: exclude;
+      animation: spin-fr 6s linear infinite; pointer-events: none;
+    }
+    @keyframes spin-fr { to { transform: rotate(360deg); } }
     .prof-stat { color: var(--gold); font-weight: 700; }
     .app-card.challenge {
       background: linear-gradient(175deg, rgba(90,208,127,0.14), rgba(90,208,127,0.03));
@@ -432,6 +441,12 @@
           <span class="app-desc" style="display:block">${sub}</span>
         </span>
         <span class="app-arrow">→</span>`;
+      // Freigeschalteten Rahmen auf das Profil-Icon anwenden
+      const FCOL = { bronze: "#cd7f32", silber: "#bfc7cf", gold: "#e8c15a", smaragd: "#4fd18b", rubin: "#ff5e7a" };
+      const fr = localStorage.getItem("gs_frame") || "none";
+      const ic = prof.querySelector(".app-icon");
+      if (ic && fr === "regenbogen") ic.classList.add("frame-rainbow");
+      else if (ic && FCOL[fr]) ic.style.boxShadow = `0 0 0 2.5px ${FCOL[fr]}, 0 0 0 4px rgba(0,0,0,0.25)`;
       nav.insertBefore(prof, nav.firstElementChild);
     } catch {}
 

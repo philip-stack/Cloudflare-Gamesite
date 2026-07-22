@@ -122,4 +122,31 @@
       });
     });
   }
+
+  // ------------------------------------------------------------------
+  // Anonymer Fehler-Melder: JS-Fehler kurz an /api/log schicken, damit
+  // Defekte auf fremden Geräten auffallen. Gedrosselt (max. 5 pro Seite,
+  // keine Duplikate) und rein "fire and forget".
+  // ------------------------------------------------------------------
+  (function () {
+    let sent = 0; const seen = new Set();
+    function report(msg, extra) {
+      try {
+        if (sent >= 5) return;
+        msg = String(msg || "").slice(0, 300);
+        if (!msg || seen.has(msg)) return;
+        seen.add(msg); sent++;
+        const body = JSON.stringify({
+          msg, extra: extra ? String(extra).slice(0, 200) : "",
+          page: location.pathname, ua: navigator.userAgent.slice(0, 200),
+        });
+        if (navigator.sendBeacon) navigator.sendBeacon("/api/log", new Blob([body], { type: "application/json" }));
+        else fetch("/api/log", { method: "POST", headers: { "Content-Type": "application/json" }, body, keepalive: true }).catch(() => {});
+      } catch (_) {}
+    }
+    window.addEventListener("error", e => report(e.message, (e.filename || "") + ":" + (e.lineno || "")));
+    window.addEventListener("unhandledrejection", e => {
+      const r = e.reason; report("unhandledrejection: " + ((r && r.message) || r), r && r.stack ? String(r.stack).slice(0, 200) : "");
+    });
+  })();
 })();
