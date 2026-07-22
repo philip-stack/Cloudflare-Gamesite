@@ -628,6 +628,12 @@
       }
     } catch {}
 
+    // --- Profil-Karte immer ganz nach oben (nach allen Einfügungen) ---
+    try {
+      const pc = nav.querySelector(".app-card.profile");
+      if (pc) nav.insertBefore(pc, nav.firstElementChild);
+    } catch {}
+
     // --- Install-Hinweis (nicht in der installierten App, abschaltbar) ---
     const standalone = matchMedia("(display-mode: standalone)").matches || navigator.standalone;
     if (!standalone && !localStorage.getItem("gs_install_hint_off")) {
