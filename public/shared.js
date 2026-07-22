@@ -476,14 +476,16 @@
     badges, skins, sound, haptic, onboard, share, markPlayed, cloud,
   };
 
-  // Auto-Sync verdrahten (nur wenn ein Sync-Code existiert)
+  // Auto-Backup verdrahten (nur wenn ein Sync-Code existiert): beim
+  // Verlassen der Seite automatisch hochladen. KEIN automatisches
+  // Nachfragen/Laden mehr — Wiederherstellen läuft manuell über das
+  // Profil (der frühere "neuerer Stand?"-Dialog war zu aufdringlich).
   try {
     if (cloud.code()) {
       document.addEventListener("visibilitychange", () => {
         if (document.visibilityState === "hidden") cloud.pushBeacon();
       });
       window.addEventListener("pagehide", () => cloud.pushBeacon());
-      setTimeout(() => cloud.syncOnLoad(), 800);
     }
   } catch {}
 })();
