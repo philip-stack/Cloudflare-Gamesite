@@ -223,15 +223,11 @@ body {
 /* Welt-Karte (Biome-Auswahl) */
 .biome-map {
   position: relative; width: 100%; height: 270px; border-radius: 16px; overflow: hidden;
-  margin: 4px 0 14px; box-shadow: 0 0 0 2.5px #123018 inset;
-  background:
-    radial-gradient(circle at 78% 46%, rgba(255,120,40,0.35) 0 8%, rgba(255,120,40,0) 22%),
-    linear-gradient(#080618 0%, #241a4a 14%, #4a72d0 25%, #a9e0ff 31%,
-      #7bd08a 39%, #46c266 64%, #2ea6e6 71%, #1a72c4 100%);
+  margin: 4px 0 14px; box-shadow: 0 0 0 2.5px #123018 inset; background: #070512;
 }
-.map-sun { position: absolute; top: 6px; right: 10px; font-size: 1.5rem; filter: drop-shadow(0 0 6px rgba(255,210,60,0.7)); }
+.map-cv { position: absolute; inset: 0; width: 100%; height: 100%; }
 .biome-spot {
-  position: absolute; transform: translate(-50%, -50%);
+  position: absolute; z-index: 2; transform: translate(-50%, -50%);
   display: flex; flex-direction: column; align-items: center; gap: 1px;
   border: 0; background: rgba(255,255,255,0.16); cursor: pointer; font-family: inherit;
   padding: 6px 8px; border-radius: 14px; color: #fff;

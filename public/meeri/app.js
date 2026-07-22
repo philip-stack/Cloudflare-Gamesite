@@ -441,15 +441,14 @@ function drawMeeri(g, cx, cy, s, tier, t, pop, gl, variant, m) {
   const wob = Math.sin(t * 4 + tier) * s * 0.015;
   const sqx = 1 + (moving ? (1 - hop) * 0.06 : 0) + breathe;  // Squash & Stretch
   const sqy = 1 - (moving ? (1 - hop) * 0.06 : 0) - breathe;
+  const face = m ? (m.face || 1) : 1;
+  const blink = m ? (((t * 0.6 + (m.id || 0) * 1.7) % 3.4) < 0.12) : false;
   g.save();
   g.translate(cx, cy + wob - hop * s * 0.14);
   g.rotate(tilt);
   g.scale(sc * sqx, sc * sqy);
   const lw = Math.max(2, s * 0.07);
   g.lineWidth = lw; g.strokeStyle = "#123018"; g.lineJoin = "round"; g.lineCap = "round";
-  // Fuß-Hub für den Schritt-Zyklus (abwechselnd)
-  const footL = moving ? Math.max(0, Math.sin(step)) * s * 0.1 : 0;
-  const footR = moving ? Math.max(0, Math.sin(step + Math.PI)) * s * 0.1 : 0;
 
   // Aura bei hohen Stufen (Kosmos-Stufen leuchten stärker)
   if (tier >= 9) {
@@ -474,20 +473,43 @@ function drawMeeri(g, cx, cy, s, tier, t, pop, gl, variant, m) {
     if (variant === "ghost") { g.globalAlpha = 0.75; }   // Geister leicht transparent
   }
 
+  // Schatten (bleibt am Boden, dreht nicht mit)
+  g.save(); g.fillStyle = "rgba(0,0,0,0.18)";
+  g.beginPath(); g.ellipse(0, s * 0.5, s * 0.42 * (1 - hop * 0.25), s * 0.12 * (1 - hop * 0.3), 0, 0, 7); g.fill(); g.restore();
+
+  // ===== Kreatur (spiegelt sich in Blickrichtung) =====
+  g.save();
+  g.scale(face, 1);
+  g.lineWidth = lw; g.strokeStyle = "#123018";
+
   // Rücken-Deko (Umhang, Flügel) HINTER dem Körper
   featBack(g, s, tier, t, T);
 
-  // Schatten
-  g.save(); g.fillStyle = "rgba(0,0,0,0.18)";
-  g.beginPath(); g.ellipse(0, s * 0.5, s * 0.42, s * 0.12, 0, 0, 7); g.fill(); g.restore();
+  // Beine + Füße (schwingen abwechselnd beim Laufen)
+  const fLx = -s * 0.18 + (moving ? Math.cos(step) * s * 0.08 : 0);
+  const fRx = s * 0.18 + (moving ? Math.cos(step + Math.PI) * s * 0.08 : 0);
+  const fLy = s * 0.44 - (moving ? Math.max(0, Math.sin(step)) * s * 0.12 : 0);
+  const fRy = s * 0.44 - (moving ? Math.max(0, Math.sin(step + Math.PI)) * s * 0.12 : 0);
+  const drawLeg = (hx, fx, fy) => {
+    g.strokeStyle = "#123018"; g.lineWidth = s * 0.12; g.beginPath(); g.moveTo(hx, s * 0.26); g.lineTo(fx, fy); g.stroke();
+    g.strokeStyle = T.c2; g.lineWidth = s * 0.07; g.beginPath(); g.moveTo(hx, s * 0.26); g.lineTo(fx, fy); g.stroke();
+    g.strokeStyle = "#123018"; g.lineWidth = lw;
+    g.fillStyle = T.c2; g.beginPath(); g.ellipse(fx, fy, s * 0.1, s * 0.07, 0, 0, 7); fst(g);
+  };
+  drawLeg(-s * 0.16, fLx, fLy);
+  drawLeg(s * 0.16, fRx, fRy);
 
-  g.lineWidth = lw; g.strokeStyle = "#123018";
-  // Füße (heben sich abwechselnd beim Laufen)
-  g.fillStyle = T.c2;
-  g.beginPath(); g.ellipse(-s * 0.22, s * 0.42 - footL, s * 0.1, s * 0.07, 0, 0, 7); fst(g);
-  g.beginPath(); g.ellipse(s * 0.22, s * 0.42 - footR, s * 0.1, s * 0.07, 0, 0, 7); fst(g);
-  // Ohren
-  for (const ex of [-s * 0.3, s * 0.3]) { g.beginPath(); g.ellipse(ex, -s * 0.28, s * 0.14, s * 0.12, 0, 0, 7); fst(g); }
+  // Ohren (flattern beim Hüpfen)
+  const earFlop = (moving ? Math.sin(step) : Math.sin(t * 2.4)) * 0.18;
+  const drawEar = (ex, rot) => {
+    g.save(); g.translate(ex, -s * 0.24); g.rotate(rot);
+    g.fillStyle = T.c2; g.beginPath(); g.ellipse(0, -s * 0.06, s * 0.14, s * 0.12, 0, 0, 7); fst(g);
+    g.fillStyle = "rgba(255,150,170,0.5)"; g.beginPath(); g.ellipse(0, -s * 0.05, s * 0.07, s * 0.07, 0, 0, 7); g.fill();
+    g.restore();
+  };
+  g.fillStyle = T.c2; g.strokeStyle = "#123018"; g.lineWidth = lw;
+  drawEar(-s * 0.3, -earFlop);
+  drawEar(s * 0.3, earFlop);
 
   // Körper (Kartoffel) mit weichem Verlauf
   const grad = g.createLinearGradient(0, -s * 0.4, 0, s * 0.45);
@@ -500,8 +522,9 @@ function drawMeeri(g, cx, cy, s, tier, t, pop, gl, variant, m) {
   // helle Schnauze
   g.beginPath(); g.ellipse(0, s * 0.12, s * 0.26, s * 0.2, 0, 0, 7); g.fillStyle = "rgba(255,255,255,0.5)"; g.fill();
 
-  drawFace(g, s, tier, t);
+  drawFace(g, s, tier, t, blink);
   featFront(g, s, tier, t, T);
+  g.restore();   // Ende Blickrichtungs-Spiegelung
 
   // Schillern-Symbol
   if (vd) {
@@ -525,7 +548,7 @@ function drawMeeri(g, cx, cy, s, tier, t, pop, gl, variant, m) {
 }
 
 // Gesicht mit stufenspezifischem Ausdruck
-function drawFace(g, s, tier, t) {
+function drawFace(g, s, tier, t, blink) {
   const lw = Math.max(2, s * 0.07);
   g.lineWidth = lw; g.strokeStyle = "#123018";
 
@@ -555,13 +578,18 @@ function drawFace(g, s, tier, t) {
   const er = cute ? s * 0.13 : s * 0.11;
   const eyeY = -s * 0.05;
   for (const ex of [-s * 0.16, s * 0.16]) {
+    if (blink) {   // geschlossenes Auge (Blinzeln)
+      g.strokeStyle = "#123018"; g.lineWidth = Math.max(2, s * 0.03);
+      g.beginPath(); g.arc(ex, eyeY, er, 0.15 * Math.PI, 0.85 * Math.PI); g.stroke();
+      continue;
+    }
     g.fillStyle = "#fff"; g.beginPath(); g.arc(ex, eyeY, er, 0, 7); g.fill();
     g.lineWidth = Math.max(1, s * 0.02); g.strokeStyle = "#123018"; g.stroke();
     g.fillStyle = (tier === 5 || tier === 15) ? "#2a1a4a" : "#123018";
     g.beginPath(); g.arc(ex + s * 0.02, eyeY + s * 0.02, er * 0.5, 0, 7); g.fill();
     g.fillStyle = "#fff"; g.beginPath(); g.arc(ex, eyeY - s * 0.01, er * 0.2, 0, 7); g.fill();
   }
-  if (tier === 5 || tier === 15) { // Glüh-Augen
+  if (!blink && (tier === 5 || tier === 15)) { // Glüh-Augen
     g.save(); g.globalCompositeOperation = "lighter";
     g.fillStyle = tier === 15 ? "rgba(184,146,255,0.55)" : "rgba(155,123,255,0.55)";
     for (const ex of [-s * 0.16, s * 0.16]) { g.beginPath(); g.arc(ex, eyeY, er * 1.3, 0, 7); g.fill(); }
@@ -846,6 +874,8 @@ function frame(ts) {
       m.step = (m.step || 0) + (m.moving ? sp * dt * 11 : dt * 2);
       const tgtTilt = m.held ? 0 : (m.moving ? Math.max(-0.2, Math.min(0.2, m.vx * 0.38)) : 0);
       m.tilt = (m.tilt || 0) + (tgtTilt - (m.tilt || 0)) * Math.min(1, dt * 6);
+      if (!m.face) m.face = 1;
+      if (!m.held && Math.abs(m.vx) > 0.08) m.face = m.vx < 0 ? -1 : 1;   // Blickrichtung
       if (m.held) continue;
       m.x += m.vx * dt * 0.06; m.y += m.vy * dt * 0.06;
       if (m.x < 0.02) { m.x = 0.02; m.vx = Math.abs(m.vx); }
@@ -1486,21 +1516,105 @@ function shareMeadow() {
   }
 }
 
-// Biome-Auswahl als kleine Welt-Karte (Weltall oben, Land in der Mitte, Meer unten)
+// Biome-Auswahl als gezeichnete, animierte Welt-Karte
 const BIOME_POS = {
-  space:  { top: "8%",  left: "50%" },
-  wiese:  { top: "48%", left: "24%" },
-  vulkan: { top: "44%", left: "77%" },
-  strand: { top: "80%", left: "52%" },
+  space:  { top: "10%", left: "50%" },
+  wiese:  { top: "52%", left: "22%" },
+  vulkan: { top: "45%", left: "78%" },
+  strand: { top: "83%", left: "50%" },
 };
+// Feste Sternpositionen (kein Flackern durch Zufall pro Frame)
+const MAP_STARS = Array.from({ length: 46 }, (_, i) => ({ x: ((i * 89 + 13) % 100) / 100, y: ((i * 53 + 7) % 100) / 100, big: i % 7 === 0, pink: i % 9 === 0 }));
+function drawWorldMap(g, W, H, t) {
+  g.clearRect(0, 0, W, H);
+  const spaceH = H * 0.30, seaTop = H * 0.72, landTop = H * 0.42;
+  // --- Weltraum ---
+  let sp = g.createLinearGradient(0, 0, 0, spaceH + 24);
+  sp.addColorStop(0, "#070512"); sp.addColorStop(1, "#2c2060");
+  g.fillStyle = sp; g.fillRect(0, 0, W, spaceH + 24);
+  for (const st of MAP_STARS) {
+    const tw = 0.35 + 0.65 * Math.abs(Math.sin(t * 2 + st.x * 20));
+    g.globalAlpha = tw; g.fillStyle = st.pink ? "#ffd6f5" : "#fff";
+    g.beginPath(); g.arc(st.x * W, st.y * spaceH, st.big ? 1.8 : 1, 0, 7); g.fill();
+  }
+  g.globalAlpha = 1;
+  // Ringplanet + Mond
+  g.save(); g.translate(W * 0.2, spaceH * 0.42);
+  g.fillStyle = "#b892ff"; g.beginPath(); g.arc(0, 0, 12, 0, 7); g.fill();
+  g.save(); g.rotate(-0.5); g.scale(1, 0.34); g.strokeStyle = "rgba(255,255,255,0.65)"; g.lineWidth = 2.4; g.beginPath(); g.arc(0, 0, 21, 0, 7); g.stroke(); g.restore();
+  g.restore();
+  g.fillStyle = "#f2f0d8"; g.beginPath(); g.arc(W * 0.8, spaceH * 0.32, 8, 0, 7); g.fill();
+  // --- Himmel ---
+  let sk = g.createLinearGradient(0, spaceH, 0, seaTop);
+  sk.addColorStop(0, "#7db8ff"); sk.addColorStop(1, "#c7ecff");
+  g.fillStyle = sk; g.fillRect(0, spaceH, W, seaTop - spaceH);
+  // Sonne mit Strahlen
+  g.save(); g.translate(W * 0.85, spaceH + (landTop - spaceH) * 0.4);
+  g.strokeStyle = "rgba(255,205,50,0.6)"; g.lineWidth = 2.5;
+  for (let i = 0; i < 12; i++) { const a = i / 12 * Math.PI * 2 + t * 0.25; const r = 15 + 3 * Math.sin(t * 3 + i); g.beginPath(); g.moveTo(Math.cos(a) * 13, Math.sin(a) * 13); g.lineTo(Math.cos(a) * (13 + r), Math.sin(a) * (13 + r)); g.stroke(); }
+  g.fillStyle = "#ffd23f"; g.beginPath(); g.arc(0, 0, 12, 0, 7); g.fill(); g.restore();
+  // Wolken (driften)
+  const cloud = (cx, cy, sc2) => { g.save(); g.translate(cx, cy); g.scale(sc2, sc2); g.fillStyle = "rgba(255,255,255,0.9)"; [[-12, 0, 9], [0, -4, 12], [13, 0, 9]].forEach(c => { g.beginPath(); g.arc(c[0], c[1], c[2], 0, 7); g.fill(); }); g.fillRect(-12, -2, 25, 8); g.restore(); };
+  cloud((t * 12) % (W + 60) - 30, spaceH + 16, 0.8);
+  cloud((t * 8 + W * 0.5) % (W + 60) - 30, landTop - 14, 1);
+  // --- Land ---
+  let ld = g.createLinearGradient(0, landTop, 0, seaTop);
+  ld.addColorStop(0, "#84d493"); ld.addColorStop(1, "#3ca85a");
+  g.fillStyle = ld; g.beginPath(); g.moveTo(0, seaTop);
+  g.lineTo(0, landTop + 12);
+  for (let x = 0; x <= W; x += 16) g.lineTo(x, landTop + 12 + Math.sin(x * 0.025 + 1) * 9);
+  g.lineTo(W, seaTop); g.closePath(); g.fill();
+  // Bäumchen links
+  const tree = (x, y) => { g.fillStyle = "#7a4a24"; g.fillRect(x - 2, y, 4, 10); g.fillStyle = "#2f9e4f"; g.beginPath(); g.arc(x, y - 4, 9, 0, 7); g.fill(); g.strokeStyle = "#123018"; g.lineWidth = 1.5; g.stroke(); };
+  tree(W * 0.12, landTop + 30); tree(W * 0.32, landTop + 40);
+  // Vulkan rechts
+  g.save(); g.translate(W * 0.78, landTop + 14);
+  g.fillStyle = "#6e4b30"; g.beginPath(); g.moveTo(-36, seaTop - landTop - 14); g.lineTo(-10, -6); g.lineTo(10, -6); g.lineTo(36, seaTop - landTop - 14); g.closePath(); g.fill();
+  g.strokeStyle = "#123018"; g.lineWidth = 1.5; g.stroke();
+  const lf = 0.55 + 0.45 * Math.abs(Math.sin(t * 4));
+  g.fillStyle = `rgb(255,${Math.round(70 + 90 * lf)},20)`; g.beginPath(); g.ellipse(0, -6, 11, 4, 0, 0, 7); g.fill();
+  // Lava-Tropfen + Rauch
+  g.fillStyle = "rgba(255,120,20,0.9)"; g.beginPath(); g.moveTo(-4, -6); g.quadraticCurveTo(-10, 6 + 6 * lf, -6, 14); g.quadraticCurveTo(-2, 6, -4, -6); g.fill();
+  for (let i = 0; i < 3; i++) { const yy = -12 - ((t * 18 + i * 22) % 40); g.globalAlpha = Math.max(0, 0.5 - (-yy - 12) / 60); g.fillStyle = "#c9c9c9"; g.beginPath(); g.arc(Math.sin(t + i) * 4, yy, 4 + i, 0, 7); g.fill(); }
+  g.globalAlpha = 1; g.restore();
+  // --- Meer ---
+  let se = g.createLinearGradient(0, seaTop, 0, H);
+  se.addColorStop(0, "#43b8ea"); se.addColorStop(1, "#1668b8");
+  g.fillStyle = se; g.fillRect(0, seaTop, W, H - seaTop);
+  g.strokeStyle = "rgba(255,255,255,0.4)"; g.lineWidth = 2;
+  for (let r = 0; r < 3; r++) { g.beginPath(); for (let x = 0; x <= W; x += 8) { const y = seaTop + 12 + r * 15 + Math.sin(x * 0.06 + t * 2 + r) * 3; x ? g.lineTo(x, y) : g.moveTo(x, y); } g.stroke(); }
+  // Sandstrand + Palme
+  g.fillStyle = "#f2d9a0"; g.beginPath(); g.ellipse(W * 0.5, seaTop + 4, 64, 16, 0, 0, 7); g.fill();
+  g.save(); g.translate(W * 0.5 + 26, seaTop + 2);
+  g.strokeStyle = "#7a4a24"; g.lineWidth = 4; g.beginPath(); g.moveTo(0, 6); g.quadraticCurveTo(-4, -10, 2, -20); g.stroke();
+  g.fillStyle = "#2f9e4f"; for (let i = 0; i < 5; i++) { const a = -0.4 + i * 0.5 + Math.sin(t * 1.5) * 0.05; g.save(); g.translate(2, -20); g.rotate(a); g.beginPath(); g.ellipse(9, 0, 10, 3, 0, 0, 7); g.fill(); g.restore(); }
+  g.restore();
+}
 function showBiomes() {
   const ov = mkOverlay(`
     <h2><span class="foil">Welt-Karte</span></h2>
     <p class="sub">Tippe einen Ort an — jede Wiese gibt dauerhaft <b>+5% Münzen</b>.</p>
     <div class="bonus-line">🗺️ Wiesen-Bonus: <b>+${Math.round((biomeBonus() - 1) * 100)}%</b></div>
-    <div class="biome-map" id="biome-map"><span class="map-sun">☀️</span></div>
+    <div class="biome-map" id="biome-map"><canvas class="map-cv"></canvas></div>
     <button class="btn-secondary" id="bio-close">Schließen</button>`);
   const map = ov.querySelector("#biome-map");
+  const cv = ov.querySelector(".map-cv");
+  const g = cv.getContext("2d");
+  let cw = 0, ch = 0;
+  const sizeCv = () => {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+    cw = map.clientWidth || 320; ch = map.clientHeight || 270;
+    cv.width = Math.round(cw * dpr); cv.height = Math.round(ch * dpr);
+    cv.style.width = cw + "px"; cv.style.height = ch + "px";
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  };
+  sizeCv();
+  const tick = () => {
+    if (!document.body.contains(cv)) return;   // Stopp, wenn geschlossen
+    drawWorldMap(g, cw, ch, performance.now() / 1000);
+    requestAnimationFrame(tick);
+  };
+  tick();
   const render = () => {
     map.querySelectorAll(".biome-spot").forEach(e => e.remove());
     BIOMES.forEach(b => {
