@@ -29,6 +29,10 @@ const TIERS = [
 ];
 const MAXT = TIERS.length - 1;
 const coinVal = t => Math.round(Math.pow(2.1, t)) || 1;
+// Endgame: Galaxie-Meeries (oberste Stufe) lassen sich zu Kosmos-Stufen (gl)
+// weiter verschmelzen — der Münzwert wächst dann pro Kosmos-Stufe weiter.
+const coinValM = m => coinVal(m.tier) * (m.tier >= MAXT ? Math.pow(2.6, m.gl || 0) : 1);
+const effTier = m => m.tier + (m.tier >= MAXT ? (m.gl || 0) : 0);   // für Prestige-Wert
 
 // ---------- Wirtschaft ----------
 const BUY_BASE = 10, BUY_GROW = 1.18;
@@ -52,10 +56,31 @@ const upCost = u => Math.round(u.base * Math.pow(u.grow, up[u.key] || 0));
 
 // ---------- Prestige ("Wiese einstampfen") ----------
 // Ab Zauber-Meeri (Stufe 5) lohnt sich der Neustart: man tauscht die Wiese
-// gegen Goldene Möhren 🥕 ein, die dauerhaft alle Münzen multiplizieren.
+// gegen Goldene Möhren 🥕 ein und gibt sie im Möhren-Shop für dauerhafte
+// Perks aus (Münz-Boost, Startkapital, Offline, Auto-Merge, Auto-Kauf).
 const PRESTIGE_MIN = 5;                       // erst ab dieser Spitzenstufe möglich
 const carrotGain = p => p < PRESTIGE_MIN ? 0 : Math.floor(Math.pow(1.8, p - 4));
-const prestigeMult = () => 1 + carrots * 0.05;   // +5 % Münzen je Möhre
+
+// Möhren-Shop (Kosten & Wirkung in Goldenen Möhren)
+const PSHOP = [
+  { key: "boost",   icon: "🪙", name: "Möhren-Boost",   base: 1,  grow: 1.6, max: 60,
+    desc: l => `+${l * 10}% Münzen für immer` },
+  { key: "capital", icon: "💰", name: "Startkapital",   base: 2,  grow: 2.0, max: 25,
+    desc: l => l ? `Start nach Prestige mit 🪙 ${fmt(startCapital())}` : "aus" },
+  { key: "offline", icon: "🌙", name: "Offline-Meister", base: 3, grow: 1.9, max: 15,
+    desc: l => `+${l} Std. & +${l * 10}% Offline-Ertrag` },
+  { key: "amerge",  icon: "🔀", name: "Auto-Merge",     base: 6,  grow: 2.3, max: 6,
+    desc: l => l ? `merged Gleiche alle ${mergeEvery().toFixed(1)}s` : "aus" },
+  { key: "abuy",    icon: "🛒", name: "Auto-Kauf",      base: 10, grow: 2.5, max: 6,
+    desc: l => l ? `kauft Meeries alle ${buyEvery().toFixed(1)}s` : "aus" },
+];
+const pCost = u => Math.round(u.base * Math.pow(u.grow, pp[u.key] || 0));
+const prestigeMult = () => 1 + (pp.boost || 0) * 0.10;          // Münz-Boost-Perk
+const startCapital = () => (pp.capital || 0) > 0 ? Math.floor(100 * Math.pow(3.2, pp.capital)) : 0;
+const offlineHours = () => OFFLINE_CAP_H + (pp.offline || 0);
+const offlineEff = () => OFFLINE_EFF + (pp.offline || 0) * 0.10;
+const mergeEvery = () => Math.max(1.2, 7 - (pp.amerge || 0) * 1.0);
+const buyEvery = () => Math.max(0.8, 6 - (pp.abuy || 0) * 0.9);
 
 // ---------- Album-Sammelbonus ----------
 const albumBonus = () => 1 + Object.keys(album).length * 0.03;   // +3 % je entdeckter Stufe
@@ -79,10 +104,22 @@ const coinMult = () => (1 + 0.25 * (up.coin || 0)) * prestigeMult() * albumBonus
 const magnetDelay = () => (up.magnet || 0) > 0 ? Math.max(0.3, 2.6 - up.magnet * 0.5) : Infinity;
 const luckChance = () => Math.min(0.6, (up.luck || 0) * 0.06);
 
+// ---------- Tägliche Aufgaben ----------
+const DAILY_POOL = [
+  { id: "merge",    icon: "🔀", text: n => `${n}× mergen`,               goal: 15 },
+  { id: "buy",      icon: "🐹", text: n => `${n} Meeries kaufen`,        goal: 12 },
+  { id: "collect",  icon: "🪙", text: n => `${n} Münz-Blasen sammeln`,   goal: 30 },
+  { id: "discover", icon: "📖", text: n => `${n} neue Evolution finden`, goal: 1  },
+  { id: "expand",   icon: "🌱", text: n => `Wiese ${n}× vergrößern`,     goal: 1  },
+];
+const todayStr = () => new Date().toISOString().slice(0, 10);
+const dailyReward = () => Math.max(400, Math.round(passivePerSec() * 150));
+
 // ---------- Zustand ----------
 const SAVE = "meeri_save_v1";
 let coins, meeries, capLevel, buyCount, album, lastSeen, uid, up;
-let carrots, peak, biome, biomesOwned;   // Prestige & Biome (überleben Prestige)
+let carrots, peak, biome, biomesOwned, pp;        // Prestige/Biome (überleben Prestige)
+let daily, lastLogin, streak, stats;              // Aufgaben, Login, Statistik
 let over = false, hudDirty = false;
 
 function capacity() { return CAP_START + capLevel * CAP_STEP; }
@@ -90,12 +127,15 @@ function buyCost() { return Math.round(BUY_BASE * Math.pow(BUY_GROW, buyCount));
 function expCost() { return Math.round(EXP_BASE * Math.pow(EXP_GROW, capLevel)); }
 
 function newUp() { return { coin: 0, speed: 0, magnet: 0, luck: 0 }; }
+function newPp() { return { boost: 0, capital: 0, offline: 0, amerge: 0, abuy: 0 }; }
+function newStats() { return { merges: 0, buys: 0, coins: 0, prestiges: 0, play: 0, bestEff: 0 }; }
 function fresh() {
   coins = 0; meeries = []; capLevel = 0; buyCount = 0; album = {}; uid = 1;
   up = newUp(); lastSeen = Date.now();
-  carrots = 0; peak = 0; biome = "wiese"; biomesOwned = ["wiese"];
+  carrots = 0; peak = 0; biome = "wiese"; biomesOwned = ["wiese"]; pp = newPp();
+  daily = null; lastLogin = ""; streak = 0; stats = newStats();
 }
-// Nur die laufende Wiese zurücksetzen — Möhren, Album & Biome bleiben.
+// Nur die laufende Wiese zurücksetzen — Möhren, Perks, Album, Biome & Aufgaben bleiben.
 function resetRun() {
   coins = 0; meeries = []; capLevel = 0; buyCount = 0; uid = 1;
   up = newUp(); peak = 0; lastSeen = Date.now();
@@ -116,13 +156,18 @@ function load() {
     biome = typeof s.biome === "string" && BIOMES.some(b => b.key === s.biome) ? s.biome : "wiese";
     biomesOwned = Array.isArray(s.biomesOwned) && s.biomesOwned.length ? s.biomesOwned.filter(k => BIOMES.some(b => b.key === k)) : ["wiese"];
     if (!biomesOwned.includes("wiese")) biomesOwned.unshift("wiese");
+    pp = Object.assign(newPp(), s.pp || {});
+    daily = s.daily || null;
+    lastLogin = s.lastLogin || "";
+    streak = Number(s.streak) || 0;
+    stats = Object.assign(newStats(), s.stats || {});
     meeries = (s.meeries || []).map(m => ({
-      id: uid++, tier: Math.max(0, Math.min(MAXT, m.tier | 0)),
+      id: uid++, tier: Math.max(0, Math.min(MAXT, m.tier | 0)), gl: Math.max(0, m.gl | 0),
       x: m.x || 0.5, y: m.y || 0.5,
       vx: (Math.random() - 0.5), vy: (Math.random() - 0.5),
       phase: Math.random() * 7, nextDrop: rndDrop(), held: false,
     }));
-    peak = Math.max(peak, meeries.reduce((a, m) => Math.max(a, m.tier), 0));
+    peak = Math.max(peak, meeries.reduce((a, m) => Math.max(a, effTier(m)), 0));
     return true;
   } catch { fresh(); return false; }
 }
@@ -141,8 +186,8 @@ function save() {
   try {
     localStorage.setItem(SAVE, JSON.stringify({
       coins, capLevel, buyCount, album, uid, up, lastSeen,
-      carrots, peak, biome, biomesOwned,
-      meeries: meeries.map(m => ({ tier: m.tier, x: m.x, y: m.y })),
+      carrots, peak, biome, biomesOwned, pp, daily, lastLogin, streak, stats,
+      meeries: meeries.map(m => ({ tier: m.tier, gl: m.gl || 0, x: m.x, y: m.y })),
     }));
     storageOK = true;
   } catch {
@@ -154,11 +199,48 @@ function saveSoon() { clearTimeout(saveTimer); saveTimer = setTimeout(save, 600)
 
 const rndDrop = () => (DROP_MIN + Math.random() * (DROP_MAX - DROP_MIN)) / (1 + 0.12 * (up ? up.speed : 0));
 
+// ---------- Tägliche Aufgaben & Login ----------
+function rollDaily() {
+  const pool = DAILY_POOL.slice();
+  const pick = [];
+  for (let i = 0; i < 3 && pool.length; i++) pick.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
+  daily = { day: todayStr(), tasks: pick.map(p => ({ id: p.id, goal: p.goal, prog: 0, claimed: false })) };
+}
+// Beim Start & Tageswechsel: Aufgaben erneuern + Login-Bonus geben.
+function ensureDaily(popup) {
+  const today = todayStr();
+  if (!daily || daily.day !== today) rollDaily();
+  if (lastLogin !== today) {
+    const gap = lastLogin ? (Date.parse(today) - Date.parse(lastLogin)) / 864e5 : 99;
+    streak = gap === 1 ? streak + 1 : 1;
+    lastLogin = today;
+    const bonus = Math.max(500, Math.round(passivePerSec() * 200 * (1 + streak * 0.15)));
+    const carrotB = streak % 5 === 0 ? Math.max(1, Math.floor(streak / 5)) : 0;
+    coins += bonus; carrots += carrotB; stats.coins += bonus;
+    save();
+    if (popup) setTimeout(() => loginPopup(bonus, carrotB), 500);
+  }
+}
+function taskDef(id) { return DAILY_POOL.find(t => t.id === id); }
+function dailyClaimable() { return !!(daily && daily.tasks.some(t => t.prog >= t.goal && !t.claimed)); }
+function dailyTick(id, n) {
+  if (!daily) return;
+  const t = daily.tasks.find(x => x.id === id);
+  if (!t || t.claimed || t.prog >= t.goal) return;
+  t.prog = Math.min(t.goal, t.prog + n);
+  if (t.prog >= t.goal) { GS.sound.good(); toast(`✅ Aufgabe fertig: ${taskDef(id).text(t.goal)} — abholen!`); }
+  hudDirty = true; saveSoon();
+}
+
+// ---------- Statistik ----------
+function earn(n) { coins += n; stats.coins += n; }
+
 // ---------- Meeri-Verwaltung ----------
 function discover(tier) {
   if (!album[tier]) {
     album[tier] = new Date().toISOString();
     GS.sound.great();
+    dailyTick("discover", 1);
     if (tier >= 2) setTimeout(() => reveal(tier, true), 120);   // cooles Meeri → große Karte
     else toast(`📖 Neu im Album: ${TIERS[tier].name}!`);
     saveSoon();
@@ -166,7 +248,7 @@ function discover(tier) {
 }
 function spawnMeeri(tier, x, y) {
   const m = {
-    id: uid++, tier, x: x ?? (0.2 + Math.random() * 0.6), y: y ?? (0.2 + Math.random() * 0.6),
+    id: uid++, tier, gl: 0, x: x ?? (0.2 + Math.random() * 0.6), y: y ?? (0.2 + Math.random() * 0.6),
     vx: (Math.random() - 0.5), vy: (Math.random() - 0.5),
     phase: Math.random() * 7, nextDrop: rndDrop(), held: false, pop: 0.001,
   };
@@ -175,17 +257,20 @@ function spawnMeeri(tier, x, y) {
   discover(tier);
   return m;
 }
-function buyMeeri() {
-  if (over) return;
-  if (meeries.length >= capacity()) { toast("Wiese voll — vergrößern oder mergen!"); return; }
+function buyMeeri(silent) {
+  if (over) return false;
+  if (meeries.length >= capacity()) { if (!silent) toast("Wiese voll — vergrößern oder mergen!"); return false; }
   const c = buyCost();
-  if (coins < c) { toast("Zu wenig Münzen"); return; }
+  if (coins < c) { if (!silent) toast("Zu wenig Münzen"); return false; }
   coins -= c; buyCount++;
+  if (stats) stats.buys++;
   const startTier = (Math.random() < luckChance()) ? 1 : 0;   // Glücks-Wurf
   const m = spawnMeeri(startTier);
-  if (startTier > 0) { floater("🍀", "#57e39b", m.x, m.y); GS.sound.good(); } else GS.sound.click();
-  GS.haptic(8);
+  if (startTier > 0) { floater("🍀", "#57e39b", m.x, m.y); GS.sound.good(); } else if (!silent) GS.sound.click();
+  if (!silent) GS.haptic(8);
+  dailyTick("buy", 1);
   updateHUD(); saveSoon();
+  return true;
 }
 function expandMeadow() {
   if (capLevel >= CAP_MAXLEVEL) { toast("Wiese ist schon riesig!"); return; }
@@ -193,23 +278,40 @@ function expandMeadow() {
   if (coins < c) { toast("Zu wenig Münzen"); return; }
   coins -= c; capLevel++;
   GS.sound.good(); GS.haptic([10, 30]); burst("PLATZ!", "#57e39b");
+  dailyTick("expand", 1);
   updateHUD(); saveSoon();
 }
 function mergeInto(target, src) {
-  if (target.tier >= MAXT) { toast("Endstufe erreicht! 🌌"); return false; }
-  target.tier++; target.pop = 0.001;
+  const endgame = target.tier >= MAXT;
+  if (endgame) { target.gl = (target.gl || 0) + 1; }   // Kosmos-Stufe hoch
+  else { target.tier++; }
+  target.pop = 0.001;
   meeries = meeries.filter(m => m.id !== src.id);
-  if (target.tier > peak) peak = target.tier;
-  const bonus = Math.round(coinVal(target.tier) * 3 * coinMult());   // kleiner Merge-Bonus
-  coins += bonus;
-  discover(target.tier);
-  burst(target.tier >= MAXT ? "GALAXIE!" : "EVOLVE!", "#ffd23f");
+  peak = Math.max(peak, effTier(target));
+  if (stats) { stats.merges++; stats.bestEff = Math.max(stats.bestEff, effTier(target)); }
+  const bonus = Math.round(coinValM(target) * 3 * coinMult());   // Merge-Bonus
+  earn(bonus);
+  if (!endgame) discover(target.tier);
+  burst(endgame ? `KOSMOS Lv.${target.gl}!` : (target.tier >= MAXT ? "GALAXIE!" : "EVOLVE!"), endgame ? "#b892ff" : "#ffd23f");
   floater("+" + fmt(bonus), "#ffd23f", target.x, target.y);
-  spawnConfetti(target.x, target.y, TIERS[target.tier].c1);
+  spawnConfetti(target.x, target.y, endgame ? "#b892ff" : TIERS[target.tier].c1);
   shake(target.tier >= 8 ? 8 : 4);   // Kamerawackeln, stärker bei High-Tier
+  dailyTick("merge", 1);
+  if (endgame) { GS.sound.win(); toast(`🌌 Kosmos-Stufe ${target.gl}! Galaxie-Meeri wird noch mächtiger.`); }
   GS.sound.great(); GS.haptic([12, 40, 12]);
   updateHUD(); saveSoon();
   return true;
+}
+
+// Auto-Merge: erstes Paar gleicher Meeries (Stufe + Kosmos) verschmelzen
+function autoMergePair() {
+  for (let i = 0; i < meeries.length; i++) {
+    const a = meeries[i]; if (a.held) continue;
+    for (let j = i + 1; j < meeries.length; j++) {
+      const b = meeries[j]; if (b.held) continue;
+      if (a.tier === b.tier && (a.gl || 0) === (b.gl || 0)) { mergeInto(a, b); return; }
+    }
+  }
 }
 
 // ---------- Prestige ----------
@@ -217,29 +319,32 @@ function doPrestige() {
   const gain = carrotGain(peak);
   if (gain <= 0) return;
   carrots += gain;
+  if (stats) stats.prestiges++;
   resetRun();
+  coins = startCapital();          // Startkapital-Perk
   spawnMeeri(0);
   burst("EINGESTAMPFT!", "#ff9c3d"); shake(10);
   GS.sound.win(); GS.haptic([15, 50, 15, 50]);
   updateHUD(); save();
-  toast(`🥕 +${gain} Goldene Möhren! Jetzt +${Math.round((prestigeMult() - 1) * 100)}% Münzen für immer.`);
+  toast(`🥕 +${gain} Goldene Möhren! Gib sie im Möhren-Shop aus.`);
 }
 
 // ---------- Offline-Einnahmen ----------
 function passivePerSec() {
   let s = 0;
   const interval = ((DROP_MIN + DROP_MAX) / 2) / (1 + 0.12 * (up ? up.speed : 0));
-  for (const m of meeries) s += coinVal(m.tier) / interval;
+  for (const m of meeries) s += coinValM(m) / interval;
   return s * coinMult();
 }
 function applyOffline() {
   const elapsed = Math.max(0, (Date.now() - lastSeen) / 1000);
   if (elapsed < 30 || !meeries.length) return;
-  const rate = passivePerSec() * OFFLINE_EFF;
-  const gain = Math.floor(rate * Math.min(elapsed, OFFLINE_CAP_H * 3600));
+  const capSec = offlineHours() * 3600;
+  const rate = passivePerSec() * offlineEff();
+  const gain = Math.floor(rate * Math.min(elapsed, capSec));
   if (gain <= 0) return;
-  coins += gain;
-  const mins = Math.floor(Math.min(elapsed, OFFLINE_CAP_H * 3600) / 60);
+  earn(gain);
+  const mins = Math.floor(Math.min(elapsed, capSec) / 60);
   setTimeout(() => welcomeBack(gain, mins), 400);
 }
 
@@ -291,7 +396,8 @@ function starP(g, cx, cy, r, n, inner) {
 }
 function fst(g) { g.fill(); g.stroke(); }
 
-function drawMeeri(g, cx, cy, s, tier, t, pop) {
+function drawMeeri(g, cx, cy, s, tier, t, pop, gl) {
+  gl = gl || 0;
   const T = TIERS[tier];
   const sc = pop > 0 ? 1 + Math.sin(Math.min(1, pop) * Math.PI) * 0.25 : 1;
   const wob = Math.sin(t * 4 + tier) * s * 0.02;
@@ -301,12 +407,12 @@ function drawMeeri(g, cx, cy, s, tier, t, pop) {
   const lw = Math.max(2, s * 0.07);
   g.lineWidth = lw; g.strokeStyle = "#123018"; g.lineJoin = "round"; g.lineCap = "round";
 
-  // Aura bei hohen Stufen
+  // Aura bei hohen Stufen (Kosmos-Stufen leuchten stärker)
   if (tier >= 9) {
-    const glow = g.createRadialGradient(0, 0, s * 0.2, 0, 0, s * 0.78);
+    const glow = g.createRadialGradient(0, 0, s * 0.2, 0, 0, s * (0.78 + Math.min(gl, 6) * 0.05));
     const gc = tier >= 15 ? "rgba(184,146,255,0.6)" : tier >= 12 ? "rgba(122,167,255,0.5)" : "rgba(255,210,63,0.5)";
     glow.addColorStop(0, gc); glow.addColorStop(1, "rgba(0,0,0,0)");
-    g.fillStyle = glow; g.beginPath(); g.arc(0, 0, s * 0.78, 0, 7); g.fill();
+    g.fillStyle = glow; g.beginPath(); g.arc(0, 0, s * (0.78 + Math.min(gl, 6) * 0.05), 0, 7); g.fill();
   }
 
   // Rücken-Deko (Umhang, Flügel) HINTER dem Körper
@@ -336,6 +442,17 @@ function drawMeeri(g, cx, cy, s, tier, t, pop) {
 
   drawFace(g, s, tier, t);
   featFront(g, s, tier, t, T);
+
+  // Kosmos-Stufe (Endgame): Sternen-Badge mit Nummer
+  if (gl > 0) {
+    for (let i = 0; i < 3; i++) { const a = t * 2 + i * 2.1; g.fillStyle = "#fff"; starP(g, Math.cos(a) * s * 0.5, -s * 0.4 + Math.sin(a) * s * 0.15, s * 0.05, 4, 0.4); g.fill(); }
+    g.save();
+    g.fillStyle = "#2a1a4a"; g.strokeStyle = "#b892ff"; g.lineWidth = Math.max(1.5, s * 0.03);
+    rrp(g, -s * 0.3, s * 0.32, s * 0.6, s * 0.2, s * 0.08); fst(g);
+    g.fillStyle = "#fff"; g.font = `900 ${s * 0.16}px ${uiFont()}`; g.textAlign = "center"; g.textBaseline = "middle";
+    g.fillText("✦ " + gl, 0, s * 0.43);
+    g.restore();
+  }
   g.restore();
 }
 
@@ -604,7 +721,7 @@ let coinsFx = [], golds = [], bursts = [], floaters = [], confetti = [];
 let shakeMag = 0;
 function shake(m) { shakeMag = Math.max(shakeMag, m); }
 function spawnCoin(m) {
-  coinsFx.push({ x: mx(m), y: my(m) - msize * 0.5, val: Math.round(coinVal(m.tier) * coinMult()), t: 0, life: 5.5, vy: -12 - Math.random() * 8, r: msize * 0.28 });
+  coinsFx.push({ x: mx(m), y: my(m) - msize * 0.5, val: Math.round(coinValM(m) * coinMult()), t: 0, life: 5.5, vy: -12 - Math.random() * 8, r: msize * 0.28 });
 }
 function spawnGold() {
   golds.push({ x: (0.15 + Math.random() * 0.7) * W, y: (0.15 + Math.random() * 0.7) * H, t: 0, life: 6, phase: Math.random() * 7 });
@@ -618,7 +735,7 @@ function spawnConfetti(rx, ry, col) {
 }
 
 // ---------- Loop ----------
-let lastT = 0, animT = 0, goldTimer = 8;
+let lastT = 0, animT = 0, goldTimer = 8, autoMergeT = 0, autoBuyT = 0, playAcc = 0;
 function frame(ts) {
   const dt = Math.min(0.05, (ts - lastT) / 1000 || 0); lastT = ts; animT += dt;
 
@@ -639,6 +756,18 @@ function frame(ts) {
     // Goldenes Meeri
     goldTimer -= dt;
     if (goldTimer <= 0 && golds.length === 0 && meeries.length > 0) { goldTimer = 25 + Math.random() * 20; spawnGold(); }
+    // Spielzeit-Statistik
+    playAcc += dt; if (playAcc >= 1 && stats) { stats.play += Math.floor(playAcc); playAcc -= Math.floor(playAcc); }
+    // Auto-Merge-Perk: gleiche Meeries automatisch verschmelzen
+    if ((pp.amerge || 0) > 0) {
+      autoMergeT -= dt;
+      if (autoMergeT <= 0) { autoMergeT = mergeEvery(); autoMergePair(); }
+    }
+    // Auto-Kauf-Perk: Meeries automatisch nachkaufen
+    if ((pp.abuy || 0) > 0) {
+      autoBuyT -= dt;
+      if (autoBuyT <= 0) { autoBuyT = buyEvery(); if (meeries.length < capacity() && coins >= buyCost()) buyMeeri(true); }
+    }
   }
 
   // Auto-Sammler: Münz-Blasen nach kurzer Zeit von selbst einsammeln
@@ -646,7 +775,7 @@ function frame(ts) {
     const md = magnetDelay();
     for (let i = coinsFx.length - 1; i >= 0; i--) {
       const c = coinsFx[i];
-      if (c.t >= md) { coins += c.val; if (floaters.length < 3) floater("+" + fmt(c.val), "#ffd23f", null, null); coinsFx.splice(i, 1); hudDirty = true; }
+      if (c.t >= md) { earn(c.val); dailyTick("collect", 1); if (floaters.length < 3) floater("+" + fmt(c.val), "#ffd23f", null, null); coinsFx.splice(i, 1); hudDirty = true; }
     }
   }
   // Effekt-Timer
@@ -692,7 +821,7 @@ function draw() {
   // Merge-Highlight: passende Partner leuchten, wenn man ein Meeri hält
   if (drag) {
     for (const m of meeries) {
-      if (m.id === drag.id || m.tier !== drag.tier) continue;
+      if (m.id === drag.id || m.tier !== drag.tier || (m.gl || 0) !== (drag.gl || 0)) continue;
       const pulse = 0.5 + 0.5 * Math.sin(animT * 8);
       ctx.save(); ctx.globalAlpha = 0.5 + pulse * 0.4;
       ctx.strokeStyle = "#ffe066"; ctx.lineWidth = 3 + pulse * 2;
@@ -703,7 +832,7 @@ function draw() {
 
   // Meeries (nach y sortiert für Tiefe)
   const sorted = [...meeries].sort((a, b) => (a.held ? 1 : 0) - (b.held ? 1 : 0) || my(a) - my(b));
-  for (const m of sorted) drawMeeri(ctx, mx(m), my(m), msize, m.tier, animT + m.phase, m.pop);
+  for (const m of sorted) drawMeeri(ctx, mx(m), my(m), msize, m.tier, animT + m.phase, m.pop, m.gl || 0);
 
   // Münz-Blasen
   for (const c of coinsFx) {
@@ -822,7 +951,7 @@ canvas.addEventListener("pointerdown", e => {
   for (const gg of golds) {
     if (Math.hypot(x - gg.x, y - gg.y) < msize * 0.6) {
       const bonus = Math.max(20, Math.round(passivePerSec() * 60) + coinVal(topTier()) * 5);
-      coins += bonus; golds = golds.filter(z => z !== gg);
+      earn(bonus); golds = golds.filter(z => z !== gg);
       floater("+" + fmt(bonus), "#ffd23f", null, null); burst("BONUS!", "#ffd23f");
       GS.sound.win(); GS.haptic([10, 30, 10]); updateHUD(); saveSoon(); return;
     }
@@ -831,7 +960,7 @@ canvas.addEventListener("pointerdown", e => {
   for (let i = coinsFx.length - 1; i >= 0; i--) {
     const c = coinsFx[i];
     if (Math.hypot(x - c.x, y - c.y) < c.r + 8) {
-      coins += c.val; coinsFx.splice(i, 1);
+      earn(c.val); coinsFx.splice(i, 1); dailyTick("collect", 1);
       floater("+" + fmt(c.val), "#ffd23f", null, null);
       GS.sound.tone(560 + Math.random() * 120, 0.06, { type: "triangle", gain: 0.06 }); GS.haptic(5);
       updateHUD(); saveSoon(); return;
@@ -853,7 +982,7 @@ function drop() {
   // Ziel-Meeri gleicher Stufe finden
   let target = null, best = msize * 0.7;
   for (const m of meeries) {
-    if (m.id === d.id || m.tier !== d.tier) continue;
+    if (m.id === d.id || m.tier !== d.tier || (m.gl || 0) !== (d.gl || 0)) continue;
     const dist = Math.hypot(mx(m) - mx(d), my(m) - my(d));
     if (dist < best) { best = dist; target = m; }
   }
@@ -889,6 +1018,9 @@ function updateHUD() {
   // Möhren-Chip
   const chip = document.getElementById("carrots-chip");
   if (chip) { if (carrots > 0) { chip.hidden = false; document.getElementById("carrots").textContent = fmt(carrots); } else chip.hidden = true; }
+  // Menü-Punkt, wenn eine Tagesaufgabe abholbereit ist
+  const mb = document.getElementById("btn-menu");
+  if (mb) mb.classList.toggle("has-dot", dailyClaimable());
 }
 
 function toast(msg) {
@@ -1000,28 +1132,159 @@ function showShop() {
 // Prestige-Overlay ("Wiese einstampfen")
 function showPrestige() {
   const gain = carrotGain(peak);
-  const nextMult = 1 + (carrots + gain) * 0.05;
   const canDo = gain > 0;
   const ov = mkOverlay(`
     <h2><span class="foil">Wiese einstampfen</span></h2>
-    <p class="sub">Fang neu an und tausche deinen Fortschritt gegen <b>Goldene Möhren 🥕</b>, die <b>für immer</b> alle Münzen erhöhen.</p>
+    <p class="sub">Fang neu an und sammle <b>Goldene Möhren 🥕</b> — die gibst du im <b>Möhren-Shop</b> für dauerhafte Perks aus.</p>
     <div class="prestige-box">
       <div class="pr-row"><span>Aktuelle Möhren</span><b>🥕 ${fmt(carrots)}</b></div>
-      <div class="pr-row"><span>Höchste Stufe (diese Wiese)</span><b>${esc(TIERS[Math.min(MAXT, peak)].name)}</b></div>
+      <div class="pr-row"><span>Höchste Stufe (diese Wiese)</span><b>${esc(TIERS[Math.min(MAXT, peak)].name)}${peak > MAXT ? " ✦" + (peak - MAXT) : ""}</b></div>
       <div class="pr-row big"><span>Du bekommst</span><b class="${canDo ? "good" : ""}">🥕 +${fmt(gain)}</b></div>
-      <div class="pr-row"><span>Münz-Bonus danach</span><b>×${nextMult.toFixed(2)}</b></div>
     </div>
     ${canDo
-      ? `<p class="sub dim">Möhren, Album & Biome bleiben — Meeries, Münzen & Shop-Upgrades werden zurückgesetzt.</p>`
+      ? `<p class="sub dim">Möhren, Perks, Album, Biome & Aufgaben bleiben — Meeries, Münzen & Shop-Upgrades werden zurückgesetzt.</p>`
       : `<p class="sub dim">Bring erst ein Meeri mindestens auf <b>${esc(TIERS[PRESTIGE_MIN].name)}</b> (Stufe ${PRESTIGE_MIN + 1}), dann lohnt sich das Einstampfen.</p>`}
     <button class="btn-primary" id="pr-go" ${canDo ? "" : "disabled"}>🥕 Einstampfen &amp; ${fmt(gain)} Möhren holen</button>
+    <button class="btn-secondary" id="pr-shop">🥕 Möhren-Shop (${fmt(carrots)})</button>
     <button class="btn-secondary" id="pr-close">Doch nicht</button>`);
   ov.querySelector("#pr-close").onclick = () => ov.remove();
+  ov.querySelector("#pr-shop").onclick = () => { ov.remove(); showPShop(); };
   ov.querySelector("#pr-go").onclick = () => {
     if (!canDo) return;
     if (!confirm(`Wiese einstampfen und ${gain} Goldene Möhren holen? Meeries & Münzen dieser Wiese gehen dabei verloren.`)) return;
     ov.remove(); doPrestige();
   };
+}
+
+// Möhren-Shop (Perks mit Goldenen Möhren kaufen)
+function showPShop() {
+  const ov = mkOverlay(`
+    <h2><span class="foil">Möhren-Shop</span></h2>
+    <p class="sub">Gib Goldene Möhren für <b>dauerhafte</b> Perks aus — sie überstehen jedes Einstampfen.</p>
+    <div class="bonus-line">🥕 Möhren: <b id="ps-carrots">${fmt(carrots)}</b></div>
+    <div id="pshop-rows"></div>
+    <button class="btn-secondary" id="ps-close">Schließen</button>`);
+  const render = () => {
+    ov.querySelector("#ps-carrots").textContent = fmt(carrots);
+    ov.querySelector("#pshop-rows").innerHTML = PSHOP.map((u, i) => {
+      const lvl = pp[u.key] || 0, maxed = lvl >= u.max, cost = pCost(u);
+      const can = !maxed && carrots >= cost;
+      return `<div class="shop-row">
+        <span class="shop-ic">${u.icon}</span>
+        <span class="shop-info"><b>${esc(u.name)} <span class="shop-lvl">Lv ${lvl}${maxed ? " (max)" : ""}</span></b><span class="shop-desc">${esc(u.desc(lvl))}</span></span>
+        <button class="shop-buy carrot" data-i="${i}" ${can ? "" : "disabled"}>${maxed ? "max" : "🥕 " + fmt(cost)}</button>
+      </div>`;
+    }).join("");
+    ov.querySelectorAll(".shop-buy[data-i]").forEach(b => b.onclick = () => {
+      const u = PSHOP[Number(b.dataset.i)], lvl = pp[u.key] || 0, cost = pCost(u);
+      if (lvl >= u.max || carrots < cost) return;
+      carrots -= cost; pp[u.key] = lvl + 1;
+      GS.sound.win(); GS.haptic(12); updateHUD(); saveSoon(); render();
+    });
+  };
+  render();
+  ov.querySelector("#ps-close").onclick = () => ov.remove();
+}
+
+// Tägliche Aufgaben
+function showDaily() {
+  ensureDaily(false);
+  const ov = mkOverlay(`
+    <h2><span class="foil">Tagesaufgaben</span></h2>
+    <p class="sub">Jeden Tag neu · 🔥 ${streak} Tage in Folge</p>
+    <div id="daily-rows"></div>
+    <button class="btn-secondary" id="d-close">Schließen</button>`);
+  const render = () => {
+    ov.querySelector("#daily-rows").innerHTML = daily.tasks.map((t, i) => {
+      const def = taskDef(t.id), done = t.prog >= t.goal, pct = Math.round(t.prog / t.goal * 100);
+      const btn = t.claimed ? `<button class="shop-buy" disabled>✓</button>`
+        : done ? `<button class="shop-buy" data-claim="${i}">holen</button>`
+        : `<button class="shop-buy" disabled>${t.prog}/${t.goal}</button>`;
+      return `<div class="shop-row">
+        <span class="shop-ic">${def.icon}</span>
+        <span class="shop-info"><b>${esc(def.text(t.goal))}</b>
+          <span class="dbar"><span class="dbar-fill" style="width:${t.claimed ? 100 : pct}%"></span></span>
+          <span class="shop-desc">Belohnung: 🪙 ${fmt(dailyReward())}</span></span>
+        ${btn}
+      </div>`;
+    }).join("");
+    ov.querySelectorAll("[data-claim]").forEach(b => b.onclick = () => {
+      const t = daily.tasks[Number(b.dataset.claim)];
+      if (!t || t.claimed || t.prog < t.goal) return;
+      const rw = dailyReward(); earn(rw); t.claimed = true;
+      floater("+" + fmt(rw), "#ffd23f", null, null); GS.sound.win(); GS.haptic([10, 30]);
+      if (daily.tasks.every(x => x.claimed)) { const b2 = rw * 2; earn(b2); carrots += 1; toast(`🎉 Alle Aufgaben! Bonus 🪙 ${fmt(b2)} + 🥕 1`); }
+      updateHUD(); saveSoon(); render();
+    });
+  };
+  render();
+  ov.querySelector("#d-close").onclick = () => ov.remove();
+}
+
+function loginPopup(bonus, carrotB) {
+  const ov = mkOverlay(`
+    <h2><span class="foil">Willkommen zurück!</span></h2>
+    <p class="sub">🔥 ${streak} Tage in Folge — weiter so!</p>
+    <div class="big-num">🪙 +${fmt(bonus)}${carrotB ? ` &nbsp;🥕 +${carrotB}` : ""}</div>
+    <button class="btn-primary" data-close="1">Juhu!</button>`);
+  ov.dataset.dismiss = "0";
+  ov.querySelector("[data-close]").onclick = () => ov.remove();
+}
+
+// Statistik
+function showStats() {
+  const hrs = Math.floor(stats.play / 3600), mins = Math.floor((stats.play % 3600) / 60);
+  const bestName = TIERS[Math.min(MAXT, stats.bestEff)].name + (stats.bestEff > MAXT ? " ✦" + (stats.bestEff - MAXT) : "");
+  const ov = mkOverlay(`
+    <h2><span class="foil">Statistik</span></h2>
+    <div class="prestige-box">
+      <div class="pr-row"><span>🔀 Merges gesamt</span><b>${fmt(stats.merges)}</b></div>
+      <div class="pr-row"><span>🐹 Meeries gekauft</span><b>${fmt(stats.buys)}</b></div>
+      <div class="pr-row"><span>🪙 Münzen verdient</span><b>${fmt(stats.coins)}</b></div>
+      <div class="pr-row"><span>🥕 Prestige-Neustarts</span><b>${fmt(stats.prestiges)}</b></div>
+      <div class="pr-row"><span>🏆 Höchste Stufe je</span><b>${esc(bestName)}</b></div>
+      <div class="pr-row"><span>⏱️ Spielzeit</span><b>${hrs}h ${mins}m</b></div>
+    </div>
+    <button class="btn-secondary" id="st-close">Schließen</button>`);
+  ov.querySelector("#st-close").onclick = () => ov.remove();
+}
+
+// ---------- Ambiente-Sound (sanfte Vogelzwitscher, abschaltbar) ----------
+let ambientOn = false;
+try { ambientOn = localStorage.getItem("meeri_ambient") === "1"; } catch (_) {}
+function toggleAmbient() {
+  ambientOn = !ambientOn;
+  try { localStorage.setItem("meeri_ambient", ambientOn ? "1" : "0"); } catch (_) {}
+  if (ambientOn) GS.sound.tone(880, 0.09, { type: "sine", gain: 0.05 });
+  toast(ambientOn ? "🐦 Ambiente an" : "🔇 Ambiente aus");
+}
+function ambientLoop() {
+  if (ambientOn && !document.hidden && GS.sound.on()) {
+    const f = 700 + Math.random() * 500;
+    GS.sound.tone(f, 0.09, { type: "sine", gain: 0.04 });
+    setTimeout(() => GS.sound.tone(f * 1.33, 0.07, { type: "sine", gain: 0.03 }), 120);
+  }
+  setTimeout(ambientLoop, 4500 + Math.random() * 5000);
+}
+
+// ---------- Ganze Wiese als Bild teilen ----------
+function shareMeadow() {
+  try {
+    canvas.toBlob(blob => {
+      if (!blob) { GS.share({ title: "MEERI-MANIA", text: "Meine Wiese in MEERI-MANIA! 🐹", url: location.origin + "/meeri/" }); return; }
+      const file = new File([blob], "meeri-wiese.png", { type: "image/png" });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        navigator.share({ files: [file], title: "MEERI-MANIA", text: "Meine Wiese in MEERI-MANIA! 🐹" }).catch(() => {});
+        return;
+      }
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a"); a.href = url; a.download = "meeri-wiese.png"; a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+      toast("📸 Bild gespeichert!");
+    }, "image/png");
+  } catch (_) {
+    GS.share({ title: "MEERI-MANIA", text: "Meine Wiese in MEERI-MANIA! 🐹", url: location.origin + "/meeri/" });
+  }
 }
 
 // Biome-Auswahl / -Shop
@@ -1066,16 +1329,24 @@ function showMenu() {
     <p class="sub">Kaufe Meeries, zieh gleiche zusammen und entdecke alle Evolutionen!</p>
     <button class="btn-primary" id="m-close">▶ Weiter wuseln</button>
     <div class="menu-grid">
+      <button class="btn-secondary" id="m-daily">📅 Aufgaben${dailyClaimable() ? ' <span class="mdot"></span>' : ""}</button>
       <button class="btn-secondary" id="m-biome">🗺️ Wiesen</button>
       <button class="btn-secondary" id="m-album">📖 Album</button>
       <button class="btn-secondary" id="m-prestige">🥕 Prestige</button>
+      <button class="btn-secondary" id="m-stats">📊 Statistik</button>
+      <button class="btn-secondary" id="m-share">📸 Wiese teilen</button>
+      <button class="btn-secondary" id="m-ambient">${ambientOn ? "🔇 Ambiente aus" : "🐦 Ambiente an"}</button>
       <button class="btn-secondary" id="m-how">❓ Anleitung</button>
       <button class="btn-secondary full" id="m-reset">🗑️ Neu starten</button>
     </div>`);
   ov.querySelector("#m-close").onclick = () => ov.remove();
+  ov.querySelector("#m-daily").onclick = () => { ov.remove(); showDaily(); };
   ov.querySelector("#m-biome").onclick = () => { ov.remove(); showBiomes(); };
   ov.querySelector("#m-album").onclick = () => { ov.remove(); showAlbum(); };
   ov.querySelector("#m-prestige").onclick = () => { ov.remove(); showPrestige(); };
+  ov.querySelector("#m-stats").onclick = () => { ov.remove(); showStats(); };
+  ov.querySelector("#m-share").onclick = () => { ov.remove(); shareMeadow(); };
+  ov.querySelector("#m-ambient").onclick = e => { toggleAmbient(); e.target.textContent = ambientOn ? "🔇 Ambiente aus" : "🐦 Ambiente an"; };
   ov.querySelector("#m-how").onclick = () => howTo(true);
   ov.querySelector("#m-reset").onclick = () => {
     if (confirm("Wirklich komplett neu starten? Aller Fortschritt geht verloren.")) {
@@ -1100,7 +1371,7 @@ function howTo(force) {
 // ====================================================================
 // Verdrahtung & Start
 // ====================================================================
-document.getElementById("buy").onclick = buyMeeri;
+document.getElementById("buy").onclick = () => buyMeeri();
 document.getElementById("expand").onclick = expandMeadow;
 document.getElementById("btn-shop").onclick = showShop;
 document.getElementById("btn-album").onclick = showAlbum;
@@ -1110,7 +1381,10 @@ document.getElementById("btn-sound").onclick = () => { GS.sound.toggle(); GS.sou
 let rt = null;
 window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(layout, 120); });
 window.addEventListener("orientationchange", () => setTimeout(layout, 250));
-document.addEventListener("visibilitychange", () => { if (document.hidden) save(); });
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) save();
+  else { ensureDaily(true); updateHUD(); }   // Tageswechsel bei Rückkehr erkennen
+});
 window.addEventListener("pagehide", save);
 window.addEventListener("blur", save);   // iOS: pagehide feuert nicht immer zuverlässig
 setInterval(save, 15000);
@@ -1125,6 +1399,8 @@ const had = load();
 layout();
 if (!had || meeries.length === 0) { if (!had) fresh(); spawnMeeri(0); }
 else applyOffline();
+ensureDaily(true);       // Aufgaben rollen + Login-Bonus
 updateHUD();
 requestAnimationFrame(frame);
+ambientLoop();
 howTo(false);

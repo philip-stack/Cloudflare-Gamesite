@@ -199,6 +199,20 @@ body {
 .pr-row.big { font-size: 1.05rem; }
 .pr-row b.good { color: #1f9d5c; }
 .shop-row.active { box-shadow: 0 0 0 2.5px #1f9d5c inset; }
+.shop-buy.carrot { background: linear-gradient(160deg, #ffb347, #ff8c1a); color: #4a2600; box-shadow: 0 0 0 2px #123018 inset, 0 3px 0 #a85c10; }
+.shop-buy.carrot:active { box-shadow: 0 0 0 2px #123018 inset, 0 1px 0 #a85c10; }
+
+/* Tagesaufgaben-Fortschritt */
+.dbar { display: block; height: 6px; border-radius: 999px; background: rgba(20,50,24,0.14); margin: 4px 0; overflow: hidden; }
+.dbar-fill { display: block; height: 100%; background: linear-gradient(90deg, #43c463, #8be79a); border-radius: 999px; }
+
+/* Menü-Punkt (Aufgabe abholbereit) */
+.mdot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #ff4d6d; vertical-align: middle; margin-left: 2px; }
+.foot-btn.has-dot { position: relative; }
+.foot-btn.has-dot::after {
+  content: ""; position: absolute; top: 6px; right: 9px; width: 9px; height: 9px;
+  border-radius: 50%; background: #ff4d6d; box-shadow: 0 0 0 2px var(--ink-black);
+}
 
 /* Entdeck-/Angeber-Karte */
 .reveal-canvas { display: block; margin: 6px auto 2px; animation: reveal-bob 1.6s ease-in-out infinite; }
@@ -232,6 +246,7 @@ body {
 :root[data-theme="dark"] .bonus-line .dim { color: #9cc2a6; }
 :root[data-theme="dark"] .pr-row { border-bottom-color: rgba(255,255,255,0.12); }
 :root[data-theme="dark"] .pr-row b.good { color: #7ee8a4; }
+:root[data-theme="dark"] .dbar { background: rgba(255,255,255,0.14); }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.001s !important; transition-duration: 0.01s !important; }
