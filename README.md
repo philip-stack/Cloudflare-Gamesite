@@ -52,6 +52,17 @@ schaltet teure Dauer-Effekte ab und drosselt die Bildrate für schwächere Gerä
   **ersten Gerät**, das ihn nutzt. Dazu **Live-Emoji-Reaktionen**, ein
   **Revanche**-Knopf (neuer Raum, gleiche Spiele), eine teilbare
   **Abend-Zusammenfassung** und ein lokaler **Verlauf** vergangener Abende.
+- **Saison & Liga** (`/saison/`, `/api/season`): eine **wöchentliche Liga über
+  alle gewerteten Spiele**. Pro Spiel gibt es Liga-Punkte nach Platzierung in
+  der Wochen-Bestenliste; über alle Spiele summiert ergibt das die Saison-
+  Tabelle. Mit Live-Reset-Countdown (Montag), Spitzenreiter je Spiel und
+  Vorsaison-Champion (Hall of Fame). Kommt **ohne neue Daten** aus — eine Saison
+  ist nur ein Zeitfenster (`strftime('%Y-%W')`) über die vorhandenen Scores.
+- **Web-Push-Benachrichtigungen** (`/api/push`): opt-in im Profil. Meldet z. B.
+  „Dein Rekord wurde geschlagen". Umgesetzt als **VAPID-signierter „Tickle"-Push
+  ohne verschlüsselte Payload** — der Service Worker holt die eigentlichen
+  Nachrichten aus einer serverseitigen Warteschlange (nach Push-Endpoint) und
+  zeigt sie an. Test-Knopf im Profil zum Prüfen am eigenen Gerät.
 - **Tages- & Wochen-Challenge** (Galopp): Alle laufen dieselbe, per Datum-
   bzw. Wochen-Seed erzeugte Strecke — je mit eigener Bestenliste. Direkt im
   **Galopp-Startmenü** wählbar (🗓️/📅). WUMMS! hat ebenfalls eine
@@ -155,7 +166,7 @@ sofort ein und synct im Hintergrund.
 ```
 wuerfelpoker/
 ├── wrangler.toml              Pages-Config + D1-Binding (DB) + AI-Binding (Kochstudio)
-├── schema.sql                 D1-Schema (Würfelpoker, *_scores, cloud_saves, party/party_member/party_score/party_reaction, error_log, rate)
+├── schema.sql                 D1-Schema (Würfelpoker, *_scores, cloud_saves, party*, push_sub/push_queue, error_log, rate)
 ├── public/                    statische Spiele (1 Ordner = 1 Spiel)
 │   ├── index.html             Landing Page mit App-Karten, Suche & Challenge
 │   ├── games.js               zentrale Spiele-Registry (Quelle für Startseite/Profil/Party)
@@ -164,8 +175,9 @@ wuerfelpoker/
 │   ├── qr.js                  eigenständiger QR-Code-Encoder (Beitritt/Sync teilen)
 │   ├── _headers               Security-Header (CSP, HSTS, nosniff, …)
 │   ├── fonts/                 selbst gehostete Schriften (Fraunces, Outfit) — kein Google-Fonts-CDN
-│   ├── profil/                Spieler-Profil & Hub (Avatar, Level, Rahmen, Cloud, Freunde)
+│   ├── profil/                Spieler-Profil & Hub (Avatar, Level, Rahmen, Cloud, Freunde, Push)
 │   ├── party/                 Spieleabend-Raum (Räume, Live-Rangliste)
+│   ├── saison/                Saison & Liga (wöchentliche Gesamtwertung)
 │   ├── impressum/             Impressum (§ 5 ECG / § 25 MedienG)
 │   ├── datenschutz/           Datenschutzerklärung (DSGVO)
 │   ├── kochstudio/            KI-Kochstudio (index.html + app.js + style.css)
@@ -188,10 +200,12 @@ wuerfelpoker/
 │   ├── games/                 Würfelpoker: geteilte Spiele (CRUD + Zellen)
 │   ├── scores/[game].js       Bestenlisten aller Spiele (GET/POST, ?daily=1, ?weekly=1, ?player=)
 │   ├── cloud.js               Cloud-Speicher (Sichern/Laden per Code, Vorversion)
-│   ├── party.js               Spieleabend-Räume (erstellen/beitreten/einreichen/Stand)
+│   ├── party.js               Spieleabend-Räume (erstellen/beitreten/einreichen/Stand/Reaktion)
+│   ├── season.js              Saison/Liga (Wochenwertung über alle Spiele)
+│   ├── push.js                Web-Push (VAPID, Abo/Queue/Versand)
 │   ├── log.js                 anonymer Fehler-Melder (→ D1, selbst-beschränkt)
 │   └── koch.js                KI-Kochstudio (Workers AI + DuckDuckGo-Websuche)
-├── tests/                     Node-Tests (Syntax, Qualität/A11y, QR, Scores/Cloud/Party-API, Flow-E2E, WUMMS/MEERI)
+├── tests/                     Node-Tests (Syntax, Qualität/A11y, QR, Scores/Cloud/Party/Saison/Push-API, Flow-E2E, WUMMS/MEERI)
 ├── lighthouserc.json          Lighthouse-Budget (Performance/A11y/Best-Practices/SEO)
 └── .github/workflows/
     ├── ci.yml                 CI: führt `npm test` bei jedem Push aus

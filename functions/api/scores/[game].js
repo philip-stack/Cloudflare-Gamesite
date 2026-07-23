@@ -1,4 +1,11 @@
 import { json } from "../_util.js";
+import { sendToName } from "../push.js";
+
+// Anzeigenamen für Push-Texte
+const GAME_LABEL = {
+  funkelfeld: "Funkelfeld", komet: "Komet", sternensturm: "Sternensturm",
+  galopp: "Galopp", wumms: "WUMMS!", meeri: "MEERI-MANIA",
+};
 
 // ====================================================================
 // Gemeinsame Bestenlisten-API für alle Spiele.
@@ -164,7 +171,8 @@ export async function onRequestGet({ request, env, params }) {
   return json({ top: rows });
 }
 
-export async function onRequestPost({ request, env, params }) {
+export async function onRequestPost(context) {
+  const { request, env, params } = context;
   const game = String(params.game || "");
   const cfg = GAMES[game];
   if (!cfg) return json({ error: "Unbekanntes Spiel" }, 404);
@@ -214,6 +222,15 @@ export async function onRequestPost({ request, env, params }) {
     return json({ error: "Dieser Name gehört schon jemand anderem — wähle einen anderen" }, 409);
   }
 
+  // Vor dem Eintragen: aktuelle:r Spitzenreiter:in (nur Gesamtwertung) — um
+  // erkennen zu können, ob diese Einsendung sie:ihn vom Thron stößt.
+  let prevTop = null;
+  if (mode === "none") {
+    prevTop = await env.DB.prepare(
+      "SELECT name, MAX(score) AS score FROM scores WHERE game = ? GROUP BY LOWER(name) ORDER BY score DESC LIMIT 1"
+    ).bind(key).first();
+  }
+
   await env.DB.prepare(
     "INSERT INTO scores (game, name, device, score, meta) VALUES (?, ?, ?, ?, ?)"
   ).bind(key, name, device, score, b.meta ? JSON.stringify(b.meta).slice(0, 500) : null).run();
@@ -226,6 +243,22 @@ export async function onRequestPost({ request, env, params }) {
   const rank = (await env.DB.prepare(
     `SELECT COUNT(*) + 1 AS r FROM (SELECT MAX(score) AS m FROM scores WHERE game = ?${cond} GROUP BY LOWER(name)) WHERE m > ?`
   ).bind(key, myBest).first()).r;
+
+  // Push: „Dein Rekord wurde geschlagen" — wenn diese Einsendung die/den
+  // bisherige:n Spitzenreiter:in überholt (nur Gesamtwertung, anderer Name).
+  // Fehlertolerant und außerhalb der Antwort (waitUntil), nie blockierend.
+  if (mode === "none" && prevTop && prevTop.name && prevTop.name.toLowerCase() !== name.toLowerCase() && myBest > prevTop.score) {
+    const label = GAME_LABEL[game] || game;
+    const msg = {
+      title: "👑 Dein Rekord wurde geschlagen!",
+      body: `${name} hat dich bei ${label} überholt (${Number(myBest).toLocaleString("de-AT")}).`,
+      url: "/saison/",
+    };
+    const wu = context && typeof context.waitUntil === "function"
+      ? context.waitUntil.bind(context)
+      : (p) => { if (p && p.catch) p.catch(() => {}); };
+    wu(sendToName(env, prevTop.name, msg));
+  }
 
   return json({ ok: true, rank, best: myBest }, 201);
 }

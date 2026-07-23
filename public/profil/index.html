@@ -239,6 +239,13 @@
         <span><b>⚡ Energiesparen</b><br><span class="cloud-info" style="margin:0">Reduziert Animationen &amp; Bildrate — schont Akku auf schwächeren Geräten.</span></span>
         <input type="checkbox" id="lowpower">
       </label>
+      <hr style="border:0;border-top:1px solid var(--edge-soft);margin:14px 0">
+      <label class="setting-row" for="push">
+        <span><b>🔔 Benachrichtigungen</b><br><span class="cloud-info" style="margin:0">Erhalte einen Hinweis, wenn dein Rekord geschlagen wird.</span></span>
+        <input type="checkbox" id="push">
+      </label>
+      <div class="cloud-status" id="push-status" role="status" aria-live="polite"></div>
+      <button class="btn-secondary" id="push-test" style="margin-top:8px" hidden>🔔 Test-Benachrichtigung senden</button>
     </div>
 
     <div class="sec-title">🤼 Freunde & Rivalen</div>
@@ -659,6 +666,70 @@
       lp.checked = window.gsLowPower.on();
       lp.onchange = () => window.gsLowPower.toggle();
     }
+
+    // --- Einstellungen: Benachrichtigungen (Web-Push) ---
+    (function () {
+      const box = $("#push"), st = $("#push-status"), testBtn = $("#push-test");
+      const setPS = (m, kind = "") => { st.className = "cloud-status " + kind; st.textContent = m; };
+      const deviceId = () => {
+        let d = localStorage.getItem("gs_device");
+        if (!d) { const a = new Uint8Array(18); crypto.getRandomValues(a); d = [...a].map(b => "abcdefghijklmnopqrstuvwxyz0123456789"[b % 36]).join(""); try { localStorage.setItem("gs_device", d); } catch {} }
+        return d;
+      };
+      const supported = "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+      if (!supported) { box.disabled = true; setPS("Dieser Browser unterstützt keine Benachrichtigungen."); return; }
+
+      const b64ToU8 = base64 => {
+        const pad = "=".repeat((4 - base64.length % 4) % 4);
+        const s = (base64 + pad).replace(/-/g, "+").replace(/_/g, "/");
+        const raw = atob(s); const out = new Uint8Array(raw.length);
+        for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+        return out;
+      };
+      const reg = () => navigator.serviceWorker.ready;
+
+      // Ausgangszustand aus einem vorhandenen Abo ableiten
+      (async () => {
+        try { const r = await reg(); const sub = await r.pushManager.getSubscription(); const on = !!sub; box.checked = on; testBtn.hidden = !on; }
+        catch {}
+      })();
+
+      async function enable() {
+        setPS("Frage Erlaubnis an …");
+        const perm = await Notification.requestPermission();
+        if (perm !== "granted") { box.checked = false; setPS("Benachrichtigungen wurden blockiert. In den Browser-Einstellungen erlauben.", "err"); return; }
+        try {
+          const key = (await (await fetch("/api/push")).json()).key;
+          const r = await reg();
+          let sub = await r.pushManager.getSubscription();
+          if (!sub) sub = await r.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToU8(key) });
+          const res = await fetch("/api/push", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "subscribe", subscription: sub.toJSON(), name: getName(), device: deviceId() }),
+          });
+          if (!res.ok) throw 0;
+          box.checked = true; testBtn.hidden = false;
+          setPS("✔ Aktiviert! Du wirst benachrichtigt, wenn dein Rekord fällt.", "ok");
+        } catch { box.checked = false; setPS("Aktivierung fehlgeschlagen — später erneut versuchen.", "err"); }
+      }
+      async function disable() {
+        setPS("Deaktiviere …");
+        try {
+          const r = await reg(); const sub = await r.pushManager.getSubscription();
+          if (sub) { await fetch("/api/push", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "unsubscribe", endpoint: sub.endpoint }) }); await sub.unsubscribe(); }
+          testBtn.hidden = true; setPS("Benachrichtigungen aus.");
+        } catch { setPS("Konnte nicht deaktivieren.", "err"); }
+      }
+      box.onchange = () => box.checked ? enable() : disable();
+      testBtn.onclick = async () => {
+        try {
+          const r = await reg(); const sub = await r.pushManager.getSubscription();
+          if (!sub) return setPS("Kein Abo — erst aktivieren.", "err");
+          const res = await fetch("/api/push", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "test", endpoint: sub.endpoint }) });
+          setPS(res.ok ? "Test gesendet — die Benachrichtigung sollte gleich erscheinen." : "Test fehlgeschlagen.", res.ok ? "ok" : "err");
+        } catch { setPS("Test fehlgeschlagen.", "err"); }
+      };
+    })();
 
     // --- Freunde & Rivalen ---
     const getFriends = () => { try { return JSON.parse(localStorage.getItem("gs_friends") || "[]"); } catch { return []; } };
