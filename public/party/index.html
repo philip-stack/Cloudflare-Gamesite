@@ -207,6 +207,7 @@
 
     async function refresh() {
       const c = code(); if (!c) return;
+      if (document.hidden) return;   // kein Poll, wenn der Tab versteckt ist
       let d;
       try { const r = await fetch("/api/party?code=" + encodeURIComponent(c)); d = await r.json(); if (!r.ok) throw 0; }
       catch { return; }

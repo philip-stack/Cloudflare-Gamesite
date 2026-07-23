@@ -397,7 +397,7 @@ const ctx = canvas.getContext("2d");
 let W = 320, H = 320, msize = 54;
 
 function layout() {
-  const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const wrap = canvas.parentElement;
   W = (wrap && wrap.clientWidth) || 320;
   H = Math.max(200, (wrap && wrap.clientHeight) || 320);
@@ -870,7 +870,7 @@ function fireEvent() {
 }
 
 // ---------- Loop ----------
-let lastT = 0, animT = 0, goldTimer = 8, autoMergeT = 0, autoBuyT = 0, playAcc = 0;
+let lastT = 0, animT = 0, goldTimer = 8, autoMergeT = 0, autoBuyT = 0, playAcc = 0, drawAcc = 0;
 function frame(ts) {
   const dt = Math.min(0.05, (ts - lastT) / 1000 || 0); lastT = ts; animT += dt;
 
@@ -937,7 +937,20 @@ function frame(ts) {
   if (flashT > 0) { flashT = Math.max(0, flashT - dt * 1.2); }
 
   if (hudDirty) { updateHUD(); hudDirty = false; }
-  draw();
+
+  // Zeichnen drosseln (die Simulation oben läuft weiter mit echtem dt):
+  // volle Bildrate nur bei aktiven Effekten, sonst ~30 fps (im
+  // Energiesparen ~20). Und gar nicht malen, wenn ein Overlay den
+  // Bildschirm verdeckt (Shop/Menü/Album) — das spart auf einem
+  // Idle-Spiel, das lange offen liegt, spürbar Akku/CPU.
+  const lowp = document.documentElement.hasAttribute("data-lowpower");
+  const fx = bursts.length || confetti.length || flashT > 0 || shakeMag > 0.3 || coinsFx.length > 6;
+  const minInt = fx && !lowp ? 0 : (lowp ? 0.05 : 0.033);
+  drawAcc += dt;
+  if (drawAcc >= minInt) {
+    drawAcc = 0;
+    if (!document.querySelector(".overlay")) draw();
+  }
   requestAnimationFrame(frame);
 }
 
@@ -1273,7 +1286,7 @@ function showAlbum() {
   ov.querySelectorAll(".album-cell[data-tier]").forEach(el => el.onclick = () => reveal(Number(el.dataset.tier), false));
   ov.querySelector("[data-close]").onclick = () => ov.remove();
   // Animierte Album-Meeris (laufen fröhlich auf der Stelle)
-  const S = 52, dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+  const S = 52, dpr = Math.min(window.devicePixelRatio || 1, 2);
   const cvs = [...ov.querySelectorAll(".album-cv")].map(c => {
     c.width = S * dpr; c.height = S * dpr; c.style.width = S + "px"; c.style.height = S + "px";
     const g = c.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -1319,7 +1332,7 @@ function reveal(tier, isNew) {
     <button class="btn-secondary" id="rv-close">${isNew ? "Weiter wuseln" : "Schließen"}</button>`);
   const cv = ov.querySelector(".reveal-canvas");
   const g = cv.getContext("2d");
-  const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
   cv.width = 200 * dpr; cv.height = 200 * dpr; cv.style.width = "200px"; cv.style.height = "200px";
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
   // Animierter, laufender Meeri (dreht sich ab und zu um)
@@ -1768,7 +1781,7 @@ function showBiomes() {
   const g = cv.getContext("2d");
   let cw = 0, ch = 0;
   const sizeCv = () => {
-    const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
     cw = map.clientWidth || 320; ch = map.clientHeight || 270;
     cv.width = Math.round(cw * dpr); cv.height = Math.round(ch * dpr);
     cv.style.width = cw + "px"; cv.style.height = ch + "px";

@@ -275,7 +275,7 @@ let cell = 40, boardX = 0, boardY = 0, cssW = 0, cssH = 0, trayY = 0, traySlotH 
 let traySlots = [];   // { r:{x,y,w,h}, tcell, cols, rows, idx }
 
 function layout() {
-  const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
   canvas.style.width = "100%";
   const wrap = canvas.parentElement;
   const availW = (wrap && wrap.clientWidth) || canvas.clientWidth || 340;

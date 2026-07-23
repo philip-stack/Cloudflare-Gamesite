@@ -40,6 +40,20 @@
 
   apply(get());
 
+  // Energiesparen: setzt data-lowpower auf <html>; CSS schaltet damit teure
+  // Dauer-Effekte ab, Canvas-Spiele (z. B. meeri) drosseln die Bildrate.
+  const applyLowPower = () => {
+    try {
+      if (localStorage.getItem("gs_lowpower") === "1") document.documentElement.setAttribute("data-lowpower", "");
+      else document.documentElement.removeAttribute("data-lowpower");
+    } catch (_) {}
+  };
+  applyLowPower();
+  window.gsLowPower = {
+    on: () => { try { return localStorage.getItem("gs_lowpower") === "1"; } catch (_) { return false; } },
+    toggle() { const next = !this.on(); try { localStorage.setItem("gs_lowpower", next ? "1" : "0"); } catch (_) {} applyLowPower(); return next; },
+  };
+
   // ------------------------------------------------------------------
   // Persistenter Speicher (gilt für die ganze Herkunft/Origin).
   // iOS/Safari & Browser mit ITP löschen localStorage sonst nach einiger

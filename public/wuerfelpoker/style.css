@@ -54,39 +54,41 @@ body {
    Kompositions-Gruppe — sonst blitzt beim Einfügen eines Overlays (neuer
    Layer) auf Mobilgeräten kurz Schwarz auf. */
 .ambience { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; isolation: isolate; }
+/* Statischer Schein: ein einmal weichgezeichneter Layer wird vom Browser
+   zwischengespeichert. Das frühere Dauer-Drift zwang die GPU, die riesige
+   Blur-Fläche in JEDEM Frame neu zu berechnen — Hauptursache fürs Warmwerden. */
 .aurora {
   position: absolute;
   width: 70vmax; height: 70vmax;
   border-radius: 50%;
-  filter: blur(90px);
-  opacity: 0.35;
+  filter: blur(60px);
+  opacity: 0.32;
   mix-blend-mode: screen;
 }
 .aurora-a {
   top: -35vmax; left: -20vmax;
   background: radial-gradient(circle, rgba(232,193,90,0.28), transparent 65%);
-  animation: drift-a 26s ease-in-out infinite alternate;
 }
 .aurora-b {
   bottom: -40vmax; right: -25vmax;
   background: radial-gradient(circle, rgba(52,120,80,0.35), transparent 65%);
-  animation: drift-b 32s ease-in-out infinite alternate;
 }
-@keyframes drift-a { to { transform: translate(10vmax, 8vmax) scale(1.15); } }
-@keyframes drift-b { to { transform: translate(-8vmax, -10vmax) scale(1.1); } }
 
+/* Statisches Korn (das frühere 3×/Sek.-Verschieben war ein Dauer-Repaint) */
 .grain {
-  position: absolute; inset: -50%;
+  position: absolute; inset: 0;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E");
   opacity: 0.05;
-  animation: grain-shift 0.9s steps(3) infinite;
 }
-@keyframes grain-shift {
-  0% { transform: translate(0, 0); }
-  33% { transform: translate(-2%, 1%); }
-  66% { transform: translate(1%, -2%); }
-  100% { transform: translate(0, 0); }
+
+/* Bewegung reduzieren / Energiesparen: teure Dauer-Effekte abschalten.
+   data-lowpower wird von theme.js aus der Nutzereinstellung gesetzt. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.001s !important; animation-iteration-count: 1 !important; transition-duration: 0.001s !important; }
 }
+:root[data-lowpower] .aurora,
+:root[data-lowpower] .grain { display: none; }
+:root[data-lowpower] *, :root[data-lowpower] *::before, :root[data-lowpower] *::after { animation: none !important; }
 
 #app {
   position: relative;
@@ -702,16 +704,14 @@ input:focus {
   color: var(--ink);
 }
 .sheet .cell.in-turn { background: rgba(232, 193, 90, 0.06); }
+/* Statische Hervorhebung statt Dauer-„Atmen": editierbare Zellen sind durch
+   den gestrichelten Gold-Rand klar erkennbar. Das frühere Endlos-Animieren
+   der Hintergrundfarbe auf VIELEN Zellen gleichzeitig war Dauer-Paint-Last. */
 .sheet .cell.editable {
   cursor: pointer;
-  background: rgba(232, 193, 90, 0.13);
+  background: rgba(232, 193, 90, 0.15);
   outline: 1px dashed var(--gold-deep);
   outline-offset: -4px;
-  animation: cell-breathe 2.4s ease-in-out infinite;
-}
-@keyframes cell-breathe {
-  0%, 100% { background-color: rgba(232, 193, 90, 0.10); }
-  50% { background-color: rgba(232, 193, 90, 0.2); }
 }
 .sheet .cell.editable:active { background: rgba(232, 193, 90, 0.32); }
 .sheet .cell.filled { animation: stamp-in 0.35s var(--ease-spring); }
