@@ -223,6 +223,12 @@
       margin-bottom: 6px;
     }
     .app-card.party .app-icon { background: rgba(182,120,255,0.2); }
+    .app-card.saison {
+      background: linear-gradient(175deg, rgba(232,193,90,0.18), rgba(232,193,90,0.04));
+      box-shadow: 0 0 0 1px rgba(232,193,90,0.32) inset, 0 10px 28px -14px rgba(0,0,0,0.55);
+      margin-bottom: 6px;
+    }
+    .app-card.saison .app-icon { background: rgba(232,193,90,0.22); }
     .game-search {
       width: 100%; margin-bottom: 14px; padding: 13px 16px;
       font-family: inherit; font-size: 0.95rem;
@@ -568,6 +574,23 @@
         <span class="app-arrow">→</span>`;
       const firstGame = nav.querySelector(".app-card[data-game]");
       nav.insertBefore(party, firstGame || null);
+    } catch {}
+
+    // --- Saison & Liga: wöchentliche Wertung über alle Spiele ---
+    try {
+      const saison = document.createElement("a");
+      saison.className = "app-card saison";
+      saison.style.setProperty("--i", 0);
+      saison.href = "/saison/";
+      saison.innerHTML = `
+        <span class="app-icon">🏆</span>
+        <span class="app-info">
+          <span class="app-name">Saison &amp; Liga</span>
+          <span class="app-desc" style="display:block">Wöchentliche Liga über alle Spiele — Punkte nach Platzierung, jeden Montag neue Saison</span>
+        </span>
+        <span class="app-arrow">→</span>`;
+      const firstGame = nav.querySelector(".app-card[data-game]");
+      nav.insertBefore(saison, firstGame || null);
     } catch {}
 
     // --- Suche/Filter über die Spielkarten ---
