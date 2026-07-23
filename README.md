@@ -26,15 +26,34 @@ sich eine globale Bestenliste pro Spiel (Top 50, pro Name zählt der Highscore).
 Die ganze Seite kann zwischen **Hell- und Dunkelmodus** umgeschaltet werden
 (🌙/☀️-Button in jeder App); die Wahl gilt app-übergreifend und wird auf dem
 Gerät gespeichert. Die Spielszenen der Canvas-Spiele bleiben bewusst dunkel,
-der Rahmen passt sich an.
+der Rahmen passt sich an. Ein **Energiesparen-Modus** (Profil → Einstellungen)
+schaltet teure Dauer-Effekte ab und drosselt die Bildrate für schwächere Geräte;
+`prefers-reduced-motion` wird ebenfalls respektiert.
 
 **Plattform-Features:**
 
+- **Spieler-Profil & Hub** (`/profil/`): eigener Bereich mit **Emoji-Avatar**
+  (Auswahl aus 32), **Spieleabend-Level & XP** (aus Abzeichen, Rekorden und
+  gespielten Spielen), **Avatar-Rahmen** und **Titeln**, die mit dem Level
+  freischalten (Neuling → … → Lebende Legende), sowie einer Übersicht aller
+  eigenen Rekorde. Die **Profil-Karte** steht auf der Startseite ganz oben.
+- **Cloud-Speicher** (`/api/cloud`): alle Spielstände, Rekorde & Abzeichen mit
+  einem Code sichern und auf jedem Gerät zurückholen — inkl. **QR-Code** des
+  Codes und Anzeige, **wann zuletzt gesichert** wurde. `shared.js` synct beim
+  Verlassen der Seite automatisch und zeigt beim Laden **nur dann** einen
+  Hinweis, wenn ein **echt neuerer Stand von einem anderen Gerät** existiert
+  (geräte-lokale Schreiber-Kennung, kein Popup-Spam bei eigenen Uploads).
+- **Spieleabend-Raum** (`/party/`, `/api/party`): Raum per 6-stelligem Code
+  (oder QR) erstellen/beitreten, gemeinsame Spiele auswählen, **Live-Rangliste**
+  über den Abend mit Rang-Punkten und „Sieger des Abends“. Würfelpoker- und
+  Score-Ergebnisse werden bei aktivem Raum automatisch eingereicht; ein Name im
+  Raum gehört dem **ersten Gerät**, das ihn nutzt.
 - **Tages- & Wochen-Challenge** (Galopp): Alle laufen dieselbe, per Datum-
   bzw. Wochen-Seed erzeugte Strecke — je mit eigener Bestenliste. Direkt im
   **Galopp-Startmenü** wählbar (🗓️/📅). WUMMS! hat ebenfalls eine
   **Tages-Challenge** (`?daily=1`, fester Seed für Teile- und Bösewicht-Abfolge),
-  im WUMMS!-Menü wählbar.
+  im WUMMS!-Menü wählbar. Die Startseite zeigt eine **Heutige Challenge** mit
+  wechselndem Spiel des Tages.
 - **Meilensteine** (Galopp, Sternensturm, Komet, WUMMS!): Abzeichen für Lauf-
   und Lebenszeit-Erfolge, lokal gespeichert, im Spielmenü einsehbar.
 - **Skins** (Galopp, Komet, Sternensturm): freispielbare Farbvarianten der
@@ -48,8 +67,12 @@ der Rahmen passt sich an.
   (`GS.sound` / `GS.haptic`), u. a. beim Würfeln und Eintragen in Würfelpoker.
 - Die Landing Page zeigt **eigene Rekorde + Weltrang** pro Spiel, eine
   **Weiterspielen-Karte** für laufende Würfelpoker-Spiele, das **zuletzt
-  gespielte** Spiel ganz oben und die Challenge-Führenden; Würfelpoker führt
-  eine **Statistik** (Siege, Spiele, Punkteschnitt) über abgeschlossene Spiele.
+  gespielte** Spiel ganz oben, eine **Live-Suche** über alle Spiele und die
+  Challenge-Führenden; Würfelpoker führt eine **Statistik** (Siege, Spiele,
+  Punkteschnitt) über abgeschlossene Spiele.
+- **Zentrale Spiele-Registry** (`public/games.js`): eine einzige Quelle für
+  Name, Icon, Beschreibung und Bestenlisten-Schlüssel jedes Spiels — Startseite,
+  Profil und Spieleabend-Raum bauen daraus ihre Karten/Listen.
 - **Gemeinsame Bestenlisten-API** (`/api/scores/<spiel>`, eine D1-Tabelle)
   mit Geräte-Token, Namensschutz (ein Name gehört dem Gerät, das ihn zuerst
   benutzt), Plausibilitätsprüfung der Scores, Rate-Limit und einem
@@ -57,7 +80,8 @@ der Rahmen passt sich an.
   ausgestelltes Token mitschicken, was blindes Absenden per Skript erschwert.
   Gemeinsamer Client-Code in `public/shared.js`.
 - **Automatische Tests** (`tests/`, per GitHub Actions bei jedem Push):
-  Syntaxprüfung aller JS-Dateien, QR-Encoder- und Scores-API-Tests.
+  Syntaxprüfung aller JS-Dateien plus Tests für QR-Encoder, Scores-, Cloud-
+  und Party-API (mit gemocktem D1) sowie WUMMS!- und MEERI-Logik.
 
 ## 🍳 KI-Kochstudio
 
@@ -87,25 +111,56 @@ Die Seite ist eine **PWA**: Am Handy über „Zum Startbildschirm hinzufügen"
 und Vollbild — bereits besuchte Spiele funktionieren auch offline
 (Bestenlisten und geteilte Spiele brauchen Internet).
 
+## Sicherheit
+
+- **Security-Header** via `public/_headers`: strenge **Content-Security-Policy**
+  (`connect-src 'self'`, `frame-ancestors none`, `object-src none`), `nosniff`,
+  `Referrer-Policy`, `Permissions-Policy` und HSTS. Alle Assets (Schriften, QR-
+  Encoder) sind selbst gehostet — kein externes CDN, keine Fremd-Skripte.
+- **Geräte-Bindung**: In Bestenlisten und Spieleabend-Räumen gehört ein Name dem
+  Gerät, das ihn zuerst benutzt — kein Einreichen unter fremdem Namen.
+- **Signierte Lauf-Token** (HMAC, `SCORE_SECRET` als Pages-Secret) gegen
+  blindes Score-Absenden, plus D1-gestütztes **Rate-Limit** auf allen APIs.
+- **Cloud-Speicher** hält beim Überschreiben die vorherige Version vor,
+  begrenzt die Größe und ist rate-limitiert.
+- **Anonymer Fehler-Melder** (`/api/log`): JS-Fehler auf fremden Geräten landen
+  gedrosselt und dedupliziert in D1 (selbst-beschränkt auf die letzten 1000),
+  damit Defekte auffallen.
+
+## Leistung & Akku
+
+Rundenbasierte Spiele (Würfelpoker, Funkelfeld, WUMMS!) zeichnen
+**ereignisgesteuert** statt in einer Dauerschleife. Für die Idle-/Effekt-Last
+gibt es mehrere Sparmaßnahmen: MEERI drosselt das Zeichnen (~30 fps, volle Rate
+nur bei Effekten) und pausiert unter Overlays, die Canvas-Auflösung ist per
+**DPR-Cap** gedeckelt, teure Dauereffekte (animierte Weichzeichnung, Grain,
+pulsierende Zellen) laufen statisch, und Hintergrund-Polls (Party, geteilte
+Spiele) pausieren bei verstecktem Tab. Würfelpoker trägt Züge **optimistisch**
+sofort ein und synct im Hintergrund.
+
 ## Struktur
 
 ```
 wuerfelpoker/
 ├── wrangler.toml              Pages-Config + D1-Binding (DB) + AI-Binding (Kochstudio)
-├── schema.sql                 D1-Schema (Würfelpoker-Tabellen + *_scores)
+├── schema.sql                 D1-Schema (Würfelpoker, *_scores, cloud_saves, party*, error_log, rate)
 ├── public/                    statische Spiele (1 Ordner = 1 Spiel)
-│   ├── index.html             Landing Page mit App-Karten
-│   ├── theme.js               Hell/Dunkel-Umschalter + SW-Registrierung + Update-Hinweis
-│   ├── shared.js              gemeinsame Spiele-Schicht (Scores, Name, Meilensteine, Skins, Sound, Teilen)
-│   ├── qr.js                  eigenständiger QR-Code-Encoder (Beitritt teilen)
+│   ├── index.html             Landing Page mit App-Karten, Suche & Challenge
+│   ├── games.js               zentrale Spiele-Registry (Quelle für Startseite/Profil/Party)
+│   ├── theme.js               Hell/Dunkel + Energiesparen + SW-Registrierung + Fehler-Melder
+│   ├── shared.js              gemeinsame Spiele-Schicht (Scores, Name, Meilensteine, Skins, Sound, Teilen, Cloud-Sync)
+│   ├── qr.js                  eigenständiger QR-Code-Encoder (Beitritt/Sync teilen)
+│   ├── _headers               Security-Header (CSP, HSTS, nosniff, …)
 │   ├── fonts/                 selbst gehostete Schriften (Fraunces, Outfit) — kein Google-Fonts-CDN
+│   ├── profil/                Spieler-Profil & Hub (Avatar, Level, Rahmen, Cloud, Freunde)
+│   ├── party/                 Spieleabend-Raum (Räume, Live-Rangliste)
 │   ├── impressum/             Impressum (§ 5 ECG / § 25 MedienG)
 │   ├── datenschutz/           Datenschutzerklärung (DSGVO)
 │   ├── kochstudio/            KI-Kochstudio (index.html + app.js + style.css)
 │   ├── favicon.ico            Browser-Tab-Icon
 │   ├── 404.html               Fehlerseite
 │   ├── manifest.webmanifest   PWA-Manifest (installierbare App)
-│   ├── sw.js                  Service Worker (offline-fähig)
+│   ├── sw.js                  Service Worker (offline-fähig, network-first + App-Shell)
 │   ├── icons/                 App-Icons
 │   ├── _redirects
 │   ├── wuerfelpoker/          index.html + app.js + style.css
@@ -116,12 +171,15 @@ wuerfelpoker/
 │   ├── wumms/                 Comic-Block-Puzzle mit Tier-Helden
 │   └── meeri/                 Merge-Idle mit Meerschweinchen (MEERI-MANIA)
 ├── functions/api/             Cloudflare Pages Functions
-│   ├── _util.js               gemeinsame Helfer (json, Codes, Spiel laden)
+│   ├── _util.js               gemeinsame Helfer (json, Codes, Spiel laden, Client-IP, Rate-Limit)
 │   ├── health.js
 │   ├── games/                 Würfelpoker: geteilte Spiele (CRUD + Zellen)
-│   ├── scores/[game].js       Bestenlisten aller Spiele (GET/POST, ?daily=1, ?weekly=1)
+│   ├── scores/[game].js       Bestenlisten aller Spiele (GET/POST, ?daily=1, ?weekly=1, ?player=)
+│   ├── cloud.js               Cloud-Speicher (Sichern/Laden per Code, Vorversion)
+│   ├── party.js               Spieleabend-Räume (erstellen/beitreten/einreichen/Stand)
+│   ├── log.js                 anonymer Fehler-Melder (→ D1, selbst-beschränkt)
 │   └── koch.js                KI-Kochstudio (Workers AI + DuckDuckGo-Websuche)
-├── tests/                     Node-Tests (Syntax, QR-Encoder, Scores-API)
+├── tests/                     Node-Tests (Syntax, QR, Scores/Cloud/Party-API, WUMMS/MEERI)
 └── .github/workflows/ci.yml   CI: führt die Tests bei jedem Push aus
 ```
 
@@ -137,7 +195,9 @@ Gold-Folie, dunkle Karten-Optik).
 
 1. Ordner `public/<name>/` mit `index.html`, `app.js`, `style.css` anlegen
    (bestehendes Spiel als Vorlage kopieren).
-2. App-Karte in `public/index.html` ergänzen (`--i` hochzählen).
+2. Spiel in der **Registry** `public/games.js` eintragen (Name, Icon,
+   Beschreibung, Bestenlisten-Schlüssel) — Startseite, Profil und Spieleabend-
+   Raum übernehmen es automatisch.
 3. Für eine Bestenliste: Spiel in der Allowlist von
    `functions/api/scores/[game].js` eintragen (Score-Obergrenze +
    optionale Plausibilitätsprüfung) — fertig, keine neue Tabelle nötig.
