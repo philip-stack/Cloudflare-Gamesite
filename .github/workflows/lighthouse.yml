@@ -1,0 +1,24 @@
+name: Lighthouse
+
+# Prüft Performance, Barrierefreiheit, Best Practices & SEO der wichtigsten
+# Seiten gegen ein Budget (lighthouserc.json). Die Schwellen sind auf "warn"
+# gesetzt und der Schritt läuft mit continue-on-error — der Bericht ist als
+# Orientierung gedacht und blockiert Merges NICHT. Report-Link erscheint im Log.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lighthouse:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Lighthouse CI (Budget-Check, nicht blockierend)
+        continue-on-error: true
+        run: |
+          npm install -g @lhci/cli@0.14.x
+          lhci autorun --config=lighthouserc.json

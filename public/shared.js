@@ -361,6 +361,35 @@
   // ---------- Zuletzt gespieltes Spiel (für die Landing Page) ----------
   function markPlayed(game) {
     try { localStorage.setItem("gs_last_game", game); } catch {}
+    // Tages-Streak pflegen: einmal pro Kalendertag hochzählen (egal welches
+    // Spiel). Gestern gespielt → +1, sonst zurück auf 1. Bester Streak wird
+    // separat gemerkt. Rein lokal, wandert über den Cloud-Sync mit.
+    try {
+      const ymd = d => { const z = n => String(n).padStart(2, "0"); return d.getFullYear() + "-" + z(d.getMonth() + 1) + "-" + z(d.getDate()); };
+      const today = ymd(new Date());
+      const last = localStorage.getItem("gs_streak_last") || "";
+      if (last !== today) {
+        const y = new Date(); y.setDate(y.getDate() - 1);
+        let cur = Number(localStorage.getItem("gs_streak") || 0);
+        cur = (last === ymd(y)) ? cur + 1 : 1;
+        localStorage.setItem("gs_streak", String(cur));
+        localStorage.setItem("gs_streak_last", today);
+        if (cur > Number(localStorage.getItem("gs_streak_best") || 0)) localStorage.setItem("gs_streak_best", String(cur));
+      }
+    } catch {}
+  }
+
+  // Aktuellen Tages-Streak lesen — aber „abgelaufen" (weder heute noch gestern
+  // gespielt) als 0 melden, ohne den Bestwert zu verändern.
+  function streak() {
+    try {
+      const ymd = d => { const z = n => String(n).padStart(2, "0"); return d.getFullYear() + "-" + z(d.getMonth() + 1) + "-" + z(d.getDate()); };
+      const last = localStorage.getItem("gs_streak_last") || "";
+      const t = new Date(), y = new Date(); y.setDate(y.getDate() - 1);
+      const cur = Number(localStorage.getItem("gs_streak") || 0);
+      if (last === ymd(t) || last === ymd(y)) return cur;
+      return 0;
+    } catch { return 0; }
   }
 
   // ---------- Cloud-Auto-Sync ----------
@@ -489,7 +518,7 @@
 
   window.GS = {
     esc, deviceId, getName, setName, submitScore, scoreFlow, showLeaderboard,
-    badges, skins, sound, haptic, onboard, share, markPlayed, cloud,
+    badges, skins, sound, haptic, onboard, share, markPlayed, streak, cloud,
   };
 
   // Auto-Sync verdrahten (nur wenn ein Sync-Code existiert): beim Verlassen

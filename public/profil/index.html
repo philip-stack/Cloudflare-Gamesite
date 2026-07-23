@@ -113,6 +113,19 @@
     .stat span { color:var(--muted); font-size:0.74rem; }
 
     .sec-title { font-family:var(--font-display); font-weight:700; font-size:1.05rem; margin:8px 2px 12px; }
+    .ach-count { font-family:var(--font-ui); font-weight:600; font-size:0.82rem; color:var(--gold); }
+
+    /* --- Erfolge --- */
+    .ach-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(84px,1fr)); gap:10px; }
+    .ach { text-align:center; padding:12px 6px 10px; border-radius:14px; background:var(--card);
+      box-shadow:0 0 0 1px var(--edge-soft) inset; position:relative; }
+    .ach.on { box-shadow:0 0 0 1.5px var(--gold) inset; background:rgba(232,193,90,0.12); }
+    .ach .ai { font-size:1.7rem; line-height:1; display:block; margin-bottom:5px; }
+    .ach.off .ai { filter:grayscale(1); opacity:0.4; }
+    .ach .an { font-size:0.7rem; font-weight:700; line-height:1.15; }
+    .ach.off .an { color:var(--muted); font-weight:600; }
+    .ach .ad { display:block; font-size:0.62rem; color:var(--muted); margin-top:3px; line-height:1.2; }
+    .ach .lock { position:absolute; top:6px; right:8px; font-size:0.7rem; opacity:0.7; }
 
     /* --- Cloud-Speicher --- */
     .cloud-card { background:var(--card); border-radius:var(--radius); padding:16px; margin-bottom:20px;
@@ -195,6 +208,15 @@
       <div class="stat"><b id="s-badges">0</b><span>Abzeichen</span></div>
       <div class="stat"><b id="s-games">0</b><span>Spiele gespielt</span></div>
       <div class="stat"><b id="s-records">0</b><span>Rekorde</span></div>
+      <div class="stat"><b id="s-streak">0</b><span>🔥 Tage-Streak</span></div>
+      <div class="stat"><b id="s-beststreak">0</b><span>Bester Streak</span></div>
+      <div class="stat"><b id="s-ach">0</b><span>Erfolge</span></div>
+    </div>
+
+    <div class="sec-title">🏆 Erfolge <span id="ach-count" class="ach-count"></span></div>
+    <div class="cloud-card">
+      <p class="cloud-info" id="ach-intro">Plattformweite Erfolge — quer über alle Spiele.</p>
+      <div class="ach-grid" id="ach-grid"></div>
     </div>
 
     <div class="sec-title">☁️ Cloud-Speicher</div>
@@ -208,7 +230,7 @@
         <button class="btn-secondary" id="cloud-save">⬆️ Jetzt sichern</button>
         <button class="btn-secondary" id="cloud-load">⬇️ Von Code laden</button>
       </div>
-      <div class="cloud-status" id="cloud-status"></div>
+      <div class="cloud-status" id="cloud-status" role="status" aria-live="polite"></div>
     </div>
 
     <div class="sec-title">⚙️ Einstellungen</div>
@@ -247,6 +269,19 @@
     const GAMES = window.GAMES || [];
     const $ = s => document.querySelector(s);
     const num = n => Number(n || 0);
+
+    // Overlay barrierefrei machen: role/aria, Escape schließt, Fokus rein &
+    // beim Schließen zurück. Gibt eine close()-Funktion zurück.
+    const modalize = (ovl) => {
+      const panel = ovl.querySelector(".ovl-panel");
+      if (panel) { panel.setAttribute("role", "dialog"); panel.setAttribute("aria-modal", "true"); }
+      const prev = document.activeElement;
+      const onKey = e => { if (e.key === "Escape") close(); };
+      function close() { document.removeEventListener("keydown", onKey); ovl.remove(); try { prev && prev.focus(); } catch {} }
+      document.addEventListener("keydown", onKey);
+      const first = ovl.querySelector("button"); if (first) setTimeout(() => { try { first.focus(); } catch {} }, 30);
+      return close;
+    };
     const fmt = n => num(n).toLocaleString("de-AT");
     const getName = () => (localStorage.getItem("bb_name") || "").trim();
 
@@ -281,6 +316,47 @@
     $("#s-badges").textContent = badgeSum;
     $("#s-games").textContent = playedCount;
     $("#s-records").textContent = recordCount;
+
+    // --- Tages-Streak (aus dem gemeinsamen System; abgelaufener Streak = 0) ---
+    const curStreak = (() => {
+      const ymd = d => { const z = n => String(n).padStart(2, "0"); return d.getFullYear() + "-" + z(d.getMonth() + 1) + "-" + z(d.getDate()); };
+      const last = localStorage.getItem("gs_streak_last") || "";
+      const t = new Date(), y = new Date(); y.setDate(y.getDate() - 1);
+      return (last === ymd(t) || last === ymd(y)) ? num(localStorage.getItem("gs_streak")) : 0;
+    })();
+    const bestStreak = num(localStorage.getItem("gs_streak_best"));
+    $("#s-streak").textContent = curStreak;
+    $("#s-beststreak").textContent = bestStreak;
+
+    // --- Plattformweite Erfolge (rein abgeleitet, kein extra Speicher) ---
+    const allPlayed = GAMES.length > 0 && GAMES.every(played);
+    const friendCount = (() => { try { return JSON.parse(localStorage.getItem("gs_friends") || "[]").length; } catch { return 0; } })();
+    const partyCount = (() => { try { return JSON.parse(localStorage.getItem("gs_party_history") || "[]").length; } catch { return 0; } })()
+      + (localStorage.getItem("gs_party_code") ? 1 : 0);
+    const ACH = [
+      { icon: "🎮", name: "Willkommen", desc: "Erstes Spiel", ok: playedCount >= 1 },
+      { icon: "🏅", name: "Erster Rekord", desc: "1 Rekord", ok: recordCount >= 1 },
+      { icon: "🎖️", name: "Sammler:in", desc: "5 Abzeichen", ok: badgeSum >= 5 },
+      { icon: "🏆", name: "Abzeichen-Meister", desc: "15 Abzeichen", ok: badgeSum >= 15 },
+      { icon: "🧭", name: "Entdecker:in", desc: "Alle Spiele", ok: allPlayed },
+      { icon: "⭐", name: "Aufsteiger:in", desc: "Level 5", ok: level >= 5 },
+      { icon: "🌟", name: "Hochkaräter", desc: "Level 10", ok: level >= 10 },
+      { icon: "🔥", name: "Dranbleiber", desc: "3-Tage-Streak", ok: bestStreak >= 3 },
+      { icon: "⚡", name: "Wochen-Streak", desc: "7-Tage-Streak", ok: bestStreak >= 7 },
+      { icon: "☁️", name: "Abgesichert", desc: "Cloud-Backup", ok: !!localStorage.getItem("gs_sync_code") },
+      { icon: "🤼", name: "Gesellig", desc: "1 Freund:in", ok: friendCount >= 1 },
+      { icon: "🎉", name: "Spieleabend", desc: "An Raum teilgenommen", ok: partyCount >= 1 },
+    ];
+    const achDone = ACH.filter(a => a.ok).length;
+    $("#s-ach").textContent = achDone;
+    $("#ach-count").textContent = `${achDone} / ${ACH.length}`;
+    $("#ach-grid").innerHTML = ACH.map(a => `
+      <div class="ach ${a.ok ? "on" : "off"}" title="${esc(a.name)} — ${esc(a.desc)}">
+        <span class="ai">${a.icon}</span>
+        <span class="an">${esc(a.name)}</span>
+        <span class="ad">${esc(a.desc)}</span>
+        ${a.ok ? "" : '<span class="lock" aria-label="gesperrt">🔒</span>'}
+      </div>`).join("");
 
     // --- Profilbild (Emoji) ---
     const AVATARS = [
@@ -369,7 +445,7 @@
           <button class="btn-secondary" id="t-close">Schließen</button>
         </div>`;
       document.body.appendChild(ovl);
-      const close = () => ovl.remove();
+      const close = modalize(ovl);
       ovl.onclick = e => { if (e.target === ovl) close(); };
       ovl.querySelector("#t-close").onclick = close;
       ovl.querySelectorAll("button[data-t]:not([disabled])").forEach(b => {
@@ -393,7 +469,7 @@
           <button class="btn-secondary" id="av-close">Schließen</button>
         </div>`;
       document.body.appendChild(ovl);
-      const close = () => ovl.remove();
+      const close = modalize(ovl);
       ovl.onclick = e => { if (e.target === ovl) close(); };
       ovl.querySelector("#av-close").onclick = close;
       ovl.querySelector("#av-clear").onclick = () => { setAvatar(""); renderName(); close(); };
@@ -427,7 +503,7 @@
           <button class="btn-secondary" id="fr-close">Schließen</button>
         </div>`;
       document.body.appendChild(ovl);
-      const close = () => ovl.remove();
+      const close = modalize(ovl);
       ovl.onclick = e => { if (e.target === ovl) close(); };
       ovl.querySelector("#fr-close").onclick = close;
       ovl.querySelectorAll(".emoji-grid button:not([disabled])").forEach(b => {

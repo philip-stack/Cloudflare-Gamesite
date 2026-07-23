@@ -35,8 +35,10 @@ schaltet teure Dauer-Effekte ab und drosselt die Bildrate für schwächere Gerä
 - **Spieler-Profil & Hub** (`/profil/`): eigener Bereich mit **Emoji-Avatar**
   (Auswahl aus 32), **Spieleabend-Level & XP** (aus Abzeichen, Rekorden und
   gespielten Spielen), **Avatar-Rahmen** und **Titeln**, die mit dem Level
-  freischalten (Neuling → … → Lebende Legende), sowie einer Übersicht aller
-  eigenen Rekorde. Die **Profil-Karte** steht auf der Startseite ganz oben.
+  freischalten (Neuling → … → Lebende Legende), einer Übersicht aller eigenen
+  Rekorde, einem **Tage-Streak** (an aufeinanderfolgenden Tagen gespielt) und
+  **plattformweiten Erfolgen** (quer über alle Spiele). Die **Profil-Karte**
+  steht auf der Startseite ganz oben.
 - **Cloud-Speicher** (`/api/cloud`): alle Spielstände, Rekorde & Abzeichen mit
   einem Code sichern und auf jedem Gerät zurückholen — inkl. **QR-Code** des
   Codes und Anzeige, **wann zuletzt gesichert** wurde. `shared.js` synct beim
@@ -45,9 +47,11 @@ schaltet teure Dauer-Effekte ab und drosselt die Bildrate für schwächere Gerä
   (geräte-lokale Schreiber-Kennung, kein Popup-Spam bei eigenen Uploads).
 - **Spieleabend-Raum** (`/party/`, `/api/party`): Raum per 6-stelligem Code
   (oder QR) erstellen/beitreten, gemeinsame Spiele auswählen, **Live-Rangliste**
-  über den Abend mit Rang-Punkten und „Sieger des Abends“. Würfelpoker- und
-  Score-Ergebnisse werden bei aktivem Raum automatisch eingereicht; ein Name im
-  Raum gehört dem **ersten Gerät**, das ihn nutzt.
+  über den Abend mit Rang-Punkten und „Sieger des Abends“. Score-Ergebnisse
+  werden bei aktivem Raum automatisch eingereicht; ein Name im Raum gehört dem
+  **ersten Gerät**, das ihn nutzt. Dazu **Live-Emoji-Reaktionen**, ein
+  **Revanche**-Knopf (neuer Raum, gleiche Spiele), eine teilbare
+  **Abend-Zusammenfassung** und ein lokaler **Verlauf** vergangener Abende.
 - **Tages- & Wochen-Challenge** (Galopp): Alle laufen dieselbe, per Datum-
   bzw. Wochen-Seed erzeugte Strecke — je mit eigener Bestenliste. Direkt im
   **Galopp-Startmenü** wählbar (🗓️/📅). WUMMS! hat ebenfalls eine
@@ -80,8 +84,16 @@ schaltet teure Dauer-Effekte ab und drosselt die Bildrate für schwächere Gerä
   ausgestelltes Token mitschicken, was blindes Absenden per Skript erschwert.
   Gemeinsamer Client-Code in `public/shared.js`.
 - **Automatische Tests** (`tests/`, per GitHub Actions bei jedem Push):
-  Syntaxprüfung aller JS-Dateien plus Tests für QR-Encoder, Scores-, Cloud-
-  und Party-API (mit gemocktem D1) sowie WUMMS!- und MEERI-Logik.
+  Syntaxprüfung aller JS-Dateien, ein **statischer Qualitäts-/A11y-Check** aller
+  HTML-Seiten (keine externen Ressourcen, alt-Texte, lang/viewport), Tests für
+  QR-Encoder, Scores-, Cloud- und Party-API (mit gemocktem D1), ein
+  **Flow-/E2E-Test** des geteilten Würfelpoker-Pfades (anlegen → laden →
+  eintragen → volle Runde) sowie WUMMS!- und MEERI-Logik. Zusätzlich ein
+  **Lighthouse-Budget** (`lighthouserc.json`) als eigener, nicht-blockierender
+  Workflow für Performance, Barrierefreiheit, Best Practices & SEO.
+- **Barrierefreiheit**: Dialoge als `role="dialog"`/`aria-modal` mit
+  Escape-zum-Schließen und Fokus-Rückgabe, `aria-live`-Statusmeldungen,
+  beschriftete Eingabefelder und sichtbarer Fokusrahmen.
 
 ## 🍳 KI-Kochstudio
 
@@ -143,7 +155,7 @@ sofort ein und synct im Hintergrund.
 ```
 wuerfelpoker/
 ├── wrangler.toml              Pages-Config + D1-Binding (DB) + AI-Binding (Kochstudio)
-├── schema.sql                 D1-Schema (Würfelpoker, *_scores, cloud_saves, party*, error_log, rate)
+├── schema.sql                 D1-Schema (Würfelpoker, *_scores, cloud_saves, party/party_member/party_score/party_reaction, error_log, rate)
 ├── public/                    statische Spiele (1 Ordner = 1 Spiel)
 │   ├── index.html             Landing Page mit App-Karten, Suche & Challenge
 │   ├── games.js               zentrale Spiele-Registry (Quelle für Startseite/Profil/Party)
@@ -179,8 +191,11 @@ wuerfelpoker/
 │   ├── party.js               Spieleabend-Räume (erstellen/beitreten/einreichen/Stand)
 │   ├── log.js                 anonymer Fehler-Melder (→ D1, selbst-beschränkt)
 │   └── koch.js                KI-Kochstudio (Workers AI + DuckDuckGo-Websuche)
-├── tests/                     Node-Tests (Syntax, QR, Scores/Cloud/Party-API, WUMMS/MEERI)
-└── .github/workflows/ci.yml   CI: führt die Tests bei jedem Push aus
+├── tests/                     Node-Tests (Syntax, Qualität/A11y, QR, Scores/Cloud/Party-API, Flow-E2E, WUMMS/MEERI)
+├── lighthouserc.json          Lighthouse-Budget (Performance/A11y/Best-Practices/SEO)
+└── .github/workflows/
+    ├── ci.yml                 CI: führt `npm test` bei jedem Push aus
+    └── lighthouse.yml         Lighthouse-Budget-Check (nicht blockierend)
 ```
 
 Tests lokal ausführen: `npm test` (Node ≥ 22).

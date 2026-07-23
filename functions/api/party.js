@@ -17,6 +17,7 @@ const CODE_RE = /^[A-Z0-9]{6}$/;
 const DEV_RE = /^[A-Za-z0-9_-]{8,40}$/;
 const MAX_SCORE = 2_000_000_000;
 const PTS = [10, 7, 5, 3, 2];               // Rang 1..5, danach 1 Punkt
+const REACTIONS = ["👏", "🔥", "😂", "😮", "🎉", "💪", "🍀", "😭"];
 const cleanName = n => String(n || "").trim().slice(0, 16);
 
 // Ein Name im Raum gehört dem Gerät, das ihn zuerst benutzt. Verhindert,
@@ -87,6 +88,21 @@ export async function onRequestPost({ request, env }) {
     return json({ ok: true });
   }
 
+  if (action === "react") {
+    const name = cleanName(b.name);
+    const emoji = String(b.emoji || "");
+    if (!name) return json({ error: "Name fehlt" }, 400);
+    if (!REACTIONS.includes(emoji)) return json({ error: "Unbekannte Reaktion" }, 400);
+    if (!(await ownName(env, code, name, dev))) return json({ error: "Dieser Name gehört einem anderen Gerät" }, 409);
+    await env.DB.prepare("INSERT INTO party_reaction (code, name, emoji) VALUES (?, ?, ?)").bind(code, name, emoji).run();
+    // Tabelle klein halten: pro Raum nur die letzten 40 Reaktionen behalten
+    await env.DB.prepare(
+      `DELETE FROM party_reaction WHERE code = ? AND id NOT IN
+        (SELECT id FROM party_reaction WHERE code = ? ORDER BY id DESC LIMIT 40)`
+    ).bind(code, code).run();
+    return json({ ok: true });
+  }
+
   return json({ error: "Unbekannte Aktion" }, 400);
 }
 
@@ -116,5 +132,11 @@ export async function onRequestGet({ request, env }) {
   }
 
   const standings = Object.values(perName).sort((a, b) => b.points - a.points || a.name.localeCompare(b.name));
-  return json({ games, standings, count: names.length });
+
+  // Letzte Reaktionen (neueste zuerst) für den Live-Feed
+  const reactions = (await env.DB.prepare(
+    "SELECT id, name, emoji FROM party_reaction WHERE code = ? ORDER BY id DESC LIMIT 12"
+  ).bind(code).all()).results;
+
+  return json({ games, standings, count: names.length, reactions });
 }

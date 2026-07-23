@@ -75,6 +75,23 @@
     .msg.err { color:#e0645a; }
     .row2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
     .confetti { position:fixed; inset:0; pointer-events:none; z-index:60; }
+    /* --- Reaktionen --- */
+    .react-bar { display:flex; flex-wrap:wrap; gap:6px; justify-content:center; margin:14px 0 4px; }
+    .react-bar button { border:0; border-radius:12px; cursor:pointer; font-size:1.35rem; line-height:1; padding:8px 10px;
+      background:var(--card); box-shadow:0 0 0 1px var(--edge-soft) inset; transition:transform 0.1s; }
+    .react-bar button:active { transform:scale(1.25); }
+    .react-feed { min-height:1.6em; text-align:center; color:var(--muted); font-size:0.82rem; margin-top:8px; line-height:1.5; }
+    .react-feed b { color:var(--ink); font-weight:600; }
+    .react-fly { position:fixed; z-index:60; pointer-events:none; font-size:1.8rem; animation:fly 1.4s ease-out forwards; }
+    @keyframes fly { 0%{ transform:translateY(0) scale(0.6); opacity:0; } 15%{ opacity:1; } 100%{ transform:translateY(-120px) scale(1.3); opacity:0; } }
+    /* --- Verlauf --- */
+    .hist { display:flex; flex-direction:column; gap:8px; }
+    .hist-row { display:flex; align-items:center; gap:10px; padding:11px 13px; border-radius:12px; background:var(--card);
+      box-shadow:0 0 0 1px var(--edge-soft) inset; }
+    .hist-row .hi { font-size:1.2rem; } .hist-row .hm { flex:1; min-width:0; }
+    .hist-row .ht { font-weight:700; font-size:0.92rem; } .hist-row .hs { color:var(--muted); font-size:0.76rem; margin-top:1px; }
+    .hist-row .hd { color:var(--muted); font-size:0.72rem; white-space:nowrap; }
+    @media (prefers-reduced-motion:reduce){ .react-fly{ animation-duration:0.001s!important; } *{ transition:none!important; } }
   </style>
 </head>
 <body>
@@ -104,12 +121,64 @@
     };
     const code = () => (localStorage.getItem("gs_party_code") || "").trim().toUpperCase();
     const view = $("#view");
+    const REACTIONS = ["👏", "🔥", "😂", "😮", "🎉", "💪", "🍀", "😭"];
     let poll = null;
+    let lastData = null;          // letzte Wertung (für Zusammenfassung/Verlauf)
+    let seenReactionId = 0;       // höchste bereits angezeigte Reaktions-ID
 
     const api = async (body) => {
       const r = await fetch("/api/party", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body) });
       return { status:r.status, data: await r.json().catch(()=>({})) };
     };
+
+    // --- Verlauf vergangener Abende (rein lokal) ---
+    const getHistory = () => { try { return JSON.parse(localStorage.getItem("gs_party_history") || "[]"); } catch { return []; } };
+    const saveToHistory = () => {
+      if (!lastData || !lastData.standings || !lastData.standings.some(s => s.points > 0)) return;
+      const entry = {
+        code: code(),
+        at: new Date().toISOString(),
+        games: (lastData.games || []).slice(),
+        top: lastData.standings.slice(0, 3).map(s => ({ name: s.name, points: s.points })),
+      };
+      const list = getHistory().filter(h => h.code !== entry.code);   // Duplikate desselben Raums ersetzen
+      list.unshift(entry);
+      try { localStorage.setItem("gs_party_history", JSON.stringify(list.slice(0, 15))); } catch {}
+    };
+    const summaryText = () => {
+      if (!lastData || !lastData.standings) return "";
+      const medals = ["🥇", "🥈", "🥉"];
+      const lines = lastData.standings.filter(s => s.points > 0)
+        .map((s, i) => `${medals[i] || (i + 1) + "."} ${s.name} — ${s.points} Pkt.`);
+      const gnames = (lastData.games || []).map(k => (byKey[k] || {}).name).filter(Boolean).join(", ");
+      return `🎉 Unser Spieleabend!\n${gnames ? "Spiele: " + gnames + "\n" : ""}${lines.join("\n") || "Noch keine Punkte"}`;
+    };
+
+    // Verlaufs-Karte für die Lobby
+    function historyCardHTML() {
+      const hist = getHistory();
+      if (!hist.length) return "";
+      const fmtD = iso => { const d = new Date(iso); return isNaN(d) ? "" : d.toLocaleDateString("de-AT", { day: "2-digit", month: "2-digit", year: "2-digit" }); };
+      const rows = hist.map(h => {
+        const winner = (h.top && h.top[0]) ? h.top[0].name : "—";
+        const gicons = (h.games || []).map(k => (byKey[k] || {}).icon || "").join("");
+        return `<div class="hist-row">
+          <span class="hi">🏆</span>
+          <span class="hm"><span class="ht">👑 ${esc(winner)}</span><span class="hs">${gicons}</span></span>
+          <span class="hd">${fmtD(h.at)}</span>
+        </div>`;
+      }).join("");
+      return `<div class="card">
+        <h2>Vergangene Abende</h2>
+        <p class="sub">Deine letzten Spieleabende auf diesem Gerät.</p>
+        <div class="hist">${rows}</div>
+        <button class="btn sec" id="hist-clear" style="margin-top:10px">Verlauf löschen</button>
+      </div>`;
+    }
+    function wireHistory() {
+      const b = $("#hist-clear");
+      if (b) b.onclick = () => { if (confirm("Verlauf wirklich löschen?")) { try { localStorage.removeItem("gs_party_history"); } catch {} renderLobby(); } };
+    }
 
     // ---------- Lobby (kein Raum aktiv) ----------
     function renderLobby(prefillCode) {
@@ -119,7 +188,7 @@
         <div class="card">
           <h2>Neuen Abend starten</h2>
           <p class="sub">Wähle die Spiele des Abends. Jede:r spielt sie — Punkte gibt's nach Platzierung, quer über alle Spiele.</p>
-          <input type="text" id="host-name" maxlength="16" placeholder="Dein Name" value="${esc(getName())}">
+          <input type="text" id="host-name" maxlength="16" placeholder="Dein Name" aria-label="Dein Name" value="${esc(getName())}">
           <div class="games-pick" id="pick">
             ${SCORED.map(g => `<button class="gp on" data-k="${g.key}"><span class="ic">${g.icon}</span>${esc(g.name)}</button>`).join("")}
           </div>
@@ -128,11 +197,13 @@
         <div class="card">
           <h2>Einem Abend beitreten</h2>
           <p class="sub">Hast du einen Code von Freunden bekommen?</p>
-          <input type="text" id="join-name" maxlength="16" placeholder="Dein Name" value="${esc(getName())}">
-          <input type="text" id="join-code" maxlength="6" placeholder="Raum-Code" style="text-transform:uppercase">
+          <input type="text" id="join-name" maxlength="16" placeholder="Dein Name" aria-label="Dein Name" value="${esc(getName())}">
+          <input type="text" id="join-code" maxlength="6" placeholder="Raum-Code" aria-label="Raum-Code" style="text-transform:uppercase">
           <button class="btn sec" id="join">Beitreten</button>
-          <div class="msg" id="msg"></div>
-        </div>`;
+          <div class="msg" id="msg" role="status" aria-live="polite"></div>
+        </div>
+        ${historyCardHTML()}`;
+      wireHistory();
       if (prefillCode && /^[A-Z0-9]{6}$/.test(prefillCode)) {
         $("#join-code").value = prefillCode;
         setMsg("Gib deinen Namen ein und tritt bei 👇");
@@ -163,6 +234,31 @@
       };
     }
     const setMsg = (m, err) => { const el = $("#msg"); if (el) { el.className = "msg" + (err?" err":""); el.textContent = m; } };
+    // Kurze Meldung im Raum (nutzt den Reaktions-Feed-Bereich)
+    let roomMsgT = null;
+    const setRoomMsg = (m, err) => {
+      const el = $("#react-feed"); if (!el) return;
+      el.style.color = err ? "#e0645a" : ""; el.textContent = m;
+      if (roomMsgT) clearTimeout(roomMsgT);
+      roomMsgT = setTimeout(() => { el.style.color = ""; renderReactions(lastData && lastData.reactions); }, 2600);
+    };
+    // Emoji vom angetippten Button nach oben wegfliegen lassen
+    const flyReaction = (emoji, fromEl) => {
+      try {
+        const r = fromEl.getBoundingClientRect();
+        const s = document.createElement("div");
+        s.className = "react-fly"; s.textContent = emoji;
+        s.style.left = (r.left + r.width / 2 - 14) + "px"; s.style.top = (r.top - 6) + "px";
+        document.body.appendChild(s);
+        setTimeout(() => s.remove(), 1500);
+      } catch {}
+    };
+    // Reaktions-Feed rendern (neueste zuerst)
+    const renderReactions = (reactions) => {
+      const el = $("#react-feed"); if (!el) return;
+      if (!reactions || !reactions.length) { el.innerHTML = '<span style="opacity:0.6">Tippe ein Emoji, um zu reagieren</span>'; return; }
+      el.innerHTML = reactions.slice(0, 8).map(r => `${r.emoji} <b>${esc(r.name)}</b>`).join("  ·  ");
+    };
 
     // ---------- Raum aktiv ----------
     async function renderRoom() {
@@ -187,9 +283,42 @@
         <div class="card">
           <h2>🏆 Wertung</h2>
           <div class="winner" id="winner"></div>
-          <div class="stand" id="stand"><p class="sub">Lade …</p></div>
+          <div class="stand" id="stand" aria-live="polite"><p class="sub">Lade …</p></div>
+          <div class="react-bar" id="react-bar" aria-label="Reaktion senden">
+            ${REACTIONS.map(e => `<button type="button" data-e="${e}" aria-label="Reaktion ${e}">${e}</button>`).join("")}
+          </div>
+          <div class="react-feed" id="react-feed" role="status" aria-live="polite"></div>
+          <div class="row2" style="margin-top:12px">
+            <button class="btn sec" id="rematch">🔁 Revanche</button>
+            <button class="btn sec" id="summary">📋 Zusammenfassung</button>
+          </div>
         </div>`;
-      $("#leave").onclick = () => { if (confirm("Diesen Spieleabend verlassen?")) { try { localStorage.removeItem("gs_party_code"); } catch {} renderLobby(); } };
+      $("#leave").onclick = () => { if (confirm("Diesen Spieleabend verlassen?")) { saveToHistory(); try { localStorage.removeItem("gs_party_code"); } catch {} renderLobby(); } };
+      // Reaktionen senden
+      view.querySelectorAll("#react-bar button").forEach(b => b.onclick = async () => {
+        const name = getName(); if (!name) return setRoomMsg("Erst einen Namen setzen (beitreten).", true);
+        flyReaction(b.dataset.e, b);
+        await api({ action: "react", code: c, name, emoji: b.dataset.e, device: deviceId() });
+        refresh();
+      });
+      // Revanche: neuer Raum mit denselben Spielen, aktuellen Abend in den Verlauf
+      $("#rematch").onclick = async () => {
+        if (!confirm("Neue Runde? Es wird ein neuer Raum mit denselben Spielen erstellt.")) return;
+        const games = (lastData && lastData.games) || [];
+        if (!games.length) return setRoomMsg("Spiele unbekannt — kurz warten und erneut versuchen.", true);
+        saveToHistory();
+        const { status, data } = await api({ action: "create", games, name: getName(), device: deviceId() });
+        if (status !== 200) return setRoomMsg(data.error || "Fehler", true);
+        try { localStorage.setItem("gs_party_code", data.code); } catch {}
+        seenReactionId = 0; lastData = null; renderRoom();
+      };
+      // Abend-Zusammenfassung teilen
+      $("#summary").onclick = async () => {
+        const text = summaryText(); if (!text) return setRoomMsg("Noch keine Ergebnisse zum Teilen.", true);
+        const full = text + "\n" + location.origin + "/party/";
+        try { if (navigator.share) { await navigator.share({ title: "Spieleabend", text: full }); return; } } catch { return; }
+        try { await navigator.clipboard.writeText(full); setRoomMsg("Zusammenfassung kopiert!"); } catch {}
+      };
       $("#share").onclick = async () => {
         const text = `🎉 Komm zu meinem Spieleabend! Raum-Code: ${c}`;
         const url = location.origin + "/party/";
@@ -211,6 +340,21 @@
       let d;
       try { const r = await fetch("/api/party?code=" + encodeURIComponent(c)); d = await r.json(); if (!r.ok) throw 0; }
       catch { return; }
+      lastData = d;
+      // Reaktionen: neue (höhere ID als zuletzt gesehen) kurz hochfliegen lassen
+      const reactions = d.reactions || [];
+      if (reactions.length) {
+        const maxId = Math.max(...reactions.map(r => r.id || 0));
+        if (seenReactionId) {
+          reactions.filter(r => r.id > seenReactionId).forEach((r, i) => {
+            const bar = $("#react-bar");
+            const anchor = bar ? bar.querySelector(`button[data-e="${r.emoji}"]`) : null;
+            if (anchor) setTimeout(() => flyReaction(r.emoji, anchor), i * 120);
+          });
+        }
+        seenReactionId = maxId;
+      }
+      renderReactions(reactions);
       // Spiele-Deeplinks
       const play = $("#play");
       if (play) play.innerHTML = d.games.map(k => {

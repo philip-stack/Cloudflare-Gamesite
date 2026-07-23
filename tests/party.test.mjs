@@ -13,6 +13,8 @@ function mockDB() {
   const party = new Map();      // code -> gamesJson
   const members = [];           // {code,name}
   const scores = [];            // {code,name,game,score}
+  const reactions = [];         // {id,code,name,emoji}
+  let rid = 0;
   return {
     prepare(sql) {
       return {
@@ -30,6 +32,11 @@ function mockDB() {
             const [code, name, game, score] = this.args;
             const ex = scores.find(s => s.code === code && s.name === name && s.game === game);
             if (ex) ex.score = Math.max(ex.score, score); else scores.push({ code, name, game, score });
+          } else if (/INSERT INTO party_reaction/.test(this.sql)) {
+            const [code, name, emoji] = this.args;
+            reactions.push({ id: ++rid, code, name, emoji });
+          } else if (/DELETE FROM party_reaction/.test(this.sql)) {
+            /* Aufräumen – im Test unkritisch */
           }
           return {};
         },
@@ -47,6 +54,7 @@ function mockDB() {
         async all() {
           if (/FROM party_member/.test(this.sql)) return { results: members.filter(m => m.code === this.args[0]).map(m => ({ name: m.name })) };
           if (/FROM party_score/.test(this.sql)) return { results: scores.filter(s => s.code === this.args[0]).map(s => ({ name: s.name, game: s.game, score: s.score })) };
+          if (/FROM party_reaction/.test(this.sql)) return { results: reactions.filter(r => r.code === this.args[0]).sort((a, b) => b.id - a.id).slice(0, 12).map(r => ({ id: r.id, name: r.name, emoji: r.emoji })) };
           return { results: [] };
         },
       };
@@ -98,6 +106,14 @@ r = await post({ action: "submit", code: c2, name: "Zoe", game: "komet", score: 
 assert("Fremd-Einreichen unter belegtem Namen abgelehnt (409)", r.status === 409);
 r = await post({ action: "submit", code: c2, name: "Zoe", game: "komet", score: 10, device: "zoedevice0001" });
 assert("Eigenes Gerät darf einreichen (200)", r.status === 200);
+
+// Reaktionen: ungültiges Emoji abgelehnt, gültiges landet im Feed
+r = await post({ action: "react", code, name: "Bob", emoji: "💩" });
+assert("Ungültige Reaktion abgelehnt (400)", r.status === 400);
+r = await post({ action: "react", code, name: "Bob", emoji: "🔥" });
+assert("Gültige Reaktion akzeptiert (200)", r.status === 200);
+r = await get(code);
+assert("Reaktion erscheint im Feed", Array.isArray(r.data.reactions) && r.data.reactions.some(x => x.emoji === "🔥" && x.name === "Bob"));
 
 // Unbekannter Raum
 r = await get("ZZZZZZ");

@@ -88,6 +88,15 @@ CREATE TABLE IF NOT EXISTS party_score (
   updated_at TEXT NOT NULL DEFAULT (datetime('now')),
   UNIQUE (code, name, game)
 );
+-- Kurzlebige Emoji-Reaktionen im Raum (Live-Feed, selbst-beschränkt)
+CREATE TABLE IF NOT EXISTS party_reaction (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  code       TEXT NOT NULL,
+  name       TEXT NOT NULL,
+  emoji      TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_party_reaction ON party_reaction(code, id);
 
 -- Rate-Limit-Buckets (Details: rateLimit() in functions/api/_util.js)
 CREATE TABLE IF NOT EXISTS rate (
