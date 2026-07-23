@@ -714,7 +714,9 @@ input:focus {
   outline-offset: -4px;
 }
 .sheet .cell.editable:active { background: rgba(232, 193, 90, 0.32); }
-.sheet .cell.filled { animation: stamp-in 0.35s var(--ease-spring); }
+/* Nur die gerade eingetragene Zelle „pocht" einmal — nicht alle bei jedem
+   Neuzeichnen (Poll/Serverabgleich würden sonst doppelt animieren). */
+.sheet .cell.just { animation: stamp-in 0.35s var(--ease-spring); }
 @keyframes stamp-in {
   from { transform: scale(1.5); opacity: 0; }
   to { transform: scale(1); opacity: 1; }

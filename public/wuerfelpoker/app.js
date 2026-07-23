@@ -845,6 +845,11 @@ function renderStarterRoll(game, ref) {
 // ist), -1 = alle zu, sonst die Spieler-ID.
 const expandedChoice = {};
 
+// Zuletzt eingetragene Zelle { pid, cat, col } — bekommt beim nächsten
+// Zeichnen einmal die „poch"-Animation und wird dann verbraucht, damit
+// Poll/Serverabgleich nicht erneut animieren.
+let justCell = null;
+
 function renderSheet(game, ref) {
   const cols = game.cols || 1;
   const round = game.round || 1;
@@ -922,7 +927,7 @@ function renderSheet(game, ref) {
         inner += `<span class="cc-progress">${a.filled}/${cols}</span>`;
       }
       if (isTurn) cls += " in-turn";
-      return `<td class="${cls}">${inner}</td>`;
+      return `<td class="${cls}" data-pid="${p.id}" data-cat="${cat.key}">${inner}</td>`;
     }).join("");
     return `
       <tr class="${isCombo ? "combo-row" : "upper-row"} ${cat.key === "S" ? "combo-start" : ""}">
@@ -1011,6 +1016,22 @@ function renderSheet(game, ref) {
   app.querySelectorAll(".cell.editable").forEach(el => {
     el.onclick = () => openEntry(game, ref, el.dataset.pid, el.dataset.cat, Number(el.dataset.col));
   });
+
+  // Nur die gerade eingetragene Zelle einmal „pochen" lassen, dann Marker
+  // verbrauchen (sonst pocht der Serverabgleich/Poll die Zahl ein zweites Mal).
+  if (justCell) {
+    const { pid, cat, col } = justCell;
+    justCell = null;
+    const sel = `.sheet td.cell[data-pid="${pid}"][data-cat="${cat}"]`;
+    const cands = app.querySelectorAll(sel);
+    let target = null;
+    cands.forEach(el => {
+      if (el.dataset.col === undefined || el.dataset.col === String(col)) target = el;
+    });
+    // Kompaktansicht (Summe über Spalten) hat kein data-col → erster Treffer
+    if (!target && cands.length) target = cands[0];
+    if (target) target.classList.add("just");
+  }
 
   const undo = document.getElementById("btn-undo");
   if (undo) undo.onclick = async () => {
@@ -1106,6 +1127,7 @@ async function commit(game, ref, pid, catKey, col, cell) {
   try { applyCellMutation(game, b); }
   catch (err) { toast(err.message, true); return; }
   delete expandedChoice[game.id];
+  justCell = { pid: Number(pid), cat: catKey, col };   // nur diese Zelle pocht
   renderGame(game, ref);
 
   // Persistieren (lokal instant; geteilt im Hintergrund). Bei Fehler den
