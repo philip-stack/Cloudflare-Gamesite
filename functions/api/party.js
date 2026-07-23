@@ -1,4 +1,4 @@
-import { json, makeCode, clientIp, rateLimit } from "./_util.js";
+import { json, makeCode, clientIp, rateLimit, broadcastParty } from "./_util.js";
 
 // ====================================================================
 // Spieleabend-Raum ("Party"): mehrere Freunde spielen dieselben Spiele
@@ -34,7 +34,15 @@ async function ownName(env, code, name, device) {
   return true;
 }
 
-export async function onRequestPost({ request, env }) {
+export async function onRequestPost(context) {
+  const { request, env } = context;
+  // Echtzeit-Signal „neu laden" an alle Raum-Clients — fehlertolerant, nie blockierend
+  const signal = code => {
+    const wu = context && typeof context.waitUntil === "function"
+      ? context.waitUntil.bind(context)
+      : (p) => { if (p && p.catch) p.catch(() => {}); };
+    wu(broadcastParty(env, code));
+  };
   if (!(await rateLimit(env, "party:" + clientIp(request), 60, 60))) {
     return json({ error: "Zu viele Anfragen — kurz warten" }, 429);
   }
@@ -70,6 +78,7 @@ export async function onRequestPost({ request, env }) {
     const name = cleanName(b.name);
     if (!name) return json({ error: "Name fehlt" }, 400);
     if (!(await ownName(env, code, name, dev))) return json({ error: "Dieser Name ist im Raum schon vergeben — wähle einen anderen" }, 409);
+    signal(code);
     return json({ ok: true, games });
   }
 
@@ -85,6 +94,7 @@ export async function onRequestPost({ request, env }) {
       `INSERT INTO party_score (code, name, game, score) VALUES (?, ?, ?, ?)
        ON CONFLICT(code, name, game) DO UPDATE SET score = MAX(score, excluded.score), updated_at = datetime('now')`
     ).bind(code, name, game, score).run();
+    signal(code);
     return json({ ok: true });
   }
 
@@ -100,6 +110,7 @@ export async function onRequestPost({ request, env }) {
       `DELETE FROM party_reaction WHERE code = ? AND id NOT IN
         (SELECT id FROM party_reaction WHERE code = ? ORDER BY id DESC LIMIT 40)`
     ).bind(code, code).run();
+    signal(code);
     return json({ ok: true });
   }
 

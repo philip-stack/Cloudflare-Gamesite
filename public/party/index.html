@@ -123,8 +123,23 @@
     const view = $("#view");
     const REACTIONS = ["👏", "🔥", "😂", "😮", "🎉", "💪", "🍀", "😭"];
     let poll = null;
+    let ws = null;                // Echtzeit-WebSocket (optional; Poll ist Fallback)
     let lastData = null;          // letzte Wertung (für Zusammenfassung/Verlauf)
     let seenReactionId = 0;       // höchste bereits angezeigte Reaktions-ID
+
+    // Echtzeit: bei „changed" sofort neu laden. Fällt der Socket aus, greift
+    // der langsamere Poll — und beim nächsten Tick wird neu verbunden.
+    function connectWS(c) {
+      closeWS();
+      try {
+        const proto = location.protocol === "https:" ? "wss" : "ws";
+        ws = new WebSocket(`${proto}://${location.host}/api/party-live?code=${encodeURIComponent(c)}`);
+        ws.onmessage = e => { if (e.data === "changed") refresh(); };
+        ws.onclose = () => { ws = null; };
+        ws.onerror = () => { try { ws.close(); } catch (_) {} ws = null; };
+      } catch (_) { ws = null; }
+    }
+    function closeWS() { if (ws) { try { ws.close(); } catch (_) {} ws = null; } }
 
     const api = async (body) => {
       const r = await fetch("/api/party", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body) });
@@ -183,6 +198,7 @@
     // ---------- Lobby (kein Raum aktiv) ----------
     function renderLobby(prefillCode) {
       if (poll) { clearInterval(poll); poll = null; }
+      closeWS();
       let picked = new Set(SCORED.map(g => g.key));   // standardmäßig alle
       view.innerHTML = `
         <div class="card">
@@ -263,6 +279,7 @@
     // ---------- Raum aktiv ----------
     async function renderRoom() {
       if (poll) { clearInterval(poll); poll = null; }
+      closeWS();
       const c = code();
       view.innerHTML = `
         <div class="card">
@@ -331,12 +348,17 @@
         if (cv && window.QR) { QR.toCanvas(location.origin + "/party/?code=" + c, cv, { scale: 4, margin: 2, dark: "#12140f", light: "#ffffff" }); }
       } catch {}
       await refresh();
-      poll = setInterval(refresh, 4000);
+      connectWS(c);
+      // Poll nur noch als Fallback (Echtzeit übernimmt sonst) — deutlich seltener.
+      poll = setInterval(refresh, 15000);
     }
 
     async function refresh() {
       const c = code(); if (!c) return;
-      if (document.hidden) return;   // kein Poll, wenn der Tab versteckt ist
+      // WS wieder aufbauen, falls er weg ist (auch nach Hintergrund/Reconnect)
+      if (!ws) connectWS(c);
+      else if (ws.readyState === 1) { try { ws.send("ping"); } catch (_) {} }
+      if (document.hidden) return;   // kein Poll-Fetch, wenn der Tab versteckt ist
       let d;
       try { const r = await fetch("/api/party?code=" + encodeURIComponent(c)); d = await r.json(); if (!r.ok) throw 0; }
       catch { return; }

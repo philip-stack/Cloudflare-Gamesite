@@ -1,0 +1,13 @@
+name = "philip-stack-rt"
+main = "index.js"
+compatibility_date = "2026-06-01"
+workers_dev = true
+
+# Das Durable Object dieses Workers (wird von der Pages-Site gebunden)
+[[durable_objects.bindings]]
+name = "PARTY_ROOM"
+class_name = "PartyRoom"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["PartyRoom"]

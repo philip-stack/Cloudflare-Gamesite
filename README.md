@@ -52,6 +52,9 @@ schaltet teure Dauer-Effekte ab und drosselt die Bildrate für schwächere Gerä
   **ersten Gerät**, das ihn nutzt. Dazu **Live-Emoji-Reaktionen**, ein
   **Revanche**-Knopf (neuer Raum, gleiche Spiele), eine teilbare
   **Abend-Zusammenfassung** und ein lokaler **Verlauf** vergangener Abende.
+  **Echtzeit** via **Durable Object** (separater Worker `philip-stack-rt`): der
+  Raum bekommt Änderungen sofort per WebSocket gepusht (Pub/Sub-Relay pro Raum),
+  mit einem langsamen Poll als Fallback.
 - **Saison & Liga** (`/saison/`, `/api/season`): eine **wöchentliche Liga über
   alle gewerteten Spiele**. Pro Spiel gibt es Liga-Punkte nach Platzierung in
   der Wochen-Bestenliste; über alle Spiele summiert ergibt das die Saison-
@@ -201,11 +204,13 @@ wuerfelpoker/
 │   ├── scores/[game].js       Bestenlisten aller Spiele (GET/POST, ?daily=1, ?weekly=1, ?player=)
 │   ├── cloud.js               Cloud-Speicher (Sichern/Laden per Code, Vorversion)
 │   ├── party.js               Spieleabend-Räume (erstellen/beitreten/einreichen/Stand/Reaktion)
+│   ├── party-live.js          WebSocket-Upgrade → Echtzeit-DO (Binding PARTY_ROOM)
 │   ├── season.js              Saison/Liga (Wochenwertung über alle Spiele)
 │   ├── push.js                Web-Push (VAPID, Abo/Queue/Versand)
 │   ├── log.js                 anonymer Fehler-Melder (→ D1, selbst-beschränkt)
 │   └── koch.js                KI-Kochstudio (Workers AI + DuckDuckGo-Websuche)
 ├── tests/                     Node-Tests (Syntax, Qualität/A11y, QR, Scores/Cloud/Party/Saison/Push-API, Flow-E2E, WUMMS/MEERI)
+├── worker-rt/                 separater Worker: Echtzeit-Durable-Object (PartyRoom)
 ├── lighthouserc.json          Lighthouse-Budget (Performance/A11y/Best-Practices/SEO)
 └── .github/workflows/
     ├── ci.yml                 CI: führt `npm test` bei jedem Push aus

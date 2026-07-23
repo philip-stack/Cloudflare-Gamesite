@@ -21,8 +21,17 @@ for (const f of walk(path.join(root, "public"))) {
   catch (e) { console.log("FAIL " + path.relative(root, f) + "\n" + (e.stderr || e).toString()); ok = false; }
 }
 for (const f of walk(path.join(root, "functions"))) {
-  try { await import(pathToFileURL(f).href); console.log("OK   " + path.relative(root, f)); }
-  catch (e) { console.log("FAIL " + path.relative(root, f) + " — " + e.message); ok = false; }
+  const rel = path.relative(root, f);
+  try { await import(pathToFileURL(f).href); console.log("OK   " + rel); }
+  catch (e) {
+    // Runtime-only-Importe (z. B. "cloudflare:workers" fürs Durable Object)
+    // kann Node nicht auflösen — dann nur die Syntax prüfen statt zu laden.
+    const msg = String((e && e.message) || e);
+    if (/cloudflare:/.test(msg) || (e && e.code === "ERR_MODULE_NOT_FOUND" && /cloudflare/.test(msg))) {
+      try { execFileSync(process.execPath, ["--check", f], { stdio: "pipe" }); console.log("OK   " + rel + " (nur Syntax — Runtime-Import)"); }
+      catch (e2) { console.log("FAIL " + rel + "\n" + ((e2.stderr || e2).toString())); ok = false; }
+    } else { console.log("FAIL " + rel + " — " + msg); ok = false; }
+  }
 }
 
 console.log("\n" + (ok ? "SYNTAX OK" : "SYNTAXFEHLER GEFUNDEN"));
