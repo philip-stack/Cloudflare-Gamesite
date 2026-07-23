@@ -154,22 +154,9 @@ const store = {
     if (isLocalId(ref.id)) {
       const g = lsGet(ref.id);
       if (!g) throw new Error("Spiel nicht gefunden");
-      const r = g.round;
-      const colObj = (((g.cells[b.player_id] ||= {})[r] ||= {})[b.col] ||= {});
-      if (colObj[b.cat_key]) throw new Error("Feld ist bereits ausgefüllt");
-      colObj[b.cat_key] = { kind: b.kind, v: b.value, serviert: !!b.serviert };
-      (g.log ||= []).push({ pid: b.player_id, cat: b.cat_key, round: r, col: b.col });
-      const roundFull = g.players.every(p => {
-        for (let c = 0; c < g.cols; c++) {
-          const cc = colCells(g, p.id, r, c);
-          if (!CATS.every(cat => cc[cat.key])) return false;
-        }
-        return true;
-      });
-      g.turnIndex = b.turn_index;
-      g.status = roundFull ? "round_end" : "active";
+      applyCellMutation(g, b);
       lsPut(g);
-      return { ok: true, roundFull };
+      return { ok: true };
     }
     return api(`/games/${ref.id}/cells?code=${ref.code}`, { method: "PUT", body: JSON.stringify(b) });
   },
@@ -256,6 +243,25 @@ function cellValue(cell) {
 // Zellen einer Spalte: cells[pid][runde][spalte] → { catKey: cell }
 function colCells(game, pid, round, col) {
   return ((game.cells[pid] || {})[round] || {})[col] || {};
+}
+// Trägt einen Zug direkt ins Spielobjekt ein (für lokale Spiele UND für die
+// optimistische Sofortanzeige bei geteilten Spielen). Wirft, wenn belegt.
+function applyCellMutation(g, b) {
+  const r = g.round;
+  const colObj = (((g.cells[b.player_id] ||= {})[r] ||= {})[b.col] ||= {});
+  if (colObj[b.cat_key]) throw new Error("Feld ist bereits ausgefüllt");
+  colObj[b.cat_key] = { kind: b.kind, v: b.value, serviert: !!b.serviert };
+  (g.log ||= []).push({ pid: b.player_id, cat: b.cat_key, round: r, col: b.col });
+  const roundFull = g.players.every(p => {
+    for (let c = 0; c < g.cols; c++) {
+      const cc = colCells(g, p.id, r, c);
+      if (!CATS.every(cat => cc[cat.key])) return false;
+    }
+    return true;
+  });
+  g.turnIndex = b.turn_index;
+  g.status = roundFull ? "round_end" : "active";
+  return { roundFull };
 }
 // Eine Kategorie über alle Spalten eines Spielers (für die kompakte Ansicht)
 function catAcross(game, pid, round, catKey) {
@@ -1088,19 +1094,25 @@ async function commit(game, ref, pid, catKey, col, cell) {
   if (cell.kind === "strike") { GS.sound.tone(200, 0.14, { type: "sawtooth", gain: 0.08 }); GS.haptic(8); }
   else if (cell.value >= 30) { GS.sound.great(); GS.haptic([12, 40, 12]); }
   else { GS.sound.good(); GS.haptic(12); }
+
+  const b = {
+    player_id: Number(pid), col, cat_key: catKey,
+    kind: cell.kind, value: cell.value, serviert: !!cell.serviert,
+    turn_index: nextTurn,
+  };
+
+  // Optimistisch: Zug sofort ins geladene Spielobjekt eintragen und neu
+  // zeichnen — der Punkt steht ohne Warten aufs Netz sofort im Feld.
+  try { applyCellMutation(game, b); }
+  catch (err) { toast(err.message, true); return; }
+  delete expandedChoice[game.id];
+  renderGame(game, ref);
+
+  // Persistieren (lokal instant; geteilt im Hintergrund). Bei Fehler den
+  // echten Serverstand nachladen, damit die Anzeige wieder stimmt.
   try {
-    await store.putCell(ref, {
-      player_id: Number(pid),
-      col,
-      cat_key: catKey,
-      kind: cell.kind,
-      value: cell.value,
-      serviert: !!cell.serviert,
-      turn_index: nextTurn,
-    });
-    // Nach dem Zug wieder automatisch den nächsten aktiven Spieler zeigen
-    delete expandedChoice[game.id];
-    await reload(ref);
+    await store.putCell(ref, b);
+    if (!isLocalId(ref.id)) await reload(ref);   // Serverwahrheit nachziehen
   } catch (err) {
     toast(err.message, true);
     await reload(ref);

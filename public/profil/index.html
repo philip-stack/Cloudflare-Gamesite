@@ -201,10 +201,9 @@
     <div class="cloud-card">
       <p class="cloud-info">Sichere alle Spielstände, Rekorde &amp; Abzeichen mit einem Code — und hol sie auf jedem Gerät zurück.</p>
       <div class="cloud-code" id="cloud-code" hidden>Dein Code: <b id="cloud-code-val"></b> <button id="cloud-copy" title="Kopieren" aria-label="Code kopieren">📋</button> <button id="cloud-qr-btn" title="QR anzeigen" aria-label="QR-Code anzeigen">🔳</button>
-        <canvas id="cloud-qr" hidden style="display:block;margin:10px auto 0;background:#fff;border-radius:10px;padding:6px"></canvas>
+        <canvas id="cloud-qr" style="display:none;margin:10px auto 0;background:#fff;border-radius:10px;padding:6px"></canvas>
       </div>
       <div class="cloud-saved" id="cloud-saved"></div>
-      <div id="cloud-prev" style="margin-bottom:10px"></div>
       <div class="cloud-btns">
         <button class="btn-secondary" id="cloud-save">⬆️ Jetzt sichern</button>
         <button class="btn-secondary" id="cloud-load">⬇️ Von Code laden</button>
@@ -569,35 +568,13 @@
       } catch { setStatus("Keine Verbindung", "err"); }
     };
 
-    // Vorherige Version anbieten (Schutz gegen versehentliches Überschreiben)
-    (async function checkPrev() {
-      const c = savedCode(); if (!c) return;
-      try {
-        const r = await fetch("/api/cloud?code=" + encodeURIComponent(c));
-        const d = await r.json().catch(() => ({}));
-        if (!r.ok || !d.hasPrev) return;
-        const when = d.prev_at ? new Date(d.prev_at.replace(" ", "T") + "Z").toLocaleString("de-AT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
-        const el = $("#cloud-prev");
-        el.innerHTML = `<button class="btn-secondary" id="cloud-prev-btn">↩︎ Vorherige Version${when ? " (" + when + ")" : ""}</button>`;
-        $("#cloud-prev-btn").onclick = async () => {
-          setStatus("Lade vorherige Version …");
-          try {
-            const rr = await fetch("/api/cloud?code=" + encodeURIComponent(c) + "&prev=1");
-            const dd = await rr.json().catch(() => ({}));
-            if (!rr.ok) return setStatus(dd.error || "Keine vorherige Version", "err");
-            applyBackup(dd, c, "Vorherige Version laden? Der aktuelle Stand wird überschrieben.");
-          } catch { setStatus("Keine Verbindung", "err"); }
-        };
-      } catch {}
-    })();
-
     $("#cloud-copy").onclick = async () => {
       try { await navigator.clipboard.writeText(savedCode()); setStatus("Code kopiert", "ok"); } catch {}
     };
     $("#cloud-qr-btn").onclick = () => {
       const cv = $("#cloud-qr");
-      if (!cv.hidden) { cv.hidden = true; return; }
-      try { if (window.QR) { QR.toCanvas(savedCode(), cv, { scale: 5, margin: 2, dark: "#12140f", light: "#ffffff" }); cv.hidden = false; } } catch {}
+      if (cv.style.display !== "none") { cv.style.display = "none"; return; }
+      try { if (window.QR) { QR.toCanvas(savedCode(), cv, { scale: 5, margin: 2, dark: "#12140f", light: "#ffffff" }); cv.style.display = "block"; } } catch {}
     };
 
     // --- Einstellungen: Energiesparen ---
