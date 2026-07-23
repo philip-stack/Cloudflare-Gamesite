@@ -105,6 +105,26 @@ CREATE TABLE IF NOT EXISTS rate (
 );
 CREATE INDEX IF NOT EXISTS idx_rate_k_at ON rate(k, at);
 
+-- Web-Push: Abos + kurzlebige Nachrichten-Warteschlange (Details: functions/api/push.js)
+CREATE TABLE IF NOT EXISTS push_sub (
+  endpoint   TEXT PRIMARY KEY,            -- Push-Endpoint des Browsers (eindeutig)
+  name       TEXT,                        -- Bestenlisten-Name beim Abonnieren
+  p256dh     TEXT,                        -- Client-Public-Key (aktuell nur gespeichert)
+  auth       TEXT,                        -- Auth-Secret (aktuell nur gespeichert)
+  device     TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_push_sub_name ON push_sub(name);
+CREATE TABLE IF NOT EXISTS push_queue (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  endpoint   TEXT NOT NULL,               -- Empfänger-Endpoint
+  title      TEXT NOT NULL,
+  body       TEXT,
+  url        TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_push_queue_ep ON push_queue(endpoint, id);
+
 -- Anonymer Fehler-Melder (Details: functions/api/log.js)
 CREATE TABLE IF NOT EXISTS error_log (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,

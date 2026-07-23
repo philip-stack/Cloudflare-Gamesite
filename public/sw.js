@@ -32,6 +32,46 @@ self.addEventListener("activate", e => {
   );
 });
 
+// ---- Web-Push ----
+// Wir bekommen einen „Tickle"-Push ohne Body. Der SW fragt seine eigenen
+// Nachrichten über den Push-Endpoint aus der Server-Queue ab und zeigt sie.
+self.addEventListener("push", e => {
+  e.waitUntil((async () => {
+    let messages = [];
+    try {
+      const sub = await self.registration.pushManager.getSubscription();
+      if (sub) {
+        const res = await fetch("/api/push", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "pending", endpoint: sub.endpoint }),
+        });
+        if (res.ok) messages = (await res.json()).messages || [];
+      }
+    } catch (_) {}
+    // Fallback, falls die Queue (noch) leer ist: dezente Sammel-Meldung
+    if (!messages.length) messages = [{ title: "🎲 Spieleabend", body: "Es gibt Neuigkeiten.", url: "/" }];
+    await Promise.all(messages.map(m =>
+      self.registration.showNotification(m.title || "Spieleabend", {
+        body: m.body || "",
+        icon: "/icons/icon-192.png",
+        badge: "/icons/icon-192.png",
+        data: { url: m.url || "/" },
+        tag: "gs-" + (m.title || ""),
+      })
+    ));
+  })());
+});
+
+self.addEventListener("notificationclick", e => {
+  e.notification.close();
+  const url = (e.notification.data && e.notification.data.url) || "/";
+  e.waitUntil((async () => {
+    const all = await clients.matchAll({ type: "window", includeUncontrolled: true });
+    for (const c of all) { if ("focus" in c) { try { await c.navigate(url); } catch (_) {} return c.focus(); } }
+    if (clients.openWindow) return clients.openWindow(url);
+  })());
+});
+
 self.addEventListener("fetch", e => {
   const url = new URL(e.request.url);
   if (e.request.method !== "GET") return;
