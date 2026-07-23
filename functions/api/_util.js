@@ -43,6 +43,18 @@ export function codeFromRequest(request) {
   return code ? code.trim().toUpperCase() : null;
 }
 
+// Echtzeit-Signal an alle Clients eines Party-Raums: sagt dem Durable Object
+// (Klasse PartyRoom in party-live.js), allen Verbundenen "neu laden" zu senden.
+// Bewusst hier (ohne cloudflare:workers-Import), damit party.js es einbinden
+// kann, ohne die DO-Runtime in die Node-Tests zu ziehen. Ohne Binding: No-op.
+export async function broadcastParty(env, code) {
+  try {
+    if (!env || !env.PARTY_ROOM) return;
+    const stub = env.PARTY_ROOM.get(env.PARTY_ROOM.idFromName(code));
+    await stub.fetch("https://do/broadcast");
+  } catch (_) { /* Echtzeit ist optional — nie den Aufrufer stören */ }
+}
+
 // Zugriff nur mit passendem Code – Spiele ohne Code sind nie erreichbar.
 export async function authGame(env, id, request) {
   const code = codeFromRequest(request);

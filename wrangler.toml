@@ -10,3 +10,11 @@ database_id = "1a3ff398-8491-47b4-922b-3d331fcb7366"
 # Workers AI (kostenloses Tageskontingent) — für das Kochstudio
 [ai]
 binding = "AI"
+
+# Echtzeit für den Spieleabend-Raum: das Durable Object PartyRoom lebt im
+# separaten Worker "philip-stack-rt" (worker-rt/) — Pages kann DOs nur binden,
+# nicht definieren, daher script_name. Klasse: worker-rt/index.js
+[[durable_objects.bindings]]
+name = "PARTY_ROOM"
+class_name = "PartyRoom"
+script_name = "philip-stack-rt"
