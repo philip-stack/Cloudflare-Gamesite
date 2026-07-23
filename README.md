@@ -61,15 +61,6 @@ schaltet teure Dauer-Effekte ab und drosselt die Bildrate für schwächere Gerä
   Tabelle. Mit Live-Reset-Countdown (Montag), Spitzenreiter je Spiel und
   Vorsaison-Champion (Hall of Fame). Kommt **ohne neue Daten** aus — eine Saison
   ist nur ein Zeitfenster (`strftime('%Y-%W')`) über die vorhandenen Scores.
-- **Passkeys / WebAuthn** (`/api/auth`): opt-in im Profil — der Cloud-Speicher
-  lässt sich **per Face ID / Fingerabdruck** sichern & laden, ohne den 8-stelligen
-  Code zu tippen (der Code-Login bleibt als Fallback). Ein Passkey wird an einen
-  Cloud-Code gebunden; beim Login liefert der Server die Spielstände zurück.
-  Umgesetzt mit einem **eigenen, minimalen ES256-Verifier** (kein Build-Schritt,
-  keine Fremd-Library): kleiner CBOR-Decoder, COSE→JWK, DER→raw-Signatur,
-  Challenge-Prüfung, Herkunfts-/Zähler-Check. Die sicherheitskritische
-  Verifikation ist mit selbst erzeugten Krypto-Vektoren getestet
-  (`tests/webauthn.test.mjs`).
 - **Web-Push-Benachrichtigungen** (`/api/push`): opt-in im Profil. Meldet z. B.
   „Dein Rekord wurde geschlagen". Umgesetzt als **VAPID-signierter „Tickle"-Push
   ohne verschlüsselte Payload** — der Service Worker holt die eigentlichen
@@ -178,7 +169,7 @@ sofort ein und synct im Hintergrund.
 ```
 wuerfelpoker/
 ├── wrangler.toml              Pages-Config + D1-Binding (DB) + AI-Binding (Kochstudio)
-├── schema.sql                 D1-Schema (Würfelpoker, *_scores, cloud_saves, party*, push_*, webauthn_*, error_log, rate)
+├── schema.sql                 D1-Schema (Würfelpoker, *_scores, cloud_saves, party*, push_*, error_log, rate)
 ├── public/                    statische Spiele (1 Ordner = 1 Spiel)
 │   ├── index.html             Landing Page mit App-Karten, Suche & Challenge
 │   ├── games.js               zentrale Spiele-Registry (Quelle für Startseite/Profil/Party)
@@ -216,11 +207,9 @@ wuerfelpoker/
 │   ├── party-live.js          WebSocket-Upgrade → Echtzeit-DO (Binding PARTY_ROOM)
 │   ├── season.js              Saison/Liga (Wochenwertung über alle Spiele)
 │   ├── push.js                Web-Push (VAPID, Abo/Queue/Versand)
-│   ├── auth.js                Passkeys/WebAuthn (Registrieren/Login → Cloud-Code)
-│   ├── _webauthn.js           minimaler ES256-Verifier (CBOR/COSE/DER, kein Build)
 │   ├── log.js                 anonymer Fehler-Melder (→ D1, selbst-beschränkt)
 │   └── koch.js                KI-Kochstudio (Workers AI + DuckDuckGo-Websuche)
-├── tests/                     Node-Tests (Syntax, Qualität/A11y, QR, Scores/Cloud/Party/Saison/Push-API, WebAuthn-Krypto, Flow-E2E, WUMMS/MEERI)
+├── tests/                     Node-Tests (Syntax, Qualität/A11y, QR, Scores/Cloud/Party/Saison/Push-API, Flow-E2E, WUMMS/MEERI)
 ├── worker-rt/                 separater Worker: Echtzeit-Durable-Object (PartyRoom)
 ├── lighthouserc.json          Lighthouse-Budget (Performance/A11y/Best-Practices/SEO)
 └── .github/workflows/
