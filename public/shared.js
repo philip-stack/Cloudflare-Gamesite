@@ -64,7 +64,7 @@
         if (pc && /^[A-Z0-9]{6}$/.test(pc) && Number.isInteger(score)) {
           fetch("/api/party", {
             method: "POST", headers: { "Content-Type": "application/json" }, keepalive: true,
-            body: JSON.stringify({ action: "submit", code: pc, name, game, score }),
+            body: JSON.stringify({ action: "submit", code: pc, name, game, score, device: deviceId() }),
           }).catch(() => {});
         }
       } catch {}

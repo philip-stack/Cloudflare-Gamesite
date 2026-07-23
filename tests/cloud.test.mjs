@@ -20,7 +20,10 @@ function mockDB() {
         async run() {
           if (/INSERT INTO cloud_saves/.test(this.sql)) {
             const [code, data, device] = this.args;
-            store.set(code, { data, device: device || null, updated_at: "2026-07-22T00:00:00Z" });
+            const ex = store.get(code);
+            const n = { data, device: device || null, updated_at: "2026-07-22T00:00:0" + ((store.size % 9)) + "Z" };
+            if (ex) { n.prev_data = ex.data; n.prev_at = ex.updated_at; }   // vorige Version aufbewahren
+            store.set(code, n);
           } else if (/INSERT INTO rate/.test(this.sql)) {
             rate.set(this.args[0], (rate.get(this.args[0]) || 0) + 1);
           }
@@ -33,7 +36,7 @@ function mockDB() {
           if (/SELECT updated_at, device FROM cloud_saves/.test(this.sql)) {
             const r = store.get(this.args[0]); return r ? { updated_at: r.updated_at, device: r.device } : null;
           }
-          if (/SELECT data, updated_at, device FROM cloud_saves/.test(this.sql)) {
+          if (/SELECT data, updated_at, device, prev_data, prev_at FROM cloud_saves/.test(this.sql)) {
             return store.get(this.args[0]) || null;
           }
           return null;
@@ -71,6 +74,12 @@ r = await post({ code, data: { bb_name: "Neu" } });
 assert("Upsert gleicher Code", r.status === 200 && r.data.code === code);
 r = await get(code);
 assert("Überschrieben", JSON.parse(r.data.data).bb_name === "Neu");
+assert("hasPrev nach Überschreiben", r.data.hasPrev === true);
+
+// Vorherige Version abrufbar (1-Schritt-Wiederherstellung)
+const rp = await mod.onRequestGet({ request: new Request("https://x/api/cloud?code=" + code + "&prev=1"), env });
+const dp = await rp.json();
+assert("Vorherige Version abrufbar", rp.status === 200 && JSON.parse(dp.data).bb_name === "Tester");
 
 // Leeres Backup abgelehnt
 r = await post({ data: {} });

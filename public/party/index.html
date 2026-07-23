@@ -68,7 +68,9 @@
     .st-name { flex:1; font-weight:700; }
     .st-pts { color:var(--gold); font-weight:800; }
     .st-sub { display:block; color:var(--muted); font-size:0.72rem; font-weight:400; }
+    .qr { display:block; margin:10px auto 4px; border-radius:10px; background:#fff; padding:6px; box-shadow:0 0 0 1px var(--edge-soft) inset; }
     .winner { text-align:center; font-family:var(--font-display); font-size:1.15rem; margin:2px 0 14px; }
+    *:focus-visible { outline:2px solid var(--gold); outline-offset:2px; }
     .msg { text-align:center; color:var(--muted); font-size:0.85rem; min-height:1em; margin-top:6px; }
     .msg.err { color:#e0645a; }
     .row2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
@@ -86,6 +88,7 @@
   </main>
 
   <script src="/games.js"></script>
+  <script src="/qr.js"></script>
   <script>
   (function () {
     const $ = s => document.querySelector(s);
@@ -94,6 +97,11 @@
     const byKey = window.GAMES_BYKEY || {};
     const getName = () => (localStorage.getItem("bb_name") || "").trim();
     const setName = v => { try { localStorage.setItem("bb_name", String(v).trim().slice(0,16)); } catch {} };
+    const deviceId = () => {
+      let d = localStorage.getItem("gs_device");
+      if (!d) { const a = new Uint8Array(18); crypto.getRandomValues(a); d = [...a].map(b => "abcdefghijklmnopqrstuvwxyz0123456789"[b % 36]).join(""); try { localStorage.setItem("gs_device", d); } catch {} }
+      return d;
+    };
     const code = () => (localStorage.getItem("gs_party_code") || "").trim().toUpperCase();
     const view = $("#view");
     let poll = null;
@@ -104,7 +112,7 @@
     };
 
     // ---------- Lobby (kein Raum aktiv) ----------
-    function renderLobby() {
+    function renderLobby(prefillCode) {
       if (poll) { clearInterval(poll); poll = null; }
       let picked = new Set(SCORED.map(g => g.key));   // standardmäßig alle
       view.innerHTML = `
@@ -125,6 +133,11 @@
           <button class="btn sec" id="join">Beitreten</button>
           <div class="msg" id="msg"></div>
         </div>`;
+      if (prefillCode && /^[A-Z0-9]{6}$/.test(prefillCode)) {
+        $("#join-code").value = prefillCode;
+        setMsg("Gib deinen Namen ein und tritt bei 👇");
+        $("#join-name").focus();
+      }
       view.querySelectorAll(".gp").forEach(b => b.onclick = () => {
         b.classList.toggle("on"); const k = b.dataset.k;
         b.classList.contains("on") ? picked.add(k) : picked.delete(k);
@@ -133,7 +146,7 @@
         const name = $("#host-name").value.trim(); if (name) setName(name);
         const games = [...picked];
         if (!games.length) return setMsg("Wähle mindestens ein Spiel", true);
-        const { status, data } = await api({ action:"create", games, name });
+        const { status, data } = await api({ action:"create", games, name, device: deviceId() });
         if (status !== 200) return setMsg(data.error || "Fehler", true);
         try { localStorage.setItem("gs_party_code", data.code); } catch {}
         renderRoom();
@@ -143,7 +156,7 @@
         const c = $("#join-code").value.trim().toUpperCase();
         if (!name) return setMsg("Bitte Namen eingeben", true);
         if (!/^[A-Z0-9]{6}$/.test(c)) return setMsg("Code besteht aus 6 Zeichen", true);
-        const { status, data } = await api({ action:"join", code:c, name });
+        const { status, data } = await api({ action:"join", code:c, name, device: deviceId() });
         if (status !== 200) return setMsg(data.error || "Fehler", true);
         try { localStorage.setItem("gs_party_code", c); } catch {}
         renderRoom();
@@ -159,7 +172,8 @@
         <div class="card">
           <h2 style="text-align:center">Raum-Code</h2>
           <div class="code-big">${esc(c)}</div>
-          <div class="code-hint">Teile den Code — Freunde treten damit bei.</div>
+          <canvas id="qr" class="qr" width="0" height="0" aria-label="QR-Code zum Beitreten"></canvas>
+          <div class="code-hint">Teile den Code oder lass Freunde den QR-Code scannen.</div>
           <div class="row2">
             <button class="btn sec" id="share">📤 Teilen</button>
             <button class="btn sec" id="leave">Verlassen</button>
@@ -182,6 +196,11 @@
         try { if (navigator.share) { await navigator.share({ title:"Spieleabend", text: text + "\n" + url }); return; } } catch { return; }
         try { await navigator.clipboard.writeText(text + "\n" + url); alert("Einladung kopiert!"); } catch {}
       };
+      // QR-Code mit Beitritts-Link
+      try {
+        const cv = $("#qr");
+        if (cv && window.QR) { QR.toCanvas(location.origin + "/party/?code=" + c, cv, { scale: 4, margin: 2, dark: "#12140f", light: "#ffffff" }); }
+      } catch {}
       await refresh();
       poll = setInterval(refresh, 4000);
     }
@@ -216,8 +235,10 @@
       }).join("");
     }
 
-    // Start
-    if (code()) renderRoom(); else renderLobby();
+    // Start — ?code= aus einem gescannten QR-Link übernimmt den Beitritt
+    const urlCode = (new URLSearchParams(location.search).get("code") || "").trim().toUpperCase();
+    if (code()) renderRoom();
+    else renderLobby(urlCode);
   })();
   </script>
 </body>

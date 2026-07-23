@@ -62,6 +62,8 @@ CREATE TABLE IF NOT EXISTS cloud_saves (
   code       TEXT PRIMARY KEY,            -- portabler 8-stelliger Backup-Code
   data       TEXT NOT NULL,               -- localStorage-Schnappschuss (JSON)
   device     TEXT,                        -- Kennung des zuletzt sichernden Geraets (writer)
+  prev_data  TEXT,                        -- vorherige Version (1-Schritt-Wiederherstellung)
+  prev_at    TEXT,
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -74,6 +76,7 @@ CREATE TABLE IF NOT EXISTS party (
 CREATE TABLE IF NOT EXISTS party_member (
   code      TEXT NOT NULL,
   name      TEXT NOT NULL,
+  device    TEXT,                          -- Gerät, dem der Name im Raum gehört
   joined_at TEXT NOT NULL DEFAULT (datetime('now')),
   UNIQUE (code, name)
 );

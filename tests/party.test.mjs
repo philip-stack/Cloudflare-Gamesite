@@ -21,8 +21,11 @@ function mockDB() {
         async run() {
           if (/INSERT INTO party /.test(this.sql)) party.set(this.args[0], this.args[1]);
           else if (/INSERT OR IGNORE INTO party_member/.test(this.sql)) {
-            const [code, name] = this.args;
-            if (!members.some(m => m.code === code && m.name === name)) members.push({ code, name });
+            const [code, name, device] = this.args;
+            if (!members.some(m => m.code === code && m.name === name)) members.push({ code, name, device: device || null });
+          } else if (/UPDATE party_member SET device/.test(this.sql)) {
+            const [device, code, name] = this.args;
+            const m = members.find(x => x.code === code && x.name === name); if (m) m.device = device;
           } else if (/INSERT INTO party_score/.test(this.sql)) {
             const [code, name, game, score] = this.args;
             const ex = scores.find(s => s.code === code && s.name === name && s.game === game);
@@ -34,6 +37,11 @@ function mockDB() {
           if (/COUNT\(\*\) AS n FROM rate/.test(this.sql)) return { n: 0 };
           if (/SELECT 1 FROM party/.test(this.sql)) return party.has(this.args[0]) ? { 1: 1 } : null;
           if (/SELECT games FROM party/.test(this.sql)) return party.has(this.args[0]) ? { games: party.get(this.args[0]) } : null;
+          if (/SELECT device FROM party_member/.test(this.sql)) {
+            const [code, name] = this.args;
+            const m = members.find(x => x.code === code && x.name === name);
+            return m ? { device: m.device } : null;
+          }
           return null;
         },
         async all() {
@@ -82,6 +90,14 @@ const bob = r.data.standings[0], alice = r.data.standings[1];
 assert("Bob führt mit 27 Punkten", bob.name === "Bob" && bob.points === 27);
 assert("Alice hat 17 Punkte", alice.name === "Alice" && alice.points === 17);
 assert("Per-Spiel-Scores vorhanden", bob.scores.wumms === 300 && alice.scores.komet === 100);
+
+// Geräte-Bindung: ein Name im Raum gehört dem ersten Gerät
+r = await post({ action: "create", games: ["komet"], name: "Zoe", device: "zoedevice0001" });
+const c2 = r.data.code;
+r = await post({ action: "submit", code: c2, name: "Zoe", game: "komet", score: 10, device: "fremdesgeraet99" });
+assert("Fremd-Einreichen unter belegtem Namen abgelehnt (409)", r.status === 409);
+r = await post({ action: "submit", code: c2, name: "Zoe", game: "komet", score: 10, device: "zoedevice0001" });
+assert("Eigenes Gerät darf einreichen (200)", r.status === 200);
 
 // Unbekannter Raum
 r = await get("ZZZZZZ");

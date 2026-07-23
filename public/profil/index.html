@@ -162,6 +162,7 @@
     footer { text-align:center; color:var(--muted); font-size:0.82rem; margin-top:34px; }
     footer a { color:var(--muted); text-decoration:none; }
     footer a:hover { color:var(--gold); }
+    *:focus-visible { outline:2px solid var(--gold); outline-offset:2px; }
     @media (prefers-reduced-motion:reduce){ *{transition:none!important;} }
   </style>
 </head>
@@ -196,8 +197,11 @@
     <div class="sec-title">☁️ Cloud-Speicher</div>
     <div class="cloud-card">
       <p class="cloud-info">Sichere alle Spielstände, Rekorde &amp; Abzeichen mit einem Code — und hol sie auf jedem Gerät zurück.</p>
-      <div class="cloud-code" id="cloud-code" hidden>Dein Code: <b id="cloud-code-val"></b> <button id="cloud-copy" title="Kopieren">📋</button></div>
+      <div class="cloud-code" id="cloud-code" hidden>Dein Code: <b id="cloud-code-val"></b> <button id="cloud-copy" title="Kopieren" aria-label="Code kopieren">📋</button> <button id="cloud-qr-btn" title="QR anzeigen" aria-label="QR-Code anzeigen">🔳</button>
+        <canvas id="cloud-qr" hidden style="display:block;margin:10px auto 0;background:#fff;border-radius:10px;padding:6px"></canvas>
+      </div>
       <div class="cloud-saved" id="cloud-saved"></div>
+      <div id="cloud-prev" style="margin-bottom:10px"></div>
       <div class="cloud-btns">
         <button class="btn-secondary" id="cloud-save">⬆️ Jetzt sichern</button>
         <button class="btn-secondary" id="cloud-load">⬇️ Von Code laden</button>
@@ -226,6 +230,7 @@
   </main>
 
   <script src="/games.js"></script>
+  <script src="/qr.js"></script>
   <script>
   (function () {
     const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" })[c]);
@@ -524,6 +529,22 @@
       } catch { setStatus("Keine Verbindung", "err"); }
     };
 
+    // Backup einer Antwort anwenden (überschreibt lokale Fortschrittsdaten)
+    const applyBackup = (d, code, confirmMsg) => {
+      const data = typeof d.data === "string" ? JSON.parse(d.data) : d.data;
+      if (!data || typeof data !== "object") { setStatus("Backup unlesbar", "err"); return false; }
+      if (!confirm(confirmMsg)) { setStatus(""); return false; }
+      for (const [k, v] of Object.entries(data)) { try { if (!skip(k)) localStorage.setItem(k, v); } catch {} }
+      try {
+        localStorage.setItem("gs_sync_code", code);
+        if (d.updated_at) { localStorage.setItem("gs_sync_at", d.updated_at); localStorage.setItem("gs_sync_seen", d.updated_at); }
+        localStorage.setItem("gs_sync_local_at", String(Date.now()));
+      } catch {}
+      setStatus("✔ Geladen! Seite wird neu geladen …", "ok");
+      setTimeout(() => location.reload(), 900);
+      return true;
+    };
+
     $("#cloud-load").onclick = async () => {
       const code = (prompt("Backup-Code eingeben (von deinem anderen Gerät):", savedCode()) || "").trim().toUpperCase();
       if (!code) return;
@@ -533,22 +554,39 @@
         const res = await fetch("/api/cloud?code=" + encodeURIComponent(code));
         const d = await res.json().catch(() => ({}));
         if (!res.ok) return setStatus(d.error || "Nicht gefunden", "err");
-        const data = typeof d.data === "string" ? JSON.parse(d.data) : d.data;
-        if (!data || typeof data !== "object") return setStatus("Backup unlesbar", "err");
-        if (!confirm("Backup laden? Der aktuelle Stand auf diesem Gerät wird überschrieben.")) { setStatus(""); return; }
-        for (const [k, v] of Object.entries(data)) { try { if (!skip(k)) localStorage.setItem(k, v); } catch {} }
-        try {
-          localStorage.setItem("gs_sync_code", code);
-          if (d.updated_at) { localStorage.setItem("gs_sync_at", d.updated_at); localStorage.setItem("gs_sync_seen", d.updated_at); }
-          localStorage.setItem("gs_sync_local_at", String(Date.now()));
-        } catch {}
-        setStatus("✔ Geladen! Seite wird neu geladen …", "ok");
-        setTimeout(() => location.reload(), 900);
+        applyBackup(d, code, "Backup laden? Der aktuelle Stand auf diesem Gerät wird überschrieben.");
       } catch { setStatus("Keine Verbindung", "err"); }
     };
 
+    // Vorherige Version anbieten (Schutz gegen versehentliches Überschreiben)
+    (async function checkPrev() {
+      const c = savedCode(); if (!c) return;
+      try {
+        const r = await fetch("/api/cloud?code=" + encodeURIComponent(c));
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok || !d.hasPrev) return;
+        const when = d.prev_at ? new Date(d.prev_at.replace(" ", "T") + "Z").toLocaleString("de-AT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
+        const el = $("#cloud-prev");
+        el.innerHTML = `<button class="btn-secondary" id="cloud-prev-btn">↩︎ Vorherige Version${when ? " (" + when + ")" : ""}</button>`;
+        $("#cloud-prev-btn").onclick = async () => {
+          setStatus("Lade vorherige Version …");
+          try {
+            const rr = await fetch("/api/cloud?code=" + encodeURIComponent(c) + "&prev=1");
+            const dd = await rr.json().catch(() => ({}));
+            if (!rr.ok) return setStatus(dd.error || "Keine vorherige Version", "err");
+            applyBackup(dd, c, "Vorherige Version laden? Der aktuelle Stand wird überschrieben.");
+          } catch { setStatus("Keine Verbindung", "err"); }
+        };
+      } catch {}
+    })();
+
     $("#cloud-copy").onclick = async () => {
       try { await navigator.clipboard.writeText(savedCode()); setStatus("Code kopiert", "ok"); } catch {}
+    };
+    $("#cloud-qr-btn").onclick = () => {
+      const cv = $("#cloud-qr");
+      if (!cv.hidden) { cv.hidden = true; return; }
+      try { if (window.QR) { QR.toCanvas(savedCode(), cv, { scale: 5, margin: 2, dark: "#12140f", light: "#ffffff" }); cv.hidden = false; } } catch {}
     };
 
     // --- Freunde & Rivalen ---

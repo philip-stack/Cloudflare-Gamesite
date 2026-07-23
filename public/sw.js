@@ -6,11 +6,11 @@
 // der Hub auch beim allerersten Offline-Aufruf erscheint.
 // API-Anfragen (/api/…) werden nie gecacht.
 // ====================================================================
-const CACHE = "gamesite-v49";
+const CACHE = "gamesite-v50";
 
 // Kern-Dateien, die den Hub tragen (klein, lohnt sich vorzucachen).
 const SHELL = [
-  "/", "/games.js", "/shared.js", "/theme.js", "/manifest.webmanifest",
+  "/", "/games.js", "/shared.js", "/theme.js", "/qr.js", "/manifest.webmanifest",
   "/profil/", "/party/", "/fonts/fonts.css",
   "/icons/icon-192.png", "/icons/icon-512.png",
 ];

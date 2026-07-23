@@ -46,9 +46,13 @@ export async function onRequestPost({ request, env }) {
 
   if (!code) code = newCode();
 
+  // Beim Überschreiben wird die bisherige Version als prev_* aufbewahrt —
+  // so lässt sich ein versehentliches/böswilliges Überschreiben rückgängig machen.
   await env.DB.prepare(
     `INSERT INTO cloud_saves (code, data, device, updated_at) VALUES (?, ?, ?, datetime('now'))
-     ON CONFLICT(code) DO UPDATE SET data = excluded.data, device = excluded.device, updated_at = datetime('now')`
+     ON CONFLICT(code) DO UPDATE SET
+       prev_data = cloud_saves.data, prev_at = cloud_saves.updated_at,
+       data = excluded.data, device = excluded.device, updated_at = datetime('now')`
   ).bind(code, data, writer || null).run();
 
   const row = await env.DB.prepare(
@@ -64,13 +68,20 @@ export async function onRequestGet({ request, env }) {
     return json({ error: "Zu viele Anfragen — kurz warten" }, 429);
   }
 
-  const code = String(new URL(request.url).searchParams.get("code") || "").trim().toUpperCase();
+  const url = new URL(request.url);
+  const code = String(url.searchParams.get("code") || "").trim().toUpperCase();
   if (!CODE_RE.test(code)) return json({ error: "Ungültiger Code" }, 400);
 
   const row = await env.DB.prepare(
-    "SELECT data, updated_at, device FROM cloud_saves WHERE code = ?"
+    "SELECT data, updated_at, device, prev_data, prev_at FROM cloud_saves WHERE code = ?"
   ).bind(code).first();
   if (!row) return json({ error: "Kein Backup unter diesem Code gefunden" }, 404);
 
-  return json({ data: row.data, updated_at: row.updated_at, writer: row.device });
+  // Vorherige Version anfordern (1-Schritt-Wiederherstellung)
+  if (url.searchParams.get("prev") === "1") {
+    if (!row.prev_data) return json({ error: "Keine vorherige Version vorhanden" }, 404);
+    return json({ data: row.prev_data, updated_at: row.prev_at, prev: true });
+  }
+
+  return json({ data: row.data, updated_at: row.updated_at, writer: row.device, hasPrev: !!row.prev_data, prev_at: row.prev_at || null });
 }

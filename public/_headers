@@ -1,0 +1,19 @@
+# Sicherheits-Header für die ganze Seite (Cloudflare Pages).
+# Alle Ressourcen sind selbst gehostet — daher strikt 'self'.
+# Hinweis: 'unsafe-inline' ist nötig, weil die Seiten Inline-<script>/<style>
+# nutzen. connect-src 'self' verhindert trotzdem, dass eingeschleuster Code
+# Daten an fremde Server sendet; frame-ancestors/object-src sperren
+# Einbettung (Clickjacking) und Plugins.
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; manifest-src 'self'; worker-src 'self'; media-src 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self'
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  X-Frame-Options: DENY
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), browsing-topics=()
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  Cross-Origin-Resource-Policy: same-origin
+
+# API-Antworten zusätzlich als nicht-cachebar kennzeichnen
+/api/*
+  Cache-Control: no-store
+  X-Content-Type-Options: nosniff

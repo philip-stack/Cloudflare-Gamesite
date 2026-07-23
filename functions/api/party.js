@@ -14,9 +14,24 @@ import { json, makeCode, clientIp, rateLimit } from "./_util.js";
 
 const ALLOWED = ["funkelfeld", "komet", "sternensturm", "galopp", "wumms", "meeri"];
 const CODE_RE = /^[A-Z0-9]{6}$/;
+const DEV_RE = /^[A-Za-z0-9_-]{8,40}$/;
 const MAX_SCORE = 2_000_000_000;
 const PTS = [10, 7, 5, 3, 2];               // Rang 1..5, danach 1 Punkt
 const cleanName = n => String(n || "").trim().slice(0, 16);
+
+// Ein Name im Raum gehört dem Gerät, das ihn zuerst benutzt. Verhindert,
+// dass jemand mit dem Raum-Code unter fremdem Namen einreicht.
+// → true = Name gehört dir (oder ist frei), false = gehört anderem Gerät.
+async function ownName(env, code, name, device) {
+  const row = await env.DB.prepare("SELECT device FROM party_member WHERE code = ? AND name = ?").bind(code, name).first();
+  if (row) {
+    if (row.device && device && row.device !== device) return false;
+    if (!row.device && device) await env.DB.prepare("UPDATE party_member SET device = ? WHERE code = ? AND name = ?").bind(device, code, name).run();
+    return true;
+  }
+  await env.DB.prepare("INSERT OR IGNORE INTO party_member (code, name, device) VALUES (?, ?, ?)").bind(code, name, device || null).run();
+  return true;
+}
 
 export async function onRequestPost({ request, env }) {
   if (!(await rateLimit(env, "party:" + clientIp(request), 60, 60))) {
@@ -35,8 +50,9 @@ export async function onRequestPost({ request, env }) {
       const exists = await env.DB.prepare("SELECT 1 FROM party WHERE code = ?").bind(code).first();
       if (!exists) break;
     }
+    const device = String(b.device || "").trim();
     await env.DB.prepare("INSERT INTO party (code, games) VALUES (?, ?)").bind(code, JSON.stringify(games)).run();
-    if (name) await env.DB.prepare("INSERT OR IGNORE INTO party_member (code, name) VALUES (?, ?)").bind(code, name).run();
+    if (name) await ownName(env, code, name, DEV_RE.test(device) ? device : null);
     return json({ ok: true, code, games });
   }
 
@@ -46,10 +62,13 @@ export async function onRequestPost({ request, env }) {
   if (!room) return json({ error: "Raum nicht gefunden" }, 404);
   const games = JSON.parse(room.games);
 
+  const device = String(b.device || "").trim();
+  const dev = DEV_RE.test(device) ? device : null;
+
   if (action === "join") {
     const name = cleanName(b.name);
     if (!name) return json({ error: "Name fehlt" }, 400);
-    await env.DB.prepare("INSERT OR IGNORE INTO party_member (code, name) VALUES (?, ?)").bind(code, name).run();
+    if (!(await ownName(env, code, name, dev))) return json({ error: "Dieser Name ist im Raum schon vergeben — wähle einen anderen" }, 409);
     return json({ ok: true, games });
   }
 
@@ -60,7 +79,7 @@ export async function onRequestPost({ request, env }) {
     if (!name) return json({ error: "Name fehlt" }, 400);
     if (!games.includes(game)) return json({ error: "Spiel gehört nicht zum Raum" }, 400);
     if (!Number.isInteger(score) || score < 0 || score > MAX_SCORE) return json({ error: "Ungültiger Score" }, 400);
-    await env.DB.prepare("INSERT OR IGNORE INTO party_member (code, name) VALUES (?, ?)").bind(code, name).run();
+    if (!(await ownName(env, code, name, dev))) return json({ error: "Dieser Name gehört einem anderen Gerät" }, 409);
     await env.DB.prepare(
       `INSERT INTO party_score (code, name, game, score) VALUES (?, ?, ?, ?)
        ON CONFLICT(code, name, game) DO UPDATE SET score = MAX(score, excluded.score), updated_at = datetime('now')`
