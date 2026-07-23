@@ -125,6 +125,21 @@ CREATE TABLE IF NOT EXISTS push_queue (
 );
 CREATE INDEX IF NOT EXISTS idx_push_queue_ep ON push_queue(endpoint, id);
 
+-- Passkeys / WebAuthn (Details: functions/api/auth.js)
+CREATE TABLE IF NOT EXISTS webauthn_cred (
+  cred_id     TEXT PRIMARY KEY,           -- Credential-ID (base64url)
+  pubkey_jwk  TEXT NOT NULL,              -- öffentlicher Schlüssel als JWK (ES256)
+  sign_count  INTEGER NOT NULL DEFAULT 0, -- Signaturzähler (Replay-Schutz)
+  code        TEXT NOT NULL,              -- verknüpfter Cloud-Speicher-Code
+  name        TEXT,
+  created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS webauthn_chal (
+  chal_id    TEXT PRIMARY KEY,            -- kurzlebige Challenge-Kennung
+  challenge  TEXT NOT NULL,               -- Challenge (base64url)
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- Anonymer Fehler-Melder (Details: functions/api/log.js)
 CREATE TABLE IF NOT EXISTS error_log (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
