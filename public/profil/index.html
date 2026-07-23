@@ -231,6 +231,13 @@
         <button class="btn-secondary" id="cloud-load">⬇️ Von Code laden</button>
       </div>
       <div class="cloud-status" id="cloud-status" role="status" aria-live="polite"></div>
+      <hr style="border:0;border-top:1px solid var(--edge-soft);margin:14px 0">
+      <p class="cloud-info" id="pk-intro">🔐 <b>Passkey</b> — ohne Code-Tippen sichern &amp; laden, per Face ID / Fingerabdruck.</p>
+      <div class="cloud-btns">
+        <button class="btn-secondary" id="pk-register">🔐 Passkey einrichten</button>
+        <button class="btn-secondary" id="pk-login">🔓 Mit Passkey laden</button>
+      </div>
+      <div class="cloud-status" id="pk-status" role="status" aria-live="polite"></div>
     </div>
 
     <div class="sec-title">⚙️ Einstellungen</div>
@@ -728,6 +735,61 @@
           const res = await fetch("/api/push", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "test", endpoint: sub.endpoint }) });
           setPS(res.ok ? "Test gesendet — die Benachrichtigung sollte gleich erscheinen." : "Test fehlgeschlagen.", res.ok ? "ok" : "err");
         } catch { setPS("Test fehlgeschlagen.", "err"); }
+      };
+    })();
+
+    // --- Passkeys (WebAuthn): bequemer Login für den Cloud-Speicher ---
+    (function () {
+      const rEl = $("#pk-register"), lEl = $("#pk-login");
+      const setpk = (m, k = "") => { const st = $("#pk-status"); st.className = "cloud-status " + k; st.textContent = m; };
+      if (!window.PublicKeyCredential || !navigator.credentials) {
+        rEl.disabled = lEl.disabled = true;
+        $("#pk-intro").textContent = "🔐 Passkeys werden von diesem Browser nicht unterstützt.";
+        return;
+      }
+      const u8ToB64url = u8 => btoa(String.fromCharCode(...new Uint8Array(u8))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+      const b64urlToU8 = str => { const s = (str + "=".repeat((4 - str.length % 4) % 4)).replace(/-/g, "+").replace(/_/g, "/"); const bin = atob(s); const o = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) o[i] = bin.charCodeAt(i); return o; };
+      const authApi = body => fetch("/api/auth", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(async r => ({ status: r.status, data: await r.json().catch(() => ({})) }));
+
+      // Für die Registrierung braucht es einen Cloud-Code — sonst zuerst sichern.
+      async function ensureCode() {
+        if (savedCode()) return savedCode();
+        const res = await fetch("/api/cloud", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ data: snapshot(), writer: cloudWriter() }) });
+        const d = await res.json().catch(() => ({}));
+        if (!res.ok || !d.code) throw new Error("Sichern fehlgeschlagen");
+        try { localStorage.setItem("gs_sync_code", d.code); if (d.updated_at) { localStorage.setItem("gs_sync_at", d.updated_at); localStorage.setItem("gs_sync_seen", d.updated_at); } localStorage.setItem("gs_sync_local_at", String(Date.now())); } catch {}
+        showCode(d.code); renderSaved();
+        return d.code;
+      }
+
+      rEl.onclick = async () => {
+        setpk("Sichere & richte Passkey ein …");
+        try {
+          const code = await ensureCode();
+          const start = await authApi({ action: "register-start", name: getName() });
+          if (start.status !== 200) throw new Error(start.data.error || "Fehler");
+          const o = start.data.options;
+          const cred = await navigator.credentials.create({ publicKey: { ...o, challenge: b64urlToU8(o.challenge), user: { ...o.user, id: b64urlToU8(o.user.id) } } });
+          const out = { id: cred.id, clientDataJSON: u8ToB64url(cred.response.clientDataJSON), attestationObject: u8ToB64url(cred.response.attestationObject) };
+          const fin = await authApi({ action: "register-finish", chalId: start.data.chalId, code, name: getName(), credential: out });
+          if (fin.status !== 200) throw new Error(fin.data.error || "Fehler");
+          setpk("✔ Passkey eingerichtet! Ab jetzt per Face ID / Fingerabdruck laden.", "ok");
+        } catch (e) { setpk(e && e.name === "NotAllowedError" ? "Abgebrochen." : ((e && e.message) || "Passkey fehlgeschlagen"), e && e.name === "NotAllowedError" ? "" : "err"); }
+      };
+
+      lEl.onclick = async () => {
+        setpk("Anmelden mit Passkey …");
+        try {
+          const start = await authApi({ action: "login-start" });
+          if (start.status !== 200) throw new Error(start.data.error || "Fehler");
+          const o = start.data.options;
+          const assn = await navigator.credentials.get({ publicKey: { ...o, challenge: b64urlToU8(o.challenge), allowCredentials: [] } });
+          const out = { id: assn.id, clientDataJSON: u8ToB64url(assn.response.clientDataJSON), authenticatorData: u8ToB64url(assn.response.authenticatorData), signature: u8ToB64url(assn.response.signature) };
+          const fin = await authApi({ action: "login-finish", chalId: start.data.chalId, credential: out });
+          if (fin.status !== 200) throw new Error(fin.data.error || "Anmeldung fehlgeschlagen");
+          if (!fin.data.data) { try { localStorage.setItem("gs_sync_code", fin.data.code); } catch {} showCode(fin.data.code); setpk("Angemeldet — für diesen Passkey gibt es noch kein Backup.", ""); return; }
+          applyBackup(fin.data, fin.data.code, "Passkey erkannt! Deine Cloud-Spielstände laden? Der aktuelle Stand auf diesem Gerät wird überschrieben.");
+        } catch (e) { setpk(e && e.name === "NotAllowedError" ? "Abgebrochen." : ((e && e.message) || "Anmeldung fehlgeschlagen"), e && e.name === "NotAllowedError" ? "" : "err"); }
       };
     })();
 
