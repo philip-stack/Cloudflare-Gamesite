@@ -37,6 +37,7 @@
   let all = [];
   let filterKind = LS.get("fire_kind", "all");
   let view = LS.get("fire_view", "list");
+  let feed = LS.get("fire_feed", "active");     // "active" | "recent" (beendet)
   let prevNums = null;              // null = erster Ladevorgang (kein Alarm)
   let newFlash = 0;
   let shownIds = new Set();         // schon eingeblendete Karten (keine Re-Animation)
@@ -131,16 +132,21 @@
   }
 
   // ---- Laden ----
+  const parseUTC = s => { const d = new Date(String(s || "").replace(" ", "T") + "Z"); return isNaN(d.getTime()) ? null : d; };
   async function load() {
+    const recent = feed === "recent";
     try {
-      const res = await fetch("/api/fire/noe", { headers: { "Accept": "application/json" } });
+      const res = await fetch("/api/fire/noe" + (recent ? "?recent=1" : ""), { headers: { "Accept": "application/json" } });
       const data = await res.json();
       const list = Array.isArray(data.einsatz) ? data.einsatz : [];
       all = list.map(e => Object.assign({}, e, {
-        _c: classify(e.a), _when: parseWhen(e.d, e.t),
+        _c: classify(e.a),
+        _when: recent ? parseUTC(e.ended_at) : parseWhen(e.d, e.t),
         _bez: BEZIRK[String(e.b)] || (e.b ? "Bezirk " + e.b : ""),
+        _ended: recent,
+        _key: recent ? "r:" + e.n : e.i,
       }));
-      detectNew(list);
+      if (!recent) detectNew(list);
       setStatus(data.error ? "err" : "ok");
       render();
       fillGeocodes();
@@ -167,8 +173,9 @@
 
   function setStatus(state) {
     const time = new Date().toLocaleTimeString("de-AT", { hour: "2-digit", minute: "2-digit" });
-    dotEl.className = "live" + (state === "err" ? " err" : "");
-    standEl.textContent = state === "err" ? "Quelle nicht erreichbar" : "Stand " + time;
+    dotEl.className = "live" + (state === "err" ? " err" : (feed === "recent" ? " stale" : ""));
+    standEl.textContent = state === "err" ? "Quelle nicht erreichbar"
+      : (feed === "recent" ? "Beendet · letzte 24 h" : "Stand " + time);
   }
 
   // ---- Titel-Blink & Toast bei neuen Einsätzen ----
@@ -233,40 +240,41 @@
     // Differenziell aktualisieren: vorhandene Karten wiederverwenden (kein
     // Flackern/„Pochen" beim Refresh), nur wirklich neue blenden ein.
     const have = new Map();
-    listEl.querySelectorAll(".card").forEach(c => have.set(c.dataset.id, c));
+    listEl.querySelectorAll(".card").forEach(c => have.set(c.dataset.key, c));
 
     let entering = 0;
     items.forEach(e => {
-      const id = String(e.i);
-      let card = have.get(id);
+      let card = have.get(e._key);
       if (card) {
-        have.delete(id);
+        have.delete(e._key);
         updateCard(card, e);
       } else {
-        card = buildCard(e, !shownIds.has(e.i), entering++);
+        card = buildCard(e, !shownIds.has(e._key), entering++);
       }
       listEl.appendChild(card);   // schiebt bestehende Knoten nur in die richtige Reihenfolge
-      shownIds.add(e.i);
+      shownIds.add(e._key);
     });
     // Verschwundene Einsätze entfernen
     have.forEach(c => c.remove());
   }
 
+  const whenText = e => e._ended ? ("beendet " + ago(e._when)) : ago(e._when);
   function cardMarkup(e) {
     const k = e._c.kind;
-    const fresh = e._when && (Date.now() - e._when.getTime()) < FRESH_MS;
+    const fresh = !e._ended && e._when && (Date.now() - e._when.getTime()) < FRESH_MS;
     const badge = `${e._c.label}${e._c.stufe ? ' <span class="stufe">St. ' + esc(e._c.stufe) + "</span>" : ""}`;
-    return `<div class="row1"><span class="badge k-${k}">${badge}</span>${fresh ? '<span class="fresh-tag">neu</span>' : ""}<span class="when">${esc(ago(e._when))}</span></div>
+    return `<div class="row1"><span class="badge k-${k}">${badge}</span>${fresh ? '<span class="fresh-tag">neu</span>' : ""}<span class="when">${esc(whenText(e))}</span></div>
         <h3>${esc(e.m || "Einsatz")}</h3>
         <div class="loc">${PIN}<span>${esc(e.o || "Unbekannt")}${e.o2 ? " · " + esc(e.o2) : ""}</span></div>
         ${e._bez ? `<div class="bez">Bezirk ${esc(e._bez)}</div>` : ""}`;
   }
   function buildCard(e, isNew, order) {
     const k = e._c.kind;
-    const fresh = e._when && (Date.now() - e._when.getTime()) < FRESH_MS;
+    const fresh = !e._ended && e._when && (Date.now() - e._when.getTime()) < FRESH_MS;
     const card = document.createElement("button");
-    card.className = "card k-" + k + (fresh ? " fresh" : "") + (isNew ? " enter" : "");
-    card.dataset.id = String(e.i);
+    card.className = "card k-" + k + (fresh ? " fresh" : "") + (e._ended ? " ended" : "") + (isNew ? " enter" : "");
+    card.dataset.key = e._key;
+    if (e.i) card.dataset.id = e.i;                 // nur aktive haben Detail
     card.dataset.when = e._when ? e._when.getTime() : 0;
     if (isNew) card.style.animationDelay = Math.min(order * 25, 300) + "ms";
     card.innerHTML = cardMarkup(e);
@@ -274,12 +282,11 @@
   }
   function updateCard(card, e) {
     const k = e._c.kind;
-    const fresh = e._when && (Date.now() - e._when.getTime()) < FRESH_MS;
-    const cls = "card k-" + k + (fresh ? " fresh" : "");   // ohne „enter" → keine Re-Animation
+    const fresh = !e._ended && e._when && (Date.now() - e._when.getTime()) < FRESH_MS;
+    const cls = "card k-" + k + (fresh ? " fresh" : "") + (e._ended ? " ended" : "");
     if (card.className !== cls) card.className = cls;
-    // Nur die Zeit ändert sich laufend; Rest bleibt stabil.
     const w = card.querySelector(".when");
-    if (w) { const t = ago(e._when); if (w.textContent !== t) w.textContent = t; }
+    if (w) { const t = whenText(e); if (w.textContent !== t) w.textContent = t; }
   }
 
   // ---- Leaflet-Karte ----
@@ -315,16 +322,16 @@
       const c = coordsOf(e);
       if (!c) continue;
       const col = KIND_COLOR[e._c.kind] || KIND_COLOR.X;
-      const fresh = e._when && (Date.now() - e._when.getTime()) < FRESH_MS;
+      const fresh = !e._ended && e._when && (Date.now() - e._when.getTime()) < FRESH_MS;
       const m = L.circleMarker(c, {
         radius: fresh ? 10 : 7, color: "#0b0c10", weight: 1.5,
-        fillColor: col, fillOpacity: 0.95,
+        fillColor: col, fillOpacity: e._ended ? 0.6 : 0.95,
       });
       m.bindPopup(
         `<div class="pop"><span class="pop-badge" style="background:${col}22;color:${col}">${esc(e._c.label)}${e._c.stufe ? " · St. " + esc(e._c.stufe) : ""}</span>` +
         `<b>${esc(e.m || "Einsatz")}</b><span>${esc(e.o || "")}${e._bez ? " · " + esc(e._bez) : ""}</span>` +
-        `<span class="pop-when">${esc(ago(e._when))}</span>` +
-        `<button class="pop-more" data-id="${esc(e.i)}">Details →</button></div>`
+        `<span class="pop-when">${esc(whenText(e))}</span>` +
+        (e.i ? `<button class="pop-more" data-id="${esc(e.i)}">Details →</button>` : "") + `</div>`
       );
       m.addTo(markers);
       pts.push(c);
@@ -503,6 +510,18 @@
   $("#view-list").addEventListener("click", () => setView("list"));
   $("#view-map").addEventListener("click", () => setView("map"));
 
+  function setFeed(f) {
+    if (feed === f) return;
+    feed = f; LS.set("fire_feed", f);
+    $("#feed-active").classList.toggle("on", f === "active"); $("#feed-active").setAttribute("aria-selected", String(f === "active"));
+    $("#feed-recent").classList.toggle("on", f === "recent"); $("#feed-recent").setAttribute("aria-selected", String(f === "recent"));
+    all = []; prevNums = null;
+    if (view === "list") listEl.innerHTML = `<div class="skeleton"></div><div class="skeleton"></div>`;
+    load();
+  }
+  $("#feed-active").addEventListener("click", () => setFeed("active"));
+  $("#feed-recent").addEventListener("click", () => setFeed("recent"));
+
   // Gespeicherten Filter/Chip auf UI anwenden
   document.querySelectorAll(".chip").forEach(c => { const on = c.dataset.kind === filterKind; c.classList.toggle("on", on); c.setAttribute("aria-selected", String(on)); });
 
@@ -530,14 +549,19 @@
   // ---- Live-Zeiten ohne Neuladen aktualisieren ----
   setInterval(() => {
     if (view !== "list") return;
+    const ended = feed === "recent";
     listEl.querySelectorAll(".card").forEach(card => {
       const w = Number(card.dataset.when) || 0; if (!w) return;
-      const el = card.querySelector(".when"); if (el) el.textContent = ago(new Date(w));
+      const el = card.querySelector(".when"); if (el) el.textContent = (ended ? "beendet " : "") + ago(new Date(w));
     });
   }, 60000);
 
   // ---- Start ----
   applyThemeUI();
+  if (feed === "recent") {
+    $("#feed-active").classList.remove("on"); $("#feed-active").setAttribute("aria-selected", "false");
+    $("#feed-recent").classList.add("on"); $("#feed-recent").setAttribute("aria-selected", "true");
+  }
   listEl.innerHTML = `<div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>`;
   if (view === "map") setView("map"); else setView("list");
   load();

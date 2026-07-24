@@ -41,7 +41,22 @@ export async function onRequestGet({ request, env }) {
     return json({ error: "Zu viele Anfragen — kurz warten" }, 429);
   }
 
-  const id = new URL(request.url).searchParams.get("id");
+  const params = new URL(request.url).searchParams;
+  const id = params.get("id");
+
+  // Beendete Einsätze (eigene Historie aus fire_op, vom Cron gepflegt).
+  if (params.get("recent")) {
+    try {
+      if (!env || !env.DB) return json({ einsatz: [], recent: true, stand: nowIso() });
+      const rows = (await env.DB.prepare(
+        "SELECT n, m, a, o, o2, b, plz, ended_at FROM fire_op WHERE ended = 1 AND ended_at > datetime('now','-1 day') ORDER BY ended_at DESC LIMIT 120"
+      ).all()).results || [];
+      await attachCoords(env, rows);
+      return withCache(json({ einsatz: rows, recent: true, stand: nowIso() }), 30);
+    } catch (_) {
+      return json({ einsatz: [], recent: true, stand: nowIso(), error: "Historie nicht verfügbar" }, 200);
+    }
+  }
 
   try {
     if (id) {

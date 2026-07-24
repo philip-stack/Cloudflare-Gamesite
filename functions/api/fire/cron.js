@@ -90,5 +90,24 @@ export async function onRequestGet({ request, env }) {
     await env.DB.prepare("DELETE FROM push_queue WHERE at < datetime('now','-1 day')").run();
   } catch (_) {}
 
+  // Historie mitschreiben: aktive Einsätze speichern/auffrischen, aus der
+  // Live-Liste gefallene als „beendet" markieren. (Nur wenn wir Daten haben
+  // — der frühe Return oben verhindert, dass ein Ausfall alles beendet.)
+  try {
+    for (const e of list) {
+      await env.DB.prepare(
+        `INSERT INTO fire_op (n, m, a, o, o2, b, last_seen, ended)
+         VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, 0)
+         ON CONFLICT(n) DO UPDATE SET m=excluded.m, a=excluded.a, o=excluded.o,
+           o2=excluded.o2, b=excluded.b, last_seen=CURRENT_TIMESTAMP, ended=0, ended_at=NULL`
+      ).bind(String(e.n), e.m || "", e.a || "", e.o || "", e.o2 || "", String(e.b || "")).run();
+    }
+    const placeholders = nums.map(() => "?").join(",");
+    await env.DB.prepare(
+      `UPDATE fire_op SET ended=1, ended_at=CURRENT_TIMESTAMP WHERE ended=0 AND n NOT IN (${placeholders})`
+    ).bind(...nums).run();
+    await env.DB.prepare("DELETE FROM fire_op WHERE ended=1 AND ended_at < datetime('now','-3 days')").run();
+  } catch (_) {}
+
   return json({ ok: true, active: list.length, fresh: fresh.length, sent });
 }
