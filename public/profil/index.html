@@ -687,33 +687,53 @@
         return out;
       };
       const reg = () => navigator.serviceWorker.ready;
+      const wantsPush = () => localStorage.getItem("gs_push_on") === "1";
 
-      // Ausgangszustand aus einem vorhandenen Abo ableiten
+      // Abo tatsächlich anlegen/erneuern und am Server registrieren. Ohne
+      // Erlaubnis-Dialog (der Aufrufer stellt sicher, dass sie erteilt ist).
+      async function subscribeNow(silent) {
+        const key = (await (await fetch("/api/push")).json()).key;
+        const r = await reg();
+        let sub = await r.pushManager.getSubscription();
+        if (!sub) sub = await r.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToU8(key) });
+        const res = await fetch("/api/push", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "subscribe", subscription: sub.toJSON(), name: getName(), device: deviceId() }),
+        });
+        if (!res.ok) throw 0;
+        try { localStorage.setItem("gs_push_on", "1"); } catch {}
+        box.checked = true; testBtn.hidden = false;
+        if (!silent) setPS("✔ Aktiviert! Du wirst benachrichtigt, wenn dein Rekord fällt.", "ok");
+      }
+
+      // Ausgangszustand: vorhandenes Abo → an lassen & Server-Eintrag auffrischen.
+      // Kein Abo, aber früher aktiviert & weiterhin erlaubt → still neu abonnieren
+      // (Abos können im Hintergrund ablaufen, v. a. auf iOS).
       (async () => {
-        try { const r = await reg(); const sub = await r.pushManager.getSubscription(); const on = !!sub; box.checked = on; testBtn.hidden = !on; }
-        catch {}
+        try {
+          const r = await reg();
+          const sub = await r.pushManager.getSubscription();
+          if (sub) { box.checked = true; testBtn.hidden = false; subscribeNow(true).catch(() => {}); return; }
+          if (wantsPush() && Notification.permission === "granted") {
+            box.checked = true; testBtn.hidden = false;
+            try { await subscribeNow(true); setPS("Benachrichtigungen wurden automatisch erneuert.", "ok"); }
+            catch { box.checked = false; testBtn.hidden = true; }
+          } else {
+            box.checked = false; testBtn.hidden = true;
+          }
+        } catch {}
       })();
 
       async function enable() {
         setPS("Frage Erlaubnis an …");
         const perm = await Notification.requestPermission();
         if (perm !== "granted") { box.checked = false; setPS("Benachrichtigungen wurden blockiert. In den Browser-Einstellungen erlauben.", "err"); return; }
-        try {
-          const key = (await (await fetch("/api/push")).json()).key;
-          const r = await reg();
-          let sub = await r.pushManager.getSubscription();
-          if (!sub) sub = await r.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToU8(key) });
-          const res = await fetch("/api/push", {
-            method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ action: "subscribe", subscription: sub.toJSON(), name: getName(), device: deviceId() }),
-          });
-          if (!res.ok) throw 0;
-          box.checked = true; testBtn.hidden = false;
-          setPS("✔ Aktiviert! Du wirst benachrichtigt, wenn dein Rekord fällt.", "ok");
-        } catch { box.checked = false; setPS("Aktivierung fehlgeschlagen — später erneut versuchen.", "err"); }
+        try { await subscribeNow(false); }
+        catch { box.checked = false; setPS("Aktivierung fehlgeschlagen — später erneut versuchen.", "err"); }
       }
       async function disable() {
         setPS("Deaktiviere …");
+        try { localStorage.setItem("gs_push_on", "0"); } catch {}
         try {
           const r = await reg(); const sub = await r.pushManager.getSubscription();
           if (sub) { await fetch("/api/push", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "unsubscribe", endpoint: sub.endpoint }) }); await sub.unsubscribe(); }

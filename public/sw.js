@@ -6,7 +6,7 @@
 // der Hub auch beim allerersten Offline-Aufruf erscheint.
 // API-Anfragen (/api/…) werden nie gecacht.
 // ====================================================================
-const CACHE = "gamesite-v59";
+const CACHE = "gamesite-v60";
 
 // Kern-Dateien, die den Hub tragen (klein, lohnt sich vorzucachen).
 const SHELL = [
@@ -59,6 +59,28 @@ self.addEventListener("push", e => {
         tag: "gs-" + (m.title || ""),
       })
     ));
+  })());
+});
+
+// Läuft ein Abo ab / rotiert der Browser es, feuert dieses Event — wir
+// abonnieren sofort neu und melden es (mit alter Endpoint-Kennung, damit der
+// Server den Namen übernimmt). So bleiben Benachrichtigungen auch ohne
+// erneuten Seitenbesuch erhalten.
+self.addEventListener("pushsubscriptionchange", e => {
+  e.waitUntil((async () => {
+    try {
+      const oldEndpoint = e.oldSubscription && e.oldSubscription.endpoint;
+      const key = (await (await fetch("/api/push")).json()).key;
+      const pad = "=".repeat((4 - key.length % 4) % 4);
+      const s = (key + pad).replace(/-/g, "+").replace(/_/g, "/");
+      const raw = atob(s); const appKey = new Uint8Array(raw.length);
+      for (let i = 0; i < raw.length; i++) appKey[i] = raw.charCodeAt(i);
+      const sub = await self.registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: appKey });
+      await fetch("/api/push", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "subscribe", subscription: sub.toJSON(), oldEndpoint }),
+      });
+    } catch (_) {}
   })());
 });
 
