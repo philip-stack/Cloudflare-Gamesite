@@ -135,8 +135,10 @@ select:focus, input:focus { border-color: rgba(255, 59, 48, 0.6); }
   padding: 16px 16px 16px 18px; overflow: hidden; backdrop-filter: blur(10px);
   color: inherit; font: inherit; box-shadow: var(--shadow);
   transition: transform 0.15s, border-color 0.15s;
-  animation: rise 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
+/* Einblenden nur für neu hinzugekommene Karten – nicht bei jedem Refresh,
+   sonst „pochen" alle Meldungen bei jedem Neuladen. */
+.card.enter { animation: rise 0.35s cubic-bezier(0.22, 1, 0.36, 1) both; }
 .card:hover { transform: translateY(-2px); border-color: rgba(255, 255, 255, 0.18); }
 .card::before {
   content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 5px; background: var(--faint);
