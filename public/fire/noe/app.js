@@ -226,16 +226,21 @@
     if (view === "map") { addMarkers(); return; }
     const items = filtered();
 
+    // Lade-Platzhalter immer wegräumen (sonst bleiben sie neben den Karten stehen).
+    listEl.querySelectorAll(".skeleton").forEach(s => s.remove());
+
     // Leerzustand
     const emptyEl = listEl.querySelector(".empty");
     if (!items.length) {
       const msg = all.length
         ? `<div class="empty"><div class="big">🔍</div>Keine Einsätze für diesen Filter.</div>`
-        : `<div class="empty"><div class="big">🌙</div>Aktuell keine gemeldeten Einsätze in Niederösterreich.</div>`;
+        : (feed === "recent"
+          ? `<div class="empty"><div class="big">✅</div>In den letzten 24&nbsp;Stunden wurden keine Einsätze beendet.</div>`
+          : `<div class="empty"><div class="big">🌙</div>Aktuell keine gemeldeten Einsätze in Niederösterreich.</div>`);
       if (listEl.innerHTML !== msg) listEl.innerHTML = msg;
       return;
     }
-    if (emptyEl) listEl.innerHTML = "";
+    if (emptyEl) emptyEl.remove();
 
     // Differenziell aktualisieren: vorhandene Karten wiederverwenden (kein
     // Flackern/„Pochen" beim Refresh), nur wirklich neue blenden ein.
