@@ -1,14 +1,16 @@
 // ====================================================================
-// Karten-Kacheln als Same-Origin-Proxy: /fire/tiles/{z}/{x}/{y}
-// Holt dunkle Basemap-Kacheln (CARTO, © OpenStreetMap-Mitwirkende) und
-// liefert sie unter eigener Herkunft aus — so bleibt die strikte CSP
-// (img-src 'self') unangetastet, ohne externe Hosts freizugeben.
+// Karten-Kacheln als Same-Origin-Proxy: /fire/tiles/{style}/{z}/{x}/{y}
+// style = "dark" | "light". Holt dunkle bzw. helle Basemap-Kacheln
+// (CARTO, © OpenStreetMap-Mitwirkende) und liefert sie unter eigener
+// Herkunft aus — so bleibt die strikte CSP (img-src 'self') unangetastet.
 // Bewusst NICHT unter /api/ (dort erzwingt _headers no-store); Kacheln
 // sind unveränderlich → sehr langer Cache in Browser und Edge.
 // ====================================================================
 const UA = "Mozilla/5.0 (Spieleabend/fire-noe; +https://philip-stack.pages.dev/fire/noe/)";
+const STYLES = { dark: "dark_all", light: "light_all" };
 
 export async function onRequestGet({ params }) {
+  const carto = STYLES[String(params.style || "dark")] || STYLES.dark;
   const yRaw = String(params.y || "").replace(/\.png$/i, "");
   const r2x = /@2x$/i.test(yRaw) ? "@2x" : "";
   const z = Number(params.z), x = Number(params.x), y = Number(yRaw.replace(/@2x$/i, ""));
@@ -18,7 +20,7 @@ export async function onRequestGet({ params }) {
   }
 
   const sub = "abc"[(x + y) % 3];
-  const url = `https://${sub}.basemaps.cartocdn.com/dark_all/${z}/${x}/${y}${r2x}.png`;
+  const url = `https://${sub}.basemaps.cartocdn.com/${carto}/${z}/${x}/${y}${r2x}.png`;
   try {
     const res = await fetch(url, {
       headers: { "User-Agent": UA, "Accept": "image/png,image/*" },
