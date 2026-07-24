@@ -714,12 +714,20 @@
           const r = await reg();
           const sub = await r.pushManager.getSubscription();
           if (sub) { box.checked = true; testBtn.hidden = false; subscribeNow(true).catch(() => {}); return; }
-          if (wantsPush() && Notification.permission === "granted") {
+          box.checked = false; testBtn.hidden = true;
+          if (!wantsPush()) return;                       // nie aktiviert → nichts sagen
+          // Früher aktiviert, aber Abo weg — je nach Erlaubnis unterschiedlich:
+          const perm = Notification.permission;
+          if (perm === "granted") {
             box.checked = true; testBtn.hidden = false;
             try { await subscribeNow(true); setPS("Benachrichtigungen wurden automatisch erneuert.", "ok"); }
             catch { box.checked = false; testBtn.hidden = true; }
+          } else if (perm === "denied") {
+            setPS("Benachrichtigungen sind im Browser blockiert. In den Website-Einstellungen von Chrome wieder erlauben.", "err");
           } else {
-            box.checked = false; testBtn.hidden = true;
+            // "default": Chrome hat die Erlaubnis zurückgesetzt (passiert bei
+            // selten besuchten Seiten) → mit einem Tipp neu aktivieren.
+            setPS("Chrome hat die Benachrichtigungen zurückgesetzt — zum erneut Aktivieren antippen.");
           }
         } catch {}
       })();
