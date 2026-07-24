@@ -322,27 +322,49 @@
     if (!map) return;
     markers.clearLayers();
     const items = filtered();
-    const pts = [];
+
+    // Nach Koordinate gruppieren: die Geokodierung ist ortsgenau, daher liegen
+    // mehrere Einsätze desselben Orts exakt aufeinander → als ein Marker mit
+    // Anzahl bündeln (Popup listet alle).
+    const groups = new Map();
+    let coded = 0;
     for (const e of items) {
       const c = coordsOf(e);
       if (!c) continue;
-      const col = KIND_COLOR[e._c.kind] || KIND_COLOR.X;
-      const fresh = !e._ended && e._when && (Date.now() - e._when.getTime()) < FRESH_MS;
-      const m = L.circleMarker(c, {
-        radius: fresh ? 10 : 7, color: "#0b0c10", weight: 1.5,
-        fillColor: col, fillOpacity: e._ended ? 0.6 : 0.95,
-      });
-      m.bindPopup(
-        `<div class="pop"><span class="pop-badge" style="background:${col}22;color:${col}">${esc(e._c.label)}${e._c.stufe ? " · St. " + esc(e._c.stufe) : ""}</span>` +
-        `<b>${esc(e.m || "Einsatz")}</b><span>${esc(e.o || "")}${e._bez ? " · " + esc(e._bez) : ""}</span>` +
-        `<span class="pop-when">${esc(whenText(e))}</span>` +
-        (e.i ? `<button class="pop-more" data-id="${esc(e.i)}">Details →</button>` : "") + `</div>`
-      );
-      m.addTo(markers);
-      pts.push(c);
+      coded++;
+      const key = c[0].toFixed(4) + "," + c[1].toFixed(4);
+      (groups.get(key) || groups.set(key, { c, items: [] }).get(key)).items.push(e);
     }
-    const uncoded = items.length - pts.length;
-    setMapNote(items.length, pts.length, uncoded);
+
+    groups.forEach(g => {
+      const lead = g.items[0];
+      const col = KIND_COLOR[lead._c.kind] || KIND_COLOR.X;
+      const anyFresh = g.items.some(e => !e._ended && e._when && (Date.now() - e._when.getTime()) < FRESH_MS);
+      const n = g.items.length;
+      const m = L.circleMarker(g.c, {
+        radius: n > 1 ? 12 : (anyFresh ? 10 : 7), color: "#0b0c10", weight: 1.5,
+        fillColor: col, fillOpacity: lead._ended ? 0.6 : 0.95,
+      });
+      if (n > 1) m.bindTooltip(String(n), { permanent: true, direction: "center", className: "cluster-badge" });
+      const body = g.items.map(e => {
+        const cc = KIND_COLOR[e._c.kind] || KIND_COLOR.X;
+        return `<div class="pop-item"><span class="pop-badge" style="background:${cc}22;color:${cc}">${esc(e._c.label)}${e._c.stufe ? " · St. " + esc(e._c.stufe) : ""}</span>` +
+          `<b>${esc(e.m || "Einsatz")}</b><span class="pop-when">${esc(whenText(e))}</span>` +
+          (e.i ? `<button class="pop-more" data-id="${esc(e.i)}">Details →</button>` : "") + `</div>`;
+      }).join("");
+      m.bindPopup(`<div class="pop"><div class="pop-loc">${esc(lead.o || "")}${lead._bez ? " · " + esc(lead._bez) : ""}</div>${body}</div>`);
+      m.addTo(markers);
+    });
+
+    setMapNote(items.length, coded, items.length - coded);
+  }
+
+  // Karte auf die aktuell gefilterten (verorteten) Einsätze zoomen; sonst NÖ.
+  function fitToFiltered() {
+    if (!map) return;
+    const pts = filtered().map(coordsOf).filter(Boolean);
+    if (pts.length) map.fitBounds(pts, { padding: [40, 40], maxZoom: 12 });
+    else map.fitBounds(NOE_BOUNDS, { padding: [24, 24] });
   }
   function setMapNote(total, shown, missing) {
     let n = $("#map-note");
@@ -369,9 +391,26 @@
     const base = all.find(e => e.i === id);
     overlay.hidden = false; document.body.style.overflow = "hidden";
     dBody.innerHTML = detailShell(base) + `<div class="d-loading">Lade Details…</div>`;
+    detailMiniMap(base);
     fetch("/api/fire/noe?id=" + encodeURIComponent(id)).then(r => r.json())
-      .then(d => { dBody.innerHTML = detailShell(base, d) + renderUnits(d); })
-      .catch(() => { dBody.innerHTML = detailShell(base) + `<div class="d-loading">Details nicht verfügbar.</div>`; });
+      .then(d => { dBody.innerHTML = detailShell(base, d) + renderUnits(d); detailMiniMap(base); })
+      .catch(() => { dBody.innerHTML = detailShell(base) + `<div class="d-loading">Details nicht verfügbar.</div>`; detailMiniMap(base); });
+  }
+  // Mini-Karte im Detail (falls Koordinaten bekannt).
+  let dMap = null;
+  function detailMiniMap(base) {
+    if (dMap) { try { dMap.remove(); } catch (_) {} dMap = null; }
+    const c = base && coordsOf(base);
+    if (!c || typeof L === "undefined") return;
+    const host = document.createElement("div");
+    host.id = "d-map";
+    dBody.appendChild(host);
+    dMap = L.map(host, { zoomControl: false, attributionControl: false, dragging: false, scrollWheelZoom: false, doubleClickZoom: false, touchZoom: false, keyboard: false })
+      .setView(c, 12);
+    L.tileLayer(tileUrl(), { detectRetina: true, maxZoom: 16 }).addTo(dMap);
+    const col = KIND_COLOR[(base._c && base._c.kind) || "X"] || KIND_COLOR.X;
+    L.circleMarker(c, { radius: 9, color: "#0b0c10", weight: 1.5, fillColor: col, fillOpacity: 0.95 }).addTo(dMap);
+    setTimeout(() => { try { dMap.invalidateSize(); } catch (_) {} }, 80);
   }
   function detailShell(base, d) {
     const src = d || base || {};
@@ -390,15 +429,23 @@
       </div>`;
   }
   function hhmm(s) { const m = /(\d{2}):(\d{2})/.exec(String(s || "")); return m ? m[1] + ":" + m[2] : ""; }
+  // Österr. FMS-Funkstatus → Klartext + Farbe.
+  const FMS = {
+    "0": ["dringend", "#ff3b30"], "1": ["einsatzbereit", "#8a93a3"], "2": ["einsatzbereit", "#8a93a3"],
+    "3": ["ausgerückt", "#ffb020"], "4": ["am Einsatzort", "#35d07f"], "5": ["Sprechwunsch", "#3b9bff"],
+    "6": ["nicht bereit", "#8a93a3"],
+  };
   function renderUnits(d) {
     const units = Array.isArray(d && d.Dispo) ? d.Dispo : [];
     if (!units.length) return `<div class="d-units"><h4>Alarmierte Wehren</h4><div class="d-loading">Noch keine Wehren gelistet.</div></div>`;
     return `<div class="d-units"><h4>Alarmierte Wehren (${units.length})</h4>` + units.map(u => {
+      const st = FMS[String(u.s)] || ["alarmiert", "#8a93a3"];
       const t = hhmm(u.dt);
-      return `<div class="unit"><span class="u-dot"></span><span class="u-name">${esc(u.n || "Feuerwehr")}</span>${t ? `<span class="u-time">alarmiert ${esc(t)}</span>` : ""}</div>`;
+      return `<div class="unit"><span class="u-dot" style="background:${st[1]}"></span><span class="u-name">${esc(u.n || "Feuerwehr")}</span>` +
+        `<span class="u-status" style="color:${st[1]}">${esc(st[0])}</span>${t ? `<span class="u-time">${esc(t)}</span>` : ""}</div>`;
     }).join("") + `</div>`;
   }
-  function closeDetail() { overlay.hidden = true; document.body.style.overflow = ""; }
+  function closeDetail() { overlay.hidden = true; document.body.style.overflow = ""; if (dMap) { try { dMap.remove(); } catch (_) {} dMap = null; } }
 
   // ---- Alarm-Overlay (Bezirks-Push) ----
   const alarmOvl = $("#alarm"), aGrid = $("#a-grid"), aAll = $("#a-all-cb"), aStatus = $("#a-status");
@@ -488,6 +535,39 @@
     setAStatus("Alarm ausgeschaltet.", "");
   }
 
+  // ---- Statistik-Overlay ----
+  const statsOvl = $("#stats-ovl"), sBody = $("#s-body");
+  function openStats() {
+    statsOvl.hidden = false; document.body.style.overflow = "hidden";
+    sBody.innerHTML = `<div class="d-loading">Lade…</div>`;
+    fetch("/api/fire/stats").then(r => r.json()).then(renderStatsOverlay)
+      .catch(() => { sBody.innerHTML = `<div class="d-loading">Statistik nicht verfügbar.</div>`; });
+  }
+  function closeStats() { statsOvl.hidden = true; document.body.style.overflow = ""; }
+  function renderStatsOverlay(s) {
+    const k = s.byKind || { B: 0, T: 0, S: 0, X: 0 };
+    const total = (k.B + k.T + k.S + k.X) || 1;
+    const dur = s.avgMin == null ? "—" : (s.avgMin >= 60 ? Math.floor(s.avgMin / 60) + " h " + (s.avgMin % 60) + " min" : s.avgMin + " min");
+    const hmax = Math.max(1, ...(s.byHour || [0]));
+    const bars = (s.byHour || []).map((v, h) =>
+      `<div class="hbar" title="${h}:00 – ${v} Einsätze"><i style="height:${Math.round(v / hmax * 100)}%"></i><em${h % 6 ? ' class="vh"' : ""}>${h}</em></div>`).join("");
+    const kindRow = (label, val, cls) => {
+      const pct = Math.round(val / total * 100);
+      return `<div class="kbar"><span>${label}</span><div class="ktrack"><i class="k-${cls}" style="width:${pct}%"></i></div><b>${val}</b></div>`;
+    };
+    sBody.innerHTML =
+      `<div class="s-tiles">
+        <div class="stat"><b>${s.active || 0}</b><span>aktiv jetzt</span></div>
+        <div class="stat"><b>${s.last24 || 0}</b><span>letzte 24 h</span></div>
+        <div class="stat"><b>${dur}</b><span>Ø Dauer</span></div>
+        <div class="stat"><b>${s.topBezirk ? esc(s.topBezirk.name) : "—"}</b><span>aktivster Bezirk${s.topBezirk ? " (" + s.topBezirk.count + ")" : ""}</span></div>
+      </div>
+      <h4 class="s-h">Nach Art</h4>
+      ${kindRow("Brand", k.B, "B")}${kindRow("Technisch", k.T, "T")}${kindRow("Schadstoff", k.S, "S")}${k.X ? kindRow("Sonstige", k.X, "X") : ""}
+      <h4 class="s-h">Einsätze nach Tagesstunde</h4>
+      <div class="hchart">${bars}</div>`;
+  }
+
   // ---- Events ----
   listEl.addEventListener("click", e => { const c = e.target.closest(".card"); if (c && c.dataset.id) openDetail(c.dataset.id); });
   mapEl.addEventListener("click", e => { const b = e.target.closest(".pop-more"); if (b && b.dataset.id) { closePopup(); openDetail(b.dataset.id); } });
@@ -496,7 +576,10 @@
   overlay.addEventListener("click", e => { if (e.target === overlay) closeDetail(); });
   $("#a-close").addEventListener("click", closeAlarm);
   alarmOvl.addEventListener("click", e => { if (e.target === alarmOvl) closeAlarm(); });
-  document.addEventListener("keydown", e => { if (e.key === "Escape") { if (!overlay.hidden) closeDetail(); else if (!alarmOvl.hidden) closeAlarm(); } });
+  $("#stats-btn").addEventListener("click", openStats);
+  $("#s-close").addEventListener("click", closeStats);
+  statsOvl.addEventListener("click", e => { if (e.target === statsOvl) closeStats(); });
+  document.addEventListener("keydown", e => { if (e.key === "Escape") { if (!overlay.hidden) closeDetail(); else if (!alarmOvl.hidden) closeAlarm(); else if (!statsOvl.hidden) closeStats(); } });
   $("#theme-btn").addEventListener("click", toggleTheme);
   $("#alarm-btn").addEventListener("click", openAlarm);
   $("#a-save").addEventListener("click", saveAlarm);
@@ -510,7 +593,7 @@
     document.querySelectorAll(".chip").forEach(c => { const on = c === chip; c.classList.toggle("on", on); c.setAttribute("aria-selected", String(on)); });
     render();
   });
-  bezirkSel.addEventListener("change", () => { LS.set("fire_bezirk", bezirkSel.value); render(); });
+  bezirkSel.addEventListener("change", () => { LS.set("fire_bezirk", bezirkSel.value); render(); if (view === "map") fitToFiltered(); });
   searchEl.addEventListener("input", render);
   $("#view-list").addEventListener("click", () => setView("list"));
   $("#view-map").addEventListener("click", () => setView("map"));

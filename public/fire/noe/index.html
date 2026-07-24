@@ -26,7 +26,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Feuerwehr NÖ" />
   <link rel="stylesheet" href="vendor/leaflet.css" />
-  <link rel="stylesheet" href="style.css?v=7" />
+  <link rel="stylesheet" href="style.css?v=8" />
 </head>
 <body>
   <div id="ptr" aria-hidden="true"><span class="ptr-spin"></span></div>
@@ -40,6 +40,7 @@
         </div>
       </div>
       <div class="head-right">
+        <button id="stats-btn" class="icon-btn" title="Statistik" aria-label="Statistik anzeigen">📊</button>
         <button id="theme-btn" class="icon-btn" title="Hell/Dunkel" aria-label="Hell- oder Dunkelmodus umschalten">🌙</button>
         <button id="alarm-btn" class="icon-btn" title="Bezirks-Alarm" aria-label="Bezirks-Alarm einrichten">🔔</button>
         <div class="status">
@@ -112,8 +113,18 @@
     </div>
   </div>
 
+  <!-- Statistik-Overlay -->
+  <div id="stats-ovl" class="overlay" hidden>
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="s-title">
+      <button class="x" id="s-close" aria-label="Schließen">✕</button>
+      <h2 id="s-title">📊 Statistik · letzte 24 h</h2>
+      <div id="s-body"><div class="d-loading">Lade…</div></div>
+      <p class="s-note">Basiert auf der eigenen Historie — sammelt erst seit Aktivierung, wächst mit der Zeit.</p>
+    </div>
+  </div>
+
   <script src="vendor/leaflet.js"></script>
-  <script src="app.js?v=8"></script>
+  <script src="app.js?v=9"></script>
   <script>
     // Eigener Service Worker (Scope /fire/noe/) → installierbar als eigene PWA.
     if ("serviceWorker" in navigator) {
