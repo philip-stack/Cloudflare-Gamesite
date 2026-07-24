@@ -26,7 +26,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Feuerwehr NÖ" />
   <link rel="stylesheet" href="vendor/leaflet.css" />
-  <link rel="stylesheet" href="style.css?v=6" />
+  <link rel="stylesheet" href="style.css?v=7" />
 </head>
 <body>
   <div id="ptr" aria-hidden="true"><span class="ptr-spin"></span></div>
@@ -59,6 +59,10 @@
         <button class="chip" data-kind="S" role="tab" aria-selected="false"><i class="dot s"></i>Schadstoff</button>
       </div>
       <div class="filters">
+        <div class="view-toggle" role="tablist" aria-label="Zeitraum">
+          <button id="feed-active" class="vt on" role="tab" aria-selected="true">Aktiv</button>
+          <button id="feed-recent" class="vt" role="tab" aria-selected="false">Beendet</button>
+        </div>
         <div class="view-toggle" role="tablist" aria-label="Ansicht">
           <button id="view-list" class="vt on" role="tab" aria-selected="true">Liste</button>
           <button id="view-map" class="vt" role="tab" aria-selected="false">Karte</button>
@@ -109,7 +113,7 @@
   </div>
 
   <script src="vendor/leaflet.js"></script>
-  <script src="app.js?v=6"></script>
+  <script src="app.js?v=7"></script>
   <script>
     // Eigener Service Worker (Scope /fire/noe/) → installierbar als eigene PWA.
     if ("serviceWorker" in navigator) {

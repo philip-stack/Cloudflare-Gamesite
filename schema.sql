@@ -166,3 +166,21 @@ CREATE TABLE IF NOT EXISTS fire_seen (
   n  TEXT PRIMARY KEY,         -- Einsatznummer (Feld n)
   at TEXT DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Eigene Einsatz-Historie (die Quelle liefert nur AKTIVE Einsätze). Der
+-- Cron schreibt aktive Einsätze mit und markiert sie als beendet, sobald
+-- sie aus der Live-Liste fallen. Ermöglicht die „Beendet"-Ansicht.
+CREATE TABLE IF NOT EXISTS fire_op (
+  n          TEXT PRIMARY KEY,   -- Einsatznummer
+  m          TEXT,               -- Meldebild
+  a          TEXT,               -- Alarmstufe
+  o          TEXT,               -- Ort
+  o2         TEXT,
+  b          TEXT,               -- Bezirkscode
+  plz        TEXT,
+  first_seen TEXT DEFAULT CURRENT_TIMESTAMP,
+  last_seen  TEXT DEFAULT CURRENT_TIMESTAMP,
+  ended      INTEGER DEFAULT 0,
+  ended_at   TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_fire_op_ended ON fire_op(ended, ended_at);
