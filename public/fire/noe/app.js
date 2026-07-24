@@ -39,6 +39,7 @@
   let view = LS.get("fire_view", "list");
   let prevNums = null;              // null = erster Ladevorgang (kein Alarm)
   let newFlash = 0;
+  let shownIds = new Set();         // schon eingeblendete Karten (keine Re-Animation)
 
   // Exakte Bounding-Box von Niederösterreich (für „auf Karte zentrieren").
   const NOE_BOUNDS = [[47.42, 14.44], [49.02, 17.07]];
@@ -223,17 +224,21 @@
         : `<div class="empty"><div class="big">🌙</div>Aktuell keine gemeldeten Einsätze in Niederösterreich.</div>`;
       return;
     }
-    listEl.innerHTML = items.map((e, idx) => {
+    let entering = 0;
+    listEl.innerHTML = items.map(e => {
       const k = e._c.kind;
       const fresh = e._when && (Date.now() - e._when.getTime()) < FRESH_MS;
+      const isNew = !shownIds.has(e.i);
       const badge = `${e._c.label}${e._c.stufe ? ' <span class="stufe">St. ' + esc(e._c.stufe) + "</span>" : ""}`;
-      return `<button class="card k-${k}${fresh ? " fresh" : ""}" data-id="${esc(e.i)}" data-when="${e._when ? e._when.getTime() : 0}" style="animation-delay:${Math.min(idx * 25, 300)}ms">
+      const style = isNew ? ` style="animation-delay:${Math.min(entering++ * 25, 300)}ms"` : "";
+      return `<button class="card k-${k}${fresh ? " fresh" : ""}${isNew ? " enter" : ""}" data-id="${esc(e.i)}" data-when="${e._when ? e._when.getTime() : 0}"${style}>
           <div class="row1"><span class="badge k-${k}">${badge}</span>${fresh ? '<span class="fresh-tag">neu</span>' : ""}<span class="when">${esc(ago(e._when))}</span></div>
           <h3>${esc(e.m || "Einsatz")}</h3>
           <div class="loc">${PIN}<span>${esc(e.o || "Unbekannt")}${e.o2 ? " · " + esc(e.o2) : ""}</span></div>
           ${e._bez ? `<div class="bez">Bezirk ${esc(e._bez)}</div>` : ""}
         </button>`;
     }).join("");
+    items.forEach(e => shownIds.add(e.i));
   }
 
   // ---- Leaflet-Karte ----
