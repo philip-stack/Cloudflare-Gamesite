@@ -84,8 +84,16 @@ export async function onRequestPost({ request, env }) {
     const sub = b.subscription || {};
     const endpoint = String(sub.endpoint || "");
     if (!/^https:\/\//.test(endpoint) || endpoint.length > 800) return json({ error: "Ungültiges Abo" }, 400);
-    const name = String(b.name || "").trim().slice(0, 16) || null;
-    const device = DEV_RE.test(String(b.device || "")) ? String(b.device) : null;
+    let name = String(b.name || "").trim().slice(0, 16) || null;
+    let device = DEV_RE.test(String(b.device || "")) ? String(b.device) : null;
+    // Beim automatischen Erneuern (Service Worker) fehlen Name/Gerät — dann vom
+    // alten Abo übernehmen, damit die „Rekord geschlagen"-Ziele erhalten bleiben.
+    const oldEndpoint = String(b.oldEndpoint || "");
+    if ((!name || !device) && /^https:\/\//.test(oldEndpoint)) {
+      const prev = await env.DB.prepare("SELECT name, device FROM push_sub WHERE endpoint = ?").bind(oldEndpoint).first();
+      if (prev) { name = name || prev.name; device = device || prev.device; }
+      if (oldEndpoint !== endpoint) await dropSub(env, oldEndpoint);
+    }
     const p256dh = sub.keys && sub.keys.p256dh ? String(sub.keys.p256dh).slice(0, 200) : null;
     const auth = sub.keys && sub.keys.auth ? String(sub.keys.auth).slice(0, 100) : null;
     await env.DB.prepare(
