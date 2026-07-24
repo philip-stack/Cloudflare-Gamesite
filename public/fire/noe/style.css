@@ -16,6 +16,8 @@
   --tech: #3b9bff;       /* Technisch */
   --stoff: #35d07f;      /* Schadstoff */
   --amber: #ffb020;
+  --ink-contrast: #0b0c10;  /* Text auf --ink-Flächen (Chips „aktiv") */
+  --map-bg: #0d1117;
 
   --radius: 18px;
   --shadow: 0 18px 48px -20px rgba(0, 0, 0, 0.8);
@@ -108,7 +110,7 @@ body {
   display: inline-flex; align-items: center; gap: 7px; transition: all 0.15s; backdrop-filter: blur(8px);
 }
 .chip:hover { color: var(--ink); border-color: rgba(255, 255, 255, 0.2); }
-.chip.on { color: #0b0c10; background: var(--ink); border-color: var(--ink); }
+.chip.on { color: var(--ink-contrast); background: var(--ink); border-color: var(--ink); }
 .chip .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
 .dot.b { background: var(--brand); } .dot.t { background: var(--tech); } .dot.s { background: var(--stoff); }
 .chip.on .dot { box-shadow: 0 0 0 2px rgba(0,0,0,0.15); }
@@ -245,7 +247,7 @@ select:focus, input:focus { border-color: rgba(255, 59, 48, 0.6); }
 
 .view-toggle { display: inline-flex; background: var(--panel); border: 1px solid var(--panel-line); border-radius: 999px; padding: 3px; backdrop-filter: blur(8px); }
 .vt { border: 0; background: transparent; color: var(--muted); font: 700 0.85rem inherit; padding: 7px 15px; border-radius: 999px; cursor: pointer; }
-.vt.on { background: var(--ink); color: #0b0c10; }
+.vt.on { background: var(--ink); color: var(--ink-contrast); }
 
 /* Sichtbarkeit von Liste/Karte (überschreibt display der jeweiligen Regel) */
 .list[hidden], #map[hidden] { display: none !important; }
@@ -254,9 +256,9 @@ select:focus, input:focus { border-color: rgba(255, 59, 48, 0.6); }
 #map {
   height: min(72vh, 640px); min-height: 380px; border-radius: var(--radius);
   overflow: hidden; border: 1px solid var(--panel-line); box-shadow: var(--shadow);
-  position: relative; background: #0d1117;
+  position: relative; background: var(--map-bg);
 }
-.leaflet-container { background: #0d1117 !important; font: inherit; }
+.leaflet-container { background: var(--map-bg) !important; font: inherit; }
 .leaflet-control-zoom a { background: #191d27 !important; color: #eef1f7 !important; border-color: rgba(255,255,255,0.08) !important; }
 .leaflet-control-zoom a:hover { background: #232838 !important; }
 .leaflet-bar { border: 1px solid rgba(255,255,255,0.1) !important; box-shadow: 0 6px 18px -8px rgba(0,0,0,0.7) !important; }
@@ -318,3 +320,62 @@ select:focus, input:focus { border-color: rgba(255, 59, 48, 0.6); }
   #map { height: min(68vh, 560px); }
   .view-toggle { order: -1; }
 }
+
+/* ==================================================================
+   Light-Mode. Setzt die Farbvariablen um und passt die wenigen fest
+   verdrahteten dunklen Flächen (Leaflet, Overlays) an.
+   ================================================================== */
+:root[data-theme="light"] {
+  --bg: #eef1f7;
+  --bg2: #f6f8fc;
+  --panel: rgba(255, 255, 255, 0.82);
+  --panel-line: rgba(12, 18, 34, 0.10);
+  --ink: #141922;
+  --muted: #5a6473;
+  --faint: #8a93a3;
+  --ink-contrast: #ffffff;
+  --map-bg: #e7ecf3;
+}
+:root[data-theme="light"] body {
+  background:
+    radial-gradient(1100px 500px at 82% -8%, rgba(255, 59, 48, 0.10), transparent 60%),
+    radial-gradient(900px 480px at 8% -6%, rgba(59, 155, 255, 0.08), transparent 60%),
+    linear-gradient(180deg, var(--bg2), var(--bg));
+}
+:root[data-theme="light"] html,
+:root[data-theme="light"] { background: #eef1f7; }
+
+:root[data-theme="light"] .card { box-shadow: 0 12px 30px -18px rgba(20, 30, 60, 0.35); }
+:root[data-theme="light"] .badge.k-B { background: rgba(255, 59, 48, 0.12); color: #c81f14; }
+:root[data-theme="light"] .badge.k-T { background: rgba(59, 155, 255, 0.14); color: #1560bd; }
+:root[data-theme="light"] .badge.k-S { background: rgba(53, 208, 127, 0.16); color: #157f4a; }
+:root[data-theme="light"] .badge.k-X { background: rgba(12, 18, 34, 0.08); color: var(--muted); }
+
+/* Leaflet hell */
+:root[data-theme="light"] .leaflet-control-zoom a { background: #ffffff !important; color: #141922 !important; border-color: rgba(12,18,34,0.1) !important; }
+:root[data-theme="light"] .leaflet-control-zoom a:hover { background: #f0f2f7 !important; }
+:root[data-theme="light"] .leaflet-control-attribution { background: rgba(255,255,255,0.82) !important; color: #5a6473 !important; }
+:root[data-theme="light"] .leaflet-control-attribution a { color: #1560bd !important; }
+:root[data-theme="light"] .leaflet-popup-content-wrapper,
+:root[data-theme="light"] .leaflet-popup-tip { background: #ffffff !important; color: #141922 !important; box-shadow: 0 12px 30px -12px rgba(20,30,60,0.4) !important; }
+
+/* Overlays hell */
+:root[data-theme="light"] .overlay { background: rgba(30, 40, 60, 0.4); }
+:root[data-theme="light"] .sheet { background: linear-gradient(180deg, #ffffff, #f4f6fb); }
+:root[data-theme="light"] .x { background: rgba(12,18,34,0.05); }
+:root[data-theme="light"] .x:hover { background: rgba(12,18,34,0.12); }
+:root[data-theme="light"] .d-meta div,
+:root[data-theme="light"] .a-item,
+:root[data-theme="light"] .a-status { background: rgba(12,18,34,0.04); }
+:root[data-theme="light"] .skeleton { background: linear-gradient(100deg, rgba(12,18,34,0.03), rgba(12,18,34,0.07), rgba(12,18,34,0.03)); background-size: 200% 100%; }
+:root[data-theme="light"] #toast { background: rgba(20,24,30,0.95); color: #fff; }
+
+/* ---------- Karten-Legende ---------- */
+#map-legend {
+  position: absolute; right: 12px; top: 12px; z-index: 500; display: flex; flex-direction: column; gap: 5px;
+  background: rgba(11,12,16,0.82); border: 1px solid var(--panel-line); border-radius: 12px;
+  padding: 9px 11px; font-size: 0.74rem; font-weight: 600; color: var(--ink); backdrop-filter: blur(6px);
+}
+:root[data-theme="light"] #map-legend { background: rgba(255,255,255,0.9); }
+#map-legend .lg { display: flex; align-items: center; gap: 7px; }
+#map-legend .lg i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; box-shadow: 0 0 0 1.5px rgba(0,0,0,0.25); }

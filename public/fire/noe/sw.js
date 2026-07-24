@@ -4,9 +4,9 @@
 // installierbar und offline-tauglich. Strategie: Netz zuerst,
 // Cache als Fallback. /api/… liegt außerhalb des Scopes → immer live.
 // ====================================================================
-const CACHE = "fire-noe-v2";
+const CACHE = "fire-noe-v3";
 const SHELL = [
-  "./", "./index.html", "./app.js?v=3", "./style.css?v=4",
+  "./", "./index.html", "./app.js?v=4", "./style.css?v=5",
   "./vendor/leaflet.js", "./vendor/leaflet.css",
   "./manifest.webmanifest", "./icons/icon-192.png", "./icons/icon-512.png",
 ];

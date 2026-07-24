@@ -40,6 +40,24 @@
   let prevNums = null;              // null = erster Ladevorgang (kein Alarm)
   let newFlash = 0;
 
+  // Exakte Bounding-Box von Niederösterreich (für „auf Karte zentrieren").
+  const NOE_BOUNDS = [[47.42, 14.44], [49.02, 17.07]];
+
+  // ---- Hell/Dunkel ----
+  const curTheme = () => document.documentElement.dataset.theme === "light" ? "light" : "dark";
+  const tileUrl = () => "/fire/tiles/" + curTheme() + "/{z}/{x}/{y}{r}.png";
+  function applyThemeUI() {
+    const t = curTheme();
+    const btn = $("#theme-btn"); if (btn) btn.textContent = t === "light" ? "☀️" : "🌙";
+    const meta = document.querySelector('meta[name="theme-color"]'); if (meta) meta.content = t === "light" ? "#eef1f7" : "#0d0e12";
+  }
+  function toggleTheme() {
+    const t = curTheme() === "light" ? "dark" : "light";
+    document.documentElement.dataset.theme = t; LS.set("fire_theme", t);
+    applyThemeUI();
+    if (tileLayer) tileLayer.setUrl(tileUrl());
+  }
+
   // ---- Helfer ----
   function classify(a) {
     const s = String(a || "").trim().toUpperCase();
@@ -219,17 +237,28 @@
   }
 
   // ---- Leaflet-Karte ----
-  let map = null, markers = null;
+  let map = null, markers = null, tileLayer = null;
   function initMap() {
     if (map) return;
-    map = L.map(mapEl, { zoomControl: true, attributionControl: true, minZoom: 7, maxZoom: 18 })
-      .setView([48.2, 15.75], 8);
+    map = L.map(mapEl, { zoomControl: true, attributionControl: true, minZoom: 7, maxZoom: 18 });
+    map.fitBounds(NOE_BOUNDS);
     map.setMaxBounds([[46.9, 13.8], [49.4, 17.7]]);
-    L.tileLayer("/fire/tiles/{z}/{x}/{y}{r}.png", {
+    tileLayer = L.tileLayer(tileUrl(), {
       detectRetina: true, maxZoom: 18,
       attribution: '© OpenStreetMap · CARTO',
     }).addTo(map);
     markers = L.layerGroup().addTo(map);
+    addLegend();
+  }
+  function addLegend() {
+    if ($("#map-legend")) return;
+    const el = document.createElement("div");
+    el.id = "map-legend";
+    el.innerHTML =
+      '<div class="lg"><i style="background:' + KIND_COLOR.B + '"></i>Brand</div>' +
+      '<div class="lg"><i style="background:' + KIND_COLOR.T + '"></i>Technisch</div>' +
+      '<div class="lg"><i style="background:' + KIND_COLOR.S + '"></i>Schadstoff</div>';
+    mapEl.appendChild(el);
   }
   function addMarkers() {
     if (!map) return;
@@ -272,7 +301,7 @@
     listEl.hidden = isMap; mapEl.hidden = !isMap;
     $("#view-list").classList.toggle("on", !isMap); $("#view-list").setAttribute("aria-selected", String(!isMap));
     $("#view-map").classList.toggle("on", isMap); $("#view-map").setAttribute("aria-selected", String(isMap));
-    if (isMap) { initMap(); setTimeout(() => { map.invalidateSize(); addMarkers(); }, 60); }
+    if (isMap) { initMap(); setTimeout(() => { map.invalidateSize(); map.fitBounds(NOE_BOUNDS, { padding: [24, 24] }); addMarkers(); }, 60); }
     else render();
   }
 
@@ -410,6 +439,7 @@
   $("#a-close").addEventListener("click", closeAlarm);
   alarmOvl.addEventListener("click", e => { if (e.target === alarmOvl) closeAlarm(); });
   document.addEventListener("keydown", e => { if (e.key === "Escape") { if (!overlay.hidden) closeDetail(); else if (!alarmOvl.hidden) closeAlarm(); } });
+  $("#theme-btn").addEventListener("click", toggleTheme);
   $("#alarm-btn").addEventListener("click", openAlarm);
   $("#a-save").addEventListener("click", saveAlarm);
   $("#a-off").addEventListener("click", offAlarm);
@@ -461,6 +491,7 @@
   }, 60000);
 
   // ---- Start ----
+  applyThemeUI();
   listEl.innerHTML = `<div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>`;
   if (view === "map") setView("map"); else setView("list");
   load();
