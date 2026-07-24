@@ -134,7 +134,40 @@
         if (!hadController) { hadController = true; return; } // Erstinstallation
         showUpdateToast();
       });
+      healPush();
     });
+  }
+
+  // ------------------------------------------------------------------
+  // Push-Selbstheilung (app-weit): Ein einmal aktiviertes Abo (gs_push_on)
+  // wird auf JEDER Seite wiederhergestellt, falls es fehlt — Push-Abos werden
+  // vom Browser/FCM turnusmäßig rotiert bzw. laufen ab. So bleiben die
+  // Benachrichtigungen an, ohne dass man extra ins Profil muss. Nichts passiert,
+  // wenn nie aktiviert wurde oder die Erlaubnis fehlt (kein ungefragtes Abo).
+  // ------------------------------------------------------------------
+  async function healPush() {
+    try {
+      if (localStorage.getItem("gs_push_on") !== "1") return;
+      if (!("Notification" in window) || Notification.permission !== "granted" || !("PushManager" in window)) return;
+      const reg = await navigator.serviceWorker.ready;
+      let sub = await reg.pushManager.getSubscription();
+      const fresh = !sub;
+      if (!sub) {
+        const key = (await (await fetch("/api/push")).json()).key;
+        const pad = "=".repeat((4 - key.length % 4) % 4);
+        const s = (key + pad).replace(/-/g, "+").replace(/_/g, "/");
+        const raw = atob(s); const u = new Uint8Array(raw.length);
+        for (let i = 0; i < raw.length; i++) u[i] = raw.charCodeAt(i);
+        sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: u });
+      }
+      // Server-Eintrag auffrischen: immer nach Neu-Abo, sonst höchstens alle 12 h.
+      const last = Number(localStorage.getItem("gs_push_ping") || 0);
+      if (!fresh && Date.now() - last < 12 * 3600 * 1000) return;
+      const name = (localStorage.getItem("bb_name") || "").trim().slice(0, 16) || null;
+      const device = localStorage.getItem("gs_device") || null;
+      await fetch("/api/push", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "subscribe", subscription: sub.toJSON(), name, device }) });
+      try { localStorage.setItem("gs_push_ping", String(Date.now())); } catch (_) {}
+    } catch (_) { /* Push ist optional — nie stören */ }
   }
 
   // ------------------------------------------------------------------
