@@ -1,13 +1,11 @@
 // ====================================================================
 // Feuerwehr NÖ – Einsätze live (Client).
-// Holt die aktiven Einsätze über den eigenen Proxy /api/fire/noe,
-// zeigt sie als Karten, filtert nach Art/Bezirk/Suche und lädt bei
-// Klick die Details (ausgerückte Wehren) nach. Auto-Refresh alle 30 s.
+// Liste + Karte, Bezirks-Push-Alarm, Auto-Refresh, progressives Geocoding.
 // ====================================================================
 (function () {
   "use strict";
 
-  // Bezirkscode → Name (aus der offiziellen Wastl-Zuordnung).
+  // Bezirkscode → Name (offizielle Wastl-Zuordnung).
   const BEZIRK = {
     "01": "Amstetten", "02": "Baden", "03": "Bruck/Leitha", "04": "Gänserndorf",
     "05": "Gmünd", "061": "Klosterneuburg", "062": "St. Pölten (Land)", "063": "Bruck/Leitha",
@@ -16,60 +14,102 @@
     "15": "Neunkirchen", "17": "St. Pölten", "18": "Scheibbs", "19": "Tulln",
     "20": "Waidhofen/Thaya", "21": "Wr. Neustadt", "22": "Zwettl",
   };
+  // Für das Alarm-Raster: Name → alle Codes mit diesem Namen (Duplikate bündeln).
+  const NAME_CODES = (() => {
+    const m = {};
+    for (const [code, name] of Object.entries(BEZIRK)) (m[name] ||= []).push(code);
+    return m;
+  })();
 
   const REFRESH_MS = 30000;
-  const FRESH_MS = 10 * 60 * 1000;   // „neu": jünger als 10 min
+  const FRESH_MS = 10 * 60 * 1000;
+  const KIND_COLOR = { B: "#ff3b30", T: "#3b9bff", S: "#35d07f", X: "#9aa3b4" };
 
   const $ = s => document.querySelector(s);
-  const listEl = $("#list");
-  const standEl = $("#stand");
-  const dotEl = $("#live-dot");
-  const statsEl = $("#stats");
-  const bezirkSel = $("#bezirk");
-  const searchEl = $("#search");
+  const listEl = $("#list"), mapEl = $("#map"), standEl = $("#stand"), dotEl = $("#live-dot");
+  const statsEl = $("#stats"), bezirkSel = $("#bezirk"), searchEl = $("#search");
 
-  let all = [];          // aktuelle Einsätze (roh + angereichert)
-  let filterKind = "all";
-  let timer = null;
+  const LS = {
+    get: (k, d) => { try { const v = localStorage.getItem(k); return v == null ? d : v; } catch (_) { return d; } },
+    set: (k, v) => { try { localStorage.setItem(k, v); } catch (_) {} },
+  };
 
-  // ---- Alarmstufe/Art deuten (T…technisch, B…Brand, S…Schadstoff) ----
+  let all = [];
+  let filterKind = LS.get("fire_kind", "all");
+  let view = LS.get("fire_view", "list");
+  let prevNums = null;              // null = erster Ladevorgang (kein Alarm)
+  let newFlash = 0;
+
+  // ---- Helfer ----
   function classify(a) {
     const s = String(a || "").trim().toUpperCase();
     const kind = "BTS".includes(s[0]) ? s[0] : "X";
     const stufe = (s.match(/\d+/) || [""])[0];
-    const label = { B: "Brand", T: "Technisch", S: "Schadstoff", X: "Einsatz" }[kind];
-    return { kind, stufe, label };
+    return { kind, stufe, label: { B: "Brand", T: "Technisch", S: "Schadstoff", X: "Einsatz" }[kind] };
   }
-
-  // ---- Zeit „24.07.2026" + „16:51:41" → Date (Ortszeit) ----
   function parseWhen(d, t) {
     const md = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(String(d || ""));
     const mt = /^(\d{2}):(\d{2})(?::(\d{2}))?/.exec(String(t || ""));
     if (!md) return null;
-    const [, dd, mm, yy] = md;
-    const hh = mt ? mt[1] : "00", mi = mt ? mt[2] : "00", ss = mt ? (mt[3] || "00") : "00";
-    const date = new Date(+yy, +mm - 1, +dd, +hh, +mi, +ss);
+    const date = new Date(+md[3], +md[2] - 1, +md[1], mt ? +mt[1] : 0, mt ? +mt[2] : 0, mt ? +(mt[3] || 0) : 0);
     return isNaN(date.getTime()) ? null : date;
   }
-
   function ago(date) {
     if (!date) return "";
     const min = Math.floor((Date.now() - date.getTime()) / 60000);
-    if (min < 0) return "gerade";
     if (min < 1) return "gerade eben";
     if (min < 60) return "vor " + min + " min";
     const h = Math.floor(min / 60);
     if (h < 24) return "vor " + h + " h";
-    const days = Math.floor(h / 24);
-    return "vor " + days + " Tg.";
+    return "vor " + Math.floor(h / 24) + " Tg.";
   }
-
   function esc(s) {
-    return String(s == null ? "" : s).replace(/[&<>"']/g, c =>
-      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   }
-
+  const normKey = o => String(o || "").toLowerCase().trim().replace(/\s+/g, " ");
   const PIN = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 21s7-5.5 7-11a7 7 0 10-14 0c0 5.5 7 11 7 11z" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="10" r="2.4" fill="currentColor"/></svg>';
+
+  // ---- Geocoding-Cache (Client) ----
+  const geo = (() => {
+    let store = {};
+    try { store = JSON.parse(LS.get("fire_geo", "{}")) || {}; } catch (_) {}
+    return {
+      get: o => store[normKey(o)],                 // [lat,lng] | 0 (miss) | undefined
+      set: (o, v) => { store[normKey(o)] = v; try { LS.set("fire_geo", JSON.stringify(store)); } catch (_) {} },
+    };
+  })();
+  let geoBusy = false;
+  function coordsOf(e) {
+    if (typeof e.lat === "number" && typeof e.lng === "number") return [e.lat, e.lng];
+    const g = geo.get(e.o);
+    return (Array.isArray(g)) ? g : null;
+  }
+  // Fehlende Orte gedrosselt auflösen (schont Nominatim). Max. einige pro Runde.
+  async function fillGeocodes() {
+    if (geoBusy) return;
+    const need = [];
+    const seen = new Set();
+    for (const e of all) {
+      const k = normKey(e.o);
+      if (!e.o || seen.has(k)) continue;
+      seen.add(k);
+      if (coordsOf(e)) continue;
+      if (geo.get(e.o) === 0) continue;            // bekannter Fehltreffer
+      need.push(e);
+    }
+    if (!need.length) return;
+    geoBusy = true;
+    for (const e of need.slice(0, 12)) {
+      try {
+        const r = await fetch("/api/fire/geo?q=" + encodeURIComponent(e.o) + (e.p ? "&plz=" + encodeURIComponent(e.p) : ""));
+        const d = await r.json();
+        if (d && typeof d.lat === "number") { geo.set(e.o, [d.lat, d.lng]); if (view === "map") addMarkers(); }
+        else if (d && d.miss) geo.set(e.o, 0);
+      } catch (_) {}
+      await new Promise(res => setTimeout(res, 850));   // Rate-Limit-freundlich
+    }
+    geoBusy = false;
+  }
 
   // ---- Laden ----
   async function load() {
@@ -77,125 +117,184 @@
       const res = await fetch("/api/fire/noe", { headers: { "Accept": "application/json" } });
       const data = await res.json();
       const list = Array.isArray(data.einsatz) ? data.einsatz : [];
-      all = list.map(e => {
-        const when = parseWhen(e.d, e.t);
-        return Object.assign({}, e, {
-          _c: classify(e.a),
-          _when: when,
-          _bez: BEZIRK[String(e.b)] || (e.b ? "Bezirk " + e.b : ""),
-        });
-      });
+      all = list.map(e => Object.assign({}, e, {
+        _c: classify(e.a), _when: parseWhen(e.d, e.t),
+        _bez: BEZIRK[String(e.b)] || (e.b ? "Bezirk " + e.b : ""),
+      }));
+      detectNew(list);
       setStatus(data.error ? "err" : "ok");
       render();
+      fillGeocodes();
     } catch (_) {
       setStatus("err");
-      if (!all.length) render();  // sonst letzte Anzeige behalten
+      if (!all.length) render();
     }
+  }
+
+  function detectNew(list) {
+    const nums = new Set(list.map(e => String(e.n)).filter(Boolean));
+    if (prevNums) {
+      let fresh = 0;
+      nums.forEach(n => { if (!prevNums.has(n)) fresh++; });
+      if (fresh > 0) {
+        try { navigator.vibrate && navigator.vibrate([70, 40, 70]); } catch (_) {}
+        newFlash += fresh;
+        flashTitle();
+        toast(fresh === 1 ? "Neuer Einsatz gemeldet" : fresh + " neue Einsätze");
+      }
+    }
+    prevNums = nums;
   }
 
   function setStatus(state) {
     const time = new Date().toLocaleTimeString("de-AT", { hour: "2-digit", minute: "2-digit" });
     dotEl.className = "live" + (state === "err" ? " err" : "");
-    standEl.textContent = state === "err"
-      ? "Quelle nicht erreichbar"
-      : "Stand " + time + " · alle 30 s";
+    standEl.textContent = state === "err" ? "Quelle nicht erreichbar" : "Stand " + time;
   }
 
-  // ---- Bezirk-Dropdown befüllen (nur vorkommende Bezirke) ----
+  // ---- Titel-Blink & Toast bei neuen Einsätzen ----
+  const baseTitle = document.title;
+  function flashTitle() { if (document.hidden) document.title = "🔴 (" + newFlash + ") neue Einsätze"; }
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) { newFlash = 0; document.title = baseTitle; load(); }
+  });
+  let toastT = null;
+  function toast(msg) {
+    let el = $("#toast");
+    if (!el) { el = document.createElement("div"); el.id = "toast"; document.body.appendChild(el); }
+    el.textContent = "🚒 " + msg; el.classList.add("show");
+    clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove("show"), 4000);
+  }
+
+  // ---- Filter ----
   function fillBezirke() {
-    const cur = bezirkSel.value;
+    const cur = bezirkSel.value || LS.get("fire_bezirk", "");
     const names = [...new Set(all.map(e => e._bez).filter(Boolean))].sort((a, b) => a.localeCompare(b, "de"));
-    bezirkSel.innerHTML = '<option value="">Alle Bezirke</option>' +
-      names.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join("");
+    bezirkSel.innerHTML = '<option value="">Alle Bezirke</option>' + names.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join("");
     if (names.includes(cur)) bezirkSel.value = cur;
   }
-
   function filtered() {
-    const q = searchEl.value.trim().toLowerCase();
-    const bez = bezirkSel.value;
+    const q = searchEl.value.trim().toLowerCase(), bez = bezirkSel.value;
     return all.filter(e => {
       if (filterKind !== "all" && e._c.kind !== filterKind) return false;
       if (bez && e._bez !== bez) return false;
-      if (q && !((e.m || "").toLowerCase().includes(q) ||
-                 (e.o || "").toLowerCase().includes(q) ||
-                 (e._bez || "").toLowerCase().includes(q))) return false;
+      if (q && !((e.m || "").toLowerCase().includes(q) || (e.o || "").toLowerCase().includes(q) || (e._bez || "").toLowerCase().includes(q))) return false;
       return true;
-    });
+    }).sort((a, b) => (b._when ? b._when.getTime() : 0) - (a._when ? a._when.getTime() : 0));
   }
 
-  // ---- Statistik ----
   function renderStats() {
     const c = { B: 0, T: 0, S: 0 };
     all.forEach(e => { if (c[e._c.kind] != null) c[e._c.kind]++; });
-    statsEl.innerHTML = `
-      <div class="stat"><b>${all.length}</b><span>Einsätze aktiv</span></div>
-      <div class="stat b"><b>${c.B}</b><span>Brand</span></div>
-      <div class="stat t"><b>${c.T}</b><span>Technisch</span></div>
-      <div class="stat s"><b>${c.S}</b><span>Schadstoff</span></div>`;
+    statsEl.innerHTML =
+      `<div class="stat"><b>${all.length}</b><span>aktiv</span></div>` +
+      `<div class="stat b"><b>${c.B}</b><span>Brand</span></div>` +
+      `<div class="stat t"><b>${c.T}</b><span>Technisch</span></div>` +
+      `<div class="stat s"><b>${c.S}</b><span>Schadstoff</span></div>`;
   }
 
   // ---- Karten ----
   function render() {
     fillBezirke();
     renderStats();
+    if (view === "map") { addMarkers(); return; }
     const items = filtered();
-
     if (!items.length) {
       listEl.innerHTML = all.length
         ? `<div class="empty"><div class="big">🔍</div>Keine Einsätze für diesen Filter.</div>`
         : `<div class="empty"><div class="big">🌙</div>Aktuell keine gemeldeten Einsätze in Niederösterreich.</div>`;
       return;
     }
-
-    // neueste zuerst
-    items.sort((a, b) => (b._when ? b._when.getTime() : 0) - (a._when ? a._when.getTime() : 0));
-
     listEl.innerHTML = items.map((e, idx) => {
       const k = e._c.kind;
       const fresh = e._when && (Date.now() - e._when.getTime()) < FRESH_MS;
       const badge = `${e._c.label}${e._c.stufe ? ' <span class="stufe">St. ' + esc(e._c.stufe) + "</span>" : ""}`;
-      const bezLine = e._bez ? `<div class="bez">Bezirk ${esc(e._bez)}</div>` : "";
-      return `
-        <button class="card k-${k}${fresh ? " fresh" : ""}" data-id="${esc(e.i)}" style="animation-delay:${Math.min(idx * 25, 300)}ms">
-          <div class="row1">
-            <span class="badge k-${k}">${badge}</span>
-            ${fresh ? '<span class="fresh-tag">neu</span>' : ""}
-            <span class="when">${esc(ago(e._when))}</span>
-          </div>
+      return `<button class="card k-${k}${fresh ? " fresh" : ""}" data-id="${esc(e.i)}" data-when="${e._when ? e._when.getTime() : 0}" style="animation-delay:${Math.min(idx * 25, 300)}ms">
+          <div class="row1"><span class="badge k-${k}">${badge}</span>${fresh ? '<span class="fresh-tag">neu</span>' : ""}<span class="when">${esc(ago(e._when))}</span></div>
           <h3>${esc(e.m || "Einsatz")}</h3>
           <div class="loc">${PIN}<span>${esc(e.o || "Unbekannt")}${e.o2 ? " · " + esc(e.o2) : ""}</span></div>
-          ${bezLine}
+          ${e._bez ? `<div class="bez">Bezirk ${esc(e._bez)}</div>` : ""}
         </button>`;
     }).join("");
   }
 
-  // ---- Detail-Overlay ----
-  const overlay = $("#detail");
-  const dBody = $("#d-body");
+  // ---- Leaflet-Karte ----
+  let map = null, markers = null;
+  function initMap() {
+    if (map) return;
+    map = L.map(mapEl, { zoomControl: true, attributionControl: true, minZoom: 7, maxZoom: 18 })
+      .setView([48.2, 15.75], 8);
+    map.setMaxBounds([[46.9, 13.8], [49.4, 17.7]]);
+    L.tileLayer("/fire/tiles/{z}/{x}/{y}{r}.png", {
+      detectRetina: true, maxZoom: 18,
+      attribution: '© OpenStreetMap · CARTO',
+    }).addTo(map);
+    markers = L.layerGroup().addTo(map);
+  }
+  function addMarkers() {
+    if (!map) return;
+    markers.clearLayers();
+    const items = filtered();
+    const pts = [];
+    for (const e of items) {
+      const c = coordsOf(e);
+      if (!c) continue;
+      const col = KIND_COLOR[e._c.kind] || KIND_COLOR.X;
+      const fresh = e._when && (Date.now() - e._when.getTime()) < FRESH_MS;
+      const m = L.circleMarker(c, {
+        radius: fresh ? 10 : 7, color: "#0b0c10", weight: 1.5,
+        fillColor: col, fillOpacity: 0.95,
+      });
+      m.bindPopup(
+        `<div class="pop"><span class="pop-badge" style="background:${col}22;color:${col}">${esc(e._c.label)}${e._c.stufe ? " · St. " + esc(e._c.stufe) : ""}</span>` +
+        `<b>${esc(e.m || "Einsatz")}</b><span>${esc(e.o || "")}${e._bez ? " · " + esc(e._bez) : ""}</span>` +
+        `<span class="pop-when">${esc(ago(e._when))}</span>` +
+        `<button class="pop-more" data-id="${esc(e.i)}">Details →</button></div>`
+      );
+      m.addTo(markers);
+      pts.push(c);
+    }
+    const uncoded = items.length - pts.length;
+    setMapNote(items.length, pts.length, uncoded);
+  }
+  function setMapNote(total, shown, missing) {
+    let n = $("#map-note");
+    if (!n) { n = document.createElement("div"); n.id = "map-note"; mapEl.appendChild(n); }
+    if (!total) { n.textContent = "Keine Einsätze."; n.hidden = false; }
+    else if (missing > 0) { n.textContent = shown + "/" + total + " verortet · Rest wird geladen…"; n.hidden = false; }
+    else n.hidden = true;
+  }
 
+  // ---- Ansicht umschalten ----
+  function setView(v) {
+    view = v; LS.set("fire_view", v);
+    const isMap = v === "map";
+    listEl.hidden = isMap; mapEl.hidden = !isMap;
+    $("#view-list").classList.toggle("on", !isMap); $("#view-list").setAttribute("aria-selected", String(!isMap));
+    $("#view-map").classList.toggle("on", isMap); $("#view-map").setAttribute("aria-selected", String(isMap));
+    if (isMap) { initMap(); setTimeout(() => { map.invalidateSize(); addMarkers(); }, 60); }
+    else render();
+  }
+
+  // ---- Detail-Overlay ----
+  const overlay = $("#detail"), dBody = $("#d-body");
   function openDetail(id) {
     const base = all.find(e => e.i === id);
-    overlay.hidden = false;
-    document.body.style.overflow = "hidden";
+    overlay.hidden = false; document.body.style.overflow = "hidden";
     dBody.innerHTML = detailShell(base) + `<div class="d-loading">Lade Details…</div>`;
-    fetch("/api/fire/noe?id=" + encodeURIComponent(id))
-      .then(r => r.json())
+    fetch("/api/fire/noe?id=" + encodeURIComponent(id)).then(r => r.json())
       .then(d => { dBody.innerHTML = detailShell(base, d) + renderUnits(d); })
       .catch(() => { dBody.innerHTML = detailShell(base) + `<div class="d-loading">Details nicht verfügbar.</div>`; });
   }
-
   function detailShell(base, d) {
     const src = d || base || {};
     const c = classify(src.a || (base && base.a));
     const when = parseWhen(src.d || (base && base.d), src.t || (base && base.t));
     const bez = base ? base._bez : "";
-    const whenStr = when
-      ? when.toLocaleString("de-AT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) + " Uhr"
-      : ((src.d || "") + " " + (src.t || "")).trim();
-    return `
-      <div class="d-head"><span class="badge k-${c.kind}">${esc(c.label)}${c.stufe ? " · Stufe " + esc(c.stufe) : ""}</span></div>
+    const whenStr = when ? when.toLocaleString("de-AT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) + " Uhr" : ((src.d || "") + " " + (src.t || "")).trim();
+    return `<div class="d-head"><span class="badge k-${c.kind}">${esc(c.label)}${c.stufe ? " · Stufe " + esc(c.stufe) : ""}</span></div>
       <h2 id="d-title">${esc(src.m || "Einsatz")}</h2>
-      <div class="d-loc">${esc(src.o || "")}${src.o2 ? " · " + esc(src.o2) : ""}${bez ? ` <span class="bz">· Bezirk ${esc(bez)}</span>` : ""}</div>
+      <div class="d-loc">${esc(src.o || "")}${src.o2 ? " · " + esc(src.o2) : ""}${src.p ? " · " + esc(src.p) : ""}${bez ? ` <span class="bz">· Bezirk ${esc(bez)}</span>` : ""}</div>
       <div class="d-meta">
         <div><span>Alarmiert</span><b>${esc(ago(when))}</b></div>
         <div><span>Zeitpunkt</span><b>${esc(whenStr)}</b></div>
@@ -203,50 +302,167 @@
         <div><span>Alarmstufe</span><b>${esc(String(src.a || (base && base.a) || "—"))}</b></div>
       </div>`;
   }
-
+  function hhmm(s) { const m = /(\d{2}):(\d{2})/.exec(String(s || "")); return m ? m[1] + ":" + m[2] : ""; }
   function renderUnits(d) {
     const units = Array.isArray(d && d.Dispo) ? d.Dispo : [];
     if (!units.length) return `<div class="d-units"><h4>Alarmierte Wehren</h4><div class="d-loading">Noch keine Wehren gelistet.</div></div>`;
-    return `<div class="d-units"><h4>Alarmierte Wehren (${units.length})</h4>` +
-      units.map(u => {
-        const t = (u.at || u.dt || "").replace(/^\d{2}\.\d{2}\.\d{4}\s*/, "");
-        return `<div class="unit"><span class="u-dot"></span><span class="u-name">${esc(u.n || "Feuerwehr")}</span>${t ? `<span class="u-time">${esc(t)}</span>` : ""}</div>`;
-      }).join("") + `</div>`;
+    return `<div class="d-units"><h4>Alarmierte Wehren (${units.length})</h4>` + units.map(u => {
+      const t = hhmm(u.dt);
+      return `<div class="unit"><span class="u-dot"></span><span class="u-name">${esc(u.n || "Feuerwehr")}</span>${t ? `<span class="u-time">alarmiert ${esc(t)}</span>` : ""}</div>`;
+    }).join("") + `</div>`;
   }
+  function closeDetail() { overlay.hidden = true; document.body.style.overflow = ""; }
 
-  function closeDetail() {
-    overlay.hidden = true;
-    document.body.style.overflow = "";
+  // ---- Alarm-Overlay (Bezirks-Push) ----
+  const alarmOvl = $("#alarm"), aGrid = $("#a-grid"), aAll = $("#a-all-cb"), aStatus = $("#a-status");
+  function buildAlarmGrid(selected) {
+    const sel = new Set(selected || []);
+    const names = Object.keys(NAME_CODES).sort((a, b) => a.localeCompare(b, "de"));
+    aGrid.innerHTML = names.map(name => {
+      const codes = NAME_CODES[name];
+      const on = codes.some(c => sel.has(c));
+      return `<label class="a-item${on ? " on" : ""}"><input type="checkbox" data-codes="${codes.join(",")}" ${on ? "checked" : ""}/> ${esc(name)}</label>`;
+    }).join("");
+  }
+  function setAStatus(msg, cls) { aStatus.hidden = !msg; aStatus.textContent = msg || ""; aStatus.className = "a-status" + (cls ? " " + cls : ""); }
+
+  function b64ToU8(k) {
+    const pad = "=".repeat((4 - k.length % 4) % 4);
+    const s = (k + pad).replace(/-/g, "+").replace(/_/g, "/");
+    const raw = atob(s); const u = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i++) u[i] = raw.charCodeAt(i);
+    return u;
+  }
+  async function getSub(create) {
+    const reg = await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub && create) {
+      const key = (await (await fetch("/api/push")).json()).key;
+      sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToU8(key) });
+    }
+    return sub;
+  }
+  function chosenCodes() {
+    if (aAll.checked) return ["*"];
+    const codes = [];
+    aGrid.querySelectorAll('input[type="checkbox"]:checked').forEach(cb => codes.push(...cb.dataset.codes.split(",")));
+    return [...new Set(codes)];
+  }
+  async function openAlarm() {
+    alarmOvl.hidden = false; document.body.style.overflow = "hidden";
+    setAStatus("", "");
+    if (!("Notification" in window) || !("serviceWorker" in navigator) || !("PushManager" in window)) {
+      buildAlarmGrid([]); setAStatus("Dieser Browser unterstützt keine Push-Benachrichtigungen.", "err"); return;
+    }
+    buildAlarmGrid([]);
+    try {
+      const sub = await getSub(false);
+      if (sub) {
+        const d = await (await fetch("/api/fire/alert", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "get", endpoint: sub.endpoint }) })).json();
+        const bez = d.bezirke || [];
+        if (bez.length) {
+          aAll.checked = bez.includes("*");
+          buildAlarmGrid(bez);
+          $("#a-off").hidden = false;
+          $("#a-save").textContent = "Auswahl speichern";
+          setAStatus("Alarm ist aktiv.", "ok");
+        }
+      }
+    } catch (_) {}
+    syncAllToggle();
+  }
+  function closeAlarm() { alarmOvl.hidden = true; document.body.style.overflow = ""; }
+  function syncAllToggle() {
+    aGrid.classList.toggle("dim", aAll.checked);
+    aGrid.querySelectorAll("input").forEach(i => i.disabled = aAll.checked);
+  }
+  async function saveAlarm() {
+    const codes = chosenCodes();
+    if (!codes.length) { setAStatus("Bitte mindestens einen Bezirk wählen.", "err"); return; }
+    setAStatus("Wird eingerichtet…", "");
+    try {
+      if (Notification.permission !== "granted") {
+        const p = await Notification.requestPermission();
+        if (p !== "granted") { setAStatus("Benachrichtigungen wurden nicht erlaubt.", "err"); return; }
+      }
+      const sub = await getSub(true);
+      const r = await fetch("/api/fire/alert", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "subscribe", subscription: sub.toJSON(), bezirke: codes }) });
+      if (!r.ok) throw new Error("save");
+      LS.set("fire_alert_on", "1");
+      $("#a-off").hidden = false; $("#a-save").textContent = "Auswahl speichern";
+      setAStatus("Alarm aktiv! Du wirst bei neuen Einsätzen benachrichtigt.", "ok");
+    } catch (_) { setAStatus("Konnte nicht aktivieren — später erneut versuchen.", "err"); }
+  }
+  async function offAlarm() {
+    try { const sub = await getSub(false); if (sub) await fetch("/api/fire/alert", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "unsubscribe", endpoint: sub.endpoint }) }); } catch (_) {}
+    LS.set("fire_alert_on", "0");
+    aAll.checked = false; buildAlarmGrid([]); syncAllToggle();
+    $("#a-off").hidden = true; $("#a-save").textContent = "Alarm aktivieren";
+    setAStatus("Alarm ausgeschaltet.", "");
   }
 
   // ---- Events ----
-  listEl.addEventListener("click", e => {
-    const card = e.target.closest(".card");
-    if (card && card.dataset.id) openDetail(card.dataset.id);
-  });
+  listEl.addEventListener("click", e => { const c = e.target.closest(".card"); if (c && c.dataset.id) openDetail(c.dataset.id); });
+  mapEl.addEventListener("click", e => { const b = e.target.closest(".pop-more"); if (b && b.dataset.id) { closePopup(); openDetail(b.dataset.id); } });
+  function closePopup() { if (map) map.closePopup(); }
   $("#d-close").addEventListener("click", closeDetail);
   overlay.addEventListener("click", e => { if (e.target === overlay) closeDetail(); });
-  document.addEventListener("keydown", e => { if (e.key === "Escape" && !overlay.hidden) closeDetail(); });
+  $("#a-close").addEventListener("click", closeAlarm);
+  alarmOvl.addEventListener("click", e => { if (e.target === alarmOvl) closeAlarm(); });
+  document.addEventListener("keydown", e => { if (e.key === "Escape") { if (!overlay.hidden) closeDetail(); else if (!alarmOvl.hidden) closeAlarm(); } });
+  $("#alarm-btn").addEventListener("click", openAlarm);
+  $("#a-save").addEventListener("click", saveAlarm);
+  $("#a-off").addEventListener("click", offAlarm);
+  aAll.addEventListener("change", syncAllToggle);
+  aGrid.addEventListener("change", e => { const l = e.target.closest(".a-item"); if (l) l.classList.toggle("on", e.target.checked); });
 
   $("#kind-chips").addEventListener("click", e => {
-    const chip = e.target.closest(".chip");
-    if (!chip) return;
-    filterKind = chip.dataset.kind;
-    document.querySelectorAll(".chip").forEach(c => {
-      const on = c === chip;
-      c.classList.toggle("on", on);
-      c.setAttribute("aria-selected", on ? "true" : "false");
-    });
+    const chip = e.target.closest(".chip"); if (!chip) return;
+    filterKind = chip.dataset.kind; LS.set("fire_kind", filterKind);
+    document.querySelectorAll(".chip").forEach(c => { const on = c === chip; c.classList.toggle("on", on); c.setAttribute("aria-selected", String(on)); });
     render();
   });
-  bezirkSel.addEventListener("change", render);
+  bezirkSel.addEventListener("change", () => { LS.set("fire_bezirk", bezirkSel.value); render(); });
   searchEl.addEventListener("input", render);
+  $("#view-list").addEventListener("click", () => setView("list"));
+  $("#view-map").addEventListener("click", () => setView("map"));
 
-  // Beim Wiederkommen (Tab/PWA) sofort aktualisieren.
-  document.addEventListener("visibilitychange", () => { if (!document.hidden) load(); });
+  // Gespeicherten Filter/Chip auf UI anwenden
+  document.querySelectorAll(".chip").forEach(c => { const on = c.dataset.kind === filterKind; c.classList.toggle("on", on); c.setAttribute("aria-selected", String(on)); });
+
+  // ---- Pull-to-refresh (nur oben, nur Touch) ----
+  (function ptr() {
+    const el = $("#ptr"); let startY = 0, pulling = false, dist = 0;
+    const TH = 70;
+    window.addEventListener("touchstart", e => {
+      if (!overlay.hidden || !alarmOvl.hidden) return;
+      if (window.scrollY > 0 || view === "map") { pulling = false; return; }
+      startY = e.touches[0].clientY; pulling = true; dist = 0;
+    }, { passive: true });
+    window.addEventListener("touchmove", e => {
+      if (!pulling) return;
+      dist = e.touches[0].clientY - startY;
+      if (dist > 0) { el.style.transform = "translateX(-50%) translateY(" + Math.min(dist, TH + 30) + "px)"; el.classList.toggle("ready", dist > TH); }
+    }, { passive: true });
+    window.addEventListener("touchend", () => {
+      if (!pulling) return; pulling = false;
+      if (dist > TH) { el.classList.add("spin"); load().finally(() => setTimeout(() => { el.classList.remove("spin", "ready"); el.style.transform = ""; }, 400)); }
+      else { el.classList.remove("ready"); el.style.transform = ""; }
+    });
+  })();
+
+  // ---- Live-Zeiten ohne Neuladen aktualisieren ----
+  setInterval(() => {
+    if (view !== "list") return;
+    listEl.querySelectorAll(".card").forEach(card => {
+      const w = Number(card.dataset.when) || 0; if (!w) return;
+      const el = card.querySelector(".when"); if (el) el.textContent = ago(new Date(w));
+    });
+  }, 60000);
 
   // ---- Start ----
   listEl.innerHTML = `<div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>`;
+  if (view === "map") setView("map"); else setView("list");
   load();
-  timer = setInterval(() => { if (!document.hidden) load(); }, REFRESH_MS);
+  setInterval(() => { if (!document.hidden) load(); }, REFRESH_MS);
 })();

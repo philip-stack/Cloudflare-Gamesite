@@ -15,9 +15,11 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Feuerwehr NÖ" />
-  <link rel="stylesheet" href="style.css?v=3" />
+  <link rel="stylesheet" href="vendor/leaflet.css" />
+  <link rel="stylesheet" href="style.css?v=4" />
 </head>
 <body>
+  <div id="ptr" aria-hidden="true"><span class="ptr-spin"></span></div>
   <div id="app">
     <header class="top">
       <div class="brand">
@@ -27,9 +29,12 @@
           <p class="sub">Aktive Einsätze · live</p>
         </div>
       </div>
-      <div class="status">
-        <span class="live" id="live-dot" aria-hidden="true"></span>
-        <span id="stand">verbinde…</span>
+      <div class="head-right">
+        <button id="alarm-btn" class="icon-btn" title="Bezirks-Alarm" aria-label="Bezirks-Alarm einrichten">🔔</button>
+        <div class="status">
+          <span class="live" id="live-dot" aria-hidden="true"></span>
+          <span id="stand">verbinde…</span>
+        </div>
       </div>
     </header>
 
@@ -43,11 +48,13 @@
         <button class="chip" data-kind="S" role="tab" aria-selected="false"><i class="dot s"></i>Schadstoff</button>
       </div>
       <div class="filters">
+        <div class="view-toggle" role="tablist" aria-label="Ansicht">
+          <button id="view-list" class="vt on" role="tab" aria-selected="true">Liste</button>
+          <button id="view-map" class="vt" role="tab" aria-selected="false">Karte</button>
+        </div>
         <label class="field">
           <span class="vh">Bezirk</span>
-          <select id="bezirk">
-            <option value="">Alle Bezirke</option>
-          </select>
+          <select id="bezirk"><option value="">Alle Bezirke</option></select>
         </label>
         <label class="field search">
           <span class="vh">Suche</span>
@@ -57,9 +64,11 @@
     </section>
 
     <main id="list" class="list" aria-live="polite"></main>
+    <div id="map" hidden></div>
 
     <footer class="foot">
       <p>Daten: NÖ Landesfeuerwehrverband (öffentliche <em>Wastl/GRISU</em>-Schnittstelle).
+         Karte © <em>OpenStreetMap</em>-Mitwirkende, Kacheln © <em>CARTO</em>.
          Inoffizielles Projekt, ohne Gewähr. Kein Ersatz für den Notruf <strong>122</strong>.</p>
     </footer>
   </div>
@@ -72,7 +81,24 @@
     </div>
   </div>
 
-  <script src="app.js?v=2"></script>
+  <!-- Alarm-Overlay -->
+  <div id="alarm" class="overlay" hidden>
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="a-title">
+      <button class="x" id="a-close" aria-label="Schließen">✕</button>
+      <h2 id="a-title">🔔 Bezirks-Alarm</h2>
+      <p class="a-lead">Push-Benachrichtigung bei neuen Einsätzen in deinen Bezirken. Läuft auch, wenn die App zu ist.</p>
+      <div id="a-status" class="a-status" hidden></div>
+      <div class="a-all"><label><input type="checkbox" id="a-all-cb" /> <b>Ganz Niederösterreich</b> (alle Bezirke)</label></div>
+      <div id="a-grid" class="a-grid"></div>
+      <div class="a-actions">
+        <button id="a-save" class="btn-primary">Alarm aktivieren</button>
+        <button id="a-off" class="btn-ghost" hidden>Alarm ausschalten</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="vendor/leaflet.js"></script>
+  <script src="app.js?v=3"></script>
   <script>
     // Eigener Service Worker (Scope /fire/noe/) → installierbar als eigene PWA.
     if ("serviceWorker" in navigator) {
