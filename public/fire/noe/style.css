@@ -181,6 +181,7 @@ select:focus, input:focus { border-color: rgba(255, 59, 48, 0.6); }
   background: rgba(6, 7, 10, 0.66); backdrop-filter: blur(6px);
   animation: fade 0.2s ease both; padding: 0;
 }
+.overlay[hidden] { display: none; }   /* sonst schlägt display:grid das hidden-Attribut */
 @keyframes fade { from { opacity: 0; } }
 .sheet {
   position: relative; width: 100%; max-width: 560px; max-height: 88dvh; overflow: auto;
