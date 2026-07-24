@@ -1,4 +1,5 @@
 import { json, clientIp, rateLimit } from "../_util.js";
+import { normKey } from "./geo.js";
 
 // ====================================================================
 // Feuerwehr-Einsätze Niederösterreich (live).
@@ -50,12 +51,31 @@ export async function onRequestGet({ request, env }) {
     }
     const data = await upstream(`${BASE}/getEinsatzAktiv.ashx`, 15);
     const list = Array.isArray(data && data.Einsatz) ? data.Einsatz : [];
+    await attachCoords(env, list);
     return withCache(json({ einsatz: list, stand: nowIso() }), 12);
   } catch (_) {
     // Quelle nicht erreichbar: leere, aber gültige Antwort — der Client
     // behält seine letzte Anzeige und zeigt einen dezenten Hinweis.
     return json({ einsatz: [], stand: nowIso(), error: "Quelle nicht erreichbar" }, 200);
   }
+}
+
+// Bereits gecachte Koordinaten an die Liste hängen (kein Geocoding hier —
+// das macht der Client gedrosselt über /api/fire/geo). Ein einziger Query.
+async function attachCoords(env, list) {
+  try {
+    if (!env || !env.DB || !list.length) return;
+    const keys = [...new Set(list.map(e => normKey(e.o)).filter(Boolean))];
+    if (!keys.length) return;
+    const rows = (await env.DB.prepare(
+      `SELECT q, lat, lng FROM geo_cache WHERE miss = 0 AND q IN (${keys.map(() => "?").join(",")})`
+    ).bind(...keys).all()).results || [];
+    const map = new Map(rows.map(r => [r.q, r]));
+    for (const e of list) {
+      const r = map.get(normKey(e.o));
+      if (r) { e.lat = r.lat; e.lng = r.lng; }
+    }
+  } catch (_) { /* Karte ist optional */ }
 }
 
 function withCache(res, seconds) {

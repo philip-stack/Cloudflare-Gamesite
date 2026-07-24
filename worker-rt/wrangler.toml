@@ -11,3 +11,9 @@ class_name = "PartyRoom"
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["PartyRoom"]
+
+# Cron: alle 2 Minuten den Feuerwehr-Bezirksalarm prüfen (pingt die
+# geschützte Pages-Route /api/fire/cron). Secret CRON_TOKEN nötig:
+#   echo <token> | npx wrangler secret put CRON_TOKEN -c worker-rt/wrangler.toml
+[triggers]
+crons = ["*/2 * * * *"]

@@ -47,8 +47,21 @@ export class PartyRoom extends DurableObject {
   async webSocketError(ws) { try { ws.close(); } catch (_) {} }
 }
 
-// Der Worker selbst wird nur als DO-Host gebraucht; die Pages-Site spricht
-// das DO über das Binding an. Ein Direktaufruf liefert nur einen Hinweis.
+// Der Worker hostet das DO und trägt zusätzlich den Cron-Trigger für den
+// Feuerwehr-Bezirksalarm: Pages kann keine Crons: Der Worker pingt darum
+// zeitgesteuert die geschützte Pages-Route /api/fire/cron (dort liegen DB
+// und VAPID). Der CRON_TOKEN (Secret hier UND in Pages) schützt den Aufruf.
 export default {
   async fetch() { return new Response("Spieleabend-Echtzeit (Durable Object host)", { status: 200 }); },
+
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil((async () => {
+      try {
+        const base = env.PAGES_ORIGIN || "https://philip-stack.pages.dev";
+        await fetch(base + "/api/fire/cron?key=" + encodeURIComponent(env.CRON_TOKEN || ""), {
+          headers: { "User-Agent": "philip-stack-rt/cron" },
+        });
+      } catch (_) { /* nächster Lauf versucht es erneut */ }
+    })());
+  },
 };

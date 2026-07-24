@@ -4,9 +4,10 @@
 // installierbar und offline-tauglich. Strategie: Netz zuerst,
 // Cache als Fallback. /api/… liegt außerhalb des Scopes → immer live.
 // ====================================================================
-const CACHE = "fire-noe-v1";
+const CACHE = "fire-noe-v2";
 const SHELL = [
-  "./", "./index.html", "./app.js?v=2", "./style.css?v=3",
+  "./", "./index.html", "./app.js?v=3", "./style.css?v=4",
+  "./vendor/leaflet.js", "./vendor/leaflet.css",
   "./manifest.webmanifest", "./icons/icon-192.png", "./icons/icon-512.png",
 ];
 
@@ -24,6 +25,65 @@ self.addEventListener("activate", e => {
       .then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
       .then(() => self.clients.claim())
   );
+});
+
+// ---- Web-Push (Bezirks-Alarm) ----
+// Wir bekommen einen payload-losen „Tickle" und holen die eigentlichen
+// Nachrichten aus der Server-Queue (/api/push, action:"pending").
+self.addEventListener("push", e => {
+  e.waitUntil((async () => {
+    let messages = [];
+    try {
+      const sub = await self.registration.pushManager.getSubscription();
+      if (sub) {
+        const res = await fetch("/api/push", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "pending", endpoint: sub.endpoint }),
+        });
+        if (res.ok) messages = (await res.json()).messages || [];
+      }
+    } catch (_) {}
+    if (!messages.length) messages = [{ title: "🚒 Feuerwehr NÖ", body: "Neuer Einsatz.", url: "/fire/noe/" }];
+    await Promise.all(messages.map(m =>
+      self.registration.showNotification(m.title || "Feuerwehr NÖ", {
+        body: m.body || "",
+        icon: "/fire/noe/icons/icon-192.png",
+        badge: "/fire/noe/icons/icon-192.png",
+        data: { url: m.url || "/fire/noe/" },
+        tag: "fire-" + (m.title || ""),
+      })
+    ));
+  })());
+});
+
+self.addEventListener("notificationclick", e => {
+  e.notification.close();
+  const url = (e.notification.data && e.notification.data.url) || "/fire/noe/";
+  e.waitUntil((async () => {
+    const all = await clients.matchAll({ type: "window", includeUncontrolled: true });
+    for (const c of all) { if ("focus" in c) { try { await c.navigate(url); } catch (_) {} return c.focus(); } }
+    if (clients.openWindow) return clients.openWindow(url);
+  })());
+});
+
+// Abo rotiert/abgelaufen → neu anlegen und Bezirke am Server behalten.
+self.addEventListener("pushsubscriptionchange", e => {
+  e.waitUntil((async () => {
+    try {
+      const key = (await (await fetch("/api/push")).json()).key;
+      const pad = "=".repeat((4 - key.length % 4) % 4);
+      const s = (key + pad).replace(/-/g, "+").replace(/_/g, "/");
+      const raw = atob(s); const appKey = new Uint8Array(raw.length);
+      for (let i = 0; i < raw.length; i++) appKey[i] = raw.charCodeAt(i);
+      const sub = await self.registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: appKey });
+      // Bezirke sind endpoint-gebunden; ohne alten Endpoint kann der Server sie
+      // nicht übernehmen — der Client richtet sie beim nächsten Öffnen neu ein.
+      await fetch("/api/fire/alert", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "get", endpoint: sub.endpoint }),
+      });
+    } catch (_) {}
+  })());
 });
 
 self.addEventListener("fetch", e => {

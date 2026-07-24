@@ -69,6 +69,20 @@ export async function sendToName(env, name, msg) {
   } catch { /* nie werfen */ }
 }
 
+// Einzelne Nachricht an EINEN Push-Endpoint: erst in die Queue (der SW holt
+// sie beim „Tickle"), dann Tickle senden. Rückgabe { ok, gone } — gone=true
+// bei 404/410 (Abo weg), damit der Aufrufer aufräumen kann.
+export async function pushToEndpoint(env, endpoint, msg) {
+  try {
+    if (!endpoint || !env.VAPID_PRIVATE_JWK) return { ok: false, gone: false };
+    await env.DB.prepare("INSERT INTO push_queue (endpoint, title, body, url) VALUES (?, ?, ?, ?)")
+      .bind(endpoint, msg.title, msg.body || "", msg.url || "/").run();
+    const res = await tickle(env, endpoint);
+    const gone = res.status === 404 || res.status === 410;
+    return { ok: res.ok, gone };
+  } catch (_) { return { ok: false, gone: false }; }
+}
+
 export async function onRequestGet() {
   return json({ key: VAPID_PUBLIC });
 }

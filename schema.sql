@@ -134,3 +134,35 @@ CREATE TABLE IF NOT EXISTS error_log (
   extra      TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- ====================================================================
+-- Feuerwehr NÖ (/fire/noe) – abgekapseltes Feature
+-- ====================================================================
+
+-- Geocoding-Cache: Ort(+PLZ) → Koordinaten. miss=1 = konnte nicht aufgelöst
+-- werden (verhindert wiederholtes Anfragen). Dauerhaft gültig (Orte ändern
+-- sich nicht), spart Nominatim-Anfragen.
+CREATE TABLE IF NOT EXISTS geo_cache (
+  q    TEXT PRIMARY KEY,       -- normalisierter Schlüssel (ort|plz)
+  lat  REAL,
+  lng  REAL,
+  miss INTEGER DEFAULT 0,
+  at   TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Bezirks-Alarm: welcher Push-Endpoint möchte Benachrichtigungen für
+-- welchen Bezirk (Code). Der eigentliche Versand nutzt push_sub/push_queue.
+CREATE TABLE IF NOT EXISTS fire_alert (
+  endpoint TEXT NOT NULL,
+  bezirk   TEXT NOT NULL,      -- Bezirkscode (z. B. "15") oder "*" für alle
+  at       TEXT DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (endpoint, bezirk)
+);
+CREATE INDEX IF NOT EXISTS idx_fire_alert_bez ON fire_alert(bezirk);
+
+-- Bereits benachrichtigte Einsätze (nach Einsatznummer), damit der
+-- Cron-Worker nicht doppelt alarmiert.
+CREATE TABLE IF NOT EXISTS fire_seen (
+  n  TEXT PRIMARY KEY,         -- Einsatznummer (Feld n)
+  at TEXT DEFAULT CURRENT_TIMESTAMP
+);
