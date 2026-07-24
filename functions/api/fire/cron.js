@@ -106,7 +106,7 @@ export async function onRequestGet({ request, env }) {
     await env.DB.prepare(
       `UPDATE fire_op SET ended=1, ended_at=CURRENT_TIMESTAMP WHERE ended=0 AND n NOT IN (${placeholders})`
     ).bind(...nums).run();
-    await env.DB.prepare("DELETE FROM fire_op WHERE ended=1 AND ended_at < datetime('now','-3 days')").run();
+    await env.DB.prepare("DELETE FROM fire_op WHERE ended=1 AND ended_at < datetime('now','-1 day')").run();
   } catch (_) {}
 
   return json({ ok: true, active: list.length, fresh: fresh.length, sent });
