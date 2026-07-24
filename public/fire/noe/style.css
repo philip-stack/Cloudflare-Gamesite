@@ -386,3 +386,38 @@ select:focus, input:focus { border-color: rgba(255, 59, 48, 0.6); }
 .card.ended { opacity: 0.82; }
 .card.ended::before { filter: grayscale(0.35); opacity: 0.7; }
 .card.ended .when { color: var(--faint); }
+
+/* ==================================================================
+   Wehr-Status, Mini-Karte, Marker-Cluster, Popup-Listen, Statistik
+   ================================================================== */
+.u-status { margin-left: auto; font-weight: 700; font-size: 0.82rem; }
+.unit .u-time { margin-left: 10px; }
+
+#d-map { height: 150px; border-radius: 12px; overflow: hidden; margin: 16px 0 2px; border: 1px solid var(--panel-line); }
+
+/* Cluster-Zahl (Leaflet-Tooltip) */
+.cluster-badge { background: transparent !important; border: 0 !important; box-shadow: none !important; color: #fff !important; font: 800 0.72rem inherit !important; padding: 0 !important; text-shadow: 0 1px 2px rgba(0,0,0,0.6); }
+.cluster-badge::before { display: none !important; }
+
+/* Popup mit mehreren Einsätzen */
+.pop-loc { font-weight: 800; font-size: 0.9rem; margin-bottom: 6px; }
+.pop-item { padding: 7px 0; border-top: 1px solid var(--panel-line); display: flex; flex-direction: column; gap: 3px; }
+.pop-item:first-of-type { border-top: 0; }
+
+/* Statistik-Overlay */
+.s-tiles { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 8px; }
+.s-tiles .stat b { font-size: 1.3rem; }
+.s-h { margin: 20px 0 10px; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); }
+.kbar { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; font-size: 0.88rem; }
+.kbar > span { width: 84px; color: var(--muted); }
+.kbar b { width: 28px; text-align: right; font-variant-numeric: tabular-nums; }
+.ktrack { flex: 1; height: 10px; background: rgba(255,255,255,0.06); border-radius: 999px; overflow: hidden; }
+:root[data-theme="light"] .ktrack { background: rgba(12,18,34,0.07); }
+.ktrack i { display: block; height: 100%; border-radius: 999px; min-width: 2px; }
+.ktrack .k-B { background: var(--brand); } .ktrack .k-T { background: var(--tech); }
+.ktrack .k-S { background: var(--stoff); } .ktrack .k-X { background: var(--faint); }
+.hchart { display: flex; align-items: flex-end; gap: 3px; height: 90px; padding-top: 4px; }
+.hbar { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; gap: 3px; }
+.hbar i { display: block; width: 100%; min-height: 2px; background: linear-gradient(var(--brand), #b31f16); border-radius: 3px 3px 0 0; opacity: 0.85; }
+.hbar em { font-size: 0.6rem; color: var(--faint); font-style: normal; }
+.s-note { margin: 16px 0 0; color: var(--faint); font-size: 0.74rem; line-height: 1.5; }
