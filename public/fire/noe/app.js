@@ -218,27 +218,68 @@
     renderStats();
     if (view === "map") { addMarkers(); return; }
     const items = filtered();
+
+    // Leerzustand
+    const emptyEl = listEl.querySelector(".empty");
     if (!items.length) {
-      listEl.innerHTML = all.length
+      const msg = all.length
         ? `<div class="empty"><div class="big">🔍</div>Keine Einsätze für diesen Filter.</div>`
         : `<div class="empty"><div class="big">🌙</div>Aktuell keine gemeldeten Einsätze in Niederösterreich.</div>`;
+      if (listEl.innerHTML !== msg) listEl.innerHTML = msg;
       return;
     }
+    if (emptyEl) listEl.innerHTML = "";
+
+    // Differenziell aktualisieren: vorhandene Karten wiederverwenden (kein
+    // Flackern/„Pochen" beim Refresh), nur wirklich neue blenden ein.
+    const have = new Map();
+    listEl.querySelectorAll(".card").forEach(c => have.set(c.dataset.id, c));
+
     let entering = 0;
-    listEl.innerHTML = items.map(e => {
-      const k = e._c.kind;
-      const fresh = e._when && (Date.now() - e._when.getTime()) < FRESH_MS;
-      const isNew = !shownIds.has(e.i);
-      const badge = `${e._c.label}${e._c.stufe ? ' <span class="stufe">St. ' + esc(e._c.stufe) + "</span>" : ""}`;
-      const style = isNew ? ` style="animation-delay:${Math.min(entering++ * 25, 300)}ms"` : "";
-      return `<button class="card k-${k}${fresh ? " fresh" : ""}${isNew ? " enter" : ""}" data-id="${esc(e.i)}" data-when="${e._when ? e._when.getTime() : 0}"${style}>
-          <div class="row1"><span class="badge k-${k}">${badge}</span>${fresh ? '<span class="fresh-tag">neu</span>' : ""}<span class="when">${esc(ago(e._when))}</span></div>
-          <h3>${esc(e.m || "Einsatz")}</h3>
-          <div class="loc">${PIN}<span>${esc(e.o || "Unbekannt")}${e.o2 ? " · " + esc(e.o2) : ""}</span></div>
-          ${e._bez ? `<div class="bez">Bezirk ${esc(e._bez)}</div>` : ""}
-        </button>`;
-    }).join("");
-    items.forEach(e => shownIds.add(e.i));
+    items.forEach(e => {
+      const id = String(e.i);
+      let card = have.get(id);
+      if (card) {
+        have.delete(id);
+        updateCard(card, e);
+      } else {
+        card = buildCard(e, !shownIds.has(e.i), entering++);
+      }
+      listEl.appendChild(card);   // schiebt bestehende Knoten nur in die richtige Reihenfolge
+      shownIds.add(e.i);
+    });
+    // Verschwundene Einsätze entfernen
+    have.forEach(c => c.remove());
+  }
+
+  function cardMarkup(e) {
+    const k = e._c.kind;
+    const fresh = e._when && (Date.now() - e._when.getTime()) < FRESH_MS;
+    const badge = `${e._c.label}${e._c.stufe ? ' <span class="stufe">St. ' + esc(e._c.stufe) + "</span>" : ""}`;
+    return `<div class="row1"><span class="badge k-${k}">${badge}</span>${fresh ? '<span class="fresh-tag">neu</span>' : ""}<span class="when">${esc(ago(e._when))}</span></div>
+        <h3>${esc(e.m || "Einsatz")}</h3>
+        <div class="loc">${PIN}<span>${esc(e.o || "Unbekannt")}${e.o2 ? " · " + esc(e.o2) : ""}</span></div>
+        ${e._bez ? `<div class="bez">Bezirk ${esc(e._bez)}</div>` : ""}`;
+  }
+  function buildCard(e, isNew, order) {
+    const k = e._c.kind;
+    const fresh = e._when && (Date.now() - e._when.getTime()) < FRESH_MS;
+    const card = document.createElement("button");
+    card.className = "card k-" + k + (fresh ? " fresh" : "") + (isNew ? " enter" : "");
+    card.dataset.id = String(e.i);
+    card.dataset.when = e._when ? e._when.getTime() : 0;
+    if (isNew) card.style.animationDelay = Math.min(order * 25, 300) + "ms";
+    card.innerHTML = cardMarkup(e);
+    return card;
+  }
+  function updateCard(card, e) {
+    const k = e._c.kind;
+    const fresh = e._when && (Date.now() - e._when.getTime()) < FRESH_MS;
+    const cls = "card k-" + k + (fresh ? " fresh" : "");   // ohne „enter" → keine Re-Animation
+    if (card.className !== cls) card.className = cls;
+    // Nur die Zeit ändert sich laufend; Rest bleibt stabil.
+    const w = card.querySelector(".when");
+    if (w) { const t = ago(e._when); if (w.textContent !== t) w.textContent = t; }
   }
 
   // ---- Leaflet-Karte ----
