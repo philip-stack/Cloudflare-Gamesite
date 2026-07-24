@@ -1,0 +1,17 @@
+{
+  "name": "Feuerwehr NÖ – Einsätze",
+  "short_name": "Feuerwehr NÖ",
+  "description": "Aktuelle Feuerwehr-Einsätze in Niederösterreich, live.",
+  "lang": "de-AT",
+  "start_url": "/fire/noe/",
+  "scope": "/fire/noe/",
+  "id": "/fire/noe/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0b0c10",
+  "theme_color": "#0d0e12",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

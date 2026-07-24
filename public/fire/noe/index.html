@@ -7,8 +7,15 @@
   <meta name="robots" content="noindex" />
   <title>Feuerwehr NÖ · Einsätze live</title>
   <meta name="description" content="Aktuelle Feuerwehr-Einsätze in Niederösterreich – live." />
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%9A%92%3C/text%3E%3C/svg%3E" />
-  <link rel="stylesheet" href="style.css?v=2" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" type="image/png" sizes="32x32" href="icons/icon-32.png" />
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="icons/icon-180.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Feuerwehr NÖ" />
+  <link rel="stylesheet" href="style.css?v=3" />
 </head>
 <body>
   <div id="app">
@@ -52,7 +59,7 @@
     <main id="list" class="list" aria-live="polite"></main>
 
     <footer class="foot">
-      <p>Daten: NÖ Landesfeuerwehrverband (öffentliche <em>Wastl/GRISU</em>-Schnittstelle, infoscreen.florian10.info).
+      <p>Daten: NÖ Landesfeuerwehrverband (öffentliche <em>Wastl/GRISU</em>-Schnittstelle).
          Inoffizielles Projekt, ohne Gewähr. Kein Ersatz für den Notruf <strong>122</strong>.</p>
     </footer>
   </div>
@@ -65,6 +72,12 @@
     </div>
   </div>
 
-  <script src="app.js?v=1"></script>
+  <script src="app.js?v=2"></script>
+  <script>
+    // Eigener Service Worker (Scope /fire/noe/) → installierbar als eigene PWA.
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
+    }
+  </script>
 </body>
 </html>
