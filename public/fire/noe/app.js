@@ -208,7 +208,7 @@
     const c = { B: 0, T: 0, S: 0 };
     all.forEach(e => { if (c[e._c.kind] != null) c[e._c.kind]++; });
     statsEl.innerHTML =
-      `<div class="stat"><b>${all.length}</b><span>aktiv</span></div>` +
+      `<div class="stat"><b>${all.length}</b><span>${feed === "recent" ? "Einsätze" : "aktiv"}</span></div>` +
       `<div class="stat b"><b>${c.B}</b><span>Brand</span></div>` +
       `<div class="stat t"><b>${c.T}</b><span>Technisch</span></div>` +
       `<div class="stat s"><b>${c.S}</b><span>Schadstoff</span></div>`;
@@ -410,7 +410,7 @@
       const cc = KIND_COLOR[e._c.kind] || KIND_COLOR.X;
       return `<div class="pop-item"><span class="pop-badge" style="background:${cc}22;color:${cc}">${esc(e._c.label)}${e._c.stufe ? " · St. " + esc(e._c.stufe) : ""}</span>` +
         `<b>${esc(e.m || "Einsatz")}</b><span class="pop-when">${esc(whenText(e))}</span>` +
-        (e.i ? `<button class="pop-more" data-id="${esc(e.i)}">Details →</button>` : "") + `</div>`;
+        `<button class="pop-more" data-key="${esc(e._key)}">Details →</button></div>`;
     }).join("");
     mapPop.innerHTML = `<button class="pop-x" aria-label="Schließen">✕</button><div class="pop"><div class="pop-loc">${esc(lead.o || "")}${lead._bez ? " · " + esc(lead._bez) : ""}</div>${body}</div>`;
     mapPop.hidden = false;
@@ -454,14 +454,23 @@
 
   // ---- Detail-Overlay ----
   const overlay = $("#detail"), dBody = $("#d-body");
-  function openDetail(id) {
-    const base = all.find(e => e.i === id);
+  function openDetail(key) {
+    const base = all.find(e => e._key === key) || all.find(e => e.i === key);
+    if (!base) return;
     overlay.hidden = false; document.body.style.overflow = "hidden";
-    dBody.innerHTML = detailShell(base) + `<div class="d-loading">Lade Details…</div>`;
-    detailMiniMap(base);
-    fetch("/api/fire/noe?id=" + encodeURIComponent(id)).then(r => r.json())
-      .then(d => { dBody.innerHTML = detailShell(base, d) + renderUnits(d); detailMiniMap(base); })
-      .catch(() => { dBody.innerHTML = detailShell(base) + `<div class="d-loading">Details nicht verfügbar.</div>`; detailMiniMap(base); });
+    if (base.i && !base._ended) {
+      // Aktiver Einsatz: Wehren live nachladen
+      dBody.innerHTML = detailShell(base) + `<div class="d-loading">Lade Details…</div>`;
+      detailMiniMap(base);
+      fetch("/api/fire/noe?id=" + encodeURIComponent(base.i)).then(r => r.json())
+        .then(d => { dBody.innerHTML = detailShell(base, d) + renderUnits(d); detailMiniMap(base); })
+        .catch(() => { dBody.innerHTML = detailShell(base) + `<div class="d-loading">Details nicht verfügbar.</div>`; detailMiniMap(base); });
+    } else {
+      // Beendeter Einsatz: keine Live-Wehr-Daten mehr abrufbar
+      dBody.innerHTML = detailShell(base) +
+        `<div class="d-units"><h4>Status</h4><div class="d-loading">Einsatz beendet — keine Wehr-Daten mehr verfügbar.</div></div>`;
+      detailMiniMap(base);
+    }
   }
   // Mini-Karte im Detail: kleine gezeichnete NÖ-Karte mit markiertem Ort.
   function detailMiniMap(base) {
@@ -480,15 +489,16 @@
   function detailShell(base, d) {
     const src = d || base || {};
     const c = classify(src.a || (base && base.a));
-    const when = parseWhen(src.d || (base && base.d), src.t || (base && base.t));
+    const ended = !!(base && base._ended);
+    const when = ended ? base._when : parseWhen(src.d || (base && base.d), src.t || (base && base.t));
     const bez = base ? base._bez : "";
-    const whenStr = when ? when.toLocaleString("de-AT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) + " Uhr" : ((src.d || "") + " " + (src.t || "")).trim();
-    return `<div class="d-head"><span class="badge k-${c.kind}">${esc(c.label)}${c.stufe ? " · Stufe " + esc(c.stufe) : ""}</span></div>
+    const whenStr = when ? when.toLocaleString("de-AT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) + " Uhr" : "—";
+    return `<div class="d-head"><span class="badge k-${c.kind}">${esc(c.label)}${c.stufe ? " · Stufe " + esc(c.stufe) : ""}</span>${ended ? '<span class="badge k-X">beendet</span>' : ""}</div>
       <h2 id="d-title">${esc(src.m || "Einsatz")}</h2>
       <div class="d-loc">${esc(src.o || "")}${src.o2 ? " · " + esc(src.o2) : ""}${src.p ? " · " + esc(src.p) : ""}${bez ? ` <span class="bz">· Bezirk ${esc(bez)}</span>` : ""}</div>
       <div class="d-meta">
-        <div><span>Alarmiert</span><b>${esc(ago(when))}</b></div>
-        <div><span>Zeitpunkt</span><b>${esc(whenStr)}</b></div>
+        <div><span>${ended ? "Beendet" : "Alarmiert"}</span><b>${esc(ago(when))}</b></div>
+        <div><span>${ended ? "Endzeit" : "Zeitpunkt"}</span><b>${esc(whenStr)}</b></div>
         <div><span>Einsatznr.</span><b>${esc(src.n || (base && base.n) || "—")}</b></div>
         <div><span>Alarmstufe</span><b>${esc(String(src.a || (base && base.a) || "—"))}</b></div>
       </div>`;
@@ -634,15 +644,15 @@
   }
 
   // ---- Events ----
-  listEl.addEventListener("click", e => { const c = e.target.closest(".card"); if (c && c.dataset.id) openDetail(c.dataset.id); });
+  listEl.addEventListener("click", e => { const c = e.target.closest(".card"); if (c && c.dataset.key) openDetail(c.dataset.key); });
   mapEl.addEventListener("click", e => {
     const more = e.target.closest(".pop-more");
-    if (more && more.dataset.id) { hidePop(); openDetail(more.dataset.id); return; }
+    if (more && more.dataset.key) { hidePop(); openDetail(more.dataset.key); return; }
     if (e.target.closest(".pop-x")) { hidePop(); return; }
     const mk = e.target.closest(".mk");
     if (mk) {
       const g = markerGroups.get(mk.dataset.key);
-      if (g && g.items.length === 1 && g.items[0].i) { openDetail(g.items[0].i); return; }
+      if (g && g.items.length === 1) { openDetail(g.items[0]._key); return; }
       showPop(mk.dataset.key, mk); return;
     }
     if (!e.target.closest("#map-pop")) hidePop();

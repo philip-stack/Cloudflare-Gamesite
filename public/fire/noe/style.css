@@ -261,6 +261,7 @@ select:focus, input:focus { border-color: rgba(255, 59, 48, 0.6); }
   height: min(72vh, 640px); min-height: 380px; border-radius: var(--radius);
   overflow: hidden; border: 1px solid var(--panel-line); box-shadow: var(--shadow);
   position: relative; background: var(--map-bg);
+  isolation: isolate;   /* eigener Stacking-Context: Legende/Popup nie über Overlays */
 }
 .leaflet-container { background: var(--map-bg) !important; font: inherit; }
 .leaflet-control-zoom a { background: #191d27 !important; color: #eef1f7 !important; border-color: rgba(255,255,255,0.08) !important; }
