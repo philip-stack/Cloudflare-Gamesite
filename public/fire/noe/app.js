@@ -42,12 +42,8 @@
   let newFlash = 0;
   let shownIds = new Set();         // schon eingeblendete Karten (keine Re-Animation)
 
-  // Exakte Bounding-Box von Niederösterreich (für „auf Karte zentrieren").
-  const NOE_BOUNDS = [[47.42, 14.44], [49.02, 17.07]];
-
   // ---- Hell/Dunkel ----
   const curTheme = () => document.documentElement.dataset.theme === "light" ? "light" : "dark";
-  const tileUrl = () => "/fire/tiles/" + curTheme() + "/{z}/{x}/{y}{r}.png";
   function applyThemeUI() {
     const t = curTheme();
     const btn = $("#theme-btn"); if (btn) btn.textContent = t === "light" ? "☀️" : "🌙";
@@ -57,7 +53,6 @@
     const t = curTheme() === "light" ? "dark" : "light";
     document.documentElement.dataset.theme = t; LS.set("fire_theme", t);
     applyThemeUI();
-    if (tileLayer) tileLayer.setUrl(tileUrl());
   }
 
   // ---- Helfer ----
@@ -294,82 +289,154 @@
     if (w) { const t = whenText(e); if (w.textContent !== t) w.textContent = t; }
   }
 
-  // ---- Leaflet-Karte ----
-  let map = null, markers = null, tileLayer = null;
-  function initMap() {
-    if (map) return;
-    map = L.map(mapEl, { zoomControl: true, attributionControl: true, minZoom: 7, maxZoom: 18 });
-    map.fitBounds(NOE_BOUNDS);
-    map.setMaxBounds([[46.9, 13.8], [49.4, 17.7]]);
-    tileLayer = L.tileLayer(tileUrl(), {
-      detectRetina: true, maxZoom: 18,
-      attribution: '© OpenStreetMap · CARTO',
-    }).addTo(map);
-    markers = L.layerGroup().addTo(map);
-    addLegend();
-  }
-  function addLegend() {
-    if ($("#map-legend")) return;
-    const el = document.createElement("div");
-    el.id = "map-legend";
-    el.innerHTML =
-      '<div class="lg"><i style="background:' + KIND_COLOR.B + '"></i>Brand</div>' +
-      '<div class="lg"><i style="background:' + KIND_COLOR.T + '"></i>Technisch</div>' +
-      '<div class="lg"><i style="background:' + KIND_COLOR.S + '"></i>Schadstoff</div>';
-    mapEl.appendChild(el);
-  }
-  function addMarkers() {
-    if (!map) return;
-    markers.clearLayers();
-    const items = filtered();
+  // ==================== Gezeichnete NÖ-Karte (SVG) ====================
+  // Kein Kartendienst — die Bezirksgrenzen kommen aus noe-geo.js (self-hosted)
+  // und werden als SVG gezeichnet; Marker werden per einfacher Projektion
+  // (äquirektangular, Breiten-korrigiert) auf dieselbe Fläche gesetzt.
+  const GEO = window.NOE_GEO || { bbox: [14.45, 47.42, 17.07, 49.02], districts: [] };
+  const GB = GEO.bbox;
+  const COSLAT = Math.cos(((GB[1] + GB[3]) / 2) * Math.PI / 180);
+  const PS = 1000;
+  const projX = lng => (lng - GB[0]) * COSLAT * PS;
+  const projY = lat => (GB[3] - lat) * PS;
+  const MAPW = projX(GB[2]), MAPH = projY(GB[1]);
+  const NS = "http://www.w3.org/2000/svg";
+  let mapSvg = null, markerG = null, mapPop = null, curView = null;
+  let markerGroups = new Map();
+  const distBounds = {};
+  let DIST_PATHS = null;
 
-    // Nach Koordinate gruppieren: die Geokodierung ist ortsgenau, daher liegen
-    // mehrere Einsätze desselben Orts exakt aufeinander → als ein Marker mit
-    // Anzahl bündeln (Popup listet alle).
+  function buildDistrictPaths() {
+    let out = "";
+    for (const d of GEO.districts) {
+      let dd = "", bx0 = 1e9, by0 = 1e9, bx1 = -1e9, by1 = -1e9;
+      for (const ring of d.polys) {
+        dd += "M" + ring.map(([lng, lat]) => {
+          const x = projX(lng), y = projY(lat);
+          if (x < bx0) bx0 = x; if (x > bx1) bx1 = x; if (y < by0) by0 = y; if (y > by1) by1 = y;
+          return x.toFixed(1) + "," + y.toFixed(1);
+        }).join("L") + "Z";
+      }
+      distBounds[d.iso] = [bx0, by0, bx1, by1];
+      out += `<path class="noe-district" d="${dd}"><title>${esc(d.name)}</title></path>`;
+    }
+    return out;
+  }
+  function ensurePaths() { if (DIST_PATHS == null) DIST_PATHS = buildDistrictPaths(); return DIST_PATHS; }
+
+  function initMap() {
+    if (mapSvg) return;
+    const pad = 14;
+    curView = [-pad, -pad, MAPW + pad * 2, MAPH + pad * 2];
+    mapEl.innerHTML =
+      `<svg id="noe-svg" viewBox="${curView.join(" ")}" preserveAspectRatio="xMidYMid meet" aria-label="Karte von Niederösterreich">` +
+      `<g id="noe-land">${ensurePaths()}</g><g id="noe-markers"></g></svg>` +
+      `<div id="map-legend"><div class="lg"><i style="background:${KIND_COLOR.B}"></i>Brand</div>` +
+      `<div class="lg"><i style="background:${KIND_COLOR.T}"></i>Technisch</div>` +
+      `<div class="lg"><i style="background:${KIND_COLOR.S}"></i>Schadstoff</div></div>` +
+      `<div id="map-note" hidden></div><div id="map-pop" hidden></div>`;
+    mapSvg = $("#noe-svg"); markerG = $("#noe-markers"); mapPop = $("#map-pop");
+  }
+
+  function setMapView(bb) {
+    const pad = 14;
+    if (!bb) curView = [-pad, -pad, MAPW + pad * 2, MAPH + pad * 2];
+    else {
+      let [x0, y0, x1, y1] = bb, w = x1 - x0, h = y1 - y0;
+      const MIN = Math.min(MAPW, MAPH) * 0.45; // Mindestzoom (~Bezirksgröße)
+      if (w < MIN) { const c = (x0 + x1) / 2; x0 = c - MIN / 2; w = MIN; }
+      if (h < MIN) { const c = (y0 + y1) / 2; y0 = c - MIN / 2; h = MIN; }
+      const m = Math.max(w, h) * 0.15 + 16;
+      curView = [x0 - m, y0 - m, w + m * 2, h + m * 2];
+    }
+    if (mapSvg) mapSvg.setAttribute("viewBox", curView.map(v => v.toFixed(1)).join(" "));
+  }
+  const markerR = () => Math.max(5, curView[2] * 0.017);
+
+  function addMarkers() {
+    if (!markerG) return;
+    while (markerG.firstChild) markerG.removeChild(markerG.firstChild);
+    hidePop();
+    const items = filtered();
+    // Nach Ort gruppieren (Geokodierung ist ortsgenau → Einsätze desselben
+    // Orts liegen aufeinander) → ein Marker mit Anzahl, Popup listet alle.
     const groups = new Map();
     let coded = 0;
     for (const e of items) {
-      const c = coordsOf(e);
-      if (!c) continue;
-      coded++;
+      const c = coordsOf(e); if (!c) continue; coded++;
       const key = c[0].toFixed(4) + "," + c[1].toFixed(4);
       (groups.get(key) || groups.set(key, { c, items: [] }).get(key)).items.push(e);
     }
-
-    groups.forEach(g => {
+    const r = markerR();
+    groups.forEach((g, key) => {
       const lead = g.items[0];
       const col = KIND_COLOR[lead._c.kind] || KIND_COLOR.X;
-      const anyFresh = g.items.some(e => !e._ended && e._when && (Date.now() - e._when.getTime()) < FRESH_MS);
       const n = g.items.length;
-      const m = L.circleMarker(g.c, {
-        radius: n > 1 ? 12 : (anyFresh ? 10 : 7), color: "#0b0c10", weight: 1.5,
-        fillColor: col, fillOpacity: lead._ended ? 0.6 : 0.95,
-      });
-      if (n > 1) m.bindTooltip(String(n), { permanent: true, direction: "center", className: "cluster-badge" });
-      const body = g.items.map(e => {
-        const cc = KIND_COLOR[e._c.kind] || KIND_COLOR.X;
-        return `<div class="pop-item"><span class="pop-badge" style="background:${cc}22;color:${cc}">${esc(e._c.label)}${e._c.stufe ? " · St. " + esc(e._c.stufe) : ""}</span>` +
-          `<b>${esc(e.m || "Einsatz")}</b><span class="pop-when">${esc(whenText(e))}</span>` +
-          (e.i ? `<button class="pop-more" data-id="${esc(e.i)}">Details →</button>` : "") + `</div>`;
-      }).join("");
-      m.bindPopup(`<div class="pop"><div class="pop-loc">${esc(lead.o || "")}${lead._bez ? " · " + esc(lead._bez) : ""}</div>${body}</div>`);
-      m.addTo(markers);
+      const cx = projX(g.c[1]), cy = projY(g.c[0]);
+      const anyFresh = g.items.some(e => !e._ended && e._when && (Date.now() - e._when.getTime()) < FRESH_MS);
+      const rr = n > 1 ? r * 1.5 : (anyFresh ? r * 1.25 : r);
+      const gg = document.createElementNS(NS, "g");
+      gg.setAttribute("class", "mk"); gg.setAttribute("data-key", key);
+      if (anyFresh) {
+        const pulse = document.createElementNS(NS, "circle");
+        pulse.setAttribute("class", "mk-pulse"); pulse.setAttribute("cx", cx); pulse.setAttribute("cy", cy);
+        pulse.setAttribute("r", rr); pulse.setAttribute("fill", col);
+        gg.appendChild(pulse);
+      }
+      const circ = document.createElementNS(NS, "circle");
+      circ.setAttribute("cx", cx); circ.setAttribute("cy", cy); circ.setAttribute("r", rr);
+      circ.setAttribute("fill", col); circ.setAttribute("stroke", "#0b0c10");
+      circ.setAttribute("stroke-width", (rr * 0.16).toFixed(2));
+      circ.setAttribute("fill-opacity", lead._ended ? "0.6" : "0.95");
+      gg.appendChild(circ);
+      if (n > 1) {
+        const txt = document.createElementNS(NS, "text");
+        txt.setAttribute("x", cx); txt.setAttribute("y", cy); txt.setAttribute("class", "mk-count");
+        txt.setAttribute("text-anchor", "middle"); txt.setAttribute("dominant-baseline", "central");
+        txt.setAttribute("font-size", (rr * 1.15).toFixed(1));
+        txt.textContent = String(n);
+        gg.appendChild(txt);
+      }
+      markerG.appendChild(gg);
     });
-
+    markerGroups = groups;
     setMapNote(items.length, coded, items.length - coded);
   }
 
-  // Karte auf die aktuell gefilterten (verorteten) Einsätze zoomen; sonst NÖ.
+  function showPop(key, atEl) {
+    const g = markerGroups.get(key); if (!g || !mapPop) return;
+    const lead = g.items[0];
+    const body = g.items.map(e => {
+      const cc = KIND_COLOR[e._c.kind] || KIND_COLOR.X;
+      return `<div class="pop-item"><span class="pop-badge" style="background:${cc}22;color:${cc}">${esc(e._c.label)}${e._c.stufe ? " · St. " + esc(e._c.stufe) : ""}</span>` +
+        `<b>${esc(e.m || "Einsatz")}</b><span class="pop-when">${esc(whenText(e))}</span>` +
+        (e.i ? `<button class="pop-more" data-id="${esc(e.i)}">Details →</button>` : "") + `</div>`;
+    }).join("");
+    mapPop.innerHTML = `<button class="pop-x" aria-label="Schließen">✕</button><div class="pop"><div class="pop-loc">${esc(lead.o || "")}${lead._bez ? " · " + esc(lead._bez) : ""}</div>${body}</div>`;
+    mapPop.hidden = false;
+    const mr = mapEl.getBoundingClientRect(), er = atEl.getBoundingClientRect();
+    mapPop.style.left = "0px"; mapPop.style.top = "0px";
+    const pw = mapPop.offsetWidth, phh = mapPop.offsetHeight;
+    let px = (er.left - mr.left + er.width / 2) - pw / 2;
+    let py = (er.top - mr.top) - phh - 10;
+    px = Math.max(8, Math.min(mr.width - pw - 8, px));
+    if (py < 8) py = (er.bottom - mr.top) + 10; // sonst unter dem Marker
+    mapPop.style.left = px + "px"; mapPop.style.top = py + "px";
+  }
+  function hidePop() { if (mapPop) mapPop.hidden = true; }
+
+  // Auf gewählten Bezirk zoomen (per Markern), sonst ganz NÖ.
   function fitToFiltered() {
-    if (!map) return;
+    if (!bezirkSel.value) { setMapView(null); addMarkers(); return; }
     const pts = filtered().map(coordsOf).filter(Boolean);
-    if (pts.length) map.fitBounds(pts, { padding: [40, 40], maxZoom: 12 });
-    else map.fitBounds(NOE_BOUNDS, { padding: [24, 24] });
+    if (!pts.length) { setMapView(null); addMarkers(); return; }
+    let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+    for (const c of pts) { const x = projX(c[1]), y = projY(c[0]); if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+    setMapView([x0, y0, x1, y1]); addMarkers();
   }
   function setMapNote(total, shown, missing) {
-    let n = $("#map-note");
-    if (!n) { n = document.createElement("div"); n.id = "map-note"; mapEl.appendChild(n); }
-    if (!total) { n.textContent = "Keine Einsätze."; n.hidden = false; }
+    const n = $("#map-note"); if (!n) return;
+    if (!total) { n.textContent = feed === "recent" ? "Keine beendeten Einsätze." : "Keine gemeldeten Einsätze."; n.hidden = false; }
     else if (missing > 0) { n.textContent = shown + "/" + total + " verortet · Rest wird geladen…"; n.hidden = false; }
     else n.hidden = true;
   }
@@ -381,8 +448,8 @@
     listEl.hidden = isMap; mapEl.hidden = !isMap;
     $("#view-list").classList.toggle("on", !isMap); $("#view-list").setAttribute("aria-selected", String(!isMap));
     $("#view-map").classList.toggle("on", isMap); $("#view-map").setAttribute("aria-selected", String(isMap));
-    if (isMap) { initMap(); setTimeout(() => { map.invalidateSize(); map.fitBounds(NOE_BOUNDS, { padding: [24, 24] }); addMarkers(); }, 60); }
-    else render();
+    if (isMap) { initMap(); if (bezirkSel.value) fitToFiltered(); else { setMapView(null); addMarkers(); } }
+    else { hidePop(); render(); }
   }
 
   // ---- Detail-Overlay ----
@@ -396,21 +463,19 @@
       .then(d => { dBody.innerHTML = detailShell(base, d) + renderUnits(d); detailMiniMap(base); })
       .catch(() => { dBody.innerHTML = detailShell(base) + `<div class="d-loading">Details nicht verfügbar.</div>`; detailMiniMap(base); });
   }
-  // Mini-Karte im Detail (falls Koordinaten bekannt).
-  let dMap = null;
+  // Mini-Karte im Detail: kleine gezeichnete NÖ-Karte mit markiertem Ort.
   function detailMiniMap(base) {
-    if (dMap) { try { dMap.remove(); } catch (_) {} dMap = null; }
     const c = base && coordsOf(base);
-    if (!c || typeof L === "undefined") return;
-    const host = document.createElement("div");
-    host.id = "d-map";
-    dBody.appendChild(host);
-    dMap = L.map(host, { zoomControl: false, attributionControl: false, dragging: false, scrollWheelZoom: false, doubleClickZoom: false, touchZoom: false, keyboard: false })
-      .setView(c, 12);
-    L.tileLayer(tileUrl(), { detectRetina: true, maxZoom: 16 }).addTo(dMap);
+    if (!c) return;
+    const cx = projX(c[1]), cy = projY(c[0]);
     const col = KIND_COLOR[(base._c && base._c.kind) || "X"] || KIND_COLOR.X;
-    L.circleMarker(c, { radius: 9, color: "#0b0c10", weight: 1.5, fillColor: col, fillOpacity: 0.95 }).addTo(dMap);
-    setTimeout(() => { try { dMap.invalidateSize(); } catch (_) {} }, 80);
+    const pad = 12, dot = Math.max(MAPW, MAPH) * 0.02;
+    const svg = `<svg id="d-map" viewBox="${-pad} ${-pad} ${(MAPW + pad * 2).toFixed(0)} ${(MAPH + pad * 2).toFixed(0)}" preserveAspectRatio="xMidYMid meet" aria-label="Ort in Niederösterreich">` +
+      `<g class="noe-land-mini">${ensurePaths()}</g>` +
+      `<circle class="d-dot-glow" cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${(dot * 2.6).toFixed(1)}" fill="${col}"/>` +
+      `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${dot.toFixed(1)}" fill="${col}" stroke="#0b0c10" stroke-width="${(dot * 0.2).toFixed(1)}"/>` +
+      `</svg>`;
+    dBody.insertAdjacentHTML("beforeend", svg);
   }
   function detailShell(base, d) {
     const src = d || base || {};
@@ -445,7 +510,7 @@
         `<span class="u-status" style="color:${st[1]}">${esc(st[0])}</span>${t ? `<span class="u-time">${esc(t)}</span>` : ""}</div>`;
     }).join("") + `</div>`;
   }
-  function closeDetail() { overlay.hidden = true; document.body.style.overflow = ""; if (dMap) { try { dMap.remove(); } catch (_) {} dMap = null; } }
+  function closeDetail() { overlay.hidden = true; document.body.style.overflow = ""; }
 
   // ---- Alarm-Overlay (Bezirks-Push) ----
   const alarmOvl = $("#alarm"), aGrid = $("#a-grid"), aAll = $("#a-all-cb"), aStatus = $("#a-status");
@@ -570,8 +635,18 @@
 
   // ---- Events ----
   listEl.addEventListener("click", e => { const c = e.target.closest(".card"); if (c && c.dataset.id) openDetail(c.dataset.id); });
-  mapEl.addEventListener("click", e => { const b = e.target.closest(".pop-more"); if (b && b.dataset.id) { closePopup(); openDetail(b.dataset.id); } });
-  function closePopup() { if (map) map.closePopup(); }
+  mapEl.addEventListener("click", e => {
+    const more = e.target.closest(".pop-more");
+    if (more && more.dataset.id) { hidePop(); openDetail(more.dataset.id); return; }
+    if (e.target.closest(".pop-x")) { hidePop(); return; }
+    const mk = e.target.closest(".mk");
+    if (mk) {
+      const g = markerGroups.get(mk.dataset.key);
+      if (g && g.items.length === 1 && g.items[0].i) { openDetail(g.items[0].i); return; }
+      showPop(mk.dataset.key, mk); return;
+    }
+    if (!e.target.closest("#map-pop")) hidePop();
+  });
   $("#d-close").addEventListener("click", closeDetail);
   overlay.addEventListener("click", e => { if (e.target === overlay) closeDetail(); });
   $("#a-close").addEventListener("click", closeAlarm);

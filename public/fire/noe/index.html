@@ -25,8 +25,7 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Feuerwehr NÖ" />
-  <link rel="stylesheet" href="vendor/leaflet.css" />
-  <link rel="stylesheet" href="style.css?v=8" />
+  <link rel="stylesheet" href="style.css?v=9" />
 </head>
 <body>
   <div id="ptr" aria-hidden="true"><span class="ptr-spin"></span></div>
@@ -84,7 +83,7 @@
 
     <footer class="foot">
       <p>Daten: NÖ Landesfeuerwehrverband (öffentliche <em>Wastl/GRISU</em>-Schnittstelle).
-         Karte © <em>OpenStreetMap</em>-Mitwirkende, Kacheln © <em>CARTO</em>.
+         Kartengrundlage: Bezirksgrenzen <em>Statistik Austria</em> (vereinfacht).
          Inoffizielles Projekt, ohne Gewähr. Kein Ersatz für den Notruf <strong>122</strong>.</p>
     </footer>
   </div>
@@ -123,8 +122,8 @@
     </div>
   </div>
 
-  <script src="vendor/leaflet.js"></script>
-  <script src="app.js?v=9"></script>
+  <script src="noe-geo.js?v=1"></script>
+  <script src="app.js?v=10"></script>
   <script>
     // Eigener Service Worker (Scope /fire/noe/) → installierbar als eigene PWA.
     if ("serviceWorker" in navigator) {
