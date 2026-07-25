@@ -18,6 +18,8 @@
   --amber: #ffb020;
   --ink-contrast: #0b0c10;  /* Text auf --ink-Flächen (Chips „aktiv") */
   --map-bg: #0d1117;
+  --land: #1b2433;          /* gezeichnete Bezirksflächen */
+  --land-line: rgba(150,180,220,0.30);
 
   --radius: 18px;
   --shadow: 0 18px 48px -20px rgba(0, 0, 0, 0.8);
@@ -421,3 +423,41 @@ select:focus, input:focus { border-color: rgba(255, 59, 48, 0.6); }
 .hbar i { display: block; width: 100%; min-height: 2px; background: linear-gradient(var(--brand), #b31f16); border-radius: 3px 3px 0 0; opacity: 0.85; }
 .hbar em { font-size: 0.6rem; color: var(--faint); font-style: normal; }
 .s-note { margin: 16px 0 0; color: var(--faint); font-size: 0.74rem; line-height: 1.5; }
+
+/* ==================================================================
+   Gezeichnete NÖ-Karte (SVG) — ersetzt die Kachelkarte
+   ================================================================== */
+#noe-svg { width: 100%; height: 100%; display: block; }
+.noe-district {
+  fill: var(--land); stroke: var(--land-line); stroke-width: 1.1;
+  stroke-linejoin: round; vector-effect: non-scaling-stroke;
+  transition: fill 0.15s;
+}
+#noe-markers .mk { cursor: pointer; }
+.mk-count { fill: #0b0c10; font-weight: 800; font-family: inherit; pointer-events: none; }
+.mk-pulse { transform-box: fill-box; transform-origin: center; animation: mkpulse 1.8s ease-out infinite; }
+@keyframes mkpulse { 0% { opacity: 0.5; transform: scale(1); } 100% { opacity: 0; transform: scale(2.4); } }
+
+/* Popup über der Karte */
+#map-pop {
+  position: absolute; z-index: 600; max-width: min(280px, 82%);
+  background: #171a23; border: 1px solid var(--panel-line); border-radius: 14px;
+  padding: 12px 14px; box-shadow: 0 14px 36px -10px rgba(0,0,0,0.75); color: var(--ink);
+}
+:root[data-theme="light"] #map-pop { background: #ffffff; box-shadow: 0 14px 34px -12px rgba(20,30,60,0.4); }
+#map-pop .pop-x { position: absolute; top: 6px; right: 6px; width: 26px; height: 26px; border-radius: 50%; border: 0; background: rgba(255,255,255,0.06); color: var(--muted); cursor: pointer; font-size: 0.8rem; }
+:root[data-theme="light"] #map-pop .pop-x { background: rgba(12,18,34,0.06); }
+#map-pop .pop-loc { font-weight: 800; font-size: 0.92rem; margin: 0 22px 6px 0; }
+#map-pop .pop-item { padding: 7px 0; border-top: 1px solid var(--panel-line); display: flex; flex-direction: column; gap: 3px; }
+#map-pop .pop-item:first-of-type { border-top: 0; }
+#map-pop .pop-badge { align-self: flex-start; font: 800 0.66rem inherit; text-transform: uppercase; letter-spacing: 0.03em; padding: 2px 7px; border-radius: 6px; }
+#map-pop .pop-when { color: var(--faint); font-size: 0.78rem; }
+#map-pop .pop-more { align-self: flex-start; margin-top: 4px; border: 0; background: var(--brand); color: #fff; font: 700 0.8rem inherit; padding: 6px 11px; border-radius: 8px; cursor: pointer; }
+
+/* Mini-Karte im Detail */
+#d-map { width: 100%; height: 150px; display: block; border-radius: 12px; overflow: hidden; margin: 16px 0 2px; border: 1px solid var(--panel-line); background: var(--map-bg); }
+.noe-land-mini path { fill: var(--land); stroke: var(--land-line); stroke-width: 1; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.d-dot-glow { opacity: 0.35; }
+
+/* Light-Mode: hellere Landflächen */
+:root[data-theme="light"] { --land: #dbe6f3; --land-line: rgba(30,60,100,0.28); }
