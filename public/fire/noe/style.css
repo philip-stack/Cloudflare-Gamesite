@@ -207,8 +207,20 @@ select:focus, input:focus { border-color: rgba(255, 59, 48, 0.6); }
   font-size: 0.9rem; cursor: pointer; line-height: 1;
 }
 .x:hover { background: rgba(255,255,255,0.12); }
+.share-btn {
+  position: absolute; top: 14px; right: 58px; height: 36px; display: inline-flex; align-items: center; gap: 6px;
+  padding: 0 13px; border-radius: 18px; border: 1px solid var(--panel-line);
+  background: rgba(255,255,255,0.05); color: var(--ink); font: 700 0.82rem inherit; cursor: pointer; line-height: 1;
+}
+.share-btn:hover { background: rgba(255,255,255,0.12); }
+.share-btn svg { flex: none; }
 
-.d-head { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; padding-right: 40px; }
+.d-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin-bottom: 4px; padding-right: 150px; min-height: 34px; }
+@media (max-width: 430px) {
+  .share-btn span { display: none; }
+  .share-btn { padding: 0; width: 36px; justify-content: center; border-radius: 50%; }
+  .d-head { padding-right: 96px; }
+}
 #d-title { margin: 8px 0 2px; font-size: 1.3rem; font-weight: 800; letter-spacing: -0.01em; line-height: 1.2; }
 .d-loc { color: var(--muted); font-weight: 600; margin-bottom: 18px; }
 .d-loc .bz { color: var(--faint); }
