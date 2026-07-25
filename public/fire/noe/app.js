@@ -504,6 +504,15 @@
       </div>`;
   }
   function hhmm(s) { const m = /(\d{2}):(\d{2})/.exec(String(s || "")); return m ? m[1] + ":" + m[2] : ""; }
+  // Uhrzeit aus einem „TT.MM.JJJJ HH:MM:SS"-Feld ziehen. Die Quelle maskiert
+  // die exakte Minute frisch alarmierter Wehren teils („10:4x:xx") — wir zeigen
+  // dann eben „10:4x" statt gar nichts.
+  function tmOf(v) {
+    const s = String(v || "").trim(); if (!s) return "";
+    const t = s.includes(" ") ? s.slice(s.indexOf(" ") + 1) : s;
+    const m = /(\d{2}):([0-9x]{2})/i.exec(t);
+    return m ? m[1] + ":" + m[2] : "";
+  }
   // Österr. FMS-Funkstatus → Klartext + Farbe.
   const FMS = {
     "0": ["dringend", "#ff3b30"], "1": ["einsatzbereit", "#8a93a3"], "2": ["einsatzbereit", "#8a93a3"],
@@ -515,9 +524,18 @@
     if (!units.length) return `<div class="d-units"><h4>Alarmierte Wehren</h4><div class="d-loading">Noch keine Wehren gelistet.</div></div>`;
     return `<div class="d-units"><h4>Alarmierte Wehren (${units.length})</h4>` + units.map(u => {
       const st = FMS[String(u.s)] || ["alarmiert", "#8a93a3"];
-      const t = hhmm(u.dt);
-      return `<div class="unit"><span class="u-dot" style="background:${st[1]}"></span><span class="u-name">${esc(u.n || "Feuerwehr")}</span>` +
-        `<span class="u-status" style="color:${st[1]}">${esc(st[0])}</span>${t ? `<span class="u-time">${esc(t)}</span>` : ""}</div>`;
+      // dt = alarmiert · ot = ausgerückt · it = eingerückt (aus der Quelle)
+      const al = tmOf(u.dt), aus = tmOf(u.ot), ein = tmOf(u.it);
+      const times = [];
+      if (al) times.push(`<span class="ut" title="alarmiert">🔔 ${esc(al)}</span>`);
+      if (aus) times.push(`<span class="ut" title="ausgerückt">🚒 ${esc(aus)}</span>`);
+      if (ein) times.push(`<span class="ut" title="eingerückt">🏠 ${esc(ein)}</span>`);
+      return `<div class="unit">` +
+        `<div class="u-row"><span class="u-dot" style="background:${st[1]}"></span>` +
+        `<span class="u-name">${esc(u.n || "Feuerwehr")}</span>` +
+        `<span class="u-status" style="color:${st[1]}">${esc(st[0])}</span></div>` +
+        (times.length ? `<div class="u-times">${times.join("")}</div>` : "") +
+        `</div>`;
     }).join("") + `</div>`;
   }
   function closeDetail() { overlay.hidden = true; document.body.style.overflow = ""; }
@@ -704,7 +722,10 @@
     const TH = 70;
     window.addEventListener("touchstart", e => {
       if (!overlay.hidden || !alarmOvl.hidden) return;
-      if (window.scrollY > 0 || view === "map") { pulling = false; return; }
+      // Auch in der Karte erlauben — das gezeichnete SVG kennt kein eigenes
+      // Pan/Zoom, ein kurzer Tap auf einen Marker bewegt sich nicht (dist≈0),
+      // erst ein deutliches Ziehen (>Schwelle) löst den Refresh aus.
+      if (window.scrollY > 0) { pulling = false; return; }
       startY = e.touches[0].clientY; pulling = true; dist = 0;
     }, { passive: true });
     window.addEventListener("touchmove", e => {
