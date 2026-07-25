@@ -234,20 +234,23 @@ SPR.rock = makeSprite(110, 110, g => {
   g.beginPath(); g.ellipse(0, -2, 50, 9, 0, 0, Math.PI * 2); g.fill();
 });
 
-// --- Sterntaler ---
+// --- Sterntaler (glänzende Goldmünze) ---
 SPR.coin = makeSprite(34, 34, g => {
   g.translate(0, -17);
-  g.shadowColor = GOLD; g.shadowBlur = 12;
-  const gr = g.createRadialGradient(-3, -4, 2, 0, 0, 15);
-  gr.addColorStop(0, CREAM); gr.addColorStop(0.6, GOLD); gr.addColorStop(1, "#a37a1e");
-  g.fillStyle = gr;
+  g.shadowColor = GOLD; g.shadowBlur = 14;
+  // Dicke Prägekante
+  const rim = g.createLinearGradient(0, -13, 0, 13);
+  rim.addColorStop(0, "#fff3c4"); rim.addColorStop(0.5, "#f0b93e"); rim.addColorStop(1, "#8a5f14");
+  g.fillStyle = rim;
   g.beginPath(); g.arc(0, 0, 13, 0, Math.PI * 2); g.fill();
   g.shadowBlur = 0;
-  g.strokeStyle = "rgba(255, 245, 200, 0.8)";
-  g.lineWidth = 1.6;
-  g.beginPath(); g.arc(0, 0, 10, 0, Math.PI * 2); g.stroke();
+  // Vertiefte Mitte
+  const face = g.createRadialGradient(-3, -4, 2, 0, 1, 12);
+  face.addColorStop(0, "#fffbe6"); face.addColorStop(0.55, "#ffd24d"); face.addColorStop(1, "#c48f22");
+  g.fillStyle = face;
+  g.beginPath(); g.arc(0, 0, 10.5, 0, Math.PI * 2); g.fill();
   // Stern
-  g.fillStyle = "#8a6a1c";
+  g.fillStyle = "rgba(150, 106, 24, 0.75)";
   g.beginPath();
   for (let i = 0; i < 10; i++) {
     const r = i % 2 ? 3 : 7;
@@ -255,6 +258,12 @@ SPR.coin = makeSprite(34, 34, g => {
     g[i ? "lineTo" : "moveTo"](Math.cos(a) * r, Math.sin(a) * r);
   }
   g.closePath(); g.fill();
+  // Glanz: heller Sichelreflex oben-links + Funkelpunkt
+  g.strokeStyle = "rgba(255, 255, 255, 0.85)";
+  g.lineWidth = 2.2; g.lineCap = "round";
+  g.beginPath(); g.arc(0, 0, 10, Math.PI * 1.05, Math.PI * 1.5); g.stroke();
+  g.fillStyle = "rgba(255,255,255,0.95)";
+  g.beginPath(); g.arc(-4.5, -5.5, 2, 0, Math.PI * 2); g.fill();
 });
 
 // --- Funkel-Juwel (5 Taler) ---
@@ -377,13 +386,19 @@ SPR.edgeB = makeSprite(26, 24, g => {
   g.shadowBlur = 0;
 });
 
-// --- Weiche Wolke ---
+// --- Weiche, fluffige Wolke (heller Kern + weiche Unterschattierung) ---
 SPR.cloud = makeSprite(180, 90, g => {
   g.translate(0, -48);
-  g.fillStyle = "rgba(255, 250, 255, 0.85)";
-  for (const [cx2, cy2, r] of [[-52, 8, 22], [-18, -6, 30], [22, 0, 26], [54, 10, 18], [0, 12, 34]]) {
-    g.beginPath(); g.arc(cx2, cy2, r, 0, Math.PI * 2); g.fill();
-  }
+  const puffs = [[-52, 8, 22], [-18, -6, 30], [22, 0, 26], [54, 10, 18], [0, 12, 34]];
+  // Weiche Unterschattierung für Volumen
+  g.fillStyle = "rgba(210, 224, 245, 0.5)";
+  for (const [cx2, cy2, r] of puffs) { g.beginPath(); g.arc(cx2, cy2 + 4, r, 0, Math.PI * 2); g.fill(); }
+  // Heller Wolkenkörper
+  g.fillStyle = "rgba(255, 255, 255, 0.95)";
+  for (const [cx2, cy2, r] of puffs) { g.beginPath(); g.arc(cx2, cy2, r, 0, Math.PI * 2); g.fill(); }
+  // Sonnenbeschienene Oberkante
+  g.fillStyle = "rgba(255, 255, 255, 1)";
+  for (const [cx2, cy2, r] of puffs) { g.beginPath(); g.arc(cx2, cy2 - r * 0.35, r * 0.6, 0, Math.PI * 2); g.fill(); }
 });
 
 // Ambient: Wolken + Glühwürmchen für Tiefe
@@ -404,48 +419,50 @@ for (let i = 0; i < 16; i++) {
 }
 
 // ==================== Zonen / Farbwelten ====================
+// Kräftige, sonnige Farbwelten im Subway-Surfers-Stil: heller Himmel,
+// satte Böden, klar lesbarer Weg. Jede Zone hat ihren eigenen Tag-Vibe.
 const ZONES = [
   {
     name: "Zuckerwiese", sub: "Zone 1",
-    sky: ["#3b1d5e", "#8f3a78", "#ff9a80"],
-    ground: ["#3a8a5c", "#245e3f"],
-    road: ["#7a5499", "#553a73"],
-    ridge: "#4a2668", stars: 0.12,
+    sky: ["#37b6ff", "#8fe0ff", "#ffe6bf"],   // sonniger Himmel → warmer Horizont
+    ground: ["#57d477", "#33a857"],           // frisches Wiesengrün
+    road: ["#c295e6", "#9a63cf"],             // helle Zuckerstraße
+    ridge: "#8a58c4", stars: 0,
   },
   {
     name: "Kristallwald", sub: "Zone 2",
-    sky: ["#081a33", "#14405e", "#2f7a99"],
-    ground: ["#1e5c66", "#153e4c"],
-    road: ["#2f5478", "#203a57"],
-    ridge: "#12304a", stars: 0.65,
+    sky: ["#12a6dc", "#45cfe8", "#c2f3ee"],   // leuchtendes Türkis
+    ground: ["#33bda8", "#1e8f7e"],
+    road: ["#3f9ec8", "#2c7098"],
+    ridge: "#1f7292", stars: 0.3,
   },
   {
     name: "Glutfelder", sub: "Zone 3",
-    sky: ["#2b0d12", "#8a3320", "#ffb366"],
-    ground: ["#7a4226", "#54301e"],
-    road: ["#8a5438", "#5e3a28"],
-    ridge: "#571f14", stars: 0.2,
+    sky: ["#ff7a3d", "#ffad5c", "#ffe39a"],   // warmes Sonnenuntergangsgold
+    ground: ["#d98a44", "#a15f2c"],
+    road: ["#c2825a", "#94603f"],
+    ridge: "#9a4826", stars: 0.1,
   },
   {
     name: "Sternenpass", sub: "Zone 4",
-    sky: ["#04050f", "#0d1233", "#28306b"],
-    ground: ["#28306b", "#1a2140"],
-    road: ["#3a446b", "#272f57"],
-    ridge: "#141a3d", stars: 1,
+    sky: ["#1c1c66", "#3a3ab8", "#7a7af0"],   // satte Sternennacht
+    ground: ["#3a3a8c", "#242461"],
+    road: ["#4e4ea6", "#353576"],
+    ridge: "#26265c", stars: 1,
   },
   {
     name: "Polarnacht", sub: "Zone 5",
-    sky: ["#04121a", "#0e3a4a", "#3fb0c9"],
-    ground: ["#bcd6e0", "#7fa3b2"],
-    road: ["#8fb3c4", "#5e8496"],
-    ridge: "#274a5a", stars: 0.85,
+    sky: ["#0d3a5e", "#1f93b0", "#5fe6cf"],   // Aurora-Türkis
+    ground: ["#d2ecf5", "#9ec8d8"],           // helles Eis
+    road: ["#a6cfe0", "#729aae"],
+    ridge: "#356a80", stars: 0.85,
   },
   {
     name: "Morgenröte", sub: "Zone 6",
-    sky: ["#22143a", "#c24d7a", "#ffd6a0"],
-    ground: ["#c98a5c", "#9c5f3c"],
-    road: ["#b57a6a", "#8a574a"],
-    ridge: "#7a3a52", stars: 0.08,
+    sky: ["#6a45a8", "#f06a9c", "#ffd9a6"],   // leuchtender Sonnenaufgang
+    ground: ["#eaa76e", "#bd7044"],
+    road: ["#d6927e", "#a86a58"],
+    ridge: "#9a4f68", stars: 0.05,
   },
 ];
 const ZONE_LEN = 450; // Meter pro Zone
@@ -1053,23 +1070,38 @@ function render(now) {
     ctx.globalAlpha = 1;
   }
 
-  // Zwillingsmonde
-  const moon = (mx, my, r, col, glow) => {
-    ctx.shadowColor = glow; ctx.shadowBlur = 26;
-    const gr = ctx.createRadialGradient(mx - r * 0.3, my - r * 0.3, r * 0.15, mx, my, r);
-    gr.addColorStop(0, "#fffdf4"); gr.addColorStop(1, col);
-    ctx.fillStyle = gr;
-    ctx.beginPath(); ctx.arc(mx, my, r, 0, Math.PI * 2); ctx.fill();
-    ctx.shadowBlur = 0;
-  };
-  moon(W * 0.78, hY * 0.34, 26, "#e8d9b0", "rgba(232,217,176,0.8)");
-  moon(W * 0.66, hY * 0.58, 9, "#d9b8e8", "rgba(217,184,232,0.8)");
+  // Himmelskörper: tagsüber strahlende Sonne mit Bloom, nachts Zwillingsmonde
+  if (pal.stars < 0.4) {
+    const sx = W * 0.75, sy = hY * 0.4, r = 32;
+    const bloom = ctx.createRadialGradient(sx, sy, 4, sx, sy, r * 4.5);
+    bloom.addColorStop(0, "rgba(255,247,214,0.6)");
+    bloom.addColorStop(0.5, "rgba(255,236,180,0.22)");
+    bloom.addColorStop(1, "rgba(255,236,180,0)");
+    ctx.fillStyle = bloom;
+    ctx.fillRect(sx - r * 4.5, sy - r * 4.5, r * 9, r * 9);
+    const disc = ctx.createRadialGradient(sx - r * 0.3, sy - r * 0.3, r * 0.2, sx, sy, r);
+    disc.addColorStop(0, "#fffef4"); disc.addColorStop(0.55, "#fff0c8"); disc.addColorStop(1, "#ffd873");
+    ctx.fillStyle = disc;
+    ctx.beginPath(); ctx.arc(sx, sy, r, 0, Math.PI * 2); ctx.fill();
+  } else {
+    const moon = (mx, my, r, col, glow) => {
+      ctx.shadowColor = glow; ctx.shadowBlur = 26;
+      const gr = ctx.createRadialGradient(mx - r * 0.3, my - r * 0.3, r * 0.15, mx, my, r);
+      gr.addColorStop(0, "#fffdf4"); gr.addColorStop(1, col);
+      ctx.fillStyle = gr;
+      ctx.beginPath(); ctx.arc(mx, my, r, 0, Math.PI * 2); ctx.fill();
+      ctx.shadowBlur = 0;
+    };
+    moon(W * 0.78, hY * 0.34, 26, "#e8d9b0", "rgba(232,217,176,0.8)");
+    moon(W * 0.66, hY * 0.58, 9, "#d9b8e8", "rgba(217,184,232,0.8)");
+  }
 
-  // Wolken ziehen vorbei (Parallax)
+  // Wolken ziehen vorbei (Parallax) — tagsüber hell & fluffig
+  const cloudA = 0.5 * (1 - pal.stars * 0.7);
   for (const c of clouds) {
     const span = W + 260;
     const x = ((c.x0 * span - o * c.sp) % span + span) % span - 130;
-    blitFoot(SPR.cloud, x, hY * c.y + 35 * c.sc, c.sc, 0.16);
+    blitFoot(SPR.cloud, x, hY * c.y + 35 * c.sc, c.sc, cloudA);
   }
 
   // Glühen am Horizont — Tiefe & Licht
@@ -1211,8 +1243,9 @@ function render(now) {
     }
   }
 
-  // Spur-Trennstriche
-  ctx.strokeStyle = "rgba(246, 238, 252, 0.28)";
+  // Spur-Trennstriche — klar & hell (Subway-Surfers-Gleise)
+  ctx.strokeStyle = "rgba(255, 252, 240, 0.55)";
+  ctx.lineCap = "round";
   const DASH = 2.6;
   const dMin = Math.floor((o + NEAR * 0.7) / DASH);
   const dMax = Math.ceil((o + SPAWN_Z) / DASH);
@@ -1563,6 +1596,11 @@ function drawRunner(now) {
   ctx.beginPath();
   ctx.roundRect(-13, -58, 26, 36, 11);
   ctx.fill();
+  // Sanftes Oberlicht + feine Cartoon-Kontur (Subway-Surfers-Pop)
+  ctx.fillStyle = "rgba(255,255,255,0.16)";
+  ctx.beginPath(); ctx.roundRect(-13, -58, 26, 13, 11); ctx.fill();
+  ctx.strokeStyle = "rgba(14,8,26,0.32)"; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.roundRect(-13, -58, 26, 36, 11); ctx.stroke();
 
   // Umhang liegt auf dem Rücken und flattert nach unten aus
   const cg2 = ctx.createLinearGradient(0, -56, 0, -14);
@@ -1624,6 +1662,13 @@ function drawRunner(now) {
   ctx.beginPath();
   ctx.arc(0, -66, 11, 0, Math.PI * 2);
   ctx.fill();
+  // Glanzlicht + Kontur auf der Kapuze
+  const hlg = ctx.createRadialGradient(-3.5, -70, 1, 0, -66, 11);
+  hlg.addColorStop(0, "rgba(255,255,255,0.4)"); hlg.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = hlg;
+  ctx.beginPath(); ctx.arc(0, -66, 11, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = "rgba(14,8,26,0.28)"; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(0, -66, 11, 0, Math.PI * 2); ctx.stroke();
   // Kapuzen-Falte
   ctx.strokeStyle = "rgba(20, 10, 34, 0.35)";
   ctx.lineWidth = 2;
@@ -1678,10 +1723,10 @@ function drawUnicorn(now) {
   for (let i = 0; i < 6; i++) {
     const off = i - 2.5;
     ctx.strokeStyle = USKIN.mane[i];
-    ctx.globalAlpha = 0.85;
-    ctx.lineWidth = 7;
+    ctx.globalAlpha = 0.95;
+    ctx.lineWidth = 7.5;
     ctx.lineCap = "round";
-    ctx.shadowColor = USKIN.mane[i]; ctx.shadowBlur = 8;
+    ctx.shadowColor = USKIN.mane[i]; ctx.shadowBlur = 13;
     ctx.beginPath();
     const wav = Math.sin(now * 0.004 + i * 0.9) * 12;
     ctx.moveTo(-14 + off * 2, -96);
@@ -1705,6 +1750,19 @@ function drawUnicorn(now) {
   ctx.quadraticCurveTo(10, -30, 16, 10);      // Halsvorderseite
   ctx.closePath();
   ctx.fill();
+  // Glänzendes Rim-Light + weicher Bauchschatten (klippt auf den Körper)
+  ctx.save();
+  ctx.clip();
+  const gloss = ctx.createLinearGradient(-30, -120, 44, -20);
+  gloss.addColorStop(0, "rgba(255,255,255,0.42)");
+  gloss.addColorStop(0.32, "rgba(255,255,255,0.04)");
+  gloss.addColorStop(1, "rgba(30,16,48,0.22)");
+  ctx.fillStyle = gloss;
+  ctx.fillRect(-60, -180, 170, 250);
+  ctx.restore();
+  // Feine Kontur (Cartoon-Pop)
+  ctx.strokeStyle = "rgba(20,10,30,0.22)"; ctx.lineWidth = 2;
+  ctx.stroke();
 
   // Nüstern (schnaubt!)
   ctx.fillStyle = USKIN.nostril;
