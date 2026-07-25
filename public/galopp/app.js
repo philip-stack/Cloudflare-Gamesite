@@ -87,6 +87,8 @@ GS.skins.define("galopp_unicorn", [
     } },
 ], "galopp");
 let USKIN = GS.skins.get("galopp_unicorn");
+let UNI_GLOSS = null; // gecachter Körper-Glanzverlauf (einmal erzeugt)
+let HOOD_GLOSS = null; // gecachtes Kapuzen-Glanzlicht
 
 // ==================== Projektion ====================
 // Pseudo-3D: t = NEAR/z ∈ (0..1], t=1 ist die Unterkante der Bühne.
@@ -399,6 +401,22 @@ SPR.cloud = makeSprite(180, 90, g => {
   // Sonnenbeschienene Oberkante
   g.fillStyle = "rgba(255, 255, 255, 1)";
   for (const [cx2, cy2, r] of puffs) { g.beginPath(); g.arc(cx2, cy2 - r * 0.35, r * 0.6, 0, Math.PI * 2); g.fill(); }
+});
+
+// --- Sonne (einmal vorgerendert: Bloom + Scheibe) ---
+SPR.sun = makeSprite(300, 300, g => {
+  g.translate(0, -150); // in die Sprite-Mitte
+  const r = 32;
+  const bloom = g.createRadialGradient(0, 0, 4, 0, 0, r * 4.5);
+  bloom.addColorStop(0, "rgba(255,247,214,0.6)");
+  bloom.addColorStop(0.5, "rgba(255,236,180,0.22)");
+  bloom.addColorStop(1, "rgba(255,236,180,0)");
+  g.fillStyle = bloom;
+  g.beginPath(); g.arc(0, 0, r * 4.5, 0, Math.PI * 2); g.fill();
+  const disc = g.createRadialGradient(-r * 0.3, -r * 0.3, r * 0.2, 0, 0, r);
+  disc.addColorStop(0, "#fffef4"); disc.addColorStop(0.55, "#fff0c8"); disc.addColorStop(1, "#ffd873");
+  g.fillStyle = disc;
+  g.beginPath(); g.arc(0, 0, r, 0, Math.PI * 2); g.fill();
 });
 
 // Ambient: Wolken + Glühwürmchen für Tiefe
@@ -1072,17 +1090,7 @@ function render(now) {
 
   // Himmelskörper: tagsüber strahlende Sonne mit Bloom, nachts Zwillingsmonde
   if (pal.stars < 0.4) {
-    const sx = W * 0.75, sy = hY * 0.4, r = 32;
-    const bloom = ctx.createRadialGradient(sx, sy, 4, sx, sy, r * 4.5);
-    bloom.addColorStop(0, "rgba(255,247,214,0.6)");
-    bloom.addColorStop(0.5, "rgba(255,236,180,0.22)");
-    bloom.addColorStop(1, "rgba(255,236,180,0)");
-    ctx.fillStyle = bloom;
-    ctx.fillRect(sx - r * 4.5, sy - r * 4.5, r * 9, r * 9);
-    const disc = ctx.createRadialGradient(sx - r * 0.3, sy - r * 0.3, r * 0.2, sx, sy, r);
-    disc.addColorStop(0, "#fffef4"); disc.addColorStop(0.55, "#fff0c8"); disc.addColorStop(1, "#ffd873");
-    ctx.fillStyle = disc;
-    ctx.beginPath(); ctx.arc(sx, sy, r, 0, Math.PI * 2); ctx.fill();
+    blitFoot(SPR.sun, W * 0.75, hY * 0.4 + SPR.sun.h / 2, 1, 1);
   } else {
     const moon = (mx, my, r, col, glow) => {
       ctx.shadowColor = glow; ctx.shadowBlur = 26;
@@ -1662,10 +1670,12 @@ function drawRunner(now) {
   ctx.beginPath();
   ctx.arc(0, -66, 11, 0, Math.PI * 2);
   ctx.fill();
-  // Glanzlicht + Kontur auf der Kapuze
-  const hlg = ctx.createRadialGradient(-3.5, -70, 1, 0, -66, 11);
-  hlg.addColorStop(0, "rgba(255,255,255,0.4)"); hlg.addColorStop(1, "rgba(255,255,255,0)");
-  ctx.fillStyle = hlg;
+  // Glanzlicht + Kontur auf der Kapuze (Verlauf gecacht)
+  if (!HOOD_GLOSS) {
+    HOOD_GLOSS = ctx.createRadialGradient(-3.5, -70, 1, 0, -66, 11);
+    HOOD_GLOSS.addColorStop(0, "rgba(255,255,255,0.4)"); HOOD_GLOSS.addColorStop(1, "rgba(255,255,255,0)");
+  }
+  ctx.fillStyle = HOOD_GLOSS;
   ctx.beginPath(); ctx.arc(0, -66, 11, 0, Math.PI * 2); ctx.fill();
   ctx.strokeStyle = "rgba(14,8,26,0.28)"; ctx.lineWidth = 1.5;
   ctx.beginPath(); ctx.arc(0, -66, 11, 0, Math.PI * 2); ctx.stroke();
@@ -1750,17 +1760,17 @@ function drawUnicorn(now) {
   ctx.quadraticCurveTo(10, -30, 16, 10);      // Halsvorderseite
   ctx.closePath();
   ctx.fill();
-  // Glänzendes Rim-Light + weicher Bauchschatten (klippt auf den Körper)
-  ctx.save();
-  ctx.clip();
-  const gloss = ctx.createLinearGradient(-30, -120, 44, -20);
-  gloss.addColorStop(0, "rgba(255,255,255,0.42)");
-  gloss.addColorStop(0.32, "rgba(255,255,255,0.04)");
-  gloss.addColorStop(1, "rgba(30,16,48,0.22)");
-  ctx.fillStyle = gloss;
-  ctx.fillRect(-60, -180, 170, 250);
-  ctx.restore();
-  // Feine Kontur (Cartoon-Pop)
+  // Glänzendes Rim-Light + weicher Bauchschatten — denselben Körperpfad noch
+  // einmal mit einem gecachten Verlauf füllen (kein Clip, keine Allokation
+  // pro Frame → kein Ruckler).
+  if (!UNI_GLOSS) {
+    UNI_GLOSS = ctx.createLinearGradient(-30, -120, 44, -20);
+    UNI_GLOSS.addColorStop(0, "rgba(255,255,255,0.42)");
+    UNI_GLOSS.addColorStop(0.32, "rgba(255,255,255,0.04)");
+    UNI_GLOSS.addColorStop(1, "rgba(30,16,48,0.22)");
+  }
+  ctx.fillStyle = UNI_GLOSS;
+  ctx.fill();
   ctx.strokeStyle = "rgba(20,10,30,0.22)"; ctx.lineWidth = 2;
   ctx.stroke();
 
