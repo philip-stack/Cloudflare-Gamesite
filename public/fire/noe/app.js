@@ -128,6 +128,7 @@
 
   // ---- Laden ----
   const parseUTC = s => { const d = new Date(String(s || "").replace(" ", "T") + "Z"); return isNaN(d.getTime()) ? null : d; };
+  const parseDispo = s => { if (!s) return null; try { const a = JSON.parse(s); return Array.isArray(a) ? a : null; } catch (_) { return null; } };
   async function load() {
     const recent = feed === "recent";
     try {
@@ -140,6 +141,7 @@
         _bez: BEZIRK[String(e.b)] || (e.b ? "Bezirk " + e.b : ""),
         _ended: recent,
         _key: recent ? "r:" + e.n : e.i,
+        _dispo: recent ? parseDispo(e.dispo) : null,   // gespeicherte Wehren (beendet)
       }));
       if (!recent) detectNew(list);
       setStatus(data.error ? "err" : "ok");
@@ -454,9 +456,35 @@
 
   // ---- Detail-Overlay ----
   const overlay = $("#detail"), dBody = $("#d-body");
+  let curDetail = null;   // aktuell geöffneter Einsatz (für „Teilen")
+
+  // Einsatz teilen — native Teilen-Ansicht (WhatsApp, …) auf Mobil,
+  // sonst in die Zwischenablage. Deep-Link per #n=<Einsatznummer>.
+  async function shareOp(base) {
+    if (!base) return;
+    const c = base._c || classify(base.a);
+    const line = [
+      "🚒 " + (c.label || "Einsatz") + (c.stufe ? " · Stufe " + c.stufe : ""),
+      base.m || "",
+      (base.o || "") + (base._bez ? " · " + base._bez : ""),
+      base._when ? (base._ended ? "beendet " : "") + fmtWhen(base._when) : "",
+    ].filter(Boolean).join("\n");
+    const url = location.origin + location.pathname + "#n=" + encodeURIComponent(base.n || "");
+    try {
+      if (navigator.share) { await navigator.share({ title: "Feuerwehr NÖ", text: line, url }); return; }
+    } catch (_) { return; }   // Nutzer hat abgebrochen
+    try {
+      await navigator.clipboard.writeText(line + "\n" + url);
+      toast("Einsatz kopiert — zum Teilen einfügen");
+    } catch (_) {
+      window.open("https://wa.me/?text=" + encodeURIComponent(line + "\n" + url), "_blank", "noopener");
+    }
+  }
+
   function openDetail(key) {
     const base = all.find(e => e._key === key) || all.find(e => e.i === key);
     if (!base) return;
+    curDetail = base;
     overlay.hidden = false; document.body.style.overflow = "hidden";
     if (base.i && !base._ended) {
       // Aktiver Einsatz: Wehren live nachladen
@@ -465,10 +493,14 @@
       fetch("/api/fire/noe?id=" + encodeURIComponent(base.i)).then(r => r.json())
         .then(d => { dBody.innerHTML = detailShell(base, d) + renderUnits(d); detailMiniMap(base); })
         .catch(() => { dBody.innerHTML = detailShell(base) + `<div class="d-loading">Details nicht verfügbar.</div>`; detailMiniMap(base); });
+    } else if (base._dispo && base._dispo.length) {
+      // Beendeter Einsatz: gespeicherte Wehren aus der Historie zeigen.
+      dBody.innerHTML = detailShell(base) + renderUnits({ Dispo: base._dispo });
+      detailMiniMap(base);
     } else {
-      // Beendeter Einsatz: keine Live-Wehr-Daten mehr abrufbar
+      // Beendeter Einsatz ohne gespeicherte Wehren (vor diesem Feature erfasst).
       dBody.innerHTML = detailShell(base) +
-        `<div class="d-units"><h4>Status</h4><div class="d-loading">Einsatz beendet — keine Wehr-Daten mehr verfügbar.</div></div>`;
+        `<div class="d-units"><h4>Alarmierte Wehren</h4><div class="d-loading">Für diesen Einsatz wurden keine Wehr-Daten gespeichert.</div></div>`;
       detailMiniMap(base);
     }
   }
@@ -486,22 +518,34 @@
       `</svg>`;
     dBody.insertAdjacentHTML("beforeend", svg);
   }
+  const fmtWhen = w => w ? w.toLocaleString("de-AT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) + " Uhr" : "—";
+  const fmtDur = min => min < 60 ? min + " min" : Math.floor(min / 60) + " h " + (min % 60) + " min";
   function detailShell(base, d) {
     const src = d || base || {};
     const c = classify(src.a || (base && base.a));
     const ended = !!(base && base._ended);
-    const when = ended ? base._when : parseWhen(src.d || (base && base.d), src.t || (base && base.t));
+    const plz = src.p || src.plz || (base && base.plz) || "";
+    const alarmWhen = parseWhen(src.d || (base && base.d), src.t || (base && base.t));
+    const endWhen = ended ? (base && base._when) : null;
     const bez = base ? base._bez : "";
-    const whenStr = when ? when.toLocaleString("de-AT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) + " Uhr" : "—";
+    const tiles = [];
+    if (ended) {
+      tiles.push(`<div><span>Alarmiert</span><b>${esc(fmtWhen(alarmWhen))}</b></div>`);
+      tiles.push(`<div><span>Beendet</span><b>${esc(fmtWhen(endWhen))}</b></div>`);
+      if (alarmWhen && endWhen) {
+        const mins = Math.round((endWhen.getTime() - alarmWhen.getTime()) / 60000);
+        if (mins >= 0) tiles.push(`<div><span>Dauer</span><b>${esc(fmtDur(mins))}</b></div>`);
+      }
+    } else {
+      tiles.push(`<div><span>Alarmiert</span><b>${esc(ago(alarmWhen))}</b></div>`);
+      tiles.push(`<div><span>Zeitpunkt</span><b>${esc(fmtWhen(alarmWhen))}</b></div>`);
+    }
+    tiles.push(`<div><span>Einsatznr.</span><b>${esc(src.n || (base && base.n) || "—")}</b></div>`);
+    tiles.push(`<div><span>Alarmstufe</span><b>${esc(String(src.a || (base && base.a) || "—"))}</b></div>`);
     return `<div class="d-head"><span class="badge k-${c.kind}">${esc(c.label)}${c.stufe ? " · Stufe " + esc(c.stufe) : ""}</span>${ended ? '<span class="badge k-X">beendet</span>' : ""}</div>
       <h2 id="d-title">${esc(src.m || "Einsatz")}</h2>
-      <div class="d-loc">${esc(src.o || "")}${src.o2 ? " · " + esc(src.o2) : ""}${src.p ? " · " + esc(src.p) : ""}${bez ? ` <span class="bz">· Bezirk ${esc(bez)}</span>` : ""}</div>
-      <div class="d-meta">
-        <div><span>${ended ? "Beendet" : "Alarmiert"}</span><b>${esc(ago(when))}</b></div>
-        <div><span>${ended ? "Endzeit" : "Zeitpunkt"}</span><b>${esc(whenStr)}</b></div>
-        <div><span>Einsatznr.</span><b>${esc(src.n || (base && base.n) || "—")}</b></div>
-        <div><span>Alarmstufe</span><b>${esc(String(src.a || (base && base.a) || "—"))}</b></div>
-      </div>`;
+      <div class="d-loc">${esc(src.o || "")}${src.o2 ? " · " + esc(src.o2) : ""}${plz ? " · " + esc(plz) : ""}${bez ? ` <span class="bz">· Bezirk ${esc(bez)}</span>` : ""}</div>
+      <div class="d-meta">${tiles.join("")}</div>`;
   }
   function hhmm(s) { const m = /(\d{2}):(\d{2})/.exec(String(s || "")); return m ? m[1] + ":" + m[2] : ""; }
   // Uhrzeit aus einem „TT.MM.JJJJ HH:MM:SS"-Feld ziehen. Die Quelle maskiert
@@ -538,7 +582,17 @@
         `</div>`;
     }).join("") + `</div>`;
   }
-  function closeDetail() { overlay.hidden = true; document.body.style.overflow = ""; }
+  function closeDetail() {
+    overlay.hidden = true; document.body.style.overflow = ""; curDetail = null;
+    if (location.hash) { try { history.replaceState(null, "", location.pathname + location.search); } catch (_) {} }
+  }
+  // Geteilten Deep-Link (#n=<Einsatznummer>) öffnen, sobald die Liste da ist.
+  function openFromHash() {
+    const m = /[#&]n=([^&]+)/.exec(location.hash || ""); if (!m) return;
+    const n = decodeURIComponent(m[1]);
+    const base = all.find(e => String(e.n) === n);
+    if (base) openDetail(base._key);
+  }
 
   // ---- Alarm-Overlay (Bezirks-Push) ----
   const alarmOvl = $("#alarm"), aGrid = $("#a-grid"), aAll = $("#a-all-cb"), aStatus = $("#a-status");
@@ -676,6 +730,7 @@
     if (!e.target.closest("#map-pop")) hidePop();
   });
   $("#d-close").addEventListener("click", closeDetail);
+  $("#d-share").addEventListener("click", () => shareOp(curDetail));
   overlay.addEventListener("click", e => { if (e.target === overlay) closeDetail(); });
   $("#a-close").addEventListener("click", closeAlarm);
   alarmOvl.addEventListener("click", e => { if (e.target === alarmOvl) closeAlarm(); });
@@ -758,6 +813,7 @@
   }
   listEl.innerHTML = `<div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>`;
   if (view === "map") setView("map"); else setView("list");
-  load();
+  load().then(openFromHash);
+  window.addEventListener("hashchange", openFromHash);
   setInterval(() => { if (!document.hidden) load(); }, REFRESH_MS);
 })();

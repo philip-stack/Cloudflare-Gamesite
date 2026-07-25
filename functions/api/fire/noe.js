@@ -49,7 +49,7 @@ export async function onRequestGet({ request, env }) {
     try {
       if (!env || !env.DB) return json({ einsatz: [], recent: true, stand: nowIso() });
       const rows = (await env.DB.prepare(
-        "SELECT n, m, a, o, o2, b, plz, ended_at FROM fire_op WHERE ended = 1 AND ended_at > datetime('now','-1 day') ORDER BY ended_at DESC LIMIT 120"
+        "SELECT n, m, a, o, o2, b, plz, d, t, dispo, ended_at FROM fire_op WHERE ended = 1 AND ended_at > datetime('now','-1 day') ORDER BY ended_at DESC LIMIT 120"
       ).all()).results || [];
       await attachCoords(env, rows);
       return withCache(json({ einsatz: rows, recent: true, stand: nowIso() }), 30);

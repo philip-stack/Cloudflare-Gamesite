@@ -178,6 +178,9 @@ CREATE TABLE IF NOT EXISTS fire_op (
   o2         TEXT,
   b          TEXT,               -- Bezirkscode
   plz        TEXT,
+  d          TEXT,               -- Alarmdatum (Quelle, TT.MM.JJJJ)
+  t          TEXT,               -- Alarmzeit (Quelle, HH:MM:SS)
+  dispo      TEXT,               -- Alarmierte Wehren als JSON (Snapshot letzter Stand)
   first_seen TEXT DEFAULT CURRENT_TIMESTAMP,
   last_seen  TEXT DEFAULT CURRENT_TIMESTAMP,
   ended      INTEGER DEFAULT 0,

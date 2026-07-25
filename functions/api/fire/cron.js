@@ -95,12 +95,35 @@ export async function onRequestGet({ request, env }) {
   // — der frühe Return oben verhindert, dass ein Ausfall alles beendet.)
   try {
     for (const e of list) {
+      // Detail (Wehren/Dispo + PLZ) mitschreiben, damit die „Beendet"-Ansicht
+      // die alarmierten Wehren auch nach Einsatzende noch zeigen kann. Jeder
+      // Lauf frischt den Stand auf → beim Beenden bleibt der letzte Snapshot.
+      let plz = "", dispo = null;
+      if (e.i) {
+        try {
+          const dRes = await fetch(`${BASE}/getEinsatzData.ashx?id=${encodeURIComponent(e.i)}`, { headers: { "User-Agent": UA } });
+          if (dRes.ok) {
+            const det = await dRes.json();
+            plz = det && det.p ? String(det.p) : "";
+            if (det && Array.isArray(det.Dispo) && det.Dispo.length) {
+              // Nur die für die Anzeige nötigen Felder speichern (kompakt).
+              dispo = JSON.stringify(det.Dispo.map(u => ({ n: u.n, s: u.s, dt: u.dt, ot: u.ot, it: u.it })));
+            }
+          }
+        } catch (_) { /* Detail optional — Liste reicht als Minimum */ }
+      }
       await env.DB.prepare(
-        `INSERT INTO fire_op (n, m, a, o, o2, b, last_seen, ended)
-         VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, 0)
+        `INSERT INTO fire_op (n, m, a, o, o2, b, plz, d, t, dispo, last_seen, ended)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, 0)
          ON CONFLICT(n) DO UPDATE SET m=excluded.m, a=excluded.a, o=excluded.o,
-           o2=excluded.o2, b=excluded.b, last_seen=CURRENT_TIMESTAMP, ended=0, ended_at=NULL`
-      ).bind(String(e.n), e.m || "", e.a || "", e.o || "", e.o2 || "", String(e.b || "")).run();
+           o2=excluded.o2, b=excluded.b,
+           plz=COALESCE(NULLIF(excluded.plz,''), fire_op.plz),
+           d=COALESCE(NULLIF(excluded.d,''), fire_op.d),
+           t=COALESCE(NULLIF(excluded.t,''), fire_op.t),
+           dispo=COALESCE(excluded.dispo, fire_op.dispo),
+           last_seen=CURRENT_TIMESTAMP, ended=0, ended_at=NULL`
+      ).bind(String(e.n), e.m || "", e.a || "", e.o || "", e.o2 || "", String(e.b || ""),
+             plz, e.d || "", e.t || "", dispo).run();
     }
     const placeholders = nums.map(() => "?").join(",");
     await env.DB.prepare(
