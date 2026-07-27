@@ -129,6 +129,18 @@
   // ---- Laden ----
   const parseUTC = s => { const d = new Date(String(s || "").replace(" ", "T") + "Z"); return isNaN(d.getTime()) ? null : d; };
   const parseDispo = s => { if (!s) return null; try { const a = JSON.parse(s); return Array.isArray(a) ? a : null; } catch (_) { return null; } };
+  // Rohzeile aus fire_op (?op=) in ein Anzeige-Objekt übersetzen.
+  function mapOp(e) {
+    const ended = !!e.ended;
+    return Object.assign({}, e, {
+      _c: classify(e.a),
+      _when: ended ? parseUTC(e.ended_at) : parseWhen(e.d, e.t),
+      _bez: BEZIRK[String(e.b)] || (e.b ? "Bezirk " + e.b : ""),
+      _ended: ended,
+      _key: ended ? "r:" + e.n : String(e.n),
+      _dispo: parseDispo(e.dispo),
+    });
+  }
   async function load() {
     const recent = feed === "recent";
     try {
@@ -483,6 +495,9 @@
 
   function openDetail(key) {
     const base = all.find(e => e._key === key) || all.find(e => e.i === key);
+    if (base) openDetailBase(base);
+  }
+  function openDetailBase(base) {
     if (!base) return;
     curDetail = base;
     overlay.hidden = false; document.body.style.overflow = "hidden";
@@ -593,12 +608,19 @@
     const m = /[#&]n=([^&]+)/.exec(location.hash || ""); if (!m) return;
     const n = decodeURIComponent(m[1]);
     let base = all.find(e => String(e.n) === n);
-    if (base) { openDetail(base._key); return; }
+    if (base) { openDetailBase(base); return; }
+    // Im anderen Feed (aktiv<->beendet, jeweils live/24 h) suchen.
     const other = feed === "active" ? "recent" : "active";
     await setFeed(other);
     base = all.find(e => String(e.n) === n);
-    if (base) openDetail(base._key);
-    else toast("Einsatz nicht gefunden (evtl. älter als 24 h)");
+    if (base) { openDetailBase(base); return; }
+    // Älter als 24 h, aber noch in der 3-Tage-Historie → direkt nachschlagen.
+    try {
+      const res = await fetch("/api/fire/noe?op=" + encodeURIComponent(n));
+      const row = ((await res.json()).einsatz || [])[0];
+      if (row) { openDetailBase(mapOp(row)); return; }
+    } catch (_) {}
+    toast("Einsatz nicht gefunden (evtl. älter als 3 Tage)");
   }
 
   // ---- Alarm-Overlay (Bezirks-Push) ----
