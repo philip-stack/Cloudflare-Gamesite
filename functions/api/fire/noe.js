@@ -44,6 +44,23 @@ export async function onRequestGet({ request, env }) {
   const params = new URL(request.url).searchParams;
   const id = params.get("id");
 
+  // Einzelner Einsatz aus der Historie (für geteilte Deep-Links). Fenster
+  // 3 Tage — länger als die 24-h-Liste, damit geteilte Links länger leben.
+  const op = params.get("op");
+  if (op) {
+    try {
+      if (!env || !env.DB) return json({ einsatz: [] });
+      const row = ((await env.DB.prepare(
+        "SELECT n, m, a, o, o2, b, plz, d, t, dispo, ended, ended_at FROM fire_op WHERE n = ? AND (ended = 0 OR ended_at > datetime('now','-3 days')) LIMIT 1"
+      ).bind(op).all()).results || [])[0];
+      if (!row) return json({ einsatz: [], one: true });
+      await attachCoords(env, [row]);
+      return withCache(json({ einsatz: [row], one: true, stand: nowIso() }), 30);
+    } catch (_) {
+      return json({ einsatz: [], one: true }, 200);
+    }
+  }
+
   // Beendete Einsätze (eigene Historie aus fire_op, vom Cron gepflegt).
   if (params.get("recent")) {
     try {
