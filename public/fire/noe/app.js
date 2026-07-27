@@ -587,11 +587,18 @@
     if (location.hash) { try { history.replaceState(null, "", location.pathname + location.search); } catch (_) {} }
   }
   // Geteilten Deep-Link (#n=<Einsatznummer>) öffnen, sobald die Liste da ist.
-  function openFromHash() {
+  // Wird der Einsatz im aktuellen Feed nicht gefunden (z. B. bereits beendet,
+  // Nutzer aber im „Aktiv"-Feed), automatisch den anderen Feed laden.
+  async function openFromHash() {
     const m = /[#&]n=([^&]+)/.exec(location.hash || ""); if (!m) return;
     const n = decodeURIComponent(m[1]);
-    const base = all.find(e => String(e.n) === n);
+    let base = all.find(e => String(e.n) === n);
+    if (base) { openDetail(base._key); return; }
+    const other = feed === "active" ? "recent" : "active";
+    await setFeed(other);
+    base = all.find(e => String(e.n) === n);
     if (base) openDetail(base._key);
+    else toast("Einsatz nicht gefunden (evtl. älter als 24 h)");
   }
 
   // ---- Alarm-Overlay (Bezirks-Push) ----
@@ -757,13 +764,13 @@
   $("#view-map").addEventListener("click", () => setView("map"));
 
   function setFeed(f) {
-    if (feed === f) return;
+    if (feed === f) return Promise.resolve();
     feed = f; LS.set("fire_feed", f);
     $("#feed-active").classList.toggle("on", f === "active"); $("#feed-active").setAttribute("aria-selected", String(f === "active"));
     $("#feed-recent").classList.toggle("on", f === "recent"); $("#feed-recent").setAttribute("aria-selected", String(f === "recent"));
     all = []; prevNums = null;
     if (view === "list") listEl.innerHTML = `<div class="skeleton"></div><div class="skeleton"></div>`;
-    load();
+    return load();
   }
   $("#feed-active").addEventListener("click", () => setFeed("active"));
   $("#feed-recent").addEventListener("click", () => setFeed("recent"));
