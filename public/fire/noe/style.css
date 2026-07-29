@@ -81,12 +81,12 @@ body {
 @keyframes beacon { 0%,100% { opacity: 0.15; } 50% { opacity: 0.7; } }
 
 .status {
-  display: flex; align-items: center; gap: 9px;
+  display: flex; align-items: center; gap: 9px; white-space: nowrap;
   background: var(--panel); border: 1px solid var(--panel-line);
   padding: 8px 14px; border-radius: 999px; font-size: 0.85rem; color: var(--muted);
   font-variant-numeric: tabular-nums; backdrop-filter: blur(8px);
 }
-.live { width: 9px; height: 9px; border-radius: 50%; background: var(--stoff); box-shadow: 0 0 0 0 rgba(53, 208, 127, 0.6); animation: pulse 2s infinite; }
+.live { flex: none; width: 9px; height: 9px; border-radius: 50%; background: var(--stoff); box-shadow: 0 0 0 0 rgba(53, 208, 127, 0.6); animation: pulse 2s infinite; }
 .live.stale { background: var(--amber); animation: none; }
 .live.err { background: var(--brand); animation: none; }
 @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(53, 208, 127, 0.55); } 70% { box-shadow: 0 0 0 8px rgba(53, 208, 127, 0); } 100% { box-shadow: 0 0 0 0 rgba(53, 208, 127, 0); } }
@@ -425,6 +425,9 @@ select:focus, input:focus { border-color: rgba(255, 59, 48, 0.6); }
 :root[data-theme="light"] #heat-legend { background: rgba(255,255,255,0.9); }
 #heat-legend .heat-bar { width: 84px; height: 10px; border-radius: 999px; background: linear-gradient(90deg, rgb(255,227,138), rgb(255,176,32), rgb(255,106,0), rgb(210,31,0)); }
 #heat-legend small { width: 100%; color: var(--faint); font-weight: 600; }
+/* hidden-Attribut muss den display:flex der Legenden ausstechen, sonst liegen
+   Punkte-Legende und Heatmap-Legende übereinander (nur eine darf sichtbar sein). */
+#map-legend[hidden], #heat-legend[hidden] { display: none !important; }
 .noe-district { transition: fill 0.25s ease, fill-opacity 0.25s ease; }
 
 /* Beendete Einsätze (Historie): dezent gedämpft, farbiger Balken blasser */
