@@ -50,6 +50,29 @@ export async function onRequestGet({ request, env }) {
       if (!topBezirk || count > topBezirk.count) topBezirk = { name, count };
     }
 
+    // ---- Dauerhafte Trends (Tages-Aggregate der letzten 30 Tage) ----
+    const DAYS = 30;
+    let trend = [], byBezirk = {};
+    try {
+      const daily = (await env.DB.prepare(
+        `SELECT day, b, kind, n FROM fire_stat_daily WHERE day >= date('now','-${DAYS - 1} days')`
+      ).all()).results || [];
+      const perDay = {};
+      for (const r of daily) {
+        const dd = (perDay[r.day] ||= { B: 0, T: 0, S: 0, X: 0, total: 0 });
+        const k = "BTS".includes(r.kind) ? r.kind : "X";
+        dd[k] += r.n; dd.total += r.n;
+        if (r.b) byBezirk[r.b] = (byBezirk[r.b] || 0) + r.n;
+      }
+      // Lückenlose Reihe der letzten DAYS Tage (auch Tage ohne Einsätze).
+      const today = new Date();
+      for (let i = DAYS - 1; i >= 0; i--) {
+        const d = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() - i));
+        const key = d.toISOString().slice(0, 10);
+        trend.push(Object.assign({ day: key }, perDay[key] || { B: 0, T: 0, S: 0, X: 0, total: 0 }));
+      }
+    } catch (_) { /* Trends optional */ }
+
     return json({
       active,
       last24: rows.length,
@@ -57,6 +80,8 @@ export async function onRequestGet({ request, env }) {
       avgMin: durN ? Math.round(durSum / durN / 60000) : null,
       topBezirk,
       byHour,
+      trend,
+      byBezirk,
     });
   } catch (_) {
     return json(empty);

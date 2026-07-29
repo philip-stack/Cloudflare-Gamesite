@@ -340,6 +340,7 @@
   const NS = "http://www.w3.org/2000/svg";
   let mapSvg = null, markerG = null, mapPop = null, curView = null;
   let markerGroups = new Map();
+  let heatMode = false, heatData = null;   // Einsatzdichte-Heatmap (30 Tage)
   const distBounds = {};
   let DIST_PATHS = null;
 
@@ -355,7 +356,7 @@
         }).join("L") + "Z";
       }
       distBounds[d.iso] = [bx0, by0, bx1, by1];
-      out += `<path class="noe-district" d="${dd}"><title>${esc(d.name)}</title></path>`;
+      out += `<path class="noe-district" data-iso="${esc(d.iso)}" d="${dd}"><title>${esc(d.name)}</title></path>`;
     }
     return out;
   }
@@ -368,11 +369,15 @@
     mapEl.innerHTML =
       `<svg id="noe-svg" viewBox="${curView.join(" ")}" preserveAspectRatio="xMidYMid meet" aria-label="Karte von Niederösterreich">` +
       `<g id="noe-land">${ensurePaths()}</g><g id="noe-markers"></g></svg>` +
+      `<button id="heat-btn" type="button" title="Heatmap (30 Tage)" aria-label="Einsatzdichte-Heatmap ein/aus">🔥</button>` +
       `<div id="map-legend"><div class="lg"><i style="background:${KIND_COLOR.B}"></i>Brand</div>` +
       `<div class="lg"><i style="background:${KIND_COLOR.T}"></i>Technisch</div>` +
       `<div class="lg"><i style="background:${KIND_COLOR.S}"></i>Schadstoff</div></div>` +
+      `<div id="heat-legend" hidden><span>wenig</span><i class="heat-bar"></i><span>viel</span><small>Einsätze · 30 Tage</small></div>` +
       `<div id="map-note" hidden></div><div id="map-pop" hidden></div>`;
     mapSvg = $("#noe-svg"); markerG = $("#noe-markers"); mapPop = $("#map-pop");
+    $("#heat-btn").addEventListener("click", toggleHeat);
+    if (heatMode) applyHeat();
   }
 
   function setMapView(bb) {
@@ -465,6 +470,73 @@
     let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
     for (const [x, y] of pts) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
     setMapView([x0, y0, x1, y1]); addMarkers();
+  }
+
+  // ==================== Heatmap (Einsatzdichte, 30 Tage) ====================
+  // Bezirkscode (Quelle) → NÖ-Karten-iso (noe-geo.js). Mehrfach-Zuordnung, wo
+  // ein Code mehrere Kartenflächen abdeckt: Stadt+Land (Krems/St.Pölten/Wr.
+  // Neustadt) sowie Code 06 = ehem. Wien-Umgebung (2017 auf Tulln/Bruck-Leitha/
+  // Korneuburg aufgeteilt). Die Zahl wird anteilig verteilt (siehe isoCounts).
+  const BEZ_TO_ISO = {
+    "01": ["305", "303"], "02": ["306"], "03": ["307"], "04": ["308"], "05": ["309"],
+    "06": ["321", "307", "312"], "07": ["310"], "08": ["311"], "09": ["312"],
+    "10": ["313", "301"], "11": ["314"], "12": ["315"], "13": ["316"], "14": ["317"],
+    "15": ["318"], "17": ["302", "319"], "18": ["320"], "19": ["321"], "20": ["322"],
+    "21": ["323", "304"], "22": ["325"],
+  };
+  // Sequenzielle Hitze-Rampe (einfarbig gedacht, hell→heiß). Lineare RGB-Lerp.
+  const HEAT_STOPS = [[255, 227, 138], [255, 176, 32], [255, 106, 0], [210, 31, 0]];
+  function heatColor(v) {  // v in [0,1]
+    const x = Math.max(0, Math.min(1, v)) * (HEAT_STOPS.length - 1);
+    const i = Math.min(HEAT_STOPS.length - 2, Math.floor(x)), f = x - i;
+    const a = HEAT_STOPS[i], b = HEAT_STOPS[i + 1];
+    const c = k => Math.round(a[k] + (b[k] - a[k]) * f);
+    return `rgb(${c(0)},${c(1)},${c(2)})`;
+  }
+  function isoCounts(byBezirk) {
+    const m = {};
+    for (const [code, cnt] of Object.entries(byBezirk || {})) {
+      const isos = BEZ_TO_ISO[code] || [];
+      if (!isos.length) continue;
+      const share = cnt / isos.length;   // anteilig verteilen (kein Mehrfachzählen)
+      for (const iso of isos) m[iso] = (m[iso] || 0) + share;
+    }
+    return m;
+  }
+  async function toggleHeat() {
+    heatMode = !heatMode;
+    $("#heat-btn") && $("#heat-btn").classList.toggle("on", heatMode);
+    if (!heatMode) { clearHeat(); return; }
+    if (!heatData) {
+      try { heatData = (await (await fetch("/api/fire/stats")).json()).byBezirk || {}; }
+      catch (_) { heatData = {}; }
+    }
+    applyHeat();
+  }
+  function applyHeat() {
+    if (!mapSvg) return;
+    const counts = isoCounts(heatData || {});
+    const max = Math.max(1, ...Object.values(counts));
+    mapSvg.querySelectorAll(".noe-district").forEach(p => {
+      const iso = p.dataset.iso, raw = counts[iso] || 0, n = Math.round(raw);
+      if (raw > 0) {
+        // sanfte Kurve (sqrt) → auch kleine Bezirke sichtbar
+        const v = Math.sqrt(raw / max);
+        p.style.fill = heatColor(v);
+        p.style.fillOpacity = (0.35 + 0.55 * v).toFixed(2);
+      } else { p.style.fill = ""; p.style.fillOpacity = ""; }
+      const t = p.querySelector("title");
+      if (t) t.textContent = t.textContent.replace(/ · .*$/, "") + " · " + n + " Einsätze (30 T.)";
+    });
+    if (markerG) markerG.style.display = "none";
+    const kl = $("#map-legend"); if (kl) kl.hidden = true;
+    const hl = $("#heat-legend"); if (hl) hl.hidden = false;
+  }
+  function clearHeat() {
+    if (mapSvg) mapSvg.querySelectorAll(".noe-district").forEach(p => { p.style.fill = ""; p.style.fillOpacity = ""; });
+    if (markerG) markerG.style.display = "";
+    const kl = $("#map-legend"); if (kl) kl.hidden = false;
+    const hl = $("#heat-legend"); if (hl) hl.hidden = true;
   }
 
   function showPop(key, atEl) {
@@ -791,6 +863,19 @@
       const pct = Math.round(val / total * 100);
       return `<div class="kbar"><span>${label}</span><div class="ktrack"><i class="k-${cls}" style="width:${pct}%"></i></div><b>${val}</b></div>`;
     };
+    // ---- Verlauf (Tages-Trend, gestapelt nach Art) ----
+    const tr = Array.isArray(s.trend) ? s.trend : [];
+    const trSum = tr.reduce((a, d) => a + (d.total || 0), 0);
+    const tmax = Math.max(1, ...tr.map(d => d.total || 0));
+    const seg = (d, key, cls) => d[key] ? `<i class="k-${cls}" style="height:${(d[key] / tmax * 100).toFixed(1)}%"></i>` : "";
+    const tbars = tr.map(d => {
+      const dt = d.day.slice(8) + "." + d.day.slice(5, 7);   // TT.MM
+      const showLbl = Number(d.day.slice(8)) % 7 === 1;       // ~alle 7 Tage
+      return `<div class="tbar" title="${dt}: ${d.total || 0} Einsätze"><div class="tstack">${seg(d, "B", "B")}${seg(d, "T", "T")}${seg(d, "S", "S")}${seg(d, "X", "X")}</div><em${showLbl ? "" : ' class="vh"'}>${dt}</em></div>`;
+    }).join("");
+    const trendBlock = trSum
+      ? `<h4 class="s-h">Verlauf · 30 Tage <span class="s-sub">${trSum} Einsätze</span></h4><div class="tchart">${tbars}</div>`
+      : `<h4 class="s-h">Verlauf · 30 Tage</h4><p class="s-empty">Noch keine Historie – der Verlauf wächst ab jetzt Tag für Tag.</p>`;
     sBody.innerHTML =
       `<div class="s-tiles">
         <div class="stat"><b>${s.active || 0}</b><span>aktiv jetzt</span></div>
@@ -800,6 +885,7 @@
       </div>
       <h4 class="s-h">Nach Art</h4>
       ${kindRow("Brand", k.B, "B")}${kindRow("Technisch", k.T, "T")}${kindRow("Schadstoff", k.S, "S")}${k.X ? kindRow("Sonstige", k.X, "X") : ""}
+      ${trendBlock}
       <h4 class="s-h">Einsätze nach Tagesstunde</h4>
       <div class="hchart">${bars}</div>`;
   }

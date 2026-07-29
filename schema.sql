@@ -182,6 +182,7 @@ CREATE TABLE IF NOT EXISTS fire_op (
   t          TEXT,               -- Alarmzeit (Quelle, HH:MM:SS)
   dispo      TEXT,               -- Alarmierte Wehren als JSON (Snapshot letzter Stand)
   last_detail TEXT,              -- wann zuletzt das Detail (Wehren) geholt wurde
+  rolled     INTEGER DEFAULT 0,  -- schon in fire_stat_daily aggregiert?
   first_seen TEXT DEFAULT CURRENT_TIMESTAMP,
   last_seen  TEXT DEFAULT CURRENT_TIMESTAMP,
   ended      INTEGER DEFAULT 0,
@@ -198,3 +199,17 @@ CREATE TABLE IF NOT EXISTS fire_health (
   detail_fetched INTEGER,            -- wie viele Details in dem Lauf geholt wurden
   note           TEXT                -- 'ok' | 'upstream-error' | …
 );
+
+-- Dauerhafte Tages-Aggregate (die Rohzeilen in fire_op werden nach 3 Tagen
+-- gelöscht). Der Cron rollt beendete Einsätze idempotent (rolled-Flag) hierher,
+-- damit Trends über Wochen/Monate erhalten bleiben. day = date(first_seen) UTC.
+CREATE TABLE IF NOT EXISTS fire_stat_daily (
+  day     TEXT NOT NULL,          -- 'YYYY-MM-DD'
+  b       TEXT NOT NULL,          -- Bezirkscode ('' = unbekannt)
+  kind    TEXT NOT NULL,          -- B/T/S/X
+  n       INTEGER NOT NULL DEFAULT 0,
+  dur_sum INTEGER NOT NULL DEFAULT 0,  -- Summe Einsatzdauer (Sekunden)
+  dur_n   INTEGER NOT NULL DEFAULT 0,  -- Anzahl mit bekannter Dauer
+  PRIMARY KEY (day, b, kind)
+);
+CREATE INDEX IF NOT EXISTS idx_fire_stat_day ON fire_stat_daily(day);
