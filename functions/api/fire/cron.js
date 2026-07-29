@@ -185,6 +185,25 @@ export async function onRequestGet({ request, env }) {
     await env.DB.prepare(
       `UPDATE fire_op SET ended=1, ended_at=CURRENT_TIMESTAMP WHERE ended=0 AND n NOT IN (${placeholders})`
     ).bind(...nums).run();
+
+    // Dauerhafte Tages-Aggregate: beendete Einsätze idempotent (rolled-Flag)
+    // in fire_stat_daily rollen, BEVOR die Rohzeilen (>3 Tage) gelöscht werden.
+    // So bleiben Trends über Wochen erhalten, obwohl fire_op nur 3 Tage hält.
+    await env.DB.prepare(
+      `INSERT INTO fire_stat_daily (day, b, kind, n, dur_sum, dur_n)
+       SELECT date(first_seen) AS day, COALESCE(b, '') AS b,
+         CASE WHEN upper(substr(a,1,1)) IN ('B','T','S') THEN upper(substr(a,1,1)) ELSE 'X' END AS kind,
+         COUNT(*) AS n,
+         CAST(SUM(CASE WHEN ended_at IS NOT NULL THEN (julianday(ended_at)-julianday(first_seen))*86400 ELSE 0 END) AS INTEGER) AS dur_sum,
+         SUM(CASE WHEN ended_at IS NOT NULL THEN 1 ELSE 0 END) AS dur_n
+       FROM fire_op
+       WHERE ended = 1 AND rolled = 0 AND first_seen IS NOT NULL
+       GROUP BY day, b, kind
+       ON CONFLICT(day, b, kind) DO UPDATE SET
+         n = n + excluded.n, dur_sum = dur_sum + excluded.dur_sum, dur_n = dur_n + excluded.dur_n`
+    ).run();
+    await env.DB.prepare("UPDATE fire_op SET rolled = 1 WHERE ended = 1 AND rolled = 0").run();
+
     // 3 Tage aufheben, damit geteilte Deep-Links so lange funktionieren
     // (die App-Liste zeigt trotzdem nur die letzten 24 h — siehe noe.js).
     await env.DB.prepare("DELETE FROM fire_op WHERE ended=1 AND ended_at < datetime('now','-3 days')").run();
