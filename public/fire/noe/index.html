@@ -25,7 +25,7 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Feuerwehr NÖ" />
-  <link rel="stylesheet" href="style.css?v=13" />
+  <link rel="stylesheet" href="style.css?v=14" />
 </head>
 <body>
   <div id="ptr" aria-hidden="true"><span class="ptr-spin"></span></div>
@@ -49,6 +49,8 @@
         </div>
       </div>
     </header>
+
+    <div id="stale" class="stale" role="alert" hidden></div>
 
     <section class="stats" id="stats" aria-live="polite"></section>
 
@@ -85,7 +87,8 @@
     <footer class="foot">
       <p>Daten: NÖ Landesfeuerwehrverband (öffentliche <em>Wastl/GRISU</em>-Schnittstelle).
          Kartengrundlage: Bezirksgrenzen <em>Statistik Austria</em> (vereinfacht).
-         Inoffizielles Projekt, ohne Gewähr. Kein Ersatz für den Notruf <strong>122</strong>.</p>
+         Privates, inoffizielles Projekt, ohne Gewähr – kein Ersatz für den Notruf <strong>122</strong>.
+         Standort wird nur lokal genutzt, nicht gespeichert.</p>
     </footer>
   </div>
 
@@ -104,6 +107,7 @@
       <button class="x" id="a-close" aria-label="Schließen">✕</button>
       <h2 id="a-title">🔔 Bezirks-Alarm</h2>
       <p class="a-lead">Push-Benachrichtigung bei neuen Einsätzen in deinen Bezirken. Läuft auch, wenn die App zu ist.</p>
+      <p class="a-note">Gespeichert wird nur dein anonymer Push-Endpunkt und die gewählten Bezirke – jederzeit über „Alarm ausschalten" wieder gelöscht. Dein Standort (für die Nähe-Sortierung) bleibt nur am Gerät und wird nirgends gespeichert.</p>
       <div id="a-status" class="a-status" hidden></div>
       <div class="a-all"><label><input type="checkbox" id="a-all-cb" /> <b>Ganz Niederösterreich</b> (alle Bezirke)</label></div>
       <div id="a-grid" class="a-grid"></div>
@@ -125,7 +129,7 @@
   </div>
 
   <script src="noe-geo.js?v=1"></script>
-  <script src="app.js?v=16"></script>
+  <script src="app.js?v=17"></script>
   <script>
     // Eigener Service Worker (Scope /fire/noe/) → installierbar als eigene PWA.
     if ("serviceWorker" in navigator) {

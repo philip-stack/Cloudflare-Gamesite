@@ -26,13 +26,22 @@ const BASE = "https://infoscreen.florian10.info/OWS/wastlMobile";
 const UA = "Mozilla/5.0 (Spieleabend/fire-noe; +https://philip-stack.pages.dev/fire/noe/)";
 
 async function upstream(url, ttl) {
-  const res = await fetch(url, {
-    headers: { "User-Agent": UA, "Accept": "application/json" },
-    // Kurzer Edge-Cache: schont die Quelle, hält die Daten trotzdem frisch.
-    cf: { cacheTtl: ttl, cacheEverything: true },
-  });
-  if (!res.ok) throw new Error("upstream " + res.status);
-  return res.json();
+  let lastErr;
+  for (let i = 0; i < 2; i++) {   // ein Retry: die Quelle ist gelegentlich zickig
+    try {
+      const res = await fetch(url, {
+        headers: { "User-Agent": UA, "Accept": "application/json" },
+        // Kurzer Edge-Cache: schont die Quelle, hält die Daten trotzdem frisch.
+        cf: { cacheTtl: ttl, cacheEverything: true },
+      });
+      if (!res.ok) throw new Error("upstream " + res.status);
+      return res.json();
+    } catch (e) {
+      lastErr = e;
+      if (i === 0) await new Promise(r => setTimeout(r, 350));
+    }
+  }
+  throw lastErr;
 }
 
 export async function onRequestGet({ request, env }) {

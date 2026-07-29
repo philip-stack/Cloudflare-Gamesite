@@ -30,6 +30,18 @@ export async function rateLimit(env, key, max, windowSec) {
   } catch { return true; }
 }
 
+// Server-seitiges Fehler-Logging in die bestehende D1-Tabelle `error_log`.
+// Best-effort: darf den Aufrufer NIE stören (leerer catch). Ersetzt stumme
+// `catch (_) {}`, damit man Störungen im Betrieb überhaupt sehen kann.
+export async function logError(env, msg, page, extra) {
+  try {
+    if (!env || !env.DB) return;
+    await env.DB.prepare("INSERT INTO error_log (msg, page, extra) VALUES (?, ?, ?)")
+      .bind(String(msg == null ? "" : msg).slice(0, 500), page || null,
+            extra == null ? null : String(extra).slice(0, 1000)).run();
+  } catch (_) { /* Logging selbst darf nie zum Problem werden */ }
+}
+
 // 6-stelliger Beitritts-Code ohne verwechselbare Zeichen (0/O, 1/I/L)
 const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 export function makeCode() {

@@ -1,5 +1,6 @@
-import { json } from "../_util.js";
+import { json, logError } from "../_util.js";
 import { pushToEndpoint } from "../push.js";
+import { BEZIRK, bezName } from "./_bezirk.js";
 
 // ====================================================================
 // Zeitgesteuerte Prüfung neuer Feuerwehr-Einsätze (NÖ) und Bezirks-Alarm.
@@ -10,20 +11,42 @@ import { pushToEndpoint } from "../push.js";
 //
 // Ablauf: aktive Einsätze holen → neue (Einsatznr. nicht in fire_seen)
 // ermitteln → an alle fire_alert-Abos des jeweiligen Bezirks (oder "*")
-// pushen → alle aktuellen als gesehen markieren → aufräumen.
+// pushen → alle aktuellen als gesehen markieren → Historie schreiben →
+// Gesundheitszustand festhalten (fire_health) → aufräumen.
 // ====================================================================
 
 const BASE = "https://infoscreen.florian10.info/OWS/wastlMobile";
 const UA = "SpieleabendFireNoe/1.0 (+https://philip-stack.pages.dev/fire/noe/)";
 
-const BEZIRK = {
-  "01": "Amstetten", "02": "Baden", "03": "Bruck/Leitha", "04": "Gänserndorf",
-  "05": "Gmünd", "061": "Klosterneuburg", "062": "St. Pölten (Land)", "063": "Bruck/Leitha",
-  "07": "Hollabrunn", "08": "Horn", "09": "Korneuburg", "10": "Krems/Donau",
-  "11": "Lilienfeld", "12": "Melk", "13": "Mistelbach", "14": "Mödling",
-  "15": "Neunkirchen", "17": "St. Pölten", "18": "Scheibbs", "19": "Tulln",
-  "20": "Waidhofen/Thaya", "21": "Wr. Neustadt", "22": "Zwettl",
-};
+const DETAIL_TTL_MIN = 6;   // Detail (Wehren) je Einsatz höchstens so oft neu holen
+const DETAIL_CAP = 25;      // …und pro Lauf nie mehr als so viele (schont die Quelle)
+
+// Robuster JSON-Abruf mit kleinem Retry (die Quelle ist gelegentlich zickig).
+async function fetchJsonRetry(url, tries = 2) {
+  let lastErr;
+  for (let i = 0; i < tries; i++) {
+    try {
+      const res = await fetch(url, { headers: { "User-Agent": UA, "Accept": "application/json" } });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      return await res.json();
+    } catch (e) {
+      lastErr = e;
+      if (i + 1 < tries) await new Promise(r => setTimeout(r, 400));
+    }
+  }
+  throw lastErr;
+}
+
+async function writeHealth(env, active, detailFetched, note) {
+  try {
+    await env.DB.prepare(
+      `INSERT INTO fire_health (k, last_run, active, detail_fetched, note)
+       VALUES ('cron', CURRENT_TIMESTAMP, ?, ?, ?)
+       ON CONFLICT(k) DO UPDATE SET last_run=CURRENT_TIMESTAMP,
+         active=excluded.active, detail_fetched=excluded.detail_fetched, note=excluded.note`
+    ).bind(active, detailFetched, note).run();
+  } catch (_) { /* Health ist optional */ }
+}
 
 export async function onRequestGet({ request, env }) {
   const key = new URL(request.url).searchParams.get("key") || "";
@@ -31,23 +54,32 @@ export async function onRequestGet({ request, env }) {
 
   let list = [];
   try {
-    const res = await fetch(`${BASE}/getEinsatzAktiv.ashx`, { headers: { "User-Agent": UA } });
-    const data = res.ok ? await res.json() : {};
-    list = Array.isArray(data.Einsatz) ? data.Einsatz : [];
-  } catch (_) {
+    const data = await fetchJsonRetry(`${BASE}/getEinsatzAktiv.ashx`, 2);
+    list = Array.isArray(data && data.Einsatz) ? data.Einsatz : [];
+  } catch (e) {
+    await logError(env, "fire-cron: upstream " + e.message, "fire/cron");
+    await writeHealth(env, -1, 0, "upstream-error");
     return json({ ok: false, error: "upstream" });
   }
-  if (!list.length) return json({ ok: true, active: 0, sent: 0 });
 
-  // Welche der aktuellen Einsätze kennen wir schon?
+  // Die Quelle liefert (auch bei Störungen) manchmal eine leere Liste. In dem
+  // Fall NICHTS beenden — sonst würde ein kurzer Aussetzer alle Einsätze als
+  // „beendet" markieren. Nur Health festhalten und sauber aussteigen.
+  if (!list.length) {
+    await writeHealth(env, 0, 0, "empty");
+    return json({ ok: true, active: 0, sent: 0 });
+  }
+
   const nums = list.map(e => String(e.n || "")).filter(Boolean);
+
+  // ---- Neue Einsätze erkennen und Bezirks-Abos pushen ----
   const seen = new Set();
   try {
     const rows = (await env.DB.prepare(
       `SELECT n FROM fire_seen WHERE n IN (${nums.map(() => "?").join(",")})`
     ).bind(...nums).all()).results || [];
     for (const r of rows) seen.add(r.n);
-  } catch (_) {}
+  } catch (e) { await logError(env, "fire-cron: seen " + e.message, "fire/cron"); }
 
   const fresh = list.filter(e => e.n && !seen.has(String(e.n)));
   let sent = 0;
@@ -61,10 +93,9 @@ export async function onRequestGet({ request, env }) {
       ).bind(bez).all()).results || [];
     } catch (_) {}
 
-    const bezName = BEZIRK[bez] || (bez ? "Bezirk " + bez : "");
     const msg = {
       title: "🚒 " + (e.a ? e.a + " · " : "") + (e.m || "Einsatz"),
-      body: (e.o || "") + (bezName ? " · " + bezName : ""),
+      body: (e.o || "") + (bezName(bez) ? " · " + bezName(bez) : ""),
       // Deep-Link direkt auf den Einsatz — die App öffnet die Detailansicht
       // und lädt automatisch den passenden Feed (aktiv/beendet).
       url: "/fire/noe/#n=" + encodeURIComponent(String(e.n || "")),
@@ -87,46 +118,69 @@ export async function onRequestGet({ request, env }) {
     for (const n of nums) {
       await env.DB.prepare("INSERT OR IGNORE INTO fire_seen (n) VALUES (?)").bind(n).run();
     }
-    // Aufräumen: alte Merker (>2 Tage) und alte Queue-Reste (>1 Tag).
     await env.DB.prepare("DELETE FROM fire_seen WHERE at < datetime('now','-2 days')").run();
     await env.DB.prepare("DELETE FROM push_queue WHERE at < datetime('now','-1 day')").run();
-  } catch (_) {}
+  } catch (e) { await logError(env, "fire-cron: seen-mark " + e.message, "fire/cron"); }
 
-  // Historie mitschreiben: aktive Einsätze speichern/auffrischen, aus der
-  // Live-Liste gefallene als „beendet" markieren. (Nur wenn wir Daten haben
-  // — der frühe Return oben verhindert, dass ein Ausfall alles beendet.)
+  // ---- Historie schreiben (inkl. Wehren) ----
+  let detailFetched = 0;
   try {
+    // Bekannten Stand der aktuellen Einsätze laden → entscheiden, für welche
+    // wir das Detail (Wehren/PLZ) (neu) holen. So bleibt die Upstream-Last
+    // auch bei Unwetter mit vielen Einsätzen beschränkt.
+    const existing = new Map();
+    try {
+      const rows = (await env.DB.prepare(
+        `SELECT n, (dispo IS NOT NULL) AS has_dispo, last_detail FROM fire_op WHERE n IN (${nums.map(() => "?").join(",")})`
+      ).bind(...nums).all()).results || [];
+      for (const r of rows) existing.set(String(r.n), r);
+    } catch (_) {}
+
+    const needsDetail = e => {
+      if (!e.i) return false;
+      const r = existing.get(String(e.n));
+      if (!r || !r.has_dispo || !r.last_detail) return true;
+      const age = Date.now() - Date.parse(String(r.last_detail).replace(" ", "T") + "Z");
+      return isNaN(age) || age > DETAIL_TTL_MIN * 60000;
+    };
+
+    // Kandidaten: neue (noch ohne Wehren) zuerst, dann die ältesten Details.
+    const candidates = list.filter(needsDetail).sort((a, b) => {
+      const na = existing.has(String(a.n)) ? 1 : 0, nb = existing.has(String(b.n)) ? 1 : 0;
+      return na - nb;
+    });
+
+    const detailMap = new Map();   // n -> { plz, dispo }
+    for (const e of candidates) {
+      if (detailFetched >= DETAIL_CAP) break;
+      try {
+        const det = await fetchJsonRetry(`${BASE}/getEinsatzData.ashx?id=${encodeURIComponent(e.i)}`, 2);
+        let dispo = null;
+        if (det && Array.isArray(det.Dispo) && det.Dispo.length) {
+          dispo = JSON.stringify(det.Dispo.map(u => ({ n: u.n, s: u.s, dt: u.dt, ot: u.ot, it: u.it })));
+        }
+        detailMap.set(String(e.n), { plz: det && det.p ? String(det.p) : "", dispo });
+        detailFetched++;
+      } catch (_) { /* dieses Detail eben nicht — Liste reicht als Minimum */ }
+    }
+
     for (const e of list) {
-      // Detail (Wehren/Dispo + PLZ) mitschreiben, damit die „Beendet"-Ansicht
-      // die alarmierten Wehren auch nach Einsatzende noch zeigen kann. Jeder
-      // Lauf frischt den Stand auf → beim Beenden bleibt der letzte Snapshot.
-      let plz = "", dispo = null;
-      if (e.i) {
-        try {
-          const dRes = await fetch(`${BASE}/getEinsatzData.ashx?id=${encodeURIComponent(e.i)}`, { headers: { "User-Agent": UA } });
-          if (dRes.ok) {
-            const det = await dRes.json();
-            plz = det && det.p ? String(det.p) : "";
-            if (det && Array.isArray(det.Dispo) && det.Dispo.length) {
-              // Nur die für die Anzeige nötigen Felder speichern (kompakt).
-              dispo = JSON.stringify(det.Dispo.map(u => ({ n: u.n, s: u.s, dt: u.dt, ot: u.ot, it: u.it })));
-            }
-          }
-        } catch (_) { /* Detail optional — Liste reicht als Minimum */ }
-      }
+      const det = detailMap.get(String(e.n));
+      const touched = det ? 1 : 0;
       await env.DB.prepare(
-        `INSERT INTO fire_op (n, m, a, o, o2, b, plz, d, t, dispo, last_seen, ended)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, 0)
-         ON CONFLICT(n) DO UPDATE SET m=excluded.m, a=excluded.a, o=excluded.o,
-           o2=excluded.o2, b=excluded.b,
+        `INSERT INTO fire_op (n, m, a, o, o2, b, plz, d, t, dispo, last_detail, last_seen, ended)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${touched ? "CURRENT_TIMESTAMP" : "NULL"}, CURRENT_TIMESTAMP, 0)
+         ON CONFLICT(n) DO UPDATE SET m=excluded.m, a=excluded.a, o=excluded.o, o2=excluded.o2, b=excluded.b,
            plz=COALESCE(NULLIF(excluded.plz,''), fire_op.plz),
            d=COALESCE(NULLIF(excluded.d,''), fire_op.d),
            t=COALESCE(NULLIF(excluded.t,''), fire_op.t),
            dispo=COALESCE(excluded.dispo, fire_op.dispo),
+           ${touched ? "last_detail=CURRENT_TIMESTAMP," : ""}
            last_seen=CURRENT_TIMESTAMP, ended=0, ended_at=NULL`
       ).bind(String(e.n), e.m || "", e.a || "", e.o || "", e.o2 || "", String(e.b || ""),
-             plz, e.d || "", e.t || "", dispo).run();
+             det ? det.plz : "", e.d || "", e.t || "", det ? det.dispo : null).run();
     }
+
     const placeholders = nums.map(() => "?").join(",");
     await env.DB.prepare(
       `UPDATE fire_op SET ended=1, ended_at=CURRENT_TIMESTAMP WHERE ended=0 AND n NOT IN (${placeholders})`
@@ -134,7 +188,10 @@ export async function onRequestGet({ request, env }) {
     // 3 Tage aufheben, damit geteilte Deep-Links so lange funktionieren
     // (die App-Liste zeigt trotzdem nur die letzten 24 h — siehe noe.js).
     await env.DB.prepare("DELETE FROM fire_op WHERE ended=1 AND ended_at < datetime('now','-3 days')").run();
-  } catch (_) {}
+  } catch (e) {
+    await logError(env, "fire-cron: history " + e.message, "fire/cron");
+  }
 
-  return json({ ok: true, active: list.length, fresh: fresh.length, sent });
+  await writeHealth(env, list.length, detailFetched, "ok");
+  return json({ ok: true, active: list.length, fresh: fresh.length, sent, detailFetched });
 }

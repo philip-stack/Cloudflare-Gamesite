@@ -181,9 +181,20 @@ CREATE TABLE IF NOT EXISTS fire_op (
   d          TEXT,               -- Alarmdatum (Quelle, TT.MM.JJJJ)
   t          TEXT,               -- Alarmzeit (Quelle, HH:MM:SS)
   dispo      TEXT,               -- Alarmierte Wehren als JSON (Snapshot letzter Stand)
+  last_detail TEXT,              -- wann zuletzt das Detail (Wehren) geholt wurde
   first_seen TEXT DEFAULT CURRENT_TIMESTAMP,
   last_seen  TEXT DEFAULT CURRENT_TIMESTAMP,
   ended      INTEGER DEFAULT 0,
   ended_at   TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_fire_op_ended ON fire_op(ended, ended_at);
+
+-- Gesundheitszustand des Cron-Laufs (ein Zeile, k='cron'). Ermöglicht der App
+-- zu erkennen, ob die Live-Aktualisierung (Worker→Cron→Quelle) noch läuft.
+CREATE TABLE IF NOT EXISTS fire_health (
+  k              TEXT PRIMARY KEY,   -- 'cron'
+  last_run       TEXT,               -- Zeitpunkt des letzten Laufs
+  active         INTEGER,            -- Anzahl aktiver Einsätze zuletzt
+  detail_fetched INTEGER,            -- wie viele Details in dem Lauf geholt wurden
+  note           TEXT                -- 'ok' | 'upstream-error' | …
+);
