@@ -1,4 +1,6 @@
 import { json, clientIp, rateLimit } from "../_util.js";
+import { BEZIRK } from "./_bezirk.js";
+import { kindOf } from "./_parse.js";
 
 // ====================================================================
 // Statistik/Trends für /fire/noe. Rechnet aus der eigenen Historie
@@ -8,16 +10,6 @@ import { json, clientIp, rateLimit } from "../_util.js";
 //     → { active, last24, byKind:{B,T,S,X}, avgMin, topBezirk:{name,count}, byHour:[..24] }
 // Hinweis: Sammelt erst seit Aktivierung der Historie — anfangs dünn.
 // ====================================================================
-
-const BEZIRK = {
-  "01": "Amstetten", "02": "Baden", "03": "Bruck/Leitha", "04": "Gänserndorf",
-  "05": "Gmünd", "061": "Klosterneuburg", "062": "St. Pölten (Land)", "063": "Bruck/Leitha",
-  "07": "Hollabrunn", "08": "Horn", "09": "Korneuburg", "10": "Krems/Donau",
-  "11": "Lilienfeld", "12": "Melk", "13": "Mistelbach", "14": "Mödling",
-  "15": "Neunkirchen", "17": "St. Pölten", "18": "Scheibbs", "19": "Tulln",
-  "20": "Waidhofen/Thaya", "21": "Wr. Neustadt", "22": "Zwettl",
-};
-const kindOf = a => { const c = String(a || "").trim().toUpperCase()[0]; return "BTS".includes(c) ? c : "X"; };
 
 export async function onRequestGet({ request, env }) {
   if (env && env.DB && !(await rateLimit(env, "firestats:" + clientIp(request), 60, 60))) {

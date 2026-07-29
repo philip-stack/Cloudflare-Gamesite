@@ -265,6 +265,11 @@ select:focus, input:focus { border-color: rgba(255, 59, 48, 0.6); }
   font-size: 1.15rem; line-height: 1; backdrop-filter: blur(8px); transition: all 0.15s;
 }
 .icon-btn:hover { border-color: rgba(255,255,255,0.2); transform: translateY(-1px); }
+.stale {
+  margin: 0 0 14px; padding: 11px 14px; border-radius: 12px; font-size: 0.86rem; font-weight: 700;
+  background: rgba(255,176,32,0.14); color: #ffb020; border: 1px solid rgba(255,176,32,0.4);
+}
+.a-note { font-size: 0.78rem; color: var(--faint); line-height: 1.5; margin: 2px 0 14px; }
 .icon-btn.on { background: #2f7bff; border-color: #2f7bff; color: #fff; }
 .icon-btn.loading { opacity: 0.6; pointer-events: none; animation: locpulse 1s ease-in-out infinite; }
 @keyframes locpulse { 50% { opacity: 0.3; } }

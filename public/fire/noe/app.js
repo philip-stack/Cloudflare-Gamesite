@@ -939,6 +939,26 @@
   window.addEventListener("hashchange", openFromHash);
   setInterval(() => { if (!document.hidden) load(); }, REFRESH_MS);
 
+  // ---- Selbstüberwachung: läuft die Live-Aktualisierung (Cron) noch? ----
+  // /api/fire/health meldet das Alter des letzten Cron-Laufs. Ist es zu groß
+  // (> ~7 min = mehrere verpasste 2-min-Läufe), warnen wir sichtbar.
+  const STALE_SEC = 420;
+  async function checkHealth() {
+    const el = $("#stale"); if (!el) return;
+    try {
+      const h = await (await fetch("/api/fire/health")).json();
+      if (typeof h.ageSec === "number" && h.ageSec > STALE_SEC) {
+        const mins = Math.round(h.ageSec / 60);
+        el.textContent = "⚠️ Live-Aktualisierung gestört – Alarm/Historie evtl. verzögert (seit " + mins + " min)";
+        el.hidden = false;
+      } else {
+        el.hidden = true;   // ok oder noch keine Daten → nicht fälschlich warnen
+      }
+    } catch (_) { /* Health ist optional */ }
+  }
+  checkHealth();
+  setInterval(() => { if (!document.hidden) checkHealth(); }, 90000);
+
   // Tippt man eine Push-Benachrichtigung bei bereits offener App an, schickt
   // der Service Worker die Ziel-URL hierher → wir setzen den Hash und öffnen
   // die Detailansicht direkt (verlässlicher als reines navigate() im SW).
