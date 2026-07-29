@@ -164,6 +164,7 @@ select:focus, input:focus { border-color: rgba(255, 59, 48, 0.6); }
 .stufe { font-variant-numeric: tabular-nums; }
 .card .when { margin-left: auto; font-size: 0.78rem; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .card .fresh-tag { font-size: 0.66rem; font-weight: 800; color: var(--brand); text-transform: uppercase; letter-spacing: 0.08em; }
+.card .dist { font-size: 0.72rem; font-weight: 800; color: #2f7bff; background: rgba(47,123,255,0.12); border-radius: 999px; padding: 2px 8px; white-space: nowrap; }
 
 .card h3 { margin: 0 0 8px; font-size: 1.04rem; font-weight: 700; line-height: 1.25; letter-spacing: -0.01em; }
 .card .loc { display: flex; align-items: center; gap: 7px; color: var(--ink); font-weight: 600; font-size: 0.94rem; }
@@ -264,6 +265,9 @@ select:focus, input:focus { border-color: rgba(255, 59, 48, 0.6); }
   font-size: 1.15rem; line-height: 1; backdrop-filter: blur(8px); transition: all 0.15s;
 }
 .icon-btn:hover { border-color: rgba(255,255,255,0.2); transform: translateY(-1px); }
+.icon-btn.on { background: #2f7bff; border-color: #2f7bff; color: #fff; }
+.icon-btn.loading { opacity: 0.6; pointer-events: none; animation: locpulse 1s ease-in-out infinite; }
+@keyframes locpulse { 50% { opacity: 0.3; } }
 
 .view-toggle { display: inline-flex; background: var(--panel); border: 1px solid var(--panel-line); border-radius: 999px; padding: 3px; backdrop-filter: blur(8px); }
 .vt { border: 0; background: transparent; color: var(--muted); font: 700 0.85rem inherit; padding: 7px 15px; border-radius: 999px; cursor: pointer; }
@@ -454,6 +458,8 @@ select:focus, input:focus { border-color: rgba(255, 59, 48, 0.6); }
 .mk-count { fill: #0b0c10; font-weight: 800; font-family: inherit; pointer-events: none; }
 .mk-pulse { transform-box: fill-box; transform-origin: center; animation: mkpulse 1.8s ease-out infinite; }
 @keyframes mkpulse { 0% { opacity: 0.5; transform: scale(1); } 100% { opacity: 0; transform: scale(2.4); } }
+.mk-user { pointer-events: none; }
+.mk-user-pulse { transform-box: fill-box; transform-origin: center; opacity: 0.45; animation: mkpulse 2s ease-out infinite; }
 
 /* Popup über der Karte */
 #map-pop {
