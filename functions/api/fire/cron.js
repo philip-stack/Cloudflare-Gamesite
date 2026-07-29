@@ -65,7 +65,9 @@ export async function onRequestGet({ request, env }) {
     const msg = {
       title: "🚒 " + (e.a ? e.a + " · " : "") + (e.m || "Einsatz"),
       body: (e.o || "") + (bezName ? " · " + bezName : ""),
-      url: "/fire/noe/",
+      // Deep-Link direkt auf den Einsatz — die App öffnet die Detailansicht
+      // und lädt automatisch den passenden Feed (aktiv/beendet).
+      url: "/fire/noe/#n=" + encodeURIComponent(String(e.n || "")),
     };
     for (const t of targets) {
       const r = await pushToEndpoint(env, t.endpoint, msg);
