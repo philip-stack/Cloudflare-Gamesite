@@ -41,6 +41,8 @@
   let prevNums = null;              // null = erster Ladevorgang (kein Alarm)
   let newFlash = 0;
   let shownIds = new Set();         // schon eingeblendete Karten (keine Re-Animation)
+  let userPos = null;              // [lat,lng] eigener Standort (Session)
+  let nearMode = false;           // Liste nach Nähe sortieren + Distanz zeigen
 
   // ---- Hell/Dunkel ----
   const curTheme = () => document.documentElement.dataset.theme === "light" ? "light" : "dark";
@@ -158,6 +160,7 @@
       if (!recent) detectNew(list);
       setStatus(data.error ? "err" : "ok");
       render();
+      refreshOpenDetail();
       fillGeocodes();
     } catch (_) {
       setStatus("err");
@@ -208,14 +211,33 @@
     bezirkSel.innerHTML = '<option value="">Alle Bezirke</option>' + names.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join("");
     if (names.includes(cur)) bezirkSel.value = cur;
   }
+  // Entfernung Luftlinie (km) zwischen zwei [lat,lng].
+  function distKm(a, b) {
+    if (!a || !b) return Infinity;
+    const R = 6371, rad = Math.PI / 180;
+    const dLat = (b[0] - a[0]) * rad, dLng = (b[1] - a[1]) * rad;
+    const la1 = a[0] * rad, la2 = b[0] * rad;
+    const h = Math.sin(dLat / 2) ** 2 + Math.cos(la1) * Math.cos(la2) * Math.sin(dLng / 2) ** 2;
+    return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
+  }
+  const distOf = e => (userPos ? distKm(userPos, coordsOf(e)) : Infinity);
+  function fmtKm(km) {
+    if (!isFinite(km)) return "";
+    return km < 1 ? Math.round(km * 1000) + " m" : (km < 10 ? km.toFixed(1) : Math.round(km)) + " km";
+  }
   function filtered() {
     const q = searchEl.value.trim().toLowerCase(), bez = bezirkSel.value;
-    return all.filter(e => {
+    const list = all.filter(e => {
       if (filterKind !== "all" && e._c.kind !== filterKind) return false;
       if (bez && e._bez !== bez) return false;
       if (q && !((e.m || "").toLowerCase().includes(q) || (e.o || "").toLowerCase().includes(q) || (e._bez || "").toLowerCase().includes(q))) return false;
       return true;
-    }).sort((a, b) => (b._when ? b._when.getTime() : 0) - (a._when ? a._when.getTime() : 0));
+    });
+    if (nearMode && userPos) {
+      // Nach Nähe: verortete zuerst (aufsteigend), nicht-verortete ans Ende.
+      return list.sort((a, b) => distOf(a) - distOf(b));
+    }
+    return list.sort((a, b) => (b._when ? b._when.getTime() : 0) - (a._when ? a._when.getTime() : 0));
   }
 
   function renderStats() {
@@ -277,7 +299,8 @@
     const k = e._c.kind;
     const fresh = !e._ended && e._when && (Date.now() - e._when.getTime()) < FRESH_MS;
     const badge = `${e._c.label}${e._c.stufe ? ' <span class="stufe">St. ' + esc(e._c.stufe) + "</span>" : ""}`;
-    return `<div class="row1"><span class="badge k-${k}">${badge}</span>${fresh ? '<span class="fresh-tag">neu</span>' : ""}<span class="when">${esc(whenText(e))}</span></div>
+    const km = (nearMode && userPos) ? fmtKm(distOf(e)) : "";
+    return `<div class="row1"><span class="badge k-${k}">${badge}</span>${fresh ? '<span class="fresh-tag">neu</span>' : ""}${km ? `<span class="dist">📍 ${esc(km)}</span>` : ""}<span class="when">${esc(whenText(e))}</span></div>
         <h3>${esc(e.m || "Einsatz")}</h3>
         <div class="loc">${PIN}<span>${esc(e.o || "Unbekannt")}${e.o2 ? " · " + esc(e.o2) : ""}</span></div>
         ${e._bez ? `<div class="bez">Bezirk ${esc(e._bez)}</div>` : ""}`;
@@ -414,7 +437,34 @@
       markerG.appendChild(gg);
     });
     markerGroups = groups;
+    if (nearMode && userPos) addUserDot();
     setMapNote(items.length, coded, items.length - coded);
+  }
+
+  // Eigener Standort als blauer Punkt auf der Karte.
+  function addUserDot() {
+    if (!markerG || !userPos) return;
+    const cx = projX(userPos[1]), cy = projY(userPos[0]);
+    const r = Math.max(4, markerR() * 0.85);
+    const g = document.createElementNS(NS, "g"); g.setAttribute("class", "mk-user");
+    const pulse = document.createElementNS(NS, "circle");
+    pulse.setAttribute("class", "mk-user-pulse"); pulse.setAttribute("cx", cx); pulse.setAttribute("cy", cy);
+    pulse.setAttribute("r", r); pulse.setAttribute("fill", "#2f7bff");
+    g.appendChild(pulse);
+    const dot = document.createElementNS(NS, "circle");
+    dot.setAttribute("cx", cx); dot.setAttribute("cy", cy); dot.setAttribute("r", (r * 0.62).toFixed(1));
+    dot.setAttribute("fill", "#2f7bff"); dot.setAttribute("stroke", "#fff");
+    dot.setAttribute("stroke-width", (r * 0.22).toFixed(2));
+    g.appendChild(dot);
+    markerG.appendChild(g);
+  }
+  function centerOnUser() {
+    if (!userPos) { setMapView(null); addMarkers(); return; }
+    const pts = [[projX(userPos[1]), projY(userPos[0])]];
+    filtered().slice(0, 3).forEach(e => { const c = coordsOf(e); if (c) pts.push([projX(c[1]), projY(c[0])]); });
+    let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+    for (const [x, y] of pts) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+    setMapView([x0, y0, x1, y1]); addMarkers();
   }
 
   function showPop(key, atEl) {
@@ -462,7 +512,7 @@
     listEl.hidden = isMap; mapEl.hidden = !isMap;
     $("#view-list").classList.toggle("on", !isMap); $("#view-list").setAttribute("aria-selected", String(!isMap));
     $("#view-map").classList.toggle("on", isMap); $("#view-map").setAttribute("aria-selected", String(isMap));
-    if (isMap) { initMap(); if (bezirkSel.value) fitToFiltered(); else { setMapView(null); addMarkers(); } }
+    if (isMap) { initMap(); if (nearMode && userPos) centerOnUser(); else if (bezirkSel.value) fitToFiltered(); else { setMapView(null); addMarkers(); } }
     else { hidePop(); render(); }
   }
 
@@ -552,8 +602,8 @@
         if (mins >= 0) tiles.push(`<div><span>Dauer</span><b>${esc(fmtDur(mins))}</b></div>`);
       }
     } else {
-      tiles.push(`<div><span>Alarmiert</span><b>${esc(ago(alarmWhen))}</b></div>`);
-      tiles.push(`<div><span>Zeitpunkt</span><b>${esc(fmtWhen(alarmWhen))}</b></div>`);
+      tiles.push(`<div><span>Läuft seit</span><b data-since="${alarmWhen ? alarmWhen.getTime() : 0}">${esc(ago(alarmWhen))}</b></div>`);
+      tiles.push(`<div><span>Alarmiert</span><b>${esc(fmtWhen(alarmWhen))}</b></div>`);
     }
     tiles.push(`<div><span>Einsatznr.</span><b>${esc(src.n || (base && base.n) || "—")}</b></div>`);
     tiles.push(`<div><span>Alarmstufe</span><b>${esc(String(src.a || (base && base.a) || "—"))}</b></div>`);
@@ -621,6 +671,16 @@
       if (row) { openDetailBase(mapOp(row)); return; }
     } catch (_) {}
     toast("Einsatz nicht gefunden (evtl. älter als 3 Tage)");
+  }
+  // Endet ein gerade betrachteter aktiver Einsatz, die Detailansicht auf
+  // „beendet" nachziehen (aus der Historie), ohne dass man umschalten muss.
+  function refreshOpenDetail() {
+    if (overlay.hidden || !curDetail || curDetail._ended || feed !== "active") return;
+    const n = String(curDetail.n || ""); if (!n) return;
+    if (all.some(e => String(e.n) === n)) return;   // noch aktiv → nichts tun
+    fetch("/api/fire/noe?op=" + encodeURIComponent(n)).then(r => r.json())
+      .then(j => { const row = (j.einsatz || [])[0]; if (row && curDetail && String(curDetail.n) === n) openDetailBase(mapOp(row)); })
+      .catch(() => {});
   }
 
   // ---- Alarm-Overlay (Bezirks-Push) ----
@@ -769,6 +829,33 @@
   document.addEventListener("keydown", e => { if (e.key === "Escape") { if (!overlay.hidden) closeDetail(); else if (!alarmOvl.hidden) closeAlarm(); else if (!statsOvl.hidden) closeStats(); } });
   $("#theme-btn").addEventListener("click", toggleTheme);
   $("#alarm-btn").addEventListener("click", openAlarm);
+  const locBtn = $("#loc-btn");
+  if (locBtn) locBtn.addEventListener("click", toggleNear);
+
+  // ---- Standort / Nähe ----
+  function rerenderNear() {
+    if (view === "list") { listEl.innerHTML = ""; shownIds.clear(); render(); }
+    else { addMarkers(); }
+  }
+  function toggleNear() {
+    if (nearMode) {
+      nearMode = false; locBtn && locBtn.classList.remove("on");
+      if (view === "map") { if (bezirkSel.value) fitToFiltered(); else { setMapView(null); addMarkers(); } }
+      else rerenderNear();
+      return;
+    }
+    if (!navigator.geolocation) { toast("Standort wird nicht unterstützt"); return; }
+    locBtn && locBtn.classList.add("loading");
+    navigator.geolocation.getCurrentPosition(p => {
+      locBtn && locBtn.classList.remove("loading");
+      userPos = [p.coords.latitude, p.coords.longitude];
+      nearMode = true; locBtn && locBtn.classList.add("on");
+      if (view === "map") centerOnUser(); else { rerenderNear(); toast("Einsätze in deiner Nähe zuerst"); }
+    }, err => {
+      locBtn && locBtn.classList.remove("loading");
+      toast(err && err.code === 1 ? "Standort-Freigabe verweigert" : "Standort nicht ermittelbar");
+    }, { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 });
+  }
   $("#a-save").addEventListener("click", saveAlarm);
   $("#a-off").addEventListener("click", offAlarm);
   aAll.addEventListener("change", syncAllToggle);
@@ -826,12 +913,18 @@
 
   // ---- Live-Zeiten ohne Neuladen aktualisieren ----
   setInterval(() => {
-    if (view !== "list") return;
-    const ended = feed === "recent";
-    listEl.querySelectorAll(".card").forEach(card => {
-      const w = Number(card.dataset.when) || 0; if (!w) return;
-      const el = card.querySelector(".when"); if (el) el.textContent = (ended ? "beendet " : "") + ago(new Date(w));
-    });
+    if (view === "list") {
+      const ended = feed === "recent";
+      listEl.querySelectorAll(".card").forEach(card => {
+        const w = Number(card.dataset.when) || 0; if (!w) return;
+        const el = card.querySelector(".when"); if (el) el.textContent = (ended ? "beendet " : "") + ago(new Date(w));
+      });
+    }
+    // Live-Laufzeit im offenen Detail eines aktiven Einsatzes.
+    if (!overlay.hidden) {
+      const b = dBody.querySelector("[data-since]");
+      if (b) { const t = Number(b.dataset.since) || 0; if (t) b.textContent = ago(new Date(t)); }
+    }
   }, 60000);
 
   // ---- Start ----
@@ -845,4 +938,18 @@
   load().then(openFromHash);
   window.addEventListener("hashchange", openFromHash);
   setInterval(() => { if (!document.hidden) load(); }, REFRESH_MS);
+
+  // Tippt man eine Push-Benachrichtigung bei bereits offener App an, schickt
+  // der Service Worker die Ziel-URL hierher → wir setzen den Hash und öffnen
+  // die Detailansicht direkt (verlässlicher als reines navigate() im SW).
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.addEventListener("message", e => {
+      const d = e.data || {};
+      if (d.type !== "open-op" || !d.url) return;
+      let hash = "";
+      try { hash = new URL(d.url, location.href).hash; } catch (_) {}
+      if (hash) { try { history.replaceState(null, "", location.pathname + location.search + hash); } catch (_) {} }
+      openFromHash();
+    });
+  }
 })();

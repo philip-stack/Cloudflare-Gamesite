@@ -4,9 +4,9 @@
 // installierbar und offline-tauglich. Strategie: Netz zuerst,
 // Cache als Fallback. /api/… liegt außerhalb des Scopes → immer live.
 // ====================================================================
-const CACHE = "fire-noe-v15";
+const CACHE = "fire-noe-v16";
 const SHELL = [
-  "./", "./index.html", "./app.js?v=15", "./style.css?v=12", "./noe-geo.js?v=1",
+  "./", "./index.html", "./app.js?v=16", "./style.css?v=13", "./noe-geo.js?v=1",
   "./manifest.webmanifest", "./icons/icon-192.png", "./icons/icon-512.png",
 ];
 
@@ -60,7 +60,15 @@ self.addEventListener("notificationclick", e => {
   const url = (e.notification.data && e.notification.data.url) || "/fire/noe/";
   e.waitUntil((async () => {
     const all = await clients.matchAll({ type: "window", includeUncontrolled: true });
-    for (const c of all) { if ("focus" in c) { try { await c.navigate(url); } catch (_) {} return c.focus(); } }
+    for (const c of all) {
+      if ("focus" in c) {
+        // Bereits offene App: Ziel per Nachricht schicken (der Client setzt
+        // den Hash und öffnet die Detailansicht) — zuverlässiger als navigate(),
+        // das bei reinen Hash-Wechseln je nach Browser nicht greift.
+        try { c.postMessage({ type: "open-op", url }); } catch (_) {}
+        return c.focus();
+      }
+    }
     if (clients.openWindow) return clients.openWindow(url);
   })());
 });

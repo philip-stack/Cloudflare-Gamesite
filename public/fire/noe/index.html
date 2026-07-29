@@ -25,7 +25,7 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Feuerwehr NÖ" />
-  <link rel="stylesheet" href="style.css?v=12" />
+  <link rel="stylesheet" href="style.css?v=13" />
 </head>
 <body>
   <div id="ptr" aria-hidden="true"><span class="ptr-spin"></span></div>
@@ -40,6 +40,7 @@
       </div>
       <div class="head-right">
         <button id="stats-btn" class="icon-btn" title="Statistik" aria-label="Statistik anzeigen">📊</button>
+        <button id="loc-btn" class="icon-btn" title="Einsätze in meiner Nähe" aria-label="Einsätze in meiner Nähe zuerst">📍</button>
         <button id="theme-btn" class="icon-btn" title="Hell/Dunkel" aria-label="Hell- oder Dunkelmodus umschalten">🌙</button>
         <button id="alarm-btn" class="icon-btn" title="Bezirks-Alarm" aria-label="Bezirks-Alarm einrichten">🔔</button>
         <div class="status">
@@ -124,7 +125,7 @@
   </div>
 
   <script src="noe-geo.js?v=1"></script>
-  <script src="app.js?v=15"></script>
+  <script src="app.js?v=16"></script>
   <script>
     // Eigener Service Worker (Scope /fire/noe/) → installierbar als eigene PWA.
     if ("serviceWorker" in navigator) {
