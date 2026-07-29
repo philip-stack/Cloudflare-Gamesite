@@ -87,9 +87,9 @@ body {
   font-variant-numeric: tabular-nums; backdrop-filter: blur(8px);
 }
 .live { flex: none; width: 9px; height: 9px; min-width: 9px; min-height: 9px; box-sizing: border-box; border-radius: 50%; background: var(--stoff); box-shadow: 0 0 0 0 rgba(53, 208, 127, 0.6); animation: pulse 2s infinite; }
-/* „Beendet" = ruhiger, neutraler Punkt (kein warnendes Amber, das auf dunklem
-   Grund „blüht" und dadurch größer wirkt als der grüne Aktiv-Punkt). */
-.live.stale { background: var(--faint); animation: none; box-shadow: none; }
+/* „Beendet": gar kein Punkt — nur der Text im Feld (der Punkt wurde im engen
+   Flex-Layout zum Oval verzerrt und wirkte deplatziert). */
+.live.stale { display: none; }
 .live.err { background: var(--brand); animation: none; box-shadow: none; }
 @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(53, 208, 127, 0.55); } 70% { box-shadow: 0 0 0 8px rgba(53, 208, 127, 0); } 100% { box-shadow: 0 0 0 0 rgba(53, 208, 127, 0); } }
 
