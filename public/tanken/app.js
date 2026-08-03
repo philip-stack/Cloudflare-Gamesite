@@ -139,6 +139,71 @@
       { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 });
   }
 
+  // ---- Autocomplete (Adressvorschläge, Photon via /api/sprit/suggest) ----
+  const ac = (() => {
+    const box = document.createElement("div"); box.id = "ac"; box.hidden = true; document.body.appendChild(box);
+    let items = [], sel = -1, curInput = null, curPick = null, t = null, seq = 0;
+    const hide = () => { box.hidden = true; items = []; sel = -1; };
+    function place(inp) {
+      const r = inp.getBoundingClientRect();
+      box.style.left = (r.left + scrollX) + "px";
+      box.style.top = (r.bottom + scrollY + 4) + "px";
+      box.style.width = r.width + "px";
+    }
+    function render() {
+      if (!items.length) { hide(); return; }
+      box.innerHTML = items.map((it, i) => `<div class="ac-item${i === sel ? " sel" : ""}" data-i="${i}">${esc(it.label)}</div>`).join("");
+      box.hidden = false;
+    }
+    function choose(i) {
+      const it = items[i]; if (!it || !curInput) return;
+      curInput.value = it.label; curInput.dataset.lat = it.lat; curInput.dataset.lng = it.lng;
+      const cb = curPick; hide(); if (cb) cb(it);
+    }
+    box.addEventListener("mousedown", e => { const el = e.target.closest(".ac-item"); if (el) { e.preventDefault(); choose(+el.dataset.i); } });
+    async function query(inp) {
+      const q = inp.value.trim(); place(inp);
+      if (q.length < 3) { hide(); return; }
+      const my = ++seq;
+      try {
+        const data = await (await fetch("/api/sprit/suggest?q=" + encodeURIComponent(q))).json();
+        if (my !== seq || document.activeElement !== inp) return;
+        items = Array.isArray(data) ? data : []; sel = -1; place(inp); render();
+      } catch (_) { hide(); }
+    }
+    function attach(inp, onPick, onEnter) {
+      inp.setAttribute("autocomplete", "off");
+      inp.addEventListener("input", () => { delete inp.dataset.lat; delete inp.dataset.lng; curInput = inp; curPick = onPick; clearTimeout(t); t = setTimeout(() => query(inp), 220); });
+      inp.addEventListener("focus", () => { curInput = inp; curPick = onPick; if (inp.value.trim().length >= 3) query(inp); });
+      inp.addEventListener("keydown", e => {
+        if (!box.hidden && items.length) {
+          if (e.key === "ArrowDown") { e.preventDefault(); sel = (sel + 1) % items.length; render(); return; }
+          if (e.key === "ArrowUp") { e.preventDefault(); sel = (sel - 1 + items.length) % items.length; render(); return; }
+          if (e.key === "Enter" && sel >= 0) { e.preventDefault(); choose(sel); return; }
+          if (e.key === "Escape") { hide(); return; }
+        }
+        if (e.key === "Enter" && onEnter) { e.preventDefault(); hide(); onEnter(); }
+      });
+      inp.addEventListener("blur", () => setTimeout(hide, 150));
+    }
+    addEventListener("resize", hide);
+    return { attach, hide };
+  })();
+  // Wert eines Eingabefelds: gewählte Koordinate (aus Vorschlag) bevorzugt.
+  const valOf = el => (el.dataset.lat ? el.dataset.lat + "," + el.dataset.lng : el.value.trim());
+  function doNear() {
+    const el = $("#near-q");
+    if (el.dataset.lat) fetchNear({ lat: +el.dataset.lat, lng: +el.dataset.lng });
+    else { const q = el.value.trim(); if (q) fetchNear({ q }); }
+  }
+  function doRoute() {
+    const fromEl = $("#rt-from"), toEl = $("#rt-to");
+    const from = valOf(fromEl), to = valOf(toEl);
+    if (!from || !to) { setMsg("Bitte Start und Ziel angeben.", "warn"); return; }
+    LS.set("sprit_from", fromEl.value); LS.set("sprit_to", toEl.value);
+    fetchRoute(from, to);
+  }
+
   // ---- UI-Events ----
   function setMode(m) {
     mode = m; LS.set("sprit_mode", m);
@@ -154,21 +219,17 @@
     document.querySelectorAll(".fuel").forEach(x => { const on = x === b; x.classList.toggle("on", on); x.setAttribute("aria-selected", String(on)); });
     // Aktuelle Ansicht mit neuem Treibstoff neu laden
     if (mode === "near" && lastNear) fetchNear(lastNear);
-    if (mode === "route" && $("#rt-from").value && $("#rt-to").value) fetchRoute($("#rt-from").value.trim(), $("#rt-to").value.trim());
+    if (mode === "route" && $("#rt-from").value && $("#rt-to").value) fetchRoute(valOf($("#rt-from")), valOf($("#rt-to")));
   }));
 
   $("#loc-btn").addEventListener("click", () => locate((lat, lng) => fetchNear({ lat, lng })));
-  $("#near-go").addEventListener("click", () => { const q = $("#near-q").value.trim(); if (q) fetchNear({ q }); });
-  $("#near-q").addEventListener("keydown", e => { if (e.key === "Enter") { const q = e.target.value.trim(); if (q) fetchNear({ q }); } });
+  $("#near-go").addEventListener("click", doNear);
+  ac.attach($("#near-q"), it => fetchNear({ lat: it.lat, lng: it.lng }), doNear);
 
-  $("#rt-from-loc").addEventListener("click", () => locate((lat, lng) => { $("#rt-from").value = lat.toFixed(5) + "," + lng.toFixed(5); setMsg("Start = dein Standort gesetzt.", ""); }));
-  $("#rt-go").addEventListener("click", () => {
-    const from = $("#rt-from").value.trim(), to = $("#rt-to").value.trim();
-    if (!from || !to) { setMsg("Bitte Start und Ziel angeben.", "warn"); return; }
-    LS.set("sprit_from", from); LS.set("sprit_to", to);
-    fetchRoute(from, to);
-  });
-  $("#rt-to").addEventListener("keydown", e => { if (e.key === "Enter") $("#rt-go").click(); });
+  $("#rt-from-loc").addEventListener("click", () => locate((lat, lng) => { const el = $("#rt-from"); el.value = "Mein Standort"; el.dataset.lat = lat; el.dataset.lng = lng; setMsg("Start = dein Standort gesetzt.", ""); }));
+  $("#rt-go").addEventListener("click", doRoute);
+  ac.attach($("#rt-from"), () => {}, null);
+  ac.attach($("#rt-to"), () => {}, doRoute);
 
   // ---- Start ----
   applyThemeUI();
