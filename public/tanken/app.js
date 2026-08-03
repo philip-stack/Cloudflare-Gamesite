@@ -10,6 +10,7 @@
   let fuel = LS.get("sprit_fuel", "DIE") === "SUP" ? "SUP" : "DIE";
   let mode = LS.get("sprit_mode", "near") === "route" ? "route" : "near";
   let lastNear = null;   // {lat,lng} | {q}
+  let nearData = null, routeData = null;   // letztes Ergebnis je Modus (für Umschalten)
   let map = null, layer = null;
 
   // ---- Theme ----
@@ -68,6 +69,7 @@
     </div>`;
   }
   function renderNear(d) {
+    nearData = d;
     const st = d.stations || [];
     ensureMap(); layer.clearLayers();
     if (!st.length) { setMsg("Keine Tankstellen mit " + d.fuelLabel + " in der Nähe gefunden.", "warn"); $("#results").innerHTML = ""; return; }
@@ -83,6 +85,7 @@
     fit(pts);
   }
   function renderRoute(d) {
+    routeData = d;
     const st = d.stations || [];
     ensureMap(); layer.clearLayers();
     if (d.route && d.route.geometry) L.polyline(d.route.geometry, { color: "#2f7bff", weight: 5, opacity: 0.75 }).addTo(layer);
@@ -210,6 +213,18 @@
     $("#tab-near").classList.toggle("on", m === "near"); $("#tab-near").setAttribute("aria-selected", String(m === "near"));
     $("#tab-route").classList.toggle("on", m === "route"); $("#tab-route").setAttribute("aria-selected", String(m === "route"));
     $("#panel-near").hidden = m !== "near"; $("#panel-route").hidden = m !== "route";
+    // Ansicht (Liste + Karte) auf den gewählten Modus umstellen.
+    ac.hide(); setMsg(""); $("#results").innerHTML = "";
+    if (map && layer) layer.clearLayers();
+    if (m === "near") {
+      if (nearData) renderNear(nearData);
+      else if (lastNear) fetchNear(lastNear);
+      else if (map) map.setView([47.7, 14.3], 7);
+    } else {
+      if (routeData) renderRoute(routeData);
+      else if ($("#rt-from").value && $("#rt-to").value) doRoute();
+      else if (map) map.setView([47.7, 14.3], 7);
+    }
   }
   $("#tab-near").addEventListener("click", () => setMode("near"));
   $("#tab-route").addEventListener("click", () => setMode("route"));
@@ -217,7 +232,9 @@
   document.querySelectorAll(".fuel").forEach(b => b.addEventListener("click", () => {
     fuel = b.dataset.fuel; LS.set("sprit_fuel", fuel);
     document.querySelectorAll(".fuel").forEach(x => { const on = x === b; x.classList.toggle("on", on); x.setAttribute("aria-selected", String(on)); });
-    // Aktuelle Ansicht mit neuem Treibstoff neu laden
+    // Treibstoff geändert → beide zwischengespeicherten Ergebnisse sind veraltet;
+    // aktuellen Modus sofort neu laden, den anderen beim nächsten Umschalten.
+    nearData = null; routeData = null;
     if (mode === "near" && lastNear) fetchNear(lastNear);
     if (mode === "route" && $("#rt-from").value && $("#rt-to").value) fetchRoute(valOf($("#rt-from")), valOf($("#rt-to")));
   }));
