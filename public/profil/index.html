@@ -211,6 +211,7 @@
       <div class="stat"><b id="s-streak">0</b><span>🔥 Tage-Streak</span></div>
       <div class="stat"><b id="s-beststreak">0</b><span>Bester Streak</span></div>
       <div class="stat"><b id="s-ach">0</b><span>Erfolge</span></div>
+      <div class="stat"><b id="s-worldrank">–</b><span>🌍 Bester Weltrang</span></div>
     </div>
 
     <div class="sec-title">🏆 Erfolge <span id="ach-count" class="ach-count"></span></div>
@@ -521,6 +522,8 @@
     // --- Spiel-Zeilen ---
     const rowsEl = $("#rows");
     const list = GAMES.slice().sort((a, b) => (played(b) - played(a)));
+    // Spielübergreifende Weltrang-Bilanz — gespeist aus denselben Fetches unten.
+    let bestWorldRank = Infinity;
     list.forEach(g => {
       const best = g.bestKey ? num(localStorage.getItem(g.bestKey)) : 0;
       const nb = g.gsBadges ? badgesOf(g.key) : 0;
@@ -549,6 +552,12 @@
             const el = document.createElement("span");
             el.className = "rank"; el.textContent = `🌍 Weltrang #${i + 1}`;
             sub.appendChild(el);
+            // Gesamt-Bilanz: bester Weltrang über alle Spiele
+            if (i + 1 < bestWorldRank) {
+              bestWorldRank = i + 1;
+              const wr = $("#s-worldrank");
+              if (wr) wr.textContent = "#" + bestWorldRank;
+            }
           }
         }).catch(() => {});
       }
