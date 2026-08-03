@@ -236,7 +236,7 @@ function showMenu(msg) {
     <input type="text" id="mp-name" maxlength="14" placeholder="Dein Name" value="${GS.esc(GS.getName())}">
     <button class="btn-primary" id="mp-create">➕ Raum erstellen</button>
     <div class="btn-row"><input type="text" id="mp-code" class="code" maxlength="6" placeholder="CODE"><button class="btn-secondary" id="mp-join">Beitreten</button></div>
-    <button class="btn-secondary" id="mp-scores">🏆 Bestenliste</button>`);
+    <button class="btn-secondary" id="mp-scores" style="margin-top:10px">🏆 Bestenliste</button>`);
   const save = () => { const v = o.querySelector("#mp-name").value.trim().slice(0, 14); if (v) GS.setName(v); };
   o.querySelector("#mp-create").onclick = () => { save(); connect(randCode()); };
   o.querySelector("#mp-join").onclick = () => { save(); const c = o.querySelector("#mp-code").value.trim().toUpperCase(); if (/^[A-Z0-9]{4,6}$/.test(c)) connect(c); else o.querySelector(".msg").textContent = "Bitte gültigen Code eingeben."; };
