@@ -99,6 +99,11 @@ function trimPoints(maxDist) {
     if (acc > maxDist) { points.length = i + 1; return; }
   }
 }
+function pathLength() {
+  let acc = 0;
+  for (let i = 1; i < points.length; i++) acc += Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
+  return acc;
+}
 function angDiff(a, b) { let d = b - a; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return d; }
 
 // ---------- Update ----------
@@ -141,9 +146,10 @@ function update(dt) {
     }
   }
 
-  // Selbstkollision (Hals überspringen)
+  // Selbstkollision (Hals überspringen; NUR echten, schon vorhandenen Körper
+  // prüfen — sonst „kollidiert" die kurze Startschlange mit ihrem Startpunkt).
   const neck = Math.ceil((HEAD_R * 2.4) / SEG_GAP) + 3;
-  const segCount = Math.floor(bodyLenPx / SEG_GAP);
+  const segCount = Math.min(Math.floor(bodyLenPx / SEG_GAP), Math.floor(pathLength() / SEG_GAP));
   for (let i = neck; i <= segCount; i++) {
     const p = sampleAt(i * SEG_GAP);
     if (Math.hypot(head.x - p.x, head.y - p.y) < COLL_R) return die();
@@ -205,9 +211,9 @@ function render() {
     ctx.restore();
   }
 
-  // Körper als glühender Pfad
-  if (mode !== "ready" && points.length > 1) {
-    const segCount = Math.floor(bodyLenPx / SEG_GAP);
+  // Körper als glühender Pfad (nur bis zur tatsächlichen Pfadlänge) + Kopf
+  if (mode !== "ready") {
+    const segCount = Math.min(Math.floor(bodyLenPx / SEG_GAP), Math.floor(pathLength() / SEG_GAP));
     const pts = [];
     for (let i = 0; i <= segCount; i++) pts.push(sampleAt(i * SEG_GAP));
     if (pts.length > 1) {
@@ -219,19 +225,18 @@ function render() {
       }
       ctx.strokeStyle = SKIN.b; ctx.lineWidth = BODY_W; drawPath(); ctx.stroke();
       ctx.strokeStyle = SKIN.a; ctx.lineWidth = BODY_W * 0.42; ctx.globalAlpha = 0.75; drawPath(); ctx.stroke(); ctx.globalAlpha = 1;
+    }
 
-      // Kopf
-      const hx = head.x, hy = head.y;
-      ctx.save();
-      ctx.shadowBlur = LOW() ? 0 : 16; ctx.shadowColor = `rgba(${SKIN.glow},0.95)`;
-      ctx.fillStyle = SKIN.a; ctx.beginPath(); ctx.arc(hx, hy, HEAD_R, 0, 6.2832); ctx.fill();
-      ctx.restore();
-      // Augen
-      const nx = Math.cos(heading), ny = Math.sin(heading), px = -ny, py = nx;
-      for (const s of [-1, 1]) {
-        const ex = hx + nx * 4 + px * s * 5, ey = hy + ny * 4 + py * s * 5;
-        ctx.fillStyle = "#05130b"; ctx.beginPath(); ctx.arc(ex, ey, 2.6, 0, 6.2832); ctx.fill();
-      }
+    // Kopf immer zeichnen
+    const hx = head.x, hy = head.y;
+    ctx.save();
+    ctx.shadowBlur = LOW() ? 0 : 16; ctx.shadowColor = `rgba(${SKIN.glow},0.95)`;
+    ctx.fillStyle = SKIN.a; ctx.beginPath(); ctx.arc(hx, hy, HEAD_R, 0, 6.2832); ctx.fill();
+    ctx.restore();
+    const nx = Math.cos(heading), ny = Math.sin(heading), px = -ny, py = nx;
+    for (const s of [-1, 1]) {
+      const ex = hx + nx * 4 + px * s * 5, ey = hy + ny * 4 + py * s * 5;
+      ctx.fillStyle = "#05130b"; ctx.beginPath(); ctx.arc(ex, ey, 2.6, 0, 6.2832); ctx.fill();
     }
   }
 
