@@ -73,7 +73,7 @@
   }
   function stationCard(s, best, extra) {
     const addr = [s.addr, (s.plz + " " + s.city).trim()].filter(Boolean).join(", ");
-    const oh = s.open ? `<span class="oh open">${s.till ? "offen bis " + esc(s.till) : "offen"}</span>` : `<span class="oh closed">geschlossen</span>`;
+    const oh = `<span class="oh ${s.open ? "open" : "closed"}">${esc(s.openText || (s.open ? "offen" : "geschlossen"))}</span>`;
     const meta = [extra, oh].filter(Boolean).join(" · ");
     const fav = isFav(s.id);
     return `<div class="card${best ? " top" : ""}">

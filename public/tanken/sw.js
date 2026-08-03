@@ -1,9 +1,9 @@
 // Service Worker der Sprit-Radar-PWA. Scope /tanken/. Netz zuerst, Cache als
 // Fallback. /api/… (Preise/Route) und /sprit/tiles/… (Kacheln) werden NICHT
 // vom SW gecacht — Preise sollen frisch sein, Kacheln cachen Edge/Browser selbst.
-const CACHE = "sprit-v7";
+const CACHE = "sprit-v8";
 const SHELL = [
-  "./", "./index.html", "./app.js?v=7", "./style.css?v=4",
+  "./", "./index.html", "./app.js?v=8", "./style.css?v=4",
   "./vendor/leaflet.js", "./vendor/leaflet.css",
   "./manifest.webmanifest", "./icons/icon-192.png", "./icons/icon-512.png",
 ];

@@ -5,25 +5,29 @@ import { writeFileSync } from "node:fs";
 
 function px(size) {
   const buf = Buffer.alloc(size * size * 4);
-  const cx = size * 0.5, r = size * 0.24, ccy = size * 0.60, apexY = size * 0.15;
   const rad = size * 0.22;                       // Eck-Radius Hintergrund
   const inRound = (x, y) => {
     const dx = Math.min(x, size - 1 - x), dy = Math.min(y, size - 1 - y);
     if (dx >= rad || dy >= rad) return true;
     return (rad - dx) ** 2 + (rad - dy) ** 2 <= rad * rad;
   };
-  const inDrop = (x, y) => {
-    if ((x - cx) ** 2 + (y - ccy) ** 2 <= r * r) return true;       // Kreis unten
-    if (y < apexY || y > ccy) return false;                          // Keil oben
-    const half = r * (y - apexY) / (ccy - apexY);
-    return Math.abs(x - cx) <= half;
+  // Zapfsäule (weiße Silhouette auf grünem Grund), Koordinaten normiert 0..1.
+  const R = (x, y, x0, y0, x1, y1) => { const u = x / size, v = y / size; return u >= x0 && u <= x1 && v >= y0 && v <= y1; };
+  const inPump = (x, y) => {
+    if (R(x, y, 0.34, 0.30, 0.52, 0.45)) return false;   // Display-Ausschnitt (grün)
+    if (R(x, y, 0.29, 0.22, 0.57, 0.84)) return true;    // Säulen-Körper
+    if (R(x, y, 0.25, 0.84, 0.61, 0.90)) return true;    // Sockel
+    if (R(x, y, 0.57, 0.25, 0.63, 0.54)) return true;    // Steigrohr rechts
+    if (R(x, y, 0.57, 0.25, 0.74, 0.32)) return true;    // Bogen oben
+    if (R(x, y, 0.68, 0.32, 0.74, 0.52)) return true;    // Zapfpistole
+    return false;
   };
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
       const o = (y * size + x) * 4;
       if (!inRound(x, y)) { buf[o + 3] = 0; continue; }
       let r8, g8, b8;
-      if (inDrop(x, y)) { r8 = 255; g8 = 255; b8 = 255; }            // weißer Tropfen
+      if (inPump(x, y)) { r8 = 255; g8 = 255; b8 = 255; }            // weiße Zapfsäule
       else {                                                          // grüner Verlauf
         const t = y / size;
         r8 = Math.round(0x2f + (0x1f - 0x2f) * t);
