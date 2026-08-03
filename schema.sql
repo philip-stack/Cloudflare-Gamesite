@@ -150,6 +150,15 @@ CREATE TABLE IF NOT EXISTS geo_cache (
   at   TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Kurzlebiger Preis-Cache für die Tank-App (/tanken): E-Control-Antworten je
+-- gerundeter Koordinate+Treibstoff (~10 min), schont die Quelle bei Routen-
+-- Abfragen (mehrere Stützpunkte pro Route). k = "lat,lng,fuel".
+CREATE TABLE IF NOT EXISTS sprit_cache (
+  k    TEXT PRIMARY KEY,
+  data TEXT,
+  at   TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Bezirks-Alarm: welcher Push-Endpoint möchte Benachrichtigungen für
 -- welchen Bezirk (Code). Der eigentliche Versand nutzt push_sub/push_queue.
 CREATE TABLE IF NOT EXISTS fire_alert (
