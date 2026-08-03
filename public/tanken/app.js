@@ -114,7 +114,9 @@
   // ---- Laden ----
   async function fetchNear(where) {
     lastNear = where;
-    setMsg("Suche günstigste Tankstellen…", "load"); $("#results").innerHTML = "";
+    // Alte Liste stehen lassen, bis neue Daten sie ersetzen (kein Layout-Sprung/
+    // „Aufblitzen" der Karte). Lade-Hinweis nur, wenn noch nichts angezeigt ist.
+    if (!$("#results").children.length) setMsg("Suche günstigste Tankstellen…", "load");
     const qs = ("lat" in where) ? `lat=${where.lat}&lng=${where.lng}` : `q=${encodeURIComponent(where.q)}`;
     try {
       const d = await (await fetch(`/api/sprit/near?${qs}&fuel=${fuel}`)).json();
@@ -123,7 +125,7 @@
     } catch (_) { setMsg("Abfrage fehlgeschlagen. Nochmal versuchen.", "warn"); }
   }
   async function fetchRoute(from, to) {
-    setMsg("Route und Preise werden berechnet…", "load"); $("#results").innerHTML = "";
+    if (!$("#results").children.length) setMsg("Route und Preise werden berechnet…", "load");
     try {
       const d = await (await fetch(`/api/sprit/route?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&fuel=${fuel}`)).json();
       if (d.error && !(d.stations && d.stations.length)) {
