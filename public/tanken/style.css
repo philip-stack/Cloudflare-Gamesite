@@ -105,9 +105,11 @@ input[type="search"]:focus { outline: 2px solid var(--accent2); outline-offset: 
 .chip.home { border-color: rgba(47,212,138,0.4); }
 .chip.fav { color: var(--gold); }
 
-.tip { display: flex; align-items: center; gap: 10px; background: rgba(232,177,0,0.12); border: 1px solid rgba(232,177,0,0.35);
-  color: var(--ink); border-radius: 12px; padding: 10px 14px; font-size: 0.86rem; margin-bottom: 12px; }
-.tip-x { margin-left: auto; flex: none; border: 0; background: transparent; color: var(--muted); cursor: pointer; font-size: 0.9rem; }
+.tip { display: flex; align-items: flex-start; gap: 10px; background: rgba(232,177,0,0.12); border: 1px solid rgba(232,177,0,0.35);
+  color: var(--ink); border-radius: 12px; padding: 10px 14px; font-size: 0.86rem; line-height: 1.45; margin-bottom: 12px; }
+.tip-t { flex: 1; min-width: 0; }
+.tip-t b { white-space: nowrap; }
+.tip-x { flex: none; border: 0; background: transparent; color: var(--muted); cursor: pointer; font-size: 0.95rem; padding: 0 2px; line-height: 1.4; }
 
 #map { height: min(52vh, 460px); border-radius: var(--radius); overflow: hidden; border: 1px solid var(--panel-line); box-shadow: var(--shadow); background: var(--bg2); z-index: 0; }
 

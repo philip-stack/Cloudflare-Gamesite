@@ -75,12 +75,6 @@
     const addr = [s.addr, (s.plz + " " + s.city).trim()].filter(Boolean).join(", ");
     const oh = s.open ? `<span class="oh open">${s.till ? "offen bis " + esc(s.till) : "offen"}</span>` : `<span class="oh closed">geschlossen</span>`;
     const meta = [extra, oh].filter(Boolean).join(" · ");
-    let save = "";
-    if (curAvg && s.price < curAvg) {
-      const cpl = Math.round((curAvg - s.price) * 100);
-      const e = (curAvg - s.price) * liters();
-      if (cpl >= 1) save = `<div class="save">−${cpl} ¢/l · ~${e.toFixed(2).replace(".", ",")} € / Tankfüllung</div>`;
-    }
     const fav = isFav(s.id);
     return `<div class="card${best ? " top" : ""}">
       <div class="price">${esc(eur(s.price))}</div>
@@ -88,7 +82,6 @@
         <div class="name">${esc(s.name)}${best ? ' <span class="tag best">günstigste</span>' : ""}</div>
         <div class="addr">${esc(addr)}</div>
         <div class="meta">${meta}</div>
-        ${save}
       </div>
       <div class="actions">
         <button class="fav${fav ? " on" : ""}" title="Favorit" aria-label="Favorit"
@@ -341,10 +334,8 @@
 
   // Optionen (Tankfüllung, Radius, Sortierung)
   function rerender() { if (mode === "near" && nearData) renderNear(nearData); else if (mode === "route" && routeData) renderRoute(routeData); }
-  $("#opt-liters").value = liters();
   $("#opt-radius").value = LS.get("sprit_radius", "0");
   $("#opt-sort").value = LS.get("sprit_sort", "price");
-  $("#opt-liters").addEventListener("change", e => { LS.set("sprit_liters", String(Math.max(1, Math.min(200, parseInt(e.target.value, 10) || 50)))); e.target.value = liters(); rerender(); });
   $("#opt-radius").addEventListener("change", e => { LS.set("sprit_radius", e.target.value); rerender(); });
   $("#opt-sort").addEventListener("change", e => { LS.set("sprit_sort", e.target.value); rerender(); });
 
@@ -352,7 +343,7 @@
   function showTip() {
     const el = $("#tip"); if (!el) return;
     if (LS.get("sprit_tip", "") === "x") { el.hidden = true; return; }
-    el.innerHTML = `💡 In Österreich dürfen Spritpreise nur um <b>12:00</b> steigen, sonst nur fallen – vormittags tanken ist meist günstiger. <button id="tip-x" class="tip-x" aria-label="Ausblenden">✕</button>`;
+    el.innerHTML = `<span class="tip-t">💡 In Österreich dürfen Spritpreise nur um <b>12:00 Uhr</b> steigen, sonst nur fallen – vormittags tanken ist meist günstiger.</span><button id="tip-x" class="tip-x" aria-label="Ausblenden">✕</button>`;
     el.hidden = false;
     $("#tip-x").addEventListener("click", () => { LS.set("sprit_tip", "x"); el.hidden = true; });
   }
