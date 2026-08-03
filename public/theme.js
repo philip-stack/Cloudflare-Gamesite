@@ -40,17 +40,47 @@
 
   apply(get());
 
+  // ------------------------------------------------------------------
+  // Barrierefreiheit (plattformweit, einmal injiziert):
+  //  - prefers-reduced-motion: Wer im Betriebssystem „Bewegung reduzieren"
+  //    gewählt hat, bekommt keine langen CSS-Animationen/Übergänge mehr
+  //    (Canvas-Spiele laufen über rAF und sind davon unberührt).
+  //  - :focus-visible: sichtbarer Tastatur-Fokusring auf jeder Seite —
+  //    auch dort, wo eigenes CSS den Fokus wegstylt (deshalb !important,
+  //    greift aber nur bei Tastatur/Programm-Fokus, nicht per Maus).
+  // ------------------------------------------------------------------
+  (function injectA11y() {
+    const css =
+      "@media (prefers-reduced-motion: reduce){*,::before,::after{" +
+      "animation-duration:.001ms!important;animation-iteration-count:1!important;" +
+      "transition-duration:.001ms!important;scroll-behavior:auto!important}}" +
+      ":focus-visible{outline:3px solid #57c7ff!important;outline-offset:2px!important}";
+    const st = document.createElement("style");
+    st.id = "gs-a11y";
+    st.textContent = css;
+    (document.head || document.documentElement).appendChild(st);
+  })();
+
   // Energiesparen: setzt data-lowpower auf <html>; CSS schaltet damit teure
   // Dauer-Effekte ab, Canvas-Spiele (z. B. meeri) drosseln die Bildrate.
+  // Wird zusätzlich automatisch aktiv, wenn das Betriebssystem „Bewegung
+  // reduzieren" meldet — außer die/der Nutzer:in hat es explizit abgeschaltet.
+  const prefersReducedMotion = () => {
+    try { return matchMedia("(prefers-reduced-motion: reduce)").matches; } catch (_) { return false; }
+  };
   const applyLowPower = () => {
     try {
-      if (localStorage.getItem("gs_lowpower") === "1") document.documentElement.setAttribute("data-lowpower", "");
+      const explicit = localStorage.getItem("gs_lowpower");        // "1" | "0" | null
+      const on = explicit === "1" || (explicit == null && prefersReducedMotion());
+      if (on) document.documentElement.setAttribute("data-lowpower", "");
       else document.documentElement.removeAttribute("data-lowpower");
     } catch (_) {}
   };
   applyLowPower();
+  try { matchMedia("(prefers-reduced-motion: reduce)").addEventListener("change", applyLowPower); } catch (_) {}
   window.gsLowPower = {
-    on: () => { try { return localStorage.getItem("gs_lowpower") === "1"; } catch (_) { return false; } },
+    // Effektiver Zustand (inkl. automatischem reduced-motion), nicht nur das Flag.
+    on: () => document.documentElement.hasAttribute("data-lowpower"),
     toggle() { const next = !this.on(); try { localStorage.setItem("gs_lowpower", next ? "1" : "0"); } catch (_) {} applyLowPower(); return next; },
   };
 
