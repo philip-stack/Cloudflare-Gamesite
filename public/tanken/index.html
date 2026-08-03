@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="de-AT" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0c1512" />
+  <script>
+    // Theme früh setzen (vor dem ersten Paint) → kein Umblitzen.
+    (function () {
+      try {
+        var t = localStorage.getItem("sprit_theme");
+        if (t !== "light" && t !== "dark") t = matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        document.documentElement.dataset.theme = t;
+      } catch (e) {}
+    })();
+  </script>
+  <meta name="robots" content="noindex" />
+  <title>Sprit-Radar · günstig tanken in Österreich</title>
+  <meta name="description" content="Günstigste Tankstellen in Österreich – im Umkreis oder entlang deiner Route." />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" type="image/png" sizes="32x32" href="icons/icon-32.png" />
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="icons/icon-180.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="Sprit-Radar" />
+  <link rel="stylesheet" href="vendor/leaflet.css" />
+  <link rel="stylesheet" href="style.css?v=1" />
+</head>
+<body>
+  <div id="app">
+    <header class="top">
+      <div class="brand">
+        <span class="logo" aria-hidden="true">⛽</span>
+        <div class="brand-txt">
+          <h1>Sprit<span>-Radar</span></h1>
+          <p class="sub">Günstig tanken · Österreich</p>
+        </div>
+      </div>
+      <button id="theme-btn" class="icon-btn" title="Hell/Dunkel" aria-label="Hell- oder Dunkelmodus umschalten">🌙</button>
+    </header>
+
+    <section class="controls">
+      <div class="tabs" role="tablist" aria-label="Modus">
+        <button id="tab-near" class="tab on" role="tab" aria-selected="true">📍 Umkreis</button>
+        <button id="tab-route" class="tab" role="tab" aria-selected="false">🧭 Route A→B</button>
+      </div>
+
+      <div class="fuels" role="tablist" aria-label="Treibstoff">
+        <button class="fuel on" data-fuel="DIE" role="tab" aria-selected="true">Diesel</button>
+        <button class="fuel" data-fuel="SUP" role="tab" aria-selected="false">Super 95</button>
+      </div>
+
+      <!-- Modus 1: Umkreis / Ortssuche -->
+      <div id="panel-near" class="panel">
+        <div class="row">
+          <button id="loc-btn" class="btn-primary">📍 Mein Standort</button>
+        </div>
+        <div class="row">
+          <input id="near-q" type="search" placeholder="…oder Ort / Adresse suchen" autocomplete="off" />
+          <button id="near-go" class="btn-ghost">Suchen</button>
+        </div>
+      </div>
+
+      <!-- Modus 2: Route -->
+      <div id="panel-route" class="panel" hidden>
+        <label class="field"><span class="vh">Start</span>
+          <input id="rt-from" type="search" placeholder="Start (Ort/Adresse)" autocomplete="off" /></label>
+        <label class="field"><span class="vh">Ziel</span>
+          <input id="rt-to" type="search" placeholder="Ziel (Ort/Adresse)" autocomplete="off" /></label>
+        <div class="row">
+          <button id="rt-from-loc" class="btn-ghost small" title="Start = mein Standort">📍 Start</button>
+          <button id="rt-go" class="btn-primary">Günstigste am Weg</button>
+        </div>
+      </div>
+    </section>
+
+    <div id="msg" class="msg" hidden></div>
+    <main id="results" class="results" aria-live="polite"></main>
+    <div id="map"></div>
+
+    <footer class="foot">
+      <p>Preise: <em>E-Control Spritpreisrechner</em> (amtliche Meldedaten). Karte: <em>OpenStreetMap</em>-Mitwirkende · Routing: <em>OSRM</em>.
+         Privates, inoffizielles Projekt, ohne Gewähr. Standort wird nur lokal genutzt.</p>
+    </footer>
+  </div>
+
+  <script src="vendor/leaflet.js"></script>
+  <script src="app.js?v=1"></script>
+  <script>
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
+    }
+  </script>
+</body>
+</html>
