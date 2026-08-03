@@ -243,6 +243,8 @@
         `<tr><td class="t">${esc((x.created_at || "").slice(5, 16))}</td><td>${esc(x.game)}</td><td>${esc(x.name)}</td><td class="num mono">${nf(x.score)}</td><td class="dev">${esc((x.device || "").slice(0, 12))}…</td><td class="num"><button class="btn sm bad" data-del="${x.id}">🗑</button> <button class="btn sm" data-ban="${esc(x.device || "")}">🚫</button></td></tr>`).join("") || '<tr><td colspan="6" class="muted">keine</td></tr>';
       const banRows = (d.banned || []).map(x =>
         `<tr><td class="dev">${esc(x.device)}</td><td class="t">${esc((x.at || "").slice(0, 16))}</td><td class="num"><button class="btn sm" data-unban="${esc(x.device)}">entsperren</button></td></tr>`).join("") || '<tr><td colspan="3" class="muted">keine gesperrten Geräte</td></tr>';
+      const drawRows = (k.entries || []).map((x, i) =>
+        `<tr><td class="num">${i + 1}</td><td>${esc(x.name)}</td><td class="num mono">${nf(x.points)}</td><td class="num mono">${nf(x.games)}</td><td class="num mono">${nf(x.wins)}</td><td class="num"><button class="btn sm bad" data-drawdel="${esc(x.name)}">🗑</button></td></tr>`).join("") || '<tr><td colspan="6" class="muted">keine Einträge</td></tr>';
 
       $("#content").innerHTML = `
         <div class="grid">
@@ -317,6 +319,14 @@
           <div id="search-out"></div>
         </div>
 
+        <div class="section-title">🎨 Kritzeln-Bestenliste bereinigen
+          <button class="btn sm bad" id="draw-clear">Alle löschen</button>
+        </div>
+        <div class="card full">
+          <table><thead><tr><th class="num">#</th><th>Name</th><th class="num">Punkte</th><th class="num">Spiele</th><th class="num">Siege</th><th class="num">Aktion</th></tr></thead>
+          <tbody>${drawRows}</tbody></table>
+        </div>
+
         <div class="section-title">⚙️ Aktionen & Alarm</div>
         <div class="card">
           <div class="toolbar" style="margin-bottom:10px">
@@ -347,6 +357,9 @@
       document.querySelectorAll("[data-del]").forEach(b => b.onclick = () => act({ action: "deleteScore", id: Number(b.dataset.del) }, "Diesen Score löschen?"));
       document.querySelectorAll("[data-ban]").forEach(b => b.onclick = () => { const dev = b.dataset.ban; if (dev) act({ action: "banDevice", device: dev }, "Dieses Gerät sperren und alle seine Scores löschen?"); });
       document.querySelectorAll("[data-unban]").forEach(b => b.onclick = () => act({ action: "unbanDevice", device: b.dataset.unban }, "Gerät wieder entsperren?"));
+      // Kritzeln-Bestenliste bereinigen
+      const dc = $("#draw-clear"); if (dc) dc.onclick = () => act({ action: "clearDraw" }, "Die GESAMTE Kritzeln-Bestenliste löschen?");
+      document.querySelectorAll("[data-drawdel]").forEach(b => b.onclick = () => act({ action: "deleteDraw", name: b.dataset.drawdel }, "Eintrag „" + b.dataset.drawdel + "“ aus der Kritzeln-Bestenliste löschen?"));
 
       // Trend-Zeitraum
       document.querySelectorAll("[data-days]").forEach(b => b.onclick = () => { trendDays = Number(b.dataset.days); load(); });
