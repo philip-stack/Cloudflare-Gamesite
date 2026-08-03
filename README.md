@@ -18,9 +18,10 @@ statisches HTML/CSS/JS in `public/`, dazu Pages Functions als API und eine
 | 🦄 **Galopp** | `/galopp/` | Temple-Run-artiger Endless-Runner — springen, ducken, abbiegen, und das wütende Einhorn nicht aufholen lassen |
 | 🦝 **WUMMS!** | `/wumms/` | Comic-Block-Puzzle mit Tier-Helden — Blöcke aufs 8×8-Feld legen, Reihen abräumen, Helden-Ultimates (Bombe/Laser/Nuke) zünden, Combo-Ketten bauen und den Bösewicht zurückschlagen, der Reihen von unten hochschiebt |
 | 🐹 **MEERI-MANIA** | `/meeri/` | Merge-Idle mit Meerschweinchen — Meeries kaufen, gleiche zusammenziehen für immer absurdere Evolutionen (Baby → Punk → Ritter → … → Drachen → Galaxie), Münz-Blasen antippen, Wiese ausbauen, Offline-Einnahmen, alle 16 im Meeri-Album entdecken. Rein lokal (kein Server) |
+| 🐍 **Neon-Schlange** | `/schlange/` | Slither-Arcade — leuchtende Neon-Schlange mit Ziehen lenken, Orbs fressen, wachsen, per ⚡/Halten boosten; nicht selbst beißen, nicht in die Wand. Skins & Meilensteine, weltweite Bestenliste |
 
 Alle Spiele sind mobile-first (Touch-Gesten), haben aber auch
-Tastatur-Steuerung. Funkelfeld, Komet, Sternensturm, Galopp und WUMMS! teilen
+Tastatur-Steuerung. Funkelfeld, Komet, Sternensturm, Galopp, WUMMS! und Neon-Schlange teilen
 sich eine globale Bestenliste pro Spiel (Top 50, pro Name zählt der Highscore).
 
 Die ganze Seite kann zwischen **Hell- und Dunkelmodus** umgeschaltet werden

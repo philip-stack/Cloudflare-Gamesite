@@ -57,6 +57,11 @@
       desc: "Merge-Idle mit Meerschweinchen — gleiche Meeries zusammenziehen, immer absurdere Evolutionen entdecken, Münzen sammeln und die Wiese ausbauen",
       bestKey: "meeri_best", scored: true, gsBadges: false, daily: false, weekly: false,
     },
+    {
+      key: "schlange", name: "Neon-Schlange", icon: "🐍", href: "/schlange/",
+      desc: "Slither-Arcade — als leuchtende Neon-Schlange Orbs fressen, wachsen, boosten und dich bloß nicht selbst beißen; weltweite Bestenliste",
+      bestKey: "schlange_best", scored: true, gsBadges: true, daily: false, weekly: false,
+    },
     // Hinweis: /kochstudio/ ist bewusst NICHT hier registriert — es bleibt
     // abgekapselt und nur direkt unter /kochstudio/ erreichbar.
   ];

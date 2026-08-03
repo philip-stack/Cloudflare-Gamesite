@@ -4,7 +4,7 @@ import { sendToName } from "../push.js";
 // Anzeigenamen für Push-Texte
 const GAME_LABEL = {
   funkelfeld: "Funkelfeld", komet: "Komet", sternensturm: "Sternensturm",
-  galopp: "Galopp", wumms: "WUMMS!", meeri: "MEERI-MANIA",
+  galopp: "Galopp", wumms: "WUMMS!", meeri: "MEERI-MANIA", schlange: "Neon-Schlange",
 };
 
 // ====================================================================
@@ -82,6 +82,15 @@ const GAMES = {
     // Score = Goldene Karotten (Prestige-Währung); rein lokales Idle-Spiel
     // ohne Server-Formel. Schutz hier: Obergrenze + Lauf-Token + Rate-Limit.
     max: 1_000_000_000,
+  },
+  schlange: {
+    max: 100_000,
+    // score = gefressene Orbs. Grob gegen die Spielzeit gedeckelt: selbst bei
+    // dichtem Feld sind höchstens ~10 Orbs/s realistisch (+ Puffer).
+    check: (score, m) =>
+      Number.isFinite(m.orbs) && Number.isFinite(m.time) &&
+      m.orbs >= 0 && m.time >= 0 && m.time <= 36_000 &&
+      score === Math.round(m.orbs) && m.orbs <= m.time * 10 + 25,
   },
 };
 
