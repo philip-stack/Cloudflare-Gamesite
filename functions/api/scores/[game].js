@@ -229,8 +229,8 @@ export async function onRequestPost(context) {
   // Über das Betreiber-Dashboard gesperrte Geräte dürfen nicht mehr einreichen.
   // Fehlertolerant: bei DB-Problemen NICHT blockieren (echte Spieler zuerst).
   try {
-    const ban = await env.DB.prepare("SELECT 1 AS x FROM banned_device WHERE device = ?").bind(device).first();
-    if (ban) return json({ error: "Einsendung nicht möglich" }, 403);
+    const ban = await env.DB.prepare("SELECT COUNT(*) AS n FROM banned_device WHERE device = ?").bind(device).first();
+    if (ban && ban.n > 0) return json({ error: "Einsendung nicht möglich" }, 403);
   } catch (_) {}
 
   // Lauf-Token prüfen (signierter Seed, kurz vorher ausgestellt)
