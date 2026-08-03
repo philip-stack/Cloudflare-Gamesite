@@ -77,7 +77,9 @@ button:active { transform: scale(0.95); }
 .panel input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(122,162,255,0.18); }
 .btn-primary { background: linear-gradient(160deg,#9fbcff 0%,var(--accent) 45%,#4d74d6 100%); color: #08101f; font-weight: 700; font-size: 1.05rem; padding: 14px; width: 100%; border-radius: 14px; box-shadow: 0 0 0 1px rgba(190,210,255,0.4) inset; margin-bottom: 10px; }
 .btn-secondary { background: var(--card-hi); color: var(--ink); font-size: 1rem; padding: 12px; width: 100%; border-radius: 14px; box-shadow: 0 0 0 1px var(--edge-soft) inset; margin-bottom: 10px; }
-.btn-row { display: flex; gap: 10px; } .btn-row > * { flex: 1; }
+.btn-row { display: flex; gap: 10px; align-items: stretch; }
+/* beide Kinder exakt gleich breit/hoch (Input + Button); Panel-Ränder killen */
+.btn-row > * { flex: 1 1 0; min-width: 0; margin: 0 !important; width: auto; }
 .code-big { font-family: var(--font-display); font-weight: 800; font-size: 2.3rem; letter-spacing: 0.3em; color: var(--accent); margin: 2px 0 4px; }
 .plist { list-style: none; text-align: left; margin: 8px 0 16px; display: flex; flex-direction: column; gap: 8px; }
 .plist li { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; background: var(--card); box-shadow: 0 0 0 1px var(--edge-soft) inset; }

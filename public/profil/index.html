@@ -262,6 +262,12 @@
     <div class="sec-title">Deine Spiele</div>
     <div class="rows" id="rows"></div>
 
+    <div class="sec-title">🎨 Kritzeln &amp; Raten</div>
+    <div class="cloud-card" id="kritzeln-card">
+      <p class="cloud-info" id="kritzeln-me">Spiel eine Runde <a href="/kritzeln/">Kritzeln &amp; Raten</a>, um in der Bestenliste zu erscheinen.</p>
+      <div id="kritzeln-top"></div>
+    </div>
+
     <button class="btn-secondary" id="share-btn" style="margin-top:18px">📤 Profil teilen</button>
 
     <footer>
@@ -827,6 +833,27 @@
       } catch { return; }
       try { await navigator.clipboard.writeText(full); alert("In die Zwischenablage kopiert!"); } catch {}
     };
+
+    // --- Kritzeln & Raten: dauerhafte Bestenliste + eigene Statistik ---
+    (async () => {
+      try {
+        const nm = getName();
+        const r = await fetch("/api/kritzeln-scores" + (nm ? "?me=" + encodeURIComponent(nm) : ""));
+        const d = await r.json(); const top = d.top || [];
+        if (d.me) {
+          $("#kritzeln-me").innerHTML = `<b class="rank">🏆 Rang #${d.me.rank}</b> · ${fmt(d.me.points)} Punkte · ${num(d.me.games)} Spiele · ${num(d.me.wins)} Siege · Best ${fmt(d.me.best)}`;
+        }
+        if (top.length) {
+          const me = (nm || "").toLowerCase();
+          $("#kritzeln-top").innerHTML = `<div style="margin-top:10px">` + top.slice(0, 5).map((p, i) =>
+            `<div class="grow" style="display:flex;gap:10px;align-items:center;padding:7px 4px">
+               <span style="width:28px;text-align:center">${["🥇", "🥈", "🥉"][i] || (i + 1) + "."}</span>
+               <span style="flex:1;${p.name.toLowerCase() === me ? "color:var(--gold);font-weight:700" : ""}">${esc(p.name)}</span>
+               <span style="font-variant-numeric:tabular-nums">${fmt(p.points)} P · ${num(p.wins)}🏆</span>
+             </div>`).join("") + `</div>`;
+        }
+      } catch (_) { /* Bestenliste optional */ }
+    })();
   })();
   </script>
 </body>

@@ -217,7 +217,7 @@
         (d.warns && d.warns.length ? `<span class="warns">· ${d.warns.map(esc).join(" · ")}</span>` : "");
       $("#stamp").textContent = "Stand: " + new Date(d.generatedAt).toLocaleString("de-AT");
 
-      const s = d.scores, e = d.errors, p = d.push, f = d.fire, db = d.db;
+      const s = d.scores, e = d.errors, p = d.push, f = d.fire, db = d.db, k = d.kritzeln || {};
 
       const gameRows = (s.games || []).map(g =>
         `<div class="kv"><span>${esc(g.game)} <span class="muted">· ${nf(g.players)} Sp.</span></span><b class="mono">${nf(g.subs)}</b></div>`).join("") || '<p class="muted">keine</p>';
@@ -272,6 +272,11 @@
             <div class="kv"><span class="muted">rate-Buckets</span><b class="mono">${nf(db.rateRows)}</b></div>
             <div class="kv"><span class="muted">verbrauchte Token</span><b class="mono">${nf(db.usedTokens)}</b></div>
             <div class="kv"><span class="muted">gesperrte Geräte</span><b class="mono">${nf(db.bannedDevices)}</b></div>
+          </div>
+          <div class="card"><h2>🎨 Kritzeln &amp; Raten</h2>
+            <div class="kv"><span class="muted">Spiele gesamt</span><b class="mono">${nf(k.games)}</b></div>
+            <div class="kv"><span class="muted">Spieler:innen</span><b class="mono">${nf(k.players)}</b></div>
+            <div class="kv"><span class="muted">Top</span><b class="mono">${k.topName ? esc(k.topName) + " · " + nf(k.topPoints) : "–"}</b></div>
           </div>
         </div>
 

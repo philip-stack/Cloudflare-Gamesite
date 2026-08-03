@@ -112,6 +112,11 @@ export async function onRequestGet({ request, env }) {
   const rate = (await one(env, "SELECT COUNT(*) n FROM rate"))?.n ?? 0;
   const usedTok = (await one(env, "SELECT COUNT(*) n FROM used_token"))?.n ?? 0;
 
+  // ---- Kritzeln & Raten (dauerhafte Bestenliste) ----
+  const kPlayers = (await one(env, "SELECT COUNT(*) n FROM draw_score"))?.n ?? 0;
+  const kGames = (await one(env, "SELECT COALESCE(SUM(wins),0) n FROM draw_score"))?.n ?? 0;   // je Spiel genau 1 Sieg
+  const kTop = await one(env, "SELECT name, points FROM draw_score ORDER BY points DESC LIMIT 1");
+
   // ---- Trends (Zeitraum wählbar 7/30/90 Tage, roh je Tag; Client füllt Lücken) ----
   const tScores = await many(env, `SELECT date(created_at) d, COUNT(*) n FROM scores WHERE created_at > datetime('now','-${days} days') GROUP BY d`);
   const tErrors = await many(env, `SELECT date(created_at) d, COUNT(*) n FROM error_log WHERE created_at > datetime('now','-${days} days') GROUP BY d`);
@@ -144,6 +149,7 @@ export async function onRequestGet({ request, env }) {
       note: fh?.note || null, openOps: fOpen, keptOps: fKept,
     },
     db: { rateRows: rate, usedTokens: usedTok, bannedDevices: banned.length },
+    kritzeln: { players: kPlayers, games: kGames, topName: kTop?.name || null, topPoints: kTop?.points ?? 0 },
     trends: { days, scores: tScores, errors: tErrors, devices: tDevices },
     alert: { name: alertName },
     recent, banned,
