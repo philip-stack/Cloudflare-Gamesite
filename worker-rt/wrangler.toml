@@ -3,6 +3,13 @@ main = "index.js"
 compatibility_date = "2026-06-01"
 workers_dev = true
 
+# Dieselbe D1 wie die Pages-Site — das DrawRoom-DO schreibt die dauerhafte
+# Kritzeln-Bestenliste (draw_score) autoritativ am Spielende.
+[[d1_databases]]
+binding = "DB"
+database_name = "wuerfelpoker"
+database_id = "1a3ff398-8491-47b4-922b-3d331fcb7366"
+
 # Durable Objects dieses Workers (werden von der Pages-Site gebunden)
 [[durable_objects.bindings]]
 name = "PARTY_ROOM"

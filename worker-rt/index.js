@@ -385,7 +385,30 @@ export class DrawRoom extends DurableObject {
     this.timers.push(setTimeout(() => { this.turnIdx++; this.beginTurn(); }, D_REVEAL * 1000));
   }
 
-  endGame() { this.clearTimers(); this.state = "over"; this.drawerId = null; this.bc({ t: "over", players: this.scoreboard() }); this.sendLobby(); }
+  endGame() {
+    this.clearTimers(); this.state = "over"; this.drawerId = null;
+    const board = this.scoreboard();
+    this.bc({ t: "over", players: board }); this.sendLobby();
+    this.recordScores(board).catch(() => {});   // dauerhafte Bestenliste (best-effort)
+  }
+
+  // Am Spielende jede:n Spieler:in in die dauerhafte D1-Bestenliste rollen.
+  // Autoritativ (im DO), damit Clients keine Fake-Werte einschleusen können.
+  async recordScores(board) {
+    try {
+      if (!this.env || !this.env.DB || !board || board.length < 2) return;
+      const winId = board[0] && board[0].score > 0 ? board[0].id : null;
+      for (const p of board) {
+        if (!p.name) continue;
+        const pts = p.score | 0, win = p.id === winId ? 1 : 0;
+        await this.env.DB.prepare(
+          "INSERT INTO draw_score (name, points, games, wins, best) VALUES (?, ?, 1, ?, ?) " +
+          "ON CONFLICT(name) DO UPDATE SET points = points + excluded.points, games = games + 1, " +
+          "wins = wins + excluded.wins, best = MAX(best, excluded.best), updated_at = datetime('now')"
+        ).bind(p.name, pts, win, pts).run();
+      }
+    } catch (_) { /* Bestenliste nie den Spielfluss stören */ }
+  }
 }
 
 // Der Worker hostet das DO und trägt zusätzlich den Cron-Trigger für den

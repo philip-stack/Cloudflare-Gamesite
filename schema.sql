@@ -83,6 +83,19 @@ CREATE TABLE IF NOT EXISTS app_config (
   v TEXT
 );
 
+-- Dauerhafte Bestenliste fuer "Kritzeln & Raten" (geraeteuebergreifend, ueber
+-- alle Spiele). Wird AUTORITATIV vom DrawRoom-DO am Spielende geschrieben
+-- (worker-rt bindet dieselbe D1). Schluessel = Name (case-insensitiv).
+CREATE TABLE IF NOT EXISTS draw_score (
+  name       TEXT PRIMARY KEY COLLATE NOCASE,
+  points     INTEGER NOT NULL DEFAULT 0,
+  games      INTEGER NOT NULL DEFAULT 0,
+  wins       INTEGER NOT NULL DEFAULT 0,
+  best       INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_draw_score_points ON draw_score(points);
+
 -- Cloud-Backup der Spielstände (plattformweit, Details: functions/api/cloud.js)
 CREATE TABLE IF NOT EXISTS cloud_saves (
   code       TEXT PRIMARY KEY,            -- portabler 8-stelliger Backup-Code

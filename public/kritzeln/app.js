@@ -208,6 +208,24 @@ function hideNote() { $("#cv-note").classList.add("hidden"); }
 // ---------- Overlays ----------
 function closeOverlay() { const o = $("#ov"); if (o) o.remove(); }
 function overlay(html) { closeOverlay(); const o = document.createElement("div"); o.id = "ov"; o.className = "overlay"; o.innerHTML = `<div class="panel">${html}</div>`; document.body.appendChild(o); return o; }
+// Zweite Overlay-Ebene (stapelt über Menü/Warteraum/Ergebnis) für die Bestenliste.
+function closeOverlay2() { const o = $("#ov2"); if (o) o.remove(); }
+function overlay2(html) { closeOverlay2(); const o = document.createElement("div"); o.id = "ov2"; o.className = "overlay"; o.style.zIndex = "60"; o.innerHTML = `<div class="panel">${html}</div>`; document.body.appendChild(o); o.onclick = e => { if (e.target === o) closeOverlay2(); }; return o; }
+
+async function showScores() {
+  const o = overlay2(`<h2>🏆 Bestenliste</h2><p class="sub">Gesamtpunkte über alle Kritzeln-Spiele</p><div id="sc-list"><p class="msg">Lade …</p></div><button class="btn-secondary" id="sc-close">Schließen</button>`);
+  o.querySelector("#sc-close").onclick = closeOverlay2;
+  try {
+    const r = await fetch("/api/kritzeln-scores?me=" + encodeURIComponent(GS.getName() || ""));
+    const d = await r.json(); const top = d.top || []; const me = (GS.getName() || "").toLowerCase();
+    const list = top.length
+      ? `<ul class="plist">${top.map((p, i) => `<li class="${p.name.toLowerCase() === me ? "win" : ""}"><span class="pname">${i < 3 ? ["🥇", "🥈", "🥉"][i] + " " : (i + 1) + ". "}${GS.esc(p.name)}</span><span class="psc">${p.points} P · ${p.wins}🏆</span></li>`).join("")}</ul>`
+      : `<p class="msg">Noch keine Spiele gewertet — spielt die erste Runde zu Ende!</p>`;
+    let mine = "";
+    if (d.me) mine = `<p class="sub" style="margin-top:6px">Du (${GS.esc(d.me.name)}): Rang #${d.me.rank} · ${d.me.points} P · ${d.me.games} Spiele · ${d.me.wins} Siege · best ${d.me.best}</p>`;
+    $("#sc-list").innerHTML = list + mine;
+  } catch { const el = $("#sc-list"); if (el) el.innerHTML = `<p class="msg err">Bestenliste nicht erreichbar</p>`; }
+}
 
 function showMenu(msg) {
   view = "menu"; $("#board").classList.add("hidden"); setGuessEnabled(false); players = [];
@@ -251,8 +269,10 @@ function showOver(list) {
     <div class="win-name" style="color:var(--gold);font-family:var(--font-display);font-weight:800;font-size:1.6rem;margin:2px 0 12px">${top ? GS.esc(top.name) + " gewinnt!" : ""}</div>
     <ul class="plist">${list.map((p, i) => `<li class="${i === 0 ? "win" : ""}"><span class="pname">${i === 0 ? "🥇 " : i === 1 ? "🥈 " : i === 2 ? "🥉 " : (i + 1) + ". "}${GS.esc(p.name)}</span><span class="psc">${p.score || 0}</span></li>`).join("")}</ul>
     ${meHost ? `<button class="btn-primary" id="ov-again">🔄 Nochmal</button>` : `<p class="msg">Warte auf den Host …</p>`}
+    <button class="btn-secondary" id="ov-scores">🏆 Bestenliste</button>
     <button class="btn-secondary" id="ov-leave">Verlassen</button>`);
   const ag = o.querySelector("#ov-again"); if (ag) ag.onclick = () => { send({ t: "start" }); };
+  o.querySelector("#ov-scores").onclick = showScores;
   o.querySelector("#ov-leave").onclick = () => { leave(); showMenu(); };
 }
 
@@ -260,6 +280,7 @@ function showOver(list) {
 const soundBtn = $("#btn-sound");
 soundBtn.textContent = GS.sound.on() ? "🔊" : "🔇";
 soundBtn.onclick = () => { soundBtn.textContent = GS.sound.toggle() ? "🔊" : "🔇"; };
+$("#btn-top").onclick = showScores;
 window.addEventListener("beforeunload", leave);
 document.addEventListener("visibilitychange", () => { if (document.hidden || intentional || !code) return; if ((view === "lobby" || view === "over") && (!ws || ws.readyState > 1)) { reTries = 0; connect(code, true); } });
 
