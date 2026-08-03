@@ -109,7 +109,13 @@ schaltet teure Dauer-Effekte ab und drosselt die Bildrate für schwächere Gerä
   und DB-Hilfstabellen. Dazu geschützte **Aktionen** (POST, nur mit Header-
   Schlüssel → CSRF-resistent): Fake-**Score löschen**, **Gerät sperren**
   (`banned_device`, blockt weitere Einsendungen), Fehler-Log/Push-Queue leeren,
-  Fire-Cron manuell auslösen. Zugriff nur mit dem Pages-Secret `ADMIN_TOKEN`
+  Fire-Cron manuell auslösen. Für gezielte Moderation: **echte Top-50 je Spiel**
+  mit Direkt-Löschen (erwischt eingenistete Fakes auf Platz 1) und **Suche nach
+  Name/Gerät** über alle Spiele. Der **Trend-Zeitraum** ist auf 7/30/90 Tage
+  umschaltbar, Sparklines zeigen beim **Hover/Touch** Datum + exakte Zahl. Ein
+  optionaler **Betreiber-Alarm** pusht bei „Achtung" (Fehlerspitze /
+  Push-Queue-Stau) an einen konfigurierten Bestenlisten-Namen (Auswertung im
+  Fire-Cron, Konfig in `app_config`). Zugriff nur mit dem Pages-Secret `ADMIN_TOKEN`
   (selbst erzeugt, gratis, kein externer Dienst); ohne Schlüssel `401`.
 - **Automatische Tests** (`tests/`, per GitHub Actions bei jedem Push):
   Syntaxprüfung aller JS-Dateien, ein **statischer Qualitäts-/A11y-Check** aller

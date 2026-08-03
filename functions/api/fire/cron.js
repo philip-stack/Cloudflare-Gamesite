@@ -1,5 +1,5 @@
 import { json, logError } from "../_util.js";
-import { pushToEndpoint } from "../push.js";
+import { pushToEndpoint, sendToName } from "../push.js";
 import { BEZIRK, bezName } from "./_bezirk.js";
 
 // ====================================================================
@@ -212,5 +212,51 @@ export async function onRequestGet({ request, env }) {
   }
 
   await writeHealth(env, list.length, detailFetched, "ok");
+  await checkAdminAlert(env);
   return json({ ok: true, active: list.length, fresh: fresh.length, sent, detailFetched });
+}
+
+// ------------------------------------------------------------------
+// Betreiber-Alarm: Da dieser Cron zuverlässig alle 2 min läuft, prüft er
+// nebenbei den Plattform-Zustand und pusht bei einem Wechsel ok→Achtung
+// EINMAL an den im Dashboard konfigurierten Bestenlisten-Namen (kein Spam:
+// Zustand wird in app_config gemerkt). Alles best-effort — darf den Cron nie
+// stören. Hinweis: „Fire-Cron hängt" kann sich hier naturgemäß nicht selbst
+// melden (dann liefe dieser Code nicht); dafür bleibt das Dashboard-Banner.
+// ------------------------------------------------------------------
+async function checkAdminAlert(env) {
+  try {
+    const cfg = await env.DB.prepare("SELECT v FROM app_config WHERE k='alert_name'").first();
+    const name = cfg && cfg.v;
+    if (!name) return;   // Alarm aus
+
+    const e15 = (await env.DB.prepare(
+      "SELECT COUNT(*) n FROM error_log WHERE created_at > datetime('now','-15 minutes') AND msg NOT LIKE '%HTTP 522%'"
+    ).first())?.n ?? 0;
+    const q = (await env.DB.prepare("SELECT COUNT(*) n FROM push_queue").first())?.n ?? 0;
+
+    const reasons = [];
+    if (e15 > 15) reasons.push(`${e15} interne Fehler/15 min`);
+    if (q > 200) reasons.push(`Push-Queue ${q}`);
+    const bad = reasons.length > 0;
+
+    const prev = (await env.DB.prepare("SELECT v FROM app_config WHERE k='alert_state'").first())?.v || "ok";
+    const setState = s => env.DB.prepare(
+      "INSERT INTO app_config (k, v) VALUES ('alert_state', ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v"
+    ).bind(s).run();
+
+    if (bad && prev !== "bad") {
+      await sendToName(env, name, {
+        title: "⚠️ Spieleabend: Achtung",
+        body: reasons.join(" · "),
+        url: "/admin/",
+      });
+      await setState("bad");
+    } else if (!bad && prev === "bad") {
+      await sendToName(env, name, { title: "✅ Spieleabend: wieder ok", body: "Alle Werte normal.", url: "/admin/" });
+      await setState("ok");
+    }
+  } catch (e) {
+    await logError(env, "fire-cron: admin-alert " + e.message, "fire/cron");
+  }
 }

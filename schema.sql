@@ -76,6 +76,13 @@ CREATE TABLE IF NOT EXISTS banned_device (
   at     TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Kleiner Schluessel-Wert-Speicher fuer Betriebseinstellungen (z. B. den
+-- Namen, an den der Betreiber-Alarm gepusht wird, + zuletzt gemeldeter Status).
+CREATE TABLE IF NOT EXISTS app_config (
+  k TEXT PRIMARY KEY,
+  v TEXT
+);
+
 -- Cloud-Backup der Spielstände (plattformweit, Details: functions/api/cloud.js)
 CREATE TABLE IF NOT EXISTS cloud_saves (
   code       TEXT PRIMARY KEY,            -- portabler 8-stelliger Backup-Code
