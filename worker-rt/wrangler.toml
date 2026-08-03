@@ -3,14 +3,22 @@ main = "index.js"
 compatibility_date = "2026-06-01"
 workers_dev = true
 
-# Das Durable Object dieses Workers (wird von der Pages-Site gebunden)
+# Durable Objects dieses Workers (werden von der Pages-Site gebunden)
 [[durable_objects.bindings]]
 name = "PARTY_ROOM"
 class_name = "PartyRoom"
 
+[[durable_objects.bindings]]
+name = "TRON_ROOM"
+class_name = "TronRoom"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["PartyRoom"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["TronRoom"]
 
 # Cron: alle 2 Minuten den Feuerwehr-Bezirksalarm prüfen (pingt die
 # geschützte Pages-Route /api/fire/cron). Secret CRON_TOKEN nötig:

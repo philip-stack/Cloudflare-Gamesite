@@ -19,6 +19,7 @@ statisches HTML/CSS/JS in `public/`, dazu Pages Functions als API und eine
 | 🦝 **WUMMS!** | `/wumms/` | Comic-Block-Puzzle mit Tier-Helden — Blöcke aufs 8×8-Feld legen, Reihen abräumen, Helden-Ultimates (Bombe/Laser/Nuke) zünden, Combo-Ketten bauen und den Bösewicht zurückschlagen, der Reihen von unten hochschiebt |
 | 🐹 **MEERI-MANIA** | `/meeri/` | Merge-Idle mit Meerschweinchen — Meeries kaufen, gleiche zusammenziehen für immer absurdere Evolutionen (Baby → Punk → Ritter → … → Drachen → Galaxie), Münz-Blasen antippen, Wiese ausbauen, Offline-Einnahmen, alle 16 im Meeri-Album entdecken. Rein lokal (kein Server) |
 | 🐍 **Neon-Schlange** | `/schlange/` | Slither-**Arena** — große Welt mit Kamera & Minimap, **KI-Gegner** zum Abschneiden (laufen sie in dich, zerfallen sie in Orbs), **Power-ups** (Magnet/Schild/×2/Geist). Ziehen lenkt, ⚡/Halten boostet; Orbs fressen & wachsen, nicht selbst beißen. Skins & Meilensteine, weltweite Bestenliste |
+| 🏍️ **Neon-Tron** | `/tron/` | **Echtzeit-Multiplayer** (2–4) — Raum per Code teilen, live gegeneinander Neon-Spuren ziehen; wer zuerst in Wand oder Spur fährt, verliert. Autoritatives Durable Object (`TronRoom`) als Server, sanftes Lenken, Countdown, Sieger, Revanche |
 
 Alle Spiele sind mobile-first (Touch-Gesten), haben aber auch
 Tastatur-Steuerung. Funkelfeld, Komet, Sternensturm, Galopp, WUMMS! und Neon-Schlange teilen

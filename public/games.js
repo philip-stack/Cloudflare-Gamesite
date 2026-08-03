@@ -62,6 +62,11 @@
       desc: "Slither-Arcade — als leuchtende Neon-Schlange Orbs fressen, wachsen, boosten und dich bloß nicht selbst beißen; weltweite Bestenliste",
       bestKey: "schlange_best", scored: true, gsBadges: true, daily: false, weekly: false,
     },
+    {
+      key: "tron", name: "Neon-Tron", icon: "🏍️", href: "/tron/",
+      desc: "Echtzeit-Multiplayer (2–4) — Raum per Code teilen und live gegeneinander Neon-Spuren ziehen; wer zuerst in Wand oder Spur fährt, verliert",
+      bestKey: null, scored: false, gsBadges: false, daily: false, weekly: false,
+    },
     // Hinweis: /kochstudio/ ist bewusst NICHT hier registriert — es bleibt
     // abgekapselt und nur direkt unter /kochstudio/ erreichbar.
   ];

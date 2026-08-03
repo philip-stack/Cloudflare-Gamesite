@@ -18,3 +18,9 @@ binding = "AI"
 name = "PARTY_ROOM"
 class_name = "PartyRoom"
 script_name = "philip-stack-rt"
+
+# Neon-Tron: autoritatives Match-DO (TronRoom) im selben Worker.
+[[durable_objects.bindings]]
+name = "TRON_ROOM"
+class_name = "TronRoom"
+script_name = "philip-stack-rt"
