@@ -50,6 +50,30 @@ export async function onRequestGet({ request, env }) {
   }
   if (!keyOk(env, request)) return json({ error: "Nicht berechtigt" }, 401);
 
+  const url = new URL(request.url);
+
+  // Sub-Abfrage: echte Bestenliste eines Spiels (Top 50), mit Row-id zum Löschen —
+  // erwischt auch alte, eingenistete Fake-Scores, die in „letzte Einsendungen" fehlen.
+  const board = url.searchParams.get("board");
+  if (board) {
+    const rows = await many(env,
+      "SELECT id, name, device, MAX(score) score, created_at FROM scores WHERE game = ? GROUP BY lower(name) ORDER BY score DESC LIMIT 50", board);
+    return json({ board, rows });
+  }
+  // Sub-Abfrage: Suche nach Name ODER Gerät über alle Spiele (Beweislage vor dem Sperren).
+  const search = url.searchParams.get("search");
+  if (search != null) {
+    const q = String(search).trim().slice(0, 40).toLowerCase();
+    if (!q) return json({ q: "", rows: [] });
+    const like = "%" + q + "%";
+    const rows = await many(env,
+      "SELECT id, game, name, device, score, created_at FROM scores WHERE lower(name) LIKE ? OR lower(device) LIKE ? ORDER BY id DESC LIMIT 100", like, like);
+    return json({ q, rows });
+  }
+
+  // Trend-Zeitraum (validiert → sichere Zahl für die Interpolation unten)
+  const days = [7, 30, 90].includes(+url.searchParams.get("days")) ? +url.searchParams.get("days") : 30;
+
   // ---- Scores ----
   const sTotal = (await one(env, "SELECT COUNT(*) n FROM scores"))?.n ?? 0;
   const s24 = (await one(env, "SELECT COUNT(*) n FROM scores WHERE created_at > datetime('now','-1 day')"))?.n ?? 0;
@@ -88,10 +112,11 @@ export async function onRequestGet({ request, env }) {
   const rate = (await one(env, "SELECT COUNT(*) n FROM rate"))?.n ?? 0;
   const usedTok = (await one(env, "SELECT COUNT(*) n FROM used_token"))?.n ?? 0;
 
-  // ---- Trends (30 Tage, roh je Tag; Client füllt Lücken) ----
-  const tScores = await many(env, "SELECT date(created_at) d, COUNT(*) n FROM scores WHERE created_at > datetime('now','-30 days') GROUP BY d");
-  const tErrors = await many(env, "SELECT date(created_at) d, COUNT(*) n FROM error_log WHERE created_at > datetime('now','-30 days') GROUP BY d");
-  const tDevices = await many(env, "SELECT date(created_at) d, COUNT(DISTINCT device) n FROM scores WHERE created_at > datetime('now','-30 days') AND device IS NOT NULL GROUP BY d");
+  // ---- Trends (Zeitraum wählbar 7/30/90 Tage, roh je Tag; Client füllt Lücken) ----
+  const tScores = await many(env, `SELECT date(created_at) d, COUNT(*) n FROM scores WHERE created_at > datetime('now','-${days} days') GROUP BY d`);
+  const tErrors = await many(env, `SELECT date(created_at) d, COUNT(*) n FROM error_log WHERE created_at > datetime('now','-${days} days') GROUP BY d`);
+  const tDevices = await many(env, `SELECT date(created_at) d, COUNT(DISTINCT device) n FROM scores WHERE created_at > datetime('now','-${days} days') AND device IS NOT NULL GROUP BY d`);
+  const alertName = (await one(env, "SELECT v FROM app_config WHERE k='alert_name'"))?.v || "";
 
   // ---- Moderation: letzte Einsendungen + gesperrte Geräte ----
   const recent = await many(env,
@@ -119,7 +144,8 @@ export async function onRequestGet({ request, env }) {
       note: fh?.note || null, openOps: fOpen, keptOps: fKept,
     },
     db: { rateRows: rate, usedTokens: usedTok, bannedDevices: banned.length },
-    trends: { scores: tScores, errors: tErrors, devices: tDevices },
+    trends: { days, scores: tScores, errors: tErrors, devices: tDevices },
+    alert: { name: alertName },
     recent, banned,
   });
 }
@@ -165,6 +191,12 @@ export async function onRequestPost({ request, env }) {
         const device = String(b.device || "").trim();
         await run("DELETE FROM banned_device WHERE device = ?", device);
         return json({ ok: true });
+      }
+      case "setAlert": {
+        // Bestenlisten-Name, an den bei „Achtung" gepusht wird (leer = aus).
+        const name = String(b.name || "").trim().slice(0, 16);
+        await run("INSERT INTO app_config (k, v) VALUES ('alert_name', ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v", name);
+        return json({ ok: true, name });
       }
       case "triggerCron": {
         const token = env && env.CRON_TOKEN;

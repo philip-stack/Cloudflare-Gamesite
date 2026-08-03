@@ -88,12 +88,20 @@
     const key = () => localStorage.getItem(LS);
 
     let timer = null, lastData = null, errView = "top", pageFilter = "";
+    let trendDays = 30, boardGame = "", boardRows = null, searchQ = "", searchRows = null;
+
+    // Geschützter GET mit Schlüssel-Header (für Unter-Abfragen board/search).
+    async function apiGet(params) {
+      const r = await fetch("/api/admin?" + params, { headers: { "x-admin-key": key() } });
+      if (!r.ok) return null;
+      return r.json().catch(() => null);
+    }
 
     async function load() {
       const k = key();
       if (!k) return showGate();
       let r, d;
-      try { r = await fetch("/api/admin", { headers: { "x-admin-key": k } }); d = await r.json(); }
+      try { r = await fetch("/api/admin?days=" + trendDays, { headers: { "x-admin-key": k } }); d = await r.json(); }
       catch { $("#gate-msg") && ($("#gate-msg").textContent = "Netzwerkfehler."); return; }
       if (r.status === 401) { localStorage.removeItem(LS); $("#gate-msg").textContent = "Falscher Schlüssel."; return showGate(); }
       if (!r.ok) return;
@@ -102,17 +110,53 @@
 
     function showGate() { $("#dash").hidden = true; $("#gate").hidden = false; $("#key").focus(); stopAuto(); }
     function showDash() { $("#gate").hidden = true; $("#dash").hidden = false; startAuto(); }
-    function startAuto() { if (timer || !$("#auto").checked) return; timer = setInterval(load, 45000); }
+    function startAuto() {
+      if (timer || !$("#auto").checked) return;
+      // Nicht neu laden, während in ein Feld getippt wird (sonst Verlust der Eingabe).
+      timer = setInterval(() => { const a = document.activeElement; if (a && a.tagName === "INPUT") return; load(); }, 45000);
+    }
     function stopAuto() { if (timer) { clearInterval(timer); timer = null; } }
 
     // --- geschützte Aktion ---
-    async function act(body, confirmMsg) {
+    async function act(body, confirmMsg, skipReload) {
       if (confirmMsg && !confirm(confirmMsg)) return;
       const r = await fetch("/api/admin", { method: "POST", headers: { "Content-Type": "application/json", "x-admin-key": key() }, body: JSON.stringify(body) });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) { alert("Fehler: " + (d.error || r.status)); return; }
-      load();
+      if (!skipReload) load();
       return d;
+    }
+
+    // --- Bestenliste je Spiel (echte Top-50, mit Löschen) ---
+    async function loadBoard() {
+      if (!boardGame) { boardRows = null; return renderBoardOut(); }
+      const d = await apiGet("board=" + encodeURIComponent(boardGame));
+      boardRows = (d && d.rows) || []; renderBoardOut();
+    }
+    function renderBoardOut() {
+      const out = $("#board-out"); if (!out) return;
+      if (!boardGame) { out.innerHTML = '<p class="muted">Spiel wählen, um die echte Top-50 zu sehen.</p>'; return; }
+      if (!boardRows) { out.innerHTML = '<p class="muted">lädt…</p>'; return; }
+      const rows = boardRows.map((x, i) => `<tr><td class="num">${i + 1}</td><td>${esc(x.name)}</td><td class="num mono">${nf(x.score)}</td><td class="dev">${esc((x.device || "").slice(0, 12))}…</td><td class="t">${esc((x.created_at || "").slice(0, 10))}</td><td class="num"><button class="btn sm bad" data-delb="${x.id}">🗑</button> <button class="btn sm" data-banb="${esc(x.device || "")}">🚫</button></td></tr>`).join("") || '<tr><td colspan="6" class="muted">keine Einträge</td></tr>';
+      out.innerHTML = `<table><thead><tr><th class="num">#</th><th>Name</th><th class="num">Score</th><th>Gerät</th><th>Datum</th><th class="num">Aktion</th></tr></thead><tbody>${rows}</tbody></table>`;
+      out.querySelectorAll("[data-delb]").forEach(b => b.onclick = async () => { if (!confirm("Diesen Bestenlisten-Eintrag löschen?")) return; await act({ action: "deleteScore", id: Number(b.dataset.delb) }, null, true); loadBoard(); });
+      out.querySelectorAll("[data-banb]").forEach(b => b.onclick = async () => { const dev = b.dataset.banb; if (dev && confirm("Gerät sperren und alle seine Scores löschen?")) { await act({ action: "banDevice", device: dev }, null, true); loadBoard(); } });
+    }
+
+    // --- Suche nach Name/Gerät ---
+    async function loadSearch() {
+      if (!searchQ) { searchRows = null; return renderSearchOut(); }
+      const d = await apiGet("search=" + encodeURIComponent(searchQ));
+      searchRows = (d && d.rows) || []; renderSearchOut();
+    }
+    function renderSearchOut() {
+      const out = $("#search-out"); if (!out) return;
+      if (searchRows == null) { out.innerHTML = ""; return; }
+      if (!searchRows.length) { out.innerHTML = '<p class="muted">nichts gefunden</p>'; return; }
+      const rows = searchRows.map(x => `<tr><td class="t">${esc((x.created_at || "").slice(5, 16))}</td><td>${esc(x.game)}</td><td>${esc(x.name)}</td><td class="num mono">${nf(x.score)}</td><td class="dev">${esc((x.device || "").slice(0, 12))}…</td><td class="num"><button class="btn sm bad" data-dels="${x.id}">🗑</button> <button class="btn sm" data-bans="${esc(x.device || "")}">🚫</button></td></tr>`).join("");
+      out.innerHTML = `<table><thead><tr><th>Zeit</th><th>Spiel</th><th>Name</th><th class="num">Score</th><th>Gerät</th><th class="num">Aktion</th></tr></thead><tbody>${rows}</tbody></table>`;
+      out.querySelectorAll("[data-dels]").forEach(b => b.onclick = async () => { if (!confirm("Score löschen?")) return; await act({ action: "deleteScore", id: Number(b.dataset.dels) }, null, true); loadSearch(); });
+      out.querySelectorAll("[data-bans]").forEach(b => b.onclick = async () => { const dev = b.dataset.bans; if (dev && confirm("Gerät sperren und alle seine Scores löschen?")) { await act({ action: "banDevice", device: dev }, null, true); loadSearch(); } });
     }
 
     // --- Sparkline (30 Tage, Lücken gefüllt) ---
@@ -212,7 +256,9 @@
           </div>
         </div>
 
-        <div class="section-title">📈 Trends</div>
+        <div class="section-title">📈 Trends
+          <span class="toolbar">${[7, 30, 90].map(n => `<button class="btn sm${trendDays === n ? " p" : ""}" data-days="${n}">${n} T</button>`).join("")}</span>
+        </div>
         <div class="grid">
           ${sparkCard("Scores / Tag", d.trends.scores)}
           ${sparkCard("Aktive Geräte / Tag", d.trends.devices)}
@@ -251,15 +297,39 @@
           <table><tbody>${banRows}</tbody></table>
         </div>
 
-        <div class="section-title">⚙️ Aktionen</div>
-        <div class="card"><div class="toolbar">
-          <button class="btn" id="trigger-cron">🚒 Fire-Cron jetzt laufen lassen</button>
-        </div></div>
+        <div class="section-title">🏆 Bestenliste bereinigen</div>
+        <div class="card full">
+          <div class="toolbar" style="margin-bottom:8px"><select class="filter" id="board-game">${`<option value="">– Spiel wählen –</option>` + (s.games || []).map(g => `<option value="${esc(g.game)}"${g.game === boardGame ? " selected" : ""}>${esc(g.game)}</option>`).join("")}</select></div>
+          <div id="board-out"></div>
+        </div>
+
+        <div class="section-title">🔎 Suche (Name / Gerät)</div>
+        <div class="card full">
+          <div class="toolbar" style="margin-bottom:8px">
+            <input class="filter" id="search-q" placeholder="Name oder Geräte-ID…" value="${esc(searchQ)}" style="flex:1;min-width:160px" />
+            <button class="btn sm" id="search-go">Suchen</button>
+          </div>
+          <div id="search-out"></div>
+        </div>
+
+        <div class="section-title">⚙️ Aktionen & Alarm</div>
+        <div class="card">
+          <div class="toolbar" style="margin-bottom:10px">
+            <button class="btn" id="trigger-cron">🚒 Fire-Cron jetzt laufen lassen</button>
+          </div>
+          <label class="muted" style="display:block;font-size:.82rem;margin-bottom:6px">Betreiber-Alarm an Bestenlisten-Namen (leer = aus):</label>
+          <div class="toolbar">
+            <input class="filter" id="alert-name" placeholder="dein Name" value="${esc(d.alert && d.alert.name || "")}" style="flex:1;min-width:140px" />
+            <button class="btn p sm" id="alert-save">Speichern</button>
+          </div>
+          <p class="muted" style="font-size:.76rem;margin:8px 0 0">Push bei ok→Achtung (Fehlerspitze / Push-Queue-Stau). Voraussetzung: Push im Profil unter genau diesem Namen aktiviert. („Fire-Cron hängt" kann sich nicht selbst melden — dafür das Banner in der App.)</p>
+        </div>
 
         <p class="foot">Rein private Betriebsübersicht. Schreib-Aktionen brauchen den Header-Schlüssel (CSRF-resistent). Kein Tracking Dritter; keine personenbezogenen Daten außer den frei gewählten Bestenlisten-Namen.</p>`;
 
       wire(e);
       document.querySelectorAll(".sparkbox").forEach(attachSparkHover);
+      renderBoardOut(); renderSearchOut();
     }
 
     function wire(e) {
@@ -272,6 +342,18 @@
       document.querySelectorAll("[data-del]").forEach(b => b.onclick = () => act({ action: "deleteScore", id: Number(b.dataset.del) }, "Diesen Score löschen?"));
       document.querySelectorAll("[data-ban]").forEach(b => b.onclick = () => { const dev = b.dataset.ban; if (dev) act({ action: "banDevice", device: dev }, "Dieses Gerät sperren und alle seine Scores löschen?"); });
       document.querySelectorAll("[data-unban]").forEach(b => b.onclick = () => act({ action: "unbanDevice", device: b.dataset.unban }, "Gerät wieder entsperren?"));
+
+      // Trend-Zeitraum
+      document.querySelectorAll("[data-days]").forEach(b => b.onclick = () => { trendDays = Number(b.dataset.days); load(); });
+      // Bestenliste je Spiel
+      const bg = $("#board-game"); if (bg) bg.onchange = () => { boardGame = bg.value; boardRows = null; renderBoardOut(); loadBoard(); };
+      // Suche
+      const sq = $("#search-q"), sgo = $("#search-go");
+      const doSearch = () => { searchQ = (sq.value || "").trim(); loadSearch(); };
+      if (sgo) sgo.onclick = doSearch;
+      if (sq) sq.onkeydown = e => { if (e.key === "Enter") doSearch(); };
+      // Betreiber-Alarm speichern
+      const asave = $("#alert-save"); if (asave) asave.onclick = async () => { const n = ($("#alert-name").value || "").trim(); const d = await act({ action: "setAlert", name: n }, null, true); if (d) alert(n ? ("Alarm aktiv für: " + n) : "Alarm deaktiviert"); };
     }
 
     $("#enter").addEventListener("click", () => { const k = $("#key").value.trim(); if (!k) return; localStorage.setItem(LS, k); $("#gate-msg").textContent = ""; load(); });
