@@ -256,4 +256,6 @@
   setMode(mode);
   $("#rt-from").value = LS.get("sprit_from", ""); $("#rt-to").value = LS.get("sprit_to", "");
   ensureMap();
+  // Im Umkreis-Modus direkt den aktuellen Standort laden (wie Button-Druck).
+  if (mode === "near") locate((lat, lng) => fetchNear({ lat, lng }));
 })();
