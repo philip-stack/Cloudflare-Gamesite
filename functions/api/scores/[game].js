@@ -226,6 +226,13 @@ export async function onRequestPost(context) {
     return json({ error: "Zu viele Einsendungen — kurz warten" }, 429);
   }
 
+  // Über das Betreiber-Dashboard gesperrte Geräte dürfen nicht mehr einreichen.
+  // Fehlertolerant: bei DB-Problemen NICHT blockieren (echte Spieler zuerst).
+  try {
+    const ban = await env.DB.prepare("SELECT 1 AS x FROM banned_device WHERE device = ?").bind(device).first();
+    if (ban) return json({ error: "Einsendung nicht möglich" }, 403);
+  } catch (_) {}
+
   // Lauf-Token prüfen (signierter Seed, kurz vorher ausgestellt)
   if (!(await verifyToken(env, game, device, b.token))) {
     return json({ error: "Sitzung abgelaufen — lade das Spiel neu" }, 403);

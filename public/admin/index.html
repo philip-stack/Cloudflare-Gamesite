@@ -10,28 +10,45 @@
     :root { --bg:#0c0f14; --card:#141a22; --line:#26303c; --ink:#eef3f8; --muted:#93a2b4; --accent:#4fd0e0; --ok:#37d38a; --warn:#ffb020; --bad:#ff5b4d; }
     * { box-sizing:border-box; }
     body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
-    .wrap { max-width:920px; margin:0 auto; padding:20px 16px 60px; }
-    header { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:18px; flex-wrap:wrap; }
+    .wrap { max-width:960px; margin:0 auto; padding:20px 16px 80px; }
+    header { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:14px; flex-wrap:wrap; }
     h1 { font-size:1.2rem; margin:0; letter-spacing:-.01em; } h1 span { color:var(--accent); }
-    .btn { border:1px solid var(--line); background:var(--card); color:var(--ink); border-radius:10px; padding:9px 14px; font:700 .88rem inherit; cursor:pointer; }
+    .btn { border:1px solid var(--line); background:var(--card); color:var(--ink); border-radius:10px; padding:8px 13px; font:700 .84rem inherit; cursor:pointer; }
+    .btn:hover { border-color:var(--accent); }
     .btn.p { background:linear-gradient(160deg,var(--accent),#2ba7b8); color:#04121a; border:0; }
+    .btn.bad { color:var(--bad); border-color:rgba(255,91,77,.4); }
+    .btn.sm { padding:5px 9px; font-size:.76rem; border-radius:8px; }
     .muted { color:var(--muted); } .mono { font-variant-numeric:tabular-nums; }
     .gate { max-width:420px; margin:12vh auto 0; text-align:center; }
     .gate input { width:100%; padding:12px 14px; border-radius:12px; border:1px solid var(--line); background:var(--card); color:var(--ink); font:inherit; margin:10px 0; }
-    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:12px; }
     .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px 16px; }
-    .card h2 { font-size:.72rem; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin:0 0 10px; font-weight:800; }
+    .card h2 { font-size:.72rem; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin:0 0 10px; font-weight:800; display:flex; justify-content:space-between; align-items:center; gap:8px; }
     .big { font-size:1.9rem; font-weight:900; letter-spacing:-.02em; }
     .kv { display:flex; justify-content:space-between; gap:10px; padding:3px 0; font-size:.9rem; }
     .kv b { font-weight:700; }
     .pill { display:inline-block; font-size:.72rem; font-weight:800; padding:2px 9px; border-radius:999px; }
     .pill.ok { background:rgba(55,211,138,.16); color:var(--ok); } .pill.warn { background:rgba(255,176,32,.16); color:var(--warn); } .pill.bad { background:rgba(255,91,77,.16); color:var(--bad); }
     table { width:100%; border-collapse:collapse; font-size:.82rem; }
+    th { text-align:left; color:var(--muted); font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; padding:4px 6px; }
     td { padding:6px 6px; border-top:1px solid var(--line); vertical-align:top; }
     td.t { color:var(--muted); white-space:nowrap; } td.m { word-break:break-word; }
-    .section-title { margin:22px 2px 10px; font-size:.95rem; font-weight:800; }
+    .num { text-align:right; font-variant-numeric:tabular-nums; }
+    .section-title { margin:24px 2px 10px; font-size:.98rem; font-weight:800; display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; }
     .err { color:var(--bad); } .foot { margin-top:26px; color:var(--muted); font-size:.78rem; }
-    .full { grid-column:1/-1; }
+    .full { grid-column:1/-1; overflow-x:auto; }
+    .ampel { display:flex; align-items:center; gap:10px; padding:12px 16px; border-radius:14px; border:1px solid var(--line); background:var(--card); margin-bottom:14px; }
+    .dot { width:14px; height:14px; border-radius:50%; flex:none; box-shadow:0 0 12px currentColor; }
+    .dot.ok { color:var(--ok); background:var(--ok); } .dot.warn { color:var(--warn); background:var(--warn); } .dot.bad { color:var(--bad); background:var(--bad); }
+    .ampel .txt { font-weight:800; } .ampel .warns { color:var(--muted); font-size:.85rem; font-weight:600; }
+    .spark { width:100%; height:44px; display:block; }
+    .spark polyline { fill:none; stroke:var(--accent); stroke-width:2; stroke-linejoin:round; stroke-linecap:round; }
+    .spark .area { fill:rgba(79,208,224,.12); stroke:none; }
+    .sparkwrap .lbl { display:flex; justify-content:space-between; font-size:.8rem; margin-top:4px; }
+    .switch { display:inline-flex; align-items:center; gap:6px; font-size:.82rem; color:var(--muted); cursor:pointer; }
+    .toolbar { display:flex; gap:8px; flex-wrap:wrap; }
+    input.filter { background:var(--bg); border:1px solid var(--line); color:var(--ink); border-radius:8px; padding:6px 10px; font:inherit; font-size:.82rem; }
+    .dev { font-family:ui-monospace,monospace; font-size:.74rem; color:var(--muted); }
   </style>
 </head>
 <body>
@@ -47,12 +64,14 @@
     <div id="dash" hidden>
       <header>
         <h1>Betrieb<span>·Dashboard</span></h1>
-        <div>
+        <div class="toolbar">
+          <label class="switch"><input type="checkbox" id="auto" checked /> Auto</label>
           <button class="btn" id="refresh">↻ Aktualisieren</button>
           <button class="btn" id="logout">Abmelden</button>
         </div>
       </header>
-      <p id="stamp" class="muted mono" style="margin-top:-8px;font-size:.8rem"></p>
+      <div id="ampel" class="ampel"><span class="dot warn"></span><span class="txt">lädt…</span></div>
+      <p id="stamp" class="muted mono" style="margin-top:-6px;font-size:.8rem"></p>
       <div id="content"></div>
     </div>
   </div>
@@ -62,56 +81,111 @@
     const LS = "admin_key";
     const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
     const nf = n => (n == null ? "–" : Number(n).toLocaleString("de-AT"));
-    function fmtAge(s) { if (s == null) return "–"; if (s < 90) return s + " s"; if (s < 5400) return Math.round(s / 60) + " min"; return Math.round(s / 3600) + " h"; }
+    function fmtAge(s) { if (s == null) return "–"; if (s < 90) return s + " s"; if (s < 5400) return Math.round(s / 60) + " min"; if (s < 172800) return Math.round(s / 3600) + " h"; return Math.round(s / 86400) + " d"; }
+    const key = () => localStorage.getItem(LS);
+
+    let timer = null, lastData = null, errView = "top", pageFilter = "";
 
     async function load() {
-      const key = localStorage.getItem(LS);
-      if (!key) return showGate();
+      const k = key();
+      if (!k) return showGate();
       let r, d;
-      try { r = await fetch("/api/admin", { headers: { "x-admin-key": key } }); d = await r.json(); }
-      catch { $("#gate-msg").textContent = "Netzwerkfehler."; return showGate(); }
+      try { r = await fetch("/api/admin", { headers: { "x-admin-key": k } }); d = await r.json(); }
+      catch { $("#gate-msg") && ($("#gate-msg").textContent = "Netzwerkfehler."); return; }
       if (r.status === 401) { localStorage.removeItem(LS); $("#gate-msg").textContent = "Falscher Schlüssel."; return showGate(); }
-      if (!r.ok) { render(null, d && d.error); return; }
-      showDash(); render(d);
+      if (!r.ok) return;
+      lastData = d; showDash(); render(d);
     }
 
-    function showGate() { $("#dash").hidden = true; $("#gate").hidden = false; $("#key").focus(); }
-    function showDash() { $("#gate").hidden = true; $("#dash").hidden = false; }
+    function showGate() { $("#dash").hidden = true; $("#gate").hidden = false; $("#key").focus(); stopAuto(); }
+    function showDash() { $("#gate").hidden = true; $("#dash").hidden = false; startAuto(); }
+    function startAuto() { if (timer || !$("#auto").checked) return; timer = setInterval(load, 45000); }
+    function stopAuto() { if (timer) { clearInterval(timer); timer = null; } }
+
+    // --- geschützte Aktion ---
+    async function act(body, confirmMsg) {
+      if (confirmMsg && !confirm(confirmMsg)) return;
+      const r = await fetch("/api/admin", { method: "POST", headers: { "Content-Type": "application/json", "x-admin-key": key() }, body: JSON.stringify(body) });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) { alert("Fehler: " + (d.error || r.status)); return; }
+      load();
+      return d;
+    }
+
+    // --- Sparkline (30 Tage, Lücken gefüllt) ---
+    function spark(rows) {
+      const days = 30, map = new Map((rows || []).map(r => [r.d, r.n]));
+      const today = new Date(), vals = [];
+      for (let i = days - 1; i >= 0; i--) { const dt = new Date(today); dt.setDate(today.getDate() - i); vals.push(map.get(dt.toISOString().slice(0, 10)) || 0); }
+      const max = Math.max(1, ...vals), W = 240, H = 44, step = W / (days - 1);
+      const pts = vals.map((v, i) => `${(i * step).toFixed(1)},${(H - 3 - (v / max) * (H - 8)).toFixed(1)}`);
+      const area = `0,${H} ` + pts.join(" ") + ` ${W},${H}`;
+      return { svg: `<svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"><polygon class="area" points="${area}"/><polyline points="${pts.join(" ")}"/></svg>`, last: vals[vals.length - 1], sum: vals.reduce((a, b) => a + b, 0), max };
+    }
+    function sparkCard(title, rows, unit) {
+      const s = spark(rows);
+      return `<div class="card sparkwrap"><h2>${title}</h2>${s.svg}<div class="lbl"><span class="muted">30 Tage · Σ ${nf(s.sum)}</span><b class="mono">heute ${nf(s.last)}${unit || ""}</b></div></div>`;
+    }
 
     function firePill(f) {
-      if (f.ageSec == null) return '<span class="pill warn">unbekannt</span>';
+      if (f.ageSec == null) return '<span class="pill bad">kein Lauf</span>';
       if (f.note && f.note !== "ok") return '<span class="pill bad">' + esc(f.note) + "</span>";
       if (f.ageSec > 900) return '<span class="pill warn">verzögert</span>';
       return '<span class="pill ok">ok</span>';
     }
 
-    function render(d, errMsg) {
-      if (!d) { $("#content").innerHTML = '<div class="card"><p class="err">' + esc(errMsg || "Fehler beim Laden") + "</p></div>"; return; }
+    function render(d) {
+      // Ampel
+      const amp = $("#ampel");
+      const cls = d.status === "ok" ? "ok" : d.status === "bad" ? "bad" : "warn";
+      amp.innerHTML = `<span class="dot ${cls}"></span><span class="txt">${d.status === "ok" ? "Alles ok" : "Achtung"}</span>` +
+        (d.warns && d.warns.length ? `<span class="warns">· ${d.warns.map(esc).join(" · ")}</span>` : "");
       $("#stamp").textContent = "Stand: " + new Date(d.generatedAt).toLocaleString("de-AT");
+
       const s = d.scores, e = d.errors, p = d.push, f = d.fire, db = d.db;
 
       const gameRows = (s.games || []).map(g =>
-        `<div class="kv"><span>${esc(g.game)} <span class="muted">· ${nf(g.players)} Spieler</span></span><b class="mono">${nf(g.subs)}</b></div>`
-      ).join("") || '<p class="muted">keine</p>';
-
+        `<div class="kv"><span>${esc(g.game)} <span class="muted">· ${nf(g.players)} Sp.</span></span><b class="mono">${nf(g.subs)}</b></div>`).join("") || '<p class="muted">keine</p>';
       const topRows = (s.games || []).filter(g => g.top > 0).map(g =>
-        `<div class="kv"><span>${esc(g.game)}</span><b class="mono">${nf(g.top)} <span class="muted">${esc(g.topName || "")}</span></b></div>`
-      ).join("") || '<p class="muted">keine</p>';
+        `<div class="kv"><span>${esc(g.game)}</span><b class="mono">${nf(g.top)} <span class="muted">${esc(g.topName || "")}</span></b></div>`).join("") || '<p class="muted">keine</p>';
 
-      const errList = (e.latest || []).map(x =>
-        `<tr><td class="t">${esc((x.created_at || "").slice(5, 16))}</td><td class="m"><b>${esc(x.msg)}</b><br><span class="muted">${esc(x.page || "")}</span></td></tr>`
-      ).join("") || '<tr><td class="muted" colspan="2">keine Fehler 🎉</td></tr>';
+      // Fehler-Ansicht (gruppiert / roh)
+      const pages = [...new Set((e.latest || []).map(x => x.page).filter(Boolean))].sort();
+      let errBody;
+      if (errView === "top") {
+        const rows = (e.top || []).filter(x => !pageFilter || x.page === pageFilter);
+        errBody = `<table><thead><tr><th class="num">×</th><th>Fehler</th><th>zuletzt</th></tr></thead><tbody>` +
+          (rows.map(x => `<tr><td class="num"><b>${nf(x.n)}</b></td><td class="m">${esc(x.msg)}<br><span class="muted">${esc(x.page || "")}</span></td><td class="t">${esc((x.last || "").slice(5, 16))}</td></tr>`).join("") || '<tr><td colspan="3" class="muted">keine Fehler in 24 h 🎉</td></tr>') + `</tbody></table>`;
+      } else {
+        const rows = (e.latest || []).filter(x => !pageFilter || x.page === pageFilter);
+        errBody = `<table><thead><tr><th>Zeit</th><th>Fehler</th></tr></thead><tbody>` +
+          (rows.map(x => `<tr><td class="t">${esc((x.created_at || "").slice(5, 16))}</td><td class="m"><b>${esc(x.msg)}</b><br><span class="muted">${esc(x.page || "")} · ${esc((x.ua || "").slice(0, 60))}</span></td></tr>`).join("") || '<tr><td colspan="2" class="muted">keine</td></tr>') + `</tbody></table>`;
+      }
+      const pageOpts = `<option value="">alle Seiten</option>` + pages.map(pg => `<option value="${esc(pg)}"${pg === pageFilter ? " selected" : ""}>${esc(pg)}</option>`).join("");
+
+      // Moderation
+      const recRows = (d.recent || []).map(x =>
+        `<tr><td class="t">${esc((x.created_at || "").slice(5, 16))}</td><td>${esc(x.game)}</td><td>${esc(x.name)}</td><td class="num mono">${nf(x.score)}</td><td class="dev">${esc((x.device || "").slice(0, 12))}…</td><td class="num"><button class="btn sm bad" data-del="${x.id}">🗑</button> <button class="btn sm" data-ban="${esc(x.device || "")}">🚫</button></td></tr>`).join("") || '<tr><td colspan="6" class="muted">keine</td></tr>';
+      const banRows = (d.banned || []).map(x =>
+        `<tr><td class="dev">${esc(x.device)}</td><td class="t">${esc((x.at || "").slice(0, 16))}</td><td class="num"><button class="btn sm" data-unban="${esc(x.device)}">entsperren</button></td></tr>`).join("") || '<tr><td colspan="3" class="muted">keine gesperrten Geräte</td></tr>';
 
       $("#content").innerHTML = `
         <div class="grid">
           <div class="card"><h2>Scores</h2><div class="big mono">${nf(s.total)}</div><div class="kv"><span class="muted">letzte 24 h</span><b class="mono">${nf(s.last24h)}</b></div></div>
-          <div class="card"><h2>JS-Fehler (24 h)</h2><div class="big mono ${e.last24h ? "err" : ""}">${nf(e.last24h)}</div><div class="kv"><span class="muted">gesamt gespeichert</span><b class="mono">${nf(e.total)}</b></div></div>
-          <div class="card"><h2>Push</h2><div class="big mono">${nf(p.subscriptions)}</div><div class="kv"><span class="muted">Warteschlange</span><b class="mono">${nf(p.queued)}</b></div></div>
+          <div class="card"><h2>Interne Fehler (24 h)</h2><div class="big mono ${(e.last24h - e.upstream522) ? "err" : ""}">${nf(e.last24h - e.upstream522)}</div><div class="kv"><span class="muted">extern (522)</span><b class="mono">${nf(e.upstream522)}</b></div></div>
+          <div class="card"><h2>Push</h2><div class="big mono">${nf(p.subscriptions)}</div><div class="kv"><span class="muted">Queue</span><b class="mono">${nf(p.queued)}${p.oldestAgeSec != null ? " · " + fmtAge(p.oldestAgeSec) : ""}</b></div></div>
           <div class="card"><h2>Fire-Cron ${firePill(f)}</h2>
             <div class="kv"><span class="muted">letzter Lauf</span><b class="mono">${fmtAge(f.ageSec)}</b></div>
             <div class="kv"><span class="muted">aktive Einsätze</span><b class="mono">${nf(f.active)}</b></div>
             <div class="kv"><span class="muted">gespeichert</span><b class="mono">${nf(f.keptOps)}</b></div>
           </div>
+        </div>
+
+        <div class="section-title">📈 Trends</div>
+        <div class="grid">
+          ${sparkCard("Scores / Tag", d.trends.scores)}
+          ${sparkCard("Aktive Geräte / Tag", d.trends.devices)}
+          ${sparkCard("Fehler / Tag", d.trends.errors)}
         </div>
 
         <div class="grid" style="margin-top:12px">
@@ -120,22 +194,60 @@
           <div class="card"><h2>DB-Hilfstabellen</h2>
             <div class="kv"><span class="muted">rate-Buckets</span><b class="mono">${nf(db.rateRows)}</b></div>
             <div class="kv"><span class="muted">verbrauchte Token</span><b class="mono">${nf(db.usedTokens)}</b></div>
+            <div class="kv"><span class="muted">gesperrte Geräte</span><b class="mono">${nf(db.bannedDevices)}</b></div>
           </div>
         </div>
 
-        <div class="section-title">Letzte JS-Fehler</div>
-        <div class="card full"><table>${errList}</table></div>
-        <p class="foot">Rein private Betriebsübersicht. Kein Tracking Dritter, keine personenbezogenen Daten außer den frei gewählten Bestenlisten-Namen.</p>`;
+        <div class="section-title">🐞 Fehler-Log
+          <span class="toolbar">
+            <select class="filter" id="err-page">${pageOpts}</select>
+            <button class="btn sm" id="err-toggle">${errView === "top" ? "Verlauf" : "Gruppiert"}</button>
+            <button class="btn sm bad" id="err-522">522 löschen (${nf(e.upstream522)})</button>
+            <button class="btn sm bad" id="err-clear">Log leeren</button>
+          </span>
+        </div>
+        <div class="card full">${errBody}</div>
+
+        <div class="section-title">🛡️ Moderation
+          <button class="btn sm bad" id="flush-queue">Push-Queue leeren</button>
+        </div>
+        <div class="card full">
+          <table><thead><tr><th>Zeit</th><th>Spiel</th><th>Name</th><th class="num">Score</th><th>Gerät</th><th class="num">Aktion</th></tr></thead>
+          <tbody>${recRows}</tbody></table>
+        </div>
+        <div class="card full" style="margin-top:12px">
+          <h2>Gesperrte Geräte</h2>
+          <table><tbody>${banRows}</tbody></table>
+        </div>
+
+        <div class="section-title">⚙️ Aktionen</div>
+        <div class="card"><div class="toolbar">
+          <button class="btn" id="trigger-cron">🚒 Fire-Cron jetzt laufen lassen</button>
+        </div></div>
+
+        <p class="foot">Rein private Betriebsübersicht. Schreib-Aktionen brauchen den Header-Schlüssel (CSRF-resistent). Kein Tracking Dritter; keine personenbezogenen Daten außer den frei gewählten Bestenlisten-Namen.</p>`;
+
+      wire(e);
     }
 
-    $("#enter").addEventListener("click", () => {
-      const k = $("#key").value.trim();
-      if (!k) return;
-      localStorage.setItem(LS, k); $("#gate-msg").textContent = ""; load();
-    });
+    function wire(e) {
+      $("#err-toggle").onclick = () => { errView = errView === "top" ? "latest" : "top"; render(lastData); };
+      $("#err-page").onchange = ev => { pageFilter = ev.target.value; render(lastData); };
+      $("#err-522").onclick = () => act({ action: "clear522" }, "Alle 522-Meldungen (externe Quelle) löschen?");
+      $("#err-clear").onclick = () => act({ action: "clearErrors" }, "Das GESAMTE Fehler-Log löschen?");
+      $("#flush-queue").onclick = () => act({ action: "flushQueue" }, "Push-Warteschlange komplett leeren?");
+      $("#trigger-cron").onclick = async () => { const d = await act({ action: "triggerCron" }); if (d) alert("Cron-Status: " + d.cronStatus); };
+      document.querySelectorAll("[data-del]").forEach(b => b.onclick = () => act({ action: "deleteScore", id: Number(b.dataset.del) }, "Diesen Score löschen?"));
+      document.querySelectorAll("[data-ban]").forEach(b => b.onclick = () => { const dev = b.dataset.ban; if (dev) act({ action: "banDevice", device: dev }, "Dieses Gerät sperren und alle seine Scores löschen?"); });
+      document.querySelectorAll("[data-unban]").forEach(b => b.onclick = () => act({ action: "unbanDevice", device: b.dataset.unban }, "Gerät wieder entsperren?"));
+    }
+
+    $("#enter").addEventListener("click", () => { const k = $("#key").value.trim(); if (!k) return; localStorage.setItem(LS, k); $("#gate-msg").textContent = ""; load(); });
     $("#key").addEventListener("keydown", e => { if (e.key === "Enter") $("#enter").click(); });
     $("#refresh").addEventListener("click", load);
     $("#logout").addEventListener("click", () => { localStorage.removeItem(LS); showGate(); });
+    $("#auto").addEventListener("change", () => { if ($("#auto").checked) startAuto(); else stopAuto(); });
+    document.addEventListener("visibilitychange", () => { if (document.hidden) stopAuto(); else if (!$("#dash").hidden) { startAuto(); load(); } });
 
     load();
   </script>
