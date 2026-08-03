@@ -28,21 +28,43 @@ let ws = null, myId = null, hostId = null, code = "";
 let view = "menu";            // menu | lobby | playing | over
 let players = new Map();      // id -> {name,color,ready,alive,x,y,a,rx,ry,pts:[]}
 let pingT = null, aim = 0, pointerTarget = null, pointerMode = false, keyTurn = 0, lastAimSent = 0, canSteer = false;
+let intentional = false, wantReady = false, reTries = 0, reTimer = null;
 
 const wsUrl = c => (location.protocol === "https:" ? "wss" : "ws") + "://" + location.host + "/api/tron-live?code=" + encodeURIComponent(c);
 const CODE_ABC = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 function randCode() { const a = new Uint8Array(4); crypto.getRandomValues(a); return [...a].map(b => CODE_ABC[b % CODE_ABC.length]).join(""); }
 
-function connect(c) {
+function connect(c, isRe) {
   code = c.toUpperCase();
-  try { ws = new WebSocket(wsUrl(code)); } catch { return showMenu("Verbindung fehlgeschlagen"); }
-  ws.onopen = () => { send({ t: "join", name: GS.getName() || "Spieler" }); if (pingT) clearInterval(pingT); pingT = setInterval(() => send({ t: "ping" }), 20000); };
+  if (!isRe) { intentional = false; reTries = 0; wantReady = false; }
+  if (reTimer) { clearTimeout(reTimer); reTimer = null; }
+  try { ws = new WebSocket(wsUrl(code)); } catch { return tryReconnect(); }
+  ws.onopen = () => {
+    reTries = 0;
+    send({ t: "join", name: GS.getName() || "Spieler" });
+    if (wantReady) send({ t: "ready", v: true });          // Bereit-Status wiederherstellen
+    if (pingT) clearInterval(pingT); pingT = setInterval(() => send({ t: "ping" }), 20000);
+  };
   ws.onmessage = e => { let m; try { m = JSON.parse(e.data); } catch { return; } onMsg(m); };
-  ws.onclose = () => { if (pingT) { clearInterval(pingT); pingT = null; } if (view !== "menu") showMenu("Verbindung getrennt"); };
+  ws.onclose = () => {
+    if (pingT) { clearInterval(pingT); pingT = null; }
+    if (intentional) return;
+    // Mitten im Match verloren → zurück ins Menü. Sonst (Lobby/Warten): neu verbinden.
+    if (view === "playing") { showMenu("Verbindung im Match verloren"); return; }
+    tryReconnect();
+  };
   ws.onerror = () => {};
 }
+function tryReconnect() {
+  if (intentional) return;
+  if (reTries >= 6) { showMenu("Verbindung getrennt"); return; }
+  reTries++;
+  const mEl = document.querySelector("#ov .msg"); if (mEl) mEl.textContent = "Verbindung unterbrochen — verbinde neu …";
+  if (reTimer) clearTimeout(reTimer);
+  reTimer = setTimeout(() => connect(code, true), 500 * reTries);
+}
 function send(o) { try { if (ws && ws.readyState === 1) ws.send(JSON.stringify(o)); } catch {} }
-function leave() { try { ws && ws.close(); } catch {} ws = null; }
+function leave() { intentional = true; if (reTimer) { clearTimeout(reTimer); reTimer = null; } try { ws && ws.close(); } catch {} ws = null; }
 
 function onMsg(m) {
   switch (m.t) {
@@ -137,7 +159,7 @@ function showLobby() {
     const r = await GS.share({ title: "Neon-Tron", text: `Spiel mit mir Neon-Tron 🏍️ — Raum-Code ${code}`, url: location.origin + "/tron/" });
     if (r === "copied") o.querySelector("#lb-share").textContent = "✔ kopiert";
   };
-  o.querySelector("#lb-ready").onclick = () => { const meP = players.get(myId); send({ t: "ready", v: !(meP && meP.ready) }); };
+  o.querySelector("#lb-ready").onclick = () => { const meP = players.get(myId); const nv = !(meP && meP.ready); wantReady = nv; send({ t: "ready", v: nv }); };
   const st = o.querySelector("#lb-start"); if (st) st.onclick = () => send({ t: "start" });
   o.querySelector("#lb-leave").onclick = () => { leave(); showMenu(); };
 }
@@ -221,6 +243,12 @@ window.addEventListener("keydown", e => {
 });
 window.addEventListener("keyup", e => { if (["ArrowLeft", "a", "A", "ArrowRight", "d", "D"].includes(e.key)) keyTurn = 0; });
 window.addEventListener("beforeunload", leave);
+// Zurück aus dem Hintergrund (z. B. nach dem Teilen via WhatsApp): sofort neu
+// verbinden, falls der Browser die WebSocket im Hintergrund gekappt hat.
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden || intentional || !code) return;
+  if ((view === "lobby" || view === "over") && (!ws || ws.readyState > 1)) { reTries = 0; connect(code, true); }
+});
 
 // ---------- Start ----------
 const soundBtn = $("#btn-sound");
