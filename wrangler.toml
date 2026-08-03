@@ -24,3 +24,9 @@ script_name = "philip-stack-rt"
 name = "TRON_ROOM"
 class_name = "TronRoom"
 script_name = "philip-stack-rt"
+
+# Kritzeln & Raten: Zeichen-/Rate-DO (DrawRoom) im selben Worker.
+[[durable_objects.bindings]]
+name = "DRAW_ROOM"
+class_name = "DrawRoom"
+script_name = "philip-stack-rt"

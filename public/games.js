@@ -63,10 +63,12 @@
       bestKey: "schlange_best", scored: true, gsBadges: true, daily: false, weekly: false,
     },
     {
-      key: "tron", name: "Neon-Tron", icon: "🏍️", href: "/tron/",
-      desc: "Echtzeit-Multiplayer (2–4) — Raum per Code teilen und live gegeneinander Neon-Spuren ziehen; wer zuerst in Wand oder Spur fährt, verliert",
+      key: "kritzeln", name: "Kritzeln & Raten", icon: "🎨", href: "/kritzeln/",
+      desc: "Echtzeit-Multiplayer (2–8) — einer malt, die anderen raten live; Raum per Code teilen, Runden, Punkte und Sieger:in des Abends",
       bestKey: null, scored: false, gsBadges: false, daily: false, weekly: false,
     },
+    // Neon-Tron (/tron/) bleibt als Route bestehen, ist aber bewusst NICHT mehr
+    // hier registriert (auf Wunsch von der Startseite genommen).
     // Hinweis: /kochstudio/ ist bewusst NICHT hier registriert — es bleibt
     // abgekapselt und nur direkt unter /kochstudio/ erreichbar.
   ];

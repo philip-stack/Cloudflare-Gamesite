@@ -191,6 +191,169 @@ export class TronRoom extends DurableObject {
   }
 }
 
+// ====================================================================
+// DrawRoom — Echtzeit „Kritzeln & Raten" (skribbl-artig, 2–8 Spieler).
+// Event-getrieben (kein Dauer-Loop): eine:r malt, die anderen raten im
+// Chat. Das DO ist Wahrheit für Wort, Punkte, Runden & Timer; Zeichen-
+// Striche werden nur an die Ratenden weitergereicht. Reguläre WebSockets.
+//
+// Client→DO: {t:join,name} {t:start} {t:choose,word} {t:stroke,...}
+//            {t:clear} {t:guess,text} {t:again} {t:ping}
+// DO→Client: {t:welcome,id} {t:lobby,...} {t:choices,words} {t:turn,...}
+//            {t:word,word} {t:draw,...} {t:clear} {t:chat,...} {t:guessed,id}
+//            {t:close} {t:hint,pattern} {t:turnEnd,word,players} {t:over,players}
+//            {t:full} {t:pong}
+// ====================================================================
+const D_WORDS = "Haus,Baum,Sonne,Mond,Stern,Auto,Zug,Flugzeug,Schiff,Fahrrad,Hund,Katze,Maus,Pferd,Kuh,Schwein,Huhn,Fisch,Vogel,Schlange,Elefant,Löwe,Affe,Bär,Igel,Biene,Schmetterling,Spinne,Marienkäfer,Blume,Baumhaus,Apfel,Banane,Karotte,Marille,Erdäpfel,Palatschinke,Sackerl,Jause,Semmel,Brezel,Torte,Eis,Pizza,Burger,Kaffee,Milch,Ei,Käse,Wurst,Brille,Hut,Schuh,Socke,Hose,Jacke,Krone,Ring,Uhr,Schlüssel,Schere,Stift,Buch,Zeitung,Ballon,Geschenk,Kerze,Lampe,Sessel,Tisch,Bett,Tür,Fenster,Leiter,Hammer,Säge,Schaufel,Regenschirm,Koffer,Rucksack,Zelt,Berg,Wolke,Regenbogen,Blitz,Schneemann,Vulkan,Insel,Brücke,Turm,Kirche,Schloss,Windmühle,Rakete,Roboter,Gespenst,Hexe,Drache,Krokodil,Pinguin,Wal,Hai,Qualle,Krebs,Frosch,Schnecke,Eule,Fuchs,Wolf,Reh,Giraffe,Zebra,Kamel,Känguru,Fußball,Gitarre,Klavier,Trommel,Trompete,Herz,Anker,Stern,Sonnenblume,Kaktus,Pilz,Eichhörnchen".split(",");
+const D_TURN = 75, D_CHOOSE = 15, D_REVEAL = 6;
+
+function d_norm(s) { return String(s || "").toLowerCase().trim().replace(/\s+/g, " ").replace(/[^a-z0-9äöüß ]/g, ""); }
+function d_lev(a, b) {
+  a = d_norm(a); b = d_norm(b); const m = a.length, n = b.length; if (Math.abs(m - n) > 2) return 9;
+  const dp = Array.from({ length: m + 1 }, (_, i) => [i, ...Array(n).fill(0)]); for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) for (let j = 1; j <= n; j++) dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+  return dp[m][n];
+}
+
+export class DrawRoom extends DurableObject {
+  constructor(ctx, env) {
+    super(ctx, env);
+    this.conns = new Map(); this.state = "lobby"; this.hostId = null; this.nextId = 1;
+    this.order = []; this.turnIdx = 0; this.rounds = 2; this.drawerId = null;
+    this.word = ""; this.revealed = []; this.timers = []; this.turnEndsAt = 0;
+  }
+
+  async fetch(request) {
+    if (request.headers.get("Upgrade") !== "websocket") return new Response("expected websocket", { status: 426 });
+    const pair = new WebSocketPair(); const [client, server] = Object.values(pair);
+    server.accept();
+    if (this.conns.size >= 8) { try { server.send(JSON.stringify({ t: "full" })); server.close(); } catch (_) {} return new Response(null, { status: 101, webSocket: client }); }
+    const id = this.nextId++;
+    const p = { id, name: "Spieler", score: 0, guessed: false, drawer: false };
+    this.conns.set(server, p);
+    if (this.hostId == null) this.hostId = id;
+    server.addEventListener("message", e => { try { this.onMsg(server, e.data); } catch (_) {} });
+    server.addEventListener("close", () => this.onClose(server));
+    server.addEventListener("error", () => this.onClose(server));
+    try { server.send(JSON.stringify({ t: "welcome", id })); } catch (_) {}
+    this.sendLobby();
+    return new Response(null, { status: 101, webSocket: client });
+  }
+
+  bc(obj, exceptId) { const s = JSON.stringify(obj); for (const [ws, p] of this.conns) { if (exceptId && p.id === exceptId) continue; try { ws.send(s); } catch (_) {} } }
+  toId(id, obj) { for (const [ws, p] of this.conns) if (p.id === id) { try { ws.send(JSON.stringify(obj)); } catch (_) {} return; } }
+  pget(id) { for (const p of this.conns.values()) if (p.id === id) return p; return null; }
+  scoreboard() { return [...this.conns.values()].map(p => ({ id: p.id, name: p.name, score: p.score, guessed: p.guessed, drawer: p.id === this.drawerId })).sort((a, b) => b.score - a.score); }
+  sendLobby() { this.bc({ t: "lobby", state: this.state, hostId: this.hostId, players: this.scoreboard() }); }
+  clearTimers() { for (const t of this.timers) clearTimeout(t); this.timers = []; }
+
+  onMsg(ws, data) {
+    const p = this.conns.get(ws); if (!p) return;
+    let m; try { m = JSON.parse(data); } catch (_) { return; }
+    switch (m.t) {
+      case "join": p.name = (String(m.name || "").trim().slice(0, 14)) || "Spieler"; this.sendLobby(); break;
+      case "start": if (p.id === this.hostId && (this.state === "lobby" || this.state === "over") && this.conns.size >= 2) this.startGame(); break;
+      case "again": if (p.id === this.hostId && this.state === "over") { this.state = "lobby"; for (const q of this.conns.values()) q.score = 0; this.sendLobby(); } break;
+      case "choose": if (this.state === "choosing" && p.id === this.drawerId && this.choices && this.choices.includes(m.word)) this.beginDrawing(m.word); break;
+      case "stroke": if (this.state === "drawing" && p.id === this.drawerId) this.bc({ t: "draw", pts: m.pts, c: m.c, w: m.w }, p.id); break;
+      case "clear": if (this.state === "drawing" && p.id === this.drawerId) this.bc({ t: "clear" }, p.id); break;
+      case "guess": this.onGuess(p, String(m.text || "")); break;
+      case "ping": try { ws.send('{"t":"pong"}'); } catch (_) {} break;
+    }
+  }
+
+  onClose(ws) {
+    const p = this.conns.get(ws); if (!p) return;
+    this.conns.delete(ws);
+    if (this.hostId === p.id) { const f = this.conns.values().next().value; this.hostId = f ? f.id : null; }
+    if (this.conns.size === 0) { this.clearTimers(); this.state = "lobby"; this.nextId = 1; this.hostId = null; return; }
+    if ((this.state === "drawing" || this.state === "choosing") && p.id === this.drawerId) { this.bc({ t: "chat", kind: "system", text: "Der/die Zeichner:in hat den Raum verlassen." }); this.endTurn(); }
+    else this.sendLobby();
+  }
+
+  startGame() {
+    for (const q of this.conns.values()) q.score = 0;
+    this.order = [...this.conns.values()].map(p => p.id);
+    this.turnIdx = 0; this.state = "playing";
+    this.beginTurn();
+  }
+
+  beginTurn() {
+    this.clearTimers();
+    const ids = this.order.filter(id => this.pget(id));   // nur noch verbundene
+    if (ids.length < 2) { return this.endGame(); }
+    const total = ids.length * this.rounds;
+    if (this.turnIdx >= total) return this.endGame();
+    this.drawerId = ids[this.turnIdx % ids.length];
+    const round = Math.floor(this.turnIdx / ids.length) + 1;
+    for (const q of this.conns.values()) q.guessed = false;
+    this.word = ""; this.revealed = [];
+    this.choices = this.pickWords(3);
+    this.state = "choosing";
+    this.bc({ t: "turn", phase: "choose", drawerId: this.drawerId, round, rounds: this.rounds, turn: this.turnIdx + 1, total });
+    this.toId(this.drawerId, { t: "choices", words: this.choices });
+    this.bc({ t: "clear" });
+    this.sendLobby();
+    this.timers.push(setTimeout(() => { if (this.state === "choosing") this.beginDrawing(this.choices[0]); }, D_CHOOSE * 1000));
+  }
+
+  pickWords(n) { const out = [], used = new Set(); while (out.length < n) { const w = D_WORDS[Math.floor(Math.random() * D_WORDS.length)]; if (!used.has(w)) { used.add(w); out.push(w); } } return out; }
+  pattern() { const chars = [...this.word]; return chars.map((c, i) => c === " " ? " " : (this.revealed[i] ? c : "_")).join(""); }
+
+  beginDrawing(word) {
+    this.clearTimers();
+    this.word = word; this.revealed = [...word].map(() => false);
+    this.state = "drawing"; this.turnEndsAt = Date.now() + D_TURN * 1000;
+    const ids = this.order.filter(id => this.pget(id));
+    const round = Math.floor(this.turnIdx / Math.max(1, ids.length)) + 1;
+    this.bc({ t: "turn", phase: "draw", drawerId: this.drawerId, round, rounds: this.rounds, time: D_TURN, pattern: this.pattern(), wordLen: [...word].length });
+    this.toId(this.drawerId, { t: "word", word });
+    // Hinweise: bei ~45% und ~70% je einen Buchstaben aufdecken
+    this.timers.push(setTimeout(() => this.reveal(), D_TURN * 0.45 * 1000));
+    this.timers.push(setTimeout(() => this.reveal(), D_TURN * 0.7 * 1000));
+    this.timers.push(setTimeout(() => this.endTurn(), D_TURN * 1000));
+  }
+
+  reveal() {
+    if (this.state !== "drawing") return;
+    const idx = [...this.word].map((c, i) => i).filter(i => this.word[i] !== " " && !this.revealed[i]);
+    if (idx.length <= 1) return;                 // mindestens 1 Buchstabe verdeckt lassen
+    this.revealed[idx[Math.floor(Math.random() * idx.length)]] = true;
+    this.bc({ t: "hint", pattern: this.pattern() });
+  }
+
+  onGuess(p, text) {
+    if (!text.trim()) return;
+    // Zeichner:in oder wer schon erraten hat → nur normaler Chat
+    if (this.state !== "drawing" || p.id === this.drawerId || p.guessed) { this.bc({ t: "chat", kind: "msg", name: p.name, text: text.slice(0, 80) }); return; }
+    if (d_norm(text) === d_norm(this.word)) {
+      p.guessed = true;
+      const remain = Math.max(0, this.turnEndsAt - Date.now()) / 1000;
+      const gain = 50 + Math.round((remain / D_TURN) * 100);
+      p.score += gain;
+      const drawer = this.pget(this.drawerId); if (drawer) drawer.score += 25;
+      this.bc({ t: "guessed", id: p.id, name: p.name });
+      this.sendLobby();
+      const guessers = [...this.conns.values()].filter(q => q.id !== this.drawerId);
+      if (guessers.every(q => q.guessed)) this.endTurn();
+      return;
+    }
+    // Falsch: als Chat zeigen; nah dran → privater Hinweis
+    this.bc({ t: "chat", kind: "guess", name: p.name, text: text.slice(0, 80) });
+    if (d_lev(text, this.word) <= 1) this.toId(p.id, { t: "close" });
+  }
+
+  endTurn() {
+    this.clearTimers();
+    if (this.state === "over" || this.state === "lobby") return;
+    this.state = "reveal";
+    this.bc({ t: "turnEnd", word: this.word, players: this.scoreboard() });
+    this.timers.push(setTimeout(() => { this.turnIdx++; this.beginTurn(); }, D_REVEAL * 1000));
+  }
+
+  endGame() { this.clearTimers(); this.state = "over"; this.drawerId = null; this.bc({ t: "over", players: this.scoreboard() }); this.sendLobby(); }
+}
+
 // Der Worker hostet das DO und trägt zusätzlich den Cron-Trigger für den
 // Feuerwehr-Bezirksalarm: Pages kann keine Crons: Der Worker pingt darum
 // zeitgesteuert die geschützte Pages-Route /api/fire/cron (dort liegen DB
