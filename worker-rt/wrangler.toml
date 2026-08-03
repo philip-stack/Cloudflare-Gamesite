@@ -12,6 +12,10 @@ class_name = "PartyRoom"
 name = "TRON_ROOM"
 class_name = "TronRoom"
 
+[[durable_objects.bindings]]
+name = "DRAW_ROOM"
+class_name = "DrawRoom"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["PartyRoom"]
@@ -19,6 +23,10 @@ new_sqlite_classes = ["PartyRoom"]
 [[migrations]]
 tag = "v2"
 new_sqlite_classes = ["TronRoom"]
+
+[[migrations]]
+tag = "v3"
+new_sqlite_classes = ["DrawRoom"]
 
 # Cron: alle 2 Minuten den Feuerwehr-Bezirksalarm prüfen (pingt die
 # geschützte Pages-Route /api/fire/cron). Secret CRON_TOKEN nötig:
