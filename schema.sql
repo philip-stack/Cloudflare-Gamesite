@@ -69,6 +69,13 @@ CREATE TABLE IF NOT EXISTS used_token (
   at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Gesperrte Geraete (Moderation ueber das Betreiber-Dashboard). Ein Geraete-
+-- Token hier drin darf keine Scores mehr einreichen (Anti-Cheat).
+CREATE TABLE IF NOT EXISTS banned_device (
+  device TEXT PRIMARY KEY,
+  at     TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- Cloud-Backup der Spielstände (plattformweit, Details: functions/api/cloud.js)
 CREATE TABLE IF NOT EXISTS cloud_saves (
   code       TEXT PRIMARY KEY,            -- portabler 8-stelliger Backup-Code

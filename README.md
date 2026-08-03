@@ -101,11 +101,16 @@ schaltet teure Dauer-Effekte ab und drosselt die Bildrate für schwächere Gerä
   gedrosselt (die Geräte-Kennung ist client-seitig fälschbar, die IP nicht).
   Gemeinsamer Client-Code in `public/shared.js`.
 - **Betreiber-Dashboard** (`/admin/`, `/api/admin` — bewusst **nicht** auf der
-  Landing Page, `noindex`): private Betriebsübersicht an einem Ort — Scores
-  gesamt/24 h, Einsendungen & Weltrekorde je Spiel, JS-Fehler der letzten 24 h,
-  Push-Abos/Warteschlange, Feuerwehr-Cron-Health und DB-Hilfstabellen. Zugriff
-  nur mit dem Pages-Secret `ADMIN_TOKEN` (selbst erzeugt, gratis, kein externer
-  Dienst); ohne Schlüssel `401`.
+  Landing Page, `noindex`): privater Live-Monitor an einem Ort — **Ampel-
+  Gesamtstatus** und **Auto-Refresh**, Scores/Einsendungen/Weltrekorde je Spiel,
+  **Trends als Sparklines** (Scores, aktive Geräte, Fehler pro Tag, 30 Tage),
+  Fehler-Log **nach Häufigkeit gruppiert** (mit User-Agent, Seiten-Filter,
+  externe `522` separat gezählt), Push-Abos/Warteschlange, Feuerwehr-Cron-Health
+  und DB-Hilfstabellen. Dazu geschützte **Aktionen** (POST, nur mit Header-
+  Schlüssel → CSRF-resistent): Fake-**Score löschen**, **Gerät sperren**
+  (`banned_device`, blockt weitere Einsendungen), Fehler-Log/Push-Queue leeren,
+  Fire-Cron manuell auslösen. Zugriff nur mit dem Pages-Secret `ADMIN_TOKEN`
+  (selbst erzeugt, gratis, kein externer Dienst); ohne Schlüssel `401`.
 - **Automatische Tests** (`tests/`, per GitHub Actions bei jedem Push):
   Syntaxprüfung aller JS-Dateien, ein **statischer Qualitäts-/A11y-Check** aller
   HTML-Seiten (keine externen Ressourcen, alt-Texte, lang/viewport), Tests für
@@ -184,7 +189,7 @@ sofort ein und synct im Hintergrund.
 ```
 wuerfelpoker/
 ├── wrangler.toml              Pages-Config + D1-Binding (DB) + AI-Binding (Kochstudio)
-├── schema.sql                 D1-Schema (Würfelpoker, scores, used_token, cloud_saves, party*, push_*, error_log, rate, fire_*)
+├── schema.sql                 D1-Schema (Würfelpoker, scores, used_token, banned_device, cloud_saves, party*, push_*, error_log, rate, fire_*)
 ├── public/                    statische Spiele (1 Ordner = 1 Spiel)
 │   ├── index.html             Landing Page mit App-Karten, Suche & Challenge
 │   ├── games.js               zentrale Spiele-Registry (Quelle für Startseite/Profil/Party)
