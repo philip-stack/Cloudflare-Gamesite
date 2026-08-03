@@ -32,17 +32,27 @@ function slim(list, fuel) {
     const pr = (s.prices || []).find(p => p.fuelType === fuel);
     if (!pr || typeof pr.amount !== "number") continue;
     const loc = s.location || {};
-    // Heutige Öffnungszeit → „offen bis" bzw. offen-jetzt aus den Zeiten.
+    // Heutige Öffnungszeit → „offen bis" / „durchgehend" / offen-jetzt.
     const today = (s.openingHours || []).find(o => o.day === tn.day);
-    let till = null, openNow = s.open !== false;
-    if (today && today.from !== today.to) {
-      const f = toMin(today.from), t = toMin(today.to);
-      if (f != null && t != null) {
-        const within = t > f ? (tn.mins >= f && tn.mins < t) : (tn.mins >= f || tn.mins < t);
-        openNow = within;
-        if (within && today.to && today.to !== "00:00") till = today.to;
+    let till = null, openNow = s.open !== false, is24 = false;
+    if (today) {
+      if (today.from === today.to) {
+        is24 = true;   // 00:00–00:00 = durchgehend geöffnet (24 h)
+      } else {
+        const f = toMin(today.from), t = toMin(today.to);
+        if (f != null && t != null) {
+          const within = t > f ? (tn.mins >= f && tn.mins < t) : (tn.mins >= f || tn.mins < t);
+          openNow = within;
+          if (within && today.to !== "00:00") till = today.to;
+        }
       }
     }
+    let openText;
+    if (!openNow) openText = "geschlossen";
+    else if (till) openText = "offen bis " + till;
+    else if (is24) openText = "durchgehend geöffnet";
+    else openText = "offen";
+
     out.push({
       id: s.id,
       name: s.name || "Tankstelle",
@@ -52,7 +62,7 @@ function slim(list, fuel) {
       lat: loc.latitude, lng: loc.longitude,
       price: pr.amount,
       open: openNow,
-      till,
+      till, openText,
       dist: typeof s.distance === "number" ? s.distance : null,
     });
   }
