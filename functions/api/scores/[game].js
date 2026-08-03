@@ -85,12 +85,13 @@ const GAMES = {
   },
   schlange: {
     max: 100_000,
-    // score = gefressene Orbs. Grob gegen die Spielzeit gedeckelt: selbst bei
-    // dichtem Feld sind höchstens ~10 Orbs/s realistisch (+ Puffer).
+    // score = gefressene Orbs. Grob gegen die Spielzeit gedeckelt. Großzügig,
+    // weil abgeschnittene Gegner in viele Orbs zerfallen und ×2 verdoppelt —
+    // echte Bursts bleiben unter der Grenze, blind gesetzte Fakes nicht.
     check: (score, m) =>
       Number.isFinite(m.orbs) && Number.isFinite(m.time) &&
       m.orbs >= 0 && m.time >= 0 && m.time <= 36_000 &&
-      score === Math.round(m.orbs) && m.orbs <= m.time * 10 + 25,
+      score === Math.round(m.orbs) && m.orbs <= m.time * 30 + 60,
   },
 };
 
