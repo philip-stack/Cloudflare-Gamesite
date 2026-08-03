@@ -41,9 +41,12 @@
     .dot { width:14px; height:14px; border-radius:50%; flex:none; box-shadow:0 0 12px currentColor; }
     .dot.ok { color:var(--ok); background:var(--ok); } .dot.warn { color:var(--warn); background:var(--warn); } .dot.bad { color:var(--bad); background:var(--bad); }
     .ampel .txt { font-weight:800; } .ampel .warns { color:var(--muted); font-size:.85rem; font-weight:600; }
-    .spark { width:100%; height:44px; display:block; }
+    .spark { width:100%; height:44px; display:block; cursor:crosshair; }
     .spark polyline { fill:none; stroke:var(--accent); stroke-width:2; stroke-linejoin:round; stroke-linecap:round; }
     .spark .area { fill:rgba(79,208,224,.12); stroke:none; }
+    .spark .marker { stroke:var(--warn); stroke-width:1.5; }
+    .sparkbox { position:relative; }
+    .sptip { position:absolute; top:-4px; transform:translateX(-50%); background:#0a0e13; border:1px solid var(--line); color:var(--ink); font:800 .74rem inherit; padding:3px 8px; border-radius:7px; white-space:nowrap; pointer-events:none; z-index:6; box-shadow:0 6px 16px rgba(0,0,0,.55); }
     .sparkwrap .lbl { display:flex; justify-content:space-between; font-size:.8rem; margin-top:4px; }
     .switch { display:inline-flex; align-items:center; gap:6px; font-size:.82rem; color:var(--muted); cursor:pointer; }
     .toolbar { display:flex; gap:8px; flex-wrap:wrap; }
@@ -115,16 +118,44 @@
     // --- Sparkline (30 Tage, Lücken gefüllt) ---
     function spark(rows) {
       const days = 30, map = new Map((rows || []).map(r => [r.d, r.n]));
-      const today = new Date(), vals = [];
-      for (let i = days - 1; i >= 0; i--) { const dt = new Date(today); dt.setDate(today.getDate() - i); vals.push(map.get(dt.toISOString().slice(0, 10)) || 0); }
-      const max = Math.max(1, ...vals), W = 240, H = 44, step = W / (days - 1);
-      const pts = vals.map((v, i) => `${(i * step).toFixed(1)},${(H - 3 - (v / max) * (H - 8)).toFixed(1)}`);
+      const today = new Date(), series = [];
+      for (let i = days - 1; i >= 0; i--) { const dt = new Date(today); dt.setDate(today.getDate() - i); const d = dt.toISOString().slice(0, 10); series.push({ d, v: map.get(d) || 0 }); }
+      const max = Math.max(1, ...series.map(p => p.v)), W = 240, H = 44, step = W / (days - 1);
+      series.forEach((p, i) => { p.x = +(i * step).toFixed(1); p.y = +(H - 3 - (p.v / max) * (H - 8)).toFixed(1); });
+      const pts = series.map(p => `${p.x},${p.y}`);
       const area = `0,${H} ` + pts.join(" ") + ` ${W},${H}`;
-      return { svg: `<svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"><polygon class="area" points="${area}"/><polyline points="${pts.join(" ")}"/></svg>`, last: vals[vals.length - 1], sum: vals.reduce((a, b) => a + b, 0), max };
+      const svg = `<svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">` +
+        `<rect x="0" y="0" width="${W}" height="${H}" fill="transparent"/>` +
+        `<polygon class="area" points="${area}"/><polyline points="${pts.join(" ")}"/>` +
+        `<line class="marker" y1="0" y2="${H}" vector-effect="non-scaling-stroke" hidden/></svg>`;
+      return { svg, series, last: series[series.length - 1].v, sum: series.reduce((a, b) => a + b.v, 0), max };
     }
     function sparkCard(title, rows, unit) {
       const s = spark(rows);
-      return `<div class="card sparkwrap"><h2>${title}</h2>${s.svg}<div class="lbl"><span class="muted">30 Tage · Σ ${nf(s.sum)}</span><b class="mono">heute ${nf(s.last)}${unit || ""}</b></div></div>`;
+      return `<div class="card sparkwrap"><h2>${title}</h2>` +
+        `<div class="sparkbox" data-series='${JSON.stringify(s.series)}'>${s.svg}<div class="sptip" hidden></div></div>` +
+        `<div class="lbl"><span class="muted">30 Tage · Σ ${nf(s.sum)}</span><b class="mono">heute ${nf(s.last)}${unit || ""}</b></div></div>`;
+    }
+    // Hover/Touch über einer Sparkline: Führungslinie + Tooltip mit Datum & exakter Zahl.
+    function attachSparkHover(box) {
+      const svg = box.querySelector("svg"), tip = box.querySelector(".sptip"), marker = box.querySelector(".marker");
+      let series; try { series = JSON.parse(box.dataset.series); } catch { return; }
+      const days = series.length, fmtD = iso => { const p = iso.split("-"); return p[2] + "." + p[1] + "."; };
+      function show(clientX) {
+        const rect = svg.getBoundingClientRect(); if (!rect.width) return;
+        let frac = (clientX - rect.left) / rect.width; frac = Math.max(0, Math.min(1, frac));
+        const idx = Math.round(frac * (days - 1)), pt = series[idx];
+        marker.setAttribute("x1", pt.x); marker.setAttribute("x2", pt.x); marker.hidden = false;
+        tip.hidden = false; tip.textContent = fmtD(pt.d) + " · " + nf(pt.v);
+        const box2 = box.getBoundingClientRect();
+        tip.style.left = Math.max(26, Math.min(box2.width - 26, clientX - box2.left)) + "px";
+      }
+      function hide() { tip.hidden = true; marker.hidden = true; }
+      svg.addEventListener("mousemove", e => show(e.clientX));
+      svg.addEventListener("mouseleave", hide);
+      svg.addEventListener("touchstart", e => { if (e.touches[0]) show(e.touches[0].clientX); }, { passive: true });
+      svg.addEventListener("touchmove", e => { if (e.touches[0]) show(e.touches[0].clientX); }, { passive: true });
+      svg.addEventListener("touchend", hide);
     }
 
     function firePill(f) {
@@ -228,6 +259,7 @@
         <p class="foot">Rein private Betriebsübersicht. Schreib-Aktionen brauchen den Header-Schlüssel (CSRF-resistent). Kein Tracking Dritter; keine personenbezogenen Daten außer den frei gewählten Bestenlisten-Namen.</p>`;
 
       wire(e);
+      document.querySelectorAll(".sparkbox").forEach(attachSparkHover);
     }
 
     function wire(e) {
