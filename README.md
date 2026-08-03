@@ -36,9 +36,9 @@ schaltet teure Dauer-Effekte ab und drosselt die Bildrate für schwächere Gerä
   (Auswahl aus 32), **Spieleabend-Level & XP** (aus Abzeichen, Rekorden und
   gespielten Spielen), **Avatar-Rahmen** und **Titeln**, die mit dem Level
   freischalten (Neuling → … → Lebende Legende), einer Übersicht aller eigenen
-  Rekorde, einem **Tage-Streak** (an aufeinanderfolgenden Tagen gespielt) und
-  **plattformweiten Erfolgen** (quer über alle Spiele). Die **Profil-Karte**
-  steht auf der Startseite ganz oben.
+  Rekorde, einem **Tage-Streak** (an aufeinanderfolgenden Tagen gespielt), dem
+  **besten Weltrang über alle Spiele** und **plattformweiten Erfolgen** (quer
+  über alle Spiele). Die **Profil-Karte** steht auf der Startseite ganz oben.
 - **Cloud-Speicher** (`/api/cloud`): alle Spielstände, Rekorde & Abzeichen mit
   einem Code sichern und auf jedem Gerät zurückholen — inkl. **QR-Code** des
   Codes und Anzeige, **wann zuletzt gesichert** wurde. `shared.js` synct beim
@@ -96,7 +96,16 @@ schaltet teure Dauer-Effekte ab und drosselt die Bildrate für schwächere Gerä
   benutzt), Plausibilitätsprüfung der Scores, Rate-Limit und einem
   **signierten Lauf-Token** (HMAC): jede Einsendung muss ein kurz vorher
   ausgestelltes Token mitschicken, was blindes Absenden per Skript erschwert.
+  Das Token ist **nur einmal gültig** (Replay-Schutz über die Tabelle
+  `used_token`), und Ausstellung wie Einsendung sind zusätzlich **pro IP**
+  gedrosselt (die Geräte-Kennung ist client-seitig fälschbar, die IP nicht).
   Gemeinsamer Client-Code in `public/shared.js`.
+- **Betreiber-Dashboard** (`/admin/`, `/api/admin` — bewusst **nicht** auf der
+  Landing Page, `noindex`): private Betriebsübersicht an einem Ort — Scores
+  gesamt/24 h, Einsendungen & Weltrekorde je Spiel, JS-Fehler der letzten 24 h,
+  Push-Abos/Warteschlange, Feuerwehr-Cron-Health und DB-Hilfstabellen. Zugriff
+  nur mit dem Pages-Secret `ADMIN_TOKEN` (selbst erzeugt, gratis, kein externer
+  Dienst); ohne Schlüssel `401`.
 - **Automatische Tests** (`tests/`, per GitHub Actions bei jedem Push):
   Syntaxprüfung aller JS-Dateien, ein **statischer Qualitäts-/A11y-Check** aller
   HTML-Seiten (keine externen Ressourcen, alt-Texte, lang/viewport), Tests für
@@ -107,7 +116,11 @@ schaltet teure Dauer-Effekte ab und drosselt die Bildrate für schwächere Gerä
   Workflow für Performance, Barrierefreiheit, Best Practices & SEO.
 - **Barrierefreiheit**: Dialoge als `role="dialog"`/`aria-modal` mit
   Escape-zum-Schließen und Fokus-Rückgabe, `aria-live`-Statusmeldungen,
-  beschriftete Eingabefelder und sichtbarer Fokusrahmen.
+  beschriftete Eingabefelder und ein plattformweit injizierter, sichtbarer
+  **Tastatur-Fokusring** (`:focus-visible`, greift auch dort, wo eigenes CSS
+  den Fokus wegstylt). Wer im Betriebssystem **„Bewegung reduzieren"** wählt,
+  bekommt keine langen CSS-Animationen/Übergänge mehr und automatisch den
+  Energiesparen-Modus (Canvas-Spiele drosseln) — beides zentral in `theme.js`.
 
 ## 🍳 KI-Kochstudio
 
@@ -146,12 +159,14 @@ und Vollbild — bereits besuchte Spiele funktionieren auch offline
 - **Geräte-Bindung**: In Bestenlisten und Spieleabend-Räumen gehört ein Name dem
   Gerät, das ihn zuerst benutzt — kein Einreichen unter fremdem Namen.
 - **Signierte Lauf-Token** (HMAC, `SCORE_SECRET` als Pages-Secret) gegen
-  blindes Score-Absenden, plus D1-gestütztes **Rate-Limit** auf allen APIs.
+  blindes Score-Absenden — **einmal gültig** (Replay-Schutz via `used_token`),
+  plus D1-gestütztes **Rate-Limit** pro Gerät **und pro IP** auf allen APIs.
 - **Cloud-Speicher** hält beim Überschreiben die vorherige Version vor,
   begrenzt die Größe und ist rate-limitiert.
 - **Anonymer Fehler-Melder** (`/api/log`): JS-Fehler auf fremden Geräten landen
   gedrosselt und dedupliziert in D1 (selbst-beschränkt auf die letzten 1000),
-  damit Defekte auffallen.
+  damit Defekte auffallen — einsehbar im **Betreiber-Dashboard** (`/admin/`,
+  geschützt per `ADMIN_TOKEN`).
 
 ## Leistung & Akku
 
@@ -169,7 +184,7 @@ sofort ein und synct im Hintergrund.
 ```
 wuerfelpoker/
 ├── wrangler.toml              Pages-Config + D1-Binding (DB) + AI-Binding (Kochstudio)
-├── schema.sql                 D1-Schema (Würfelpoker, *_scores, cloud_saves, party*, push_*, error_log, rate)
+├── schema.sql                 D1-Schema (Würfelpoker, scores, used_token, cloud_saves, party*, push_*, error_log, rate, fire_*)
 ├── public/                    statische Spiele (1 Ordner = 1 Spiel)
 │   ├── index.html             Landing Page mit App-Karten, Suche & Challenge
 │   ├── games.js               zentrale Spiele-Registry (Quelle für Startseite/Profil/Party)
@@ -178,7 +193,8 @@ wuerfelpoker/
 │   ├── qr.js                  eigenständiger QR-Code-Encoder (Beitritt/Sync teilen)
 │   ├── _headers               Security-Header (CSP, HSTS, nosniff, …)
 │   ├── fonts/                 selbst gehostete Schriften (Fraunces, Outfit) — kein Google-Fonts-CDN
-│   ├── profil/                Spieler-Profil & Hub (Avatar, Level, Rahmen, Cloud, Freunde, Push)
+│   ├── profil/                Spieler-Profil & Hub (Avatar, Level, Rahmen, Cloud, Freunde, Push, bester Weltrang)
+│   ├── admin/                 privates Betreiber-Dashboard (noindex, Schlüssel via ADMIN_TOKEN)
 │   ├── party/                 Spieleabend-Raum (Räume, Live-Rangliste)
 │   ├── saison/                Saison & Liga (wöchentliche Gesamtwertung)
 │   ├── impressum/             Impressum (§ 5 ECG / § 25 MedienG)
@@ -208,6 +224,7 @@ wuerfelpoker/
 │   ├── season.js              Saison/Liga (Wochenwertung über alle Spiele)
 │   ├── push.js                Web-Push (VAPID, Abo/Queue/Versand)
 │   ├── log.js                 anonymer Fehler-Melder (→ D1, selbst-beschränkt)
+│   ├── admin.js               Betreiber-Dashboard-Aggregat (geschützt per ADMIN_TOKEN)
 │   └── koch.js                KI-Kochstudio (Workers AI + DuckDuckGo-Websuche)
 ├── tests/                     Node-Tests (Syntax, Qualität/A11y, QR, Scores/Cloud/Party/Saison/Push-API, Flow-E2E, WUMMS/MEERI)
 ├── worker-rt/                 separater Worker: Echtzeit-Durable-Object (PartyRoom)
