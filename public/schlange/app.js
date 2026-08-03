@@ -145,22 +145,44 @@ function headHitsSegs(h, segs, skip, r2) {
 }
 
 // ---------- KI ----------
-function botThink(b, dt) {
+function nearBody(x, y, segs, skip, r) { const r2 = r * r; for (let i = skip; i < segs.length; i++) { const dx = x - segs[i].x, dy = y - segs[i].y; if (dx * dx + dy * dy < r2) return true; } return false; }
+
+function botThink(b, dt, allS) {
+  // --- Ziel wählen: Orb bevorzugt VOR der Schlange (keine Kehrtwenden) ---
   b.ai.retarget -= dt;
-  // nächstes Orb in Sichtweite suchen
   if (b.ai.retarget <= 0) {
-    b.ai.retarget = rnd(0.5, 1.4);
-    let best = null, bd = 460 * 460;
-    for (const f of food) { const dx = f.x - b.x, dy = f.y - b.y, d = dx * dx + dy * dy; if (d < bd) { bd = d; best = f; } }
-    if (best) { b.ai.tx = best.x; b.ai.ty = best.y; }
-    else { b.ai.tx = clamp(b.x + rnd(-500, 500), 80, WORLD - 80); b.ai.ty = clamp(b.y + rnd(-500, 500), 80, WORLD - 80); }
+    b.ai.retarget = rnd(0.9, 1.9);
+    let pick = null, bs = -1e9;
+    for (const f of food) {
+      const dx = f.x - b.x, dy = f.y - b.y, d2 = dx * dx + dy * dy;
+      if (d2 > 540 * 540) continue;
+      const fwd = Math.cos(angDiff(b.heading, Math.atan2(dy, dx)));  // 1 = genau voraus
+      const s = fwd * 1.6 - Math.sqrt(d2) / 540 + (f.type ? 0.5 : 0);
+      if (s > bs) { bs = s; pick = f; }
+    }
+    if (pick) { b.ai.tx = pick.x; b.ai.ty = pick.y; }
+    else { b.ai.tx = clamp(b.x + Math.cos(b.heading) * 320 + rnd(-160, 160), 120, WORLD - 120); b.ai.ty = clamp(b.y + Math.sin(b.heading) * 320 + rnd(-160, 160), 120, WORLD - 120); }
   }
-  // Wandnähe → zur Mitte lenken
-  const margin = 150;
-  let tx = b.ai.tx, ty = b.ai.ty;
-  if (b.x < margin || b.x > WORLD - margin || b.y < margin || b.y > WORLD - margin) { tx = WORLD / 2; ty = WORLD / 2; }
-  const desired = Math.atan2(ty - b.y, tx - b.x);
-  b.heading += clamp(angDiff(b.heading, desired), -TURN * 0.8 * dt, TURN * 0.8 * dt);
+  let desired = Math.atan2(b.ai.ty - b.y, b.ai.tx - b.x);
+
+  // --- Ausweichen: Fühler nach vorn; blockiert → freie Richtung suchen ---
+  const look = 78, wallPad = 46, selfSkip = 6, dr = HIT + 9;
+  const blocked = ang => {
+    const fx = b.x + Math.cos(ang) * look, fy = b.y + Math.sin(ang) * look;
+    if (fx < wallPad || fx > WORLD - wallPad || fy < wallPad || fy > WORLD - wallPad) return true;
+    if (nearBody(fx, fy, b.segsC, selfSkip, dr)) return true;            // eigener Körper
+    for (const o of allS) { if (o === b) continue; if (nearBody(fx, fy, o.segsC, 0, dr)) return true; }
+    return false;
+  };
+  if (blocked(desired)) {
+    let found = false;
+    for (const off of [0.35, -0.35, 0.7, -0.7, 1.05, -1.05, 1.5, -1.5, 2.0, -2.0, 2.6, -2.6]) {
+      if (!blocked(b.heading + off)) { desired = b.heading + off; found = true; break; }
+    }
+    if (!found) desired = b.heading + 2.4;   // Panik-Wende
+  }
+
+  b.heading += clamp(angDiff(b.heading, desired), -TURN * 0.72 * dt, TURN * 0.72 * dt);
   b.boosting = false;
 }
 
@@ -181,8 +203,9 @@ function update(dt) {
   player.bodyLenPx = Math.max(BASE_LEN * 0.9, BASE_LEN + player.orbs * GROW - player.boostSpent);
   moveSnake(player, dt, player.boosting ? BOOST_SPEED : SPEED);
 
-  // --- Bots ---
-  for (const b of bots) { botThink(b, dt); b.bodyLenPx = BASE_LEN + b.orbs * GROW; moveSnake(b, dt, SPEED); }
+  // --- Bots --- (Ausweichen nutzt die Segmente vom letzten Frame)
+  const allS = [player, ...bots];
+  for (const b of bots) { botThink(b, dt, allS); b.bodyLenPx = BASE_LEN + b.orbs * GROW; moveSnake(b, dt, SPEED); }
 
   // --- Segmente aller lebenden Schlangen ---
   refreshSegs(player);
