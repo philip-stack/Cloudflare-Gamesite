@@ -93,7 +93,7 @@ function onMsg(m) {
 }
 
 function onTurn(m) {
-  closeOverlay(); view = "playing"; $("#board").classList.remove("hidden");
+  closeOverlay(); view = "playing"; $("#board").classList.remove("hidden"); showLeave(true);
   iAmDrawer = m.drawerId === myId; strokes = []; clearCanvas(); resize();
   $("#i-turn").textContent = "Runde " + (m.round || 1) + " · Zug " + (m.turn || (m.round || 1)) + (m.total ? "/" + m.total : "");
   const drawer = players.find(p => p.id === m.drawerId);
@@ -228,7 +228,7 @@ async function showScores() {
 }
 
 function showMenu(msg) {
-  view = "menu"; $("#board").classList.add("hidden"); setGuessEnabled(false); players = [];
+  view = "menu"; $("#board").classList.add("hidden"); setGuessEnabled(false); players = []; showLeave(false);
   const o = overlay(`
     <h2><span class="foil">Kritzeln &amp; Raten</span></h2>
     <p class="sub">Einer malt, die anderen raten — live, für <b>2–8 Spieler</b>. Erstelle einen Raum und teile den Code.</p>
@@ -244,6 +244,7 @@ function showMenu(msg) {
 }
 
 function showLobby() {
+  showLeave(true);
   const meHost = myId === hostId;
   const o = overlay(`
     <h2>Warteraum</h2>
@@ -265,6 +266,7 @@ function showWordPick(words) {
 }
 
 function showOver(list) {
+  showLeave(true);
   const meHost = myId === hostId; const top = list[0];
   const o = overlay(`
     <h2>🏆 Ergebnis</h2>
@@ -283,6 +285,8 @@ const soundBtn = $("#btn-sound");
 soundBtn.textContent = GS.sound.on() ? "🔊" : "🔇";
 soundBtn.onclick = () => { soundBtn.textContent = GS.sound.toggle() ? "🔊" : "🔇"; };
 $("#btn-top").onclick = showScores;
+$("#btn-leave").onclick = () => { if (confirm("Raum verlassen?")) { leave(); showMenu(); } };
+function showLeave(on) { const b = $("#btn-leave"); if (b) b.classList.toggle("hidden", !on); }
 window.addEventListener("beforeunload", leave);
 document.addEventListener("visibilitychange", () => { if (document.hidden || intentional || !code) return; if ((view === "lobby" || view === "over") && (!ws || ws.readyState > 1)) { reTries = 0; connect(code, true); } });
 
