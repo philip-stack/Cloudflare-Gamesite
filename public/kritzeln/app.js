@@ -40,6 +40,8 @@ const wsUrl = c => (location.protocol === "https:" ? "wss" : "ws") + "://" + loc
 const CODE_ABC = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 const randCode = () => { const a = new Uint8Array(4); crypto.getRandomValues(a); return [...a].map(b => CODE_ABC[b % CODE_ABC.length]).join(""); };
 const r4 = v => Math.round(v * 1e4) / 1e4;
+// Wortmuster mit Abständen darstellen: "_A__" → "_ A _ _"
+const spaced = s => [...String(s || "")].join(" ");
 
 function connect(c, isRe) {
   code = c.toUpperCase();
