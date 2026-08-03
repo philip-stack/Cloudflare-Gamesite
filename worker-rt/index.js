@@ -243,6 +243,9 @@ export class DrawRoom extends DurableObject {
   bc(obj, exceptId) { const s = JSON.stringify(obj); for (const [ws, p] of this.conns) { if (exceptId && p.id === exceptId) continue; try { ws.send(s); } catch (_) {} } }
   toId(id, obj) { for (const [ws, p] of this.conns) if (p.id === id) { try { ws.send(JSON.stringify(obj)); } catch (_) {} return; } }
   pget(id) { for (const p of this.conns.values()) if (p.id === id) return p; return null; }
+  // Teilnehmer:innen eines Spiels (überlebt Disconnects) für die Wertung.
+  partKey(p) { return p.uid || ("id" + p.id); }
+  syncPart(p) { if (!this.parts) this.parts = new Map(); this.parts.set(this.partKey(p), { name: p.name, score: p.score | 0 }); }
   scoreboard() { return [...this.conns.values()].map(p => ({ id: p.id, name: p.name, score: p.score, guessed: p.guessed, drawer: p.id === this.drawerId })).sort((a, b) => b.score - a.score); }
   sendLobby() { this.bc({ t: "lobby", state: this.state, hostId: this.hostId, players: this.scoreboard() }); }
   clearTimers() { for (const t of this.timers) clearTimeout(t); this.timers = []; }
@@ -284,13 +287,22 @@ export class DrawRoom extends DurableObject {
     const p = this.conns.get(ws); if (!p) return;
     this.conns.delete(ws);
     if (this.hostId === p.id) { const f = this.conns.values().next().value; this.hostId = f ? f.id : null; }
-    if (this.conns.size === 0) { this.clearTimers(); this.state = "lobby"; this.nextId = 1; this.hostId = null; return; }
-    if ((this.state === "drawing" || this.state === "choosing") && p.id === this.drawerId) { this.bc({ t: "chat", kind: "system", text: "Der/die Zeichner:in hat den Raum verlassen." }); this.endTurn(); }
-    else this.sendLobby();
+    if (this.conns.size === 0) {
+      // Alle weg (Tabs geschlossen o. Ä.) mitten im Spiel → trotzdem werten.
+      if (this.parts && (this.state === "choosing" || this.state === "drawing" || this.state === "reveal")) this.saveScores([...this.parts.values()]);
+      this.clearTimers(); this.state = "lobby"; this.nextId = 1; this.hostId = null; this.parts = null; return;
+    }
+    const playing = this.state === "choosing" || this.state === "drawing" || this.state === "reveal";
+    // Zu wenige übrig → JETZT werten (die verbleibende Verbindung hält das DO
+    // wach, der D1-Schreibvorgang läuft zuverlässig durch).
+    if (playing && this.conns.size < 2) { this.endGame(); return; }
+    if (playing && p.id === this.drawerId) { this.bc({ t: "chat", kind: "system", text: "Der/die Zeichner:in hat den Raum verlassen." }); this.endTurn(); return; }
+    this.sendLobby();
   }
 
   startGame() {
-    for (const q of this.conns.values()) q.score = 0;
+    this.parts = new Map();
+    for (const q of this.conns.values()) { q.score = 0; q.guessed = false; this.syncPart(q); }
     this.order = [...this.conns.values()].map(p => p.id);
     this.turnIdx = 0; this.state = "playing";
     this.beginTurn();
@@ -366,6 +378,7 @@ export class DrawRoom extends DurableObject {
       const gain = 50 + Math.round((remain / D_TURN) * 100);
       p.score += gain;
       const drawer = this.pget(this.drawerId); if (drawer) drawer.score += 25;
+      this.syncPart(p); if (drawer) this.syncPart(drawer);
       this.bc({ t: "guessed", id: p.id, name: p.name });
       this.sendLobby();
       const guessers = [...this.conns.values()].filter(q => q.id !== this.drawerId);
@@ -389,25 +402,35 @@ export class DrawRoom extends DurableObject {
     this.clearTimers(); this.state = "over"; this.drawerId = null;
     const board = this.scoreboard();
     this.bc({ t: "over", players: board }); this.sendLobby();
-    this.recordScores(board).catch(() => {});   // dauerhafte Bestenliste (best-effort)
+    this.saveScores(this.parts ? [...this.parts.values()] : []);
+    this.parts = null;
   }
 
-  // Am Spielende jede:n Spieler:in in die dauerhafte D1-Bestenliste rollen.
+  // Wertung robust schreiben — via waitUntil, damit der D1-Schreibvorgang auch
+  // dann durchläuft, wenn das Spiel abrupt endet (alle weg). parts = [{name,score}].
+  saveScores(parts) {
+    const run = this.recordScores(parts).catch(() => {});
+    try { this.ctx.waitUntil(run); } catch (_) {}
+  }
+
+  // Am Spielende jede:n Teilnehmer:in in die dauerhafte D1-Bestenliste rollen.
   // Autoritativ (im DO), damit Clients keine Fake-Werte einschleusen können.
-  async recordScores(board) {
-    try {
-      if (!this.env || !this.env.DB || !board || board.length < 2) return;
-      const winId = board[0] && board[0].score > 0 ? board[0].id : null;
-      for (const p of board) {
-        if (!p.name) continue;
-        const pts = p.score | 0, win = p.id === winId ? 1 : 0;
+  async recordScores(parts) {
+    if (!this.env || !this.env.DB || !parts || parts.length < 2) return;
+    let winName = null, top = 0;
+    for (const p of parts) { const s = p.score | 0; if (s > top) { top = s; winName = p.name; } }
+    if (top <= 0) return;   // niemand hat geraten → nicht werten
+    for (const p of parts) {
+      if (!p.name) continue;
+      const pts = p.score | 0, win = p.name === winName ? 1 : 0;
+      try {
         await this.env.DB.prepare(
           "INSERT INTO draw_score (name, points, games, wins, best) VALUES (?, ?, 1, ?, ?) " +
           "ON CONFLICT(name) DO UPDATE SET points = points + excluded.points, games = games + 1, " +
           "wins = wins + excluded.wins, best = MAX(best, excluded.best), updated_at = datetime('now')"
         ).bind(p.name, pts, win, pts).run();
-      }
-    } catch (_) { /* Bestenliste nie den Spielfluss stören */ }
+      } catch (_) { /* Bestenliste nie den Spielfluss stören */ }
+    }
   }
 }
 
