@@ -31,10 +31,13 @@ export async function onRequestGet({ request, env }) {
   const stations = (await ecByAddress(env, center.lat, center.lng, fuel))
     .slice()
     .sort((a, b) => a.price - b.price);
+  const avgPrice = stations.length
+    ? Math.round(stations.reduce((s, x) => s + x.price, 0) / stations.length * 1000) / 1000 : null;
 
   return withCache(json({
     center: { lat: center.lat, lng: center.lng, label },
     fuel, fuelLabel: FUELS[fuel],
+    avgPrice,
     stations,
     stand: new Date().toISOString(),
   }), 120);

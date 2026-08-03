@@ -78,8 +78,21 @@ export async function onRequestGet({ request, env }) {
     if (min <= off) onWay.push(Object.assign({}, st, { offKm: Math.round(min * 2 * 10) / 10 }));
   }
 
+  const avgPrice = onWay.length
+    ? Math.round(onWay.reduce((s, x) => s + x.price, 0) / onWay.length * 1000) / 1000 : null;
   onWay.sort((a, b) => a.price - b.price);
   const stations = onWay.slice(0, 3);
+
+  // Echte Umweg-Minuten für die 3 Treffer: Fahrzeit from→Tankstelle→to minus
+  // Direktfahrzeit (ein OSRM-Aufruf je Tankstelle). Fällt auf null zurück.
+  await Promise.all(stations.map(async s => {
+    try {
+      const u = `${OSRM}/${from.lng},${from.lat};${s.lng},${s.lat};${to.lng},${to.lat}?overview=false`;
+      const r = await fetch(u, { headers: { "User-Agent": UA, "Accept": "application/json" } });
+      const rt = ((await r.json()).routes || [])[0];
+      if (rt) s.detourMin = Math.max(0, Math.round(rt.duration / 60 - durationMin));
+    } catch (_) { /* Umweg-Zeit optional */ }
+  }));
 
   // Geometrie für die Karte verschlanken (~300 Punkte reichen).
   const gstep = Math.max(1, Math.floor(coords.length / 300));
@@ -92,6 +105,7 @@ export async function onRequestGet({ request, env }) {
     to: { lat: to.lat, lng: to.lng, label: to.label || toQ },
     route: { distanceKm: Math.round(distanceKm * 10) / 10, durationMin, geometry },
     fuel, fuelLabel: FUELS[fuel], off,
+    avgPrice,
     stations,
     checked: byId.size,
     stand: new Date().toISOString(),

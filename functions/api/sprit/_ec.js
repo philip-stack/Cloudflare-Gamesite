@@ -11,16 +11,38 @@
 const BASE = "https://api.e-control.at/sprit/1.0/search/gas-stations/by-address";
 const UA = "SpieleabendTanken/1.0 (+https://philip-stack.pages.dev/tanken/; privat)";
 
-export const FUELS = { DIE: "Diesel", SUP: "Super 95" };
-export const normFuel = f => (f === "SUP" ? "SUP" : "DIE");   // Default Diesel
+export const FUELS = { DIE: "Diesel", SUP: "Super 95", GAS: "CNG" };
+export const normFuel = f => (f === "SUP" || f === "GAS") ? f : "DIE";   // Default Diesel
 
-// Rohantwort → schlanke, einheitliche Tankstellen-Objekte.
+// Aktueller Wochentag (E-Control-Code) + Minuten seit Mitternacht in AT-Zeit.
+function viennaNow() {
+  const now = new Date();
+  const wd = new Intl.DateTimeFormat("en-US", { timeZone: "Europe/Vienna", weekday: "short" }).format(now);
+  const hm = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Vienna", hour: "2-digit", minute: "2-digit", hour12: false }).format(now);
+  const map = { Mon: "MO", Tue: "DI", Wed: "MI", Thu: "DO", Fri: "FR", Sat: "SA", Sun: "SO" };
+  return { day: map[wd] || "", mins: (+hm.slice(0, 2)) * 60 + (+hm.slice(3, 5)) };
+}
+const toMin = t => { const m = /^(\d{2}):(\d{2})/.exec(String(t || "")); return m ? +m[1] * 60 + +m[2] : null; };
+
+// Rohantwort → schlanke, einheitliche Tankstellen-Objekte (inkl. „offen bis").
 function slim(list, fuel) {
+  const tn = viennaNow();
   const out = [];
   for (const s of (Array.isArray(list) ? list : [])) {
     const pr = (s.prices || []).find(p => p.fuelType === fuel);
     if (!pr || typeof pr.amount !== "number") continue;
     const loc = s.location || {};
+    // Heutige Öffnungszeit → „offen bis" bzw. offen-jetzt aus den Zeiten.
+    const today = (s.openingHours || []).find(o => o.day === tn.day);
+    let till = null, openNow = s.open !== false;
+    if (today && today.from !== today.to) {
+      const f = toMin(today.from), t = toMin(today.to);
+      if (f != null && t != null) {
+        const within = t > f ? (tn.mins >= f && tn.mins < t) : (tn.mins >= f || tn.mins < t);
+        openNow = within;
+        if (within && today.to && today.to !== "00:00") till = today.to;
+      }
+    }
     out.push({
       id: s.id,
       name: s.name || "Tankstelle",
@@ -29,7 +51,8 @@ function slim(list, fuel) {
       city: loc.city || "",
       lat: loc.latitude, lng: loc.longitude,
       price: pr.amount,
-      open: s.open !== false,
+      open: openNow,
+      till,
       dist: typeof s.distance === "number" ? s.distance : null,
     });
   }

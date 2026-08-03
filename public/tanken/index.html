@@ -25,7 +25,7 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="Sprit-Radar" />
   <link rel="stylesheet" href="vendor/leaflet.css" />
-  <link rel="stylesheet" href="style.css?v=2" />
+  <link rel="stylesheet" href="style.css?v=3" />
 </head>
 <body>
   <div id="app">
@@ -49,7 +49,19 @@
       <div class="fuels" role="tablist" aria-label="Treibstoff">
         <button class="fuel on" data-fuel="DIE" role="tab" aria-selected="true">Diesel</button>
         <button class="fuel" data-fuel="SUP" role="tab" aria-selected="false">Super 95</button>
+        <button class="fuel" data-fuel="GAS" role="tab" aria-selected="false">CNG</button>
       </div>
+
+      <details class="opts" id="opts">
+        <summary>⚙︎ Optionen</summary>
+        <div class="opt-grid">
+          <label>Tankfüllung <input id="opt-liters" type="number" min="1" max="200" step="1" inputmode="numeric" /> L</label>
+          <label>Umkreis-Radius
+            <select id="opt-radius"><option value="0">alle</option><option value="5">5 km</option><option value="10">10 km</option><option value="20">20 km</option></select></label>
+          <label>Sortierung
+            <select id="opt-sort"><option value="price">Preis</option><option value="dist">Entfernung</option></select></label>
+        </div>
+      </details>
 
       <!-- Modus 1: Umkreis / Ortssuche -->
       <div id="panel-near" class="panel">
@@ -60,6 +72,7 @@
           <input id="near-q" type="search" placeholder="…oder Ort / Adresse suchen" autocomplete="off" />
           <button id="near-go" class="btn-ghost">Suchen</button>
         </div>
+        <div class="quick" id="q-near"></div>
       </div>
 
       <!-- Modus 2: Route -->
@@ -72,9 +85,11 @@
           <button id="rt-from-loc" class="btn-ghost small" title="Start = mein Standort">📍 Start</button>
           <button id="rt-go" class="btn-primary">Günstigste am Weg</button>
         </div>
+        <div class="quick" id="q-route"></div>
       </div>
     </section>
 
+    <div id="tip" class="tip" hidden></div>
     <div id="msg" class="msg" hidden></div>
     <main id="results" class="results" aria-live="polite"></main>
     <div id="map"></div>
@@ -86,7 +101,7 @@
   </div>
 
   <script src="vendor/leaflet.js"></script>
-  <script src="app.js?v=5"></script>
+  <script src="app.js?v=6"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
