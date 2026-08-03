@@ -28,6 +28,14 @@ let pingT = null, intentional = false, wantStartName = "", reTries = 0, reTimer 
 // Zeichnen
 let drawing = false, curColor = "#111827", curW = 6, curStroke = null, firstFlush = false, lastSentIdx = 0;
 
+// Pro-Tab stabile Spieler-ID: übersteht Reload/Hintergrund (Reconnect behält
+// dieselbe Identität), zwei Tabs = zwei Spieler. Nicht geräteweit (deviceId),
+// damit man zum Testen zwei Fenster nebeneinander offen haben kann.
+const TAB_UID = (() => {
+  try { let u = sessionStorage.getItem("kritzeln_uid"); if (!u) { const a = new Uint8Array(12); crypto.getRandomValues(a); u = [...a].map(b => b.toString(16).padStart(2, "0")).join(""); sessionStorage.setItem("kritzeln_uid", u); } return u; }
+  catch { return "t" + Math.floor(performance.now()).toString(36); }
+})();
+
 const wsUrl = c => (location.protocol === "https:" ? "wss" : "ws") + "://" + location.host + "/api/kritzeln-live?code=" + encodeURIComponent(c);
 const CODE_ABC = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 const randCode = () => { const a = new Uint8Array(4); crypto.getRandomValues(a); return [...a].map(b => CODE_ABC[b % CODE_ABC.length]).join(""); };
@@ -38,7 +46,7 @@ function connect(c, isRe) {
   if (!isRe) { intentional = false; reTries = 0; }
   if (reTimer) { clearTimeout(reTimer); reTimer = null; }
   try { ws = new WebSocket(wsUrl(code)); } catch { return tryReconnect(); }
-  ws.onopen = () => { reTries = 0; send({ t: "join", name: GS.getName() || "Spieler" }); if (pingT) clearInterval(pingT); pingT = setInterval(() => send({ t: "ping" }), 20000); };
+  ws.onopen = () => { reTries = 0; send({ t: "join", name: GS.getName() || "Spieler", uid: TAB_UID }); if (pingT) clearInterval(pingT); pingT = setInterval(() => send({ t: "ping" }), 20000); };
   ws.onmessage = e => { let m; try { m = JSON.parse(e.data); } catch { return; } onMsg(m); };
   ws.onclose = () => { if (pingT) { clearInterval(pingT); pingT = null; } if (intentional) return; tryReconnect(); };
   ws.onerror = () => {};

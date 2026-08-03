@@ -251,7 +251,25 @@ export class DrawRoom extends DurableObject {
     const p = this.conns.get(ws); if (!p) return;
     let m; try { m = JSON.parse(data); } catch (_) { return; }
     switch (m.t) {
-      case "join": p.name = (String(m.name || "").trim().slice(0, 14)) || "Spieler"; this.sendLobby(); break;
+      case "join": {
+        p.name = (String(m.name || "").trim().slice(0, 14)) || "Spieler";
+        if (m.uid) {
+          p.uid = String(m.uid).slice(0, 40);
+          // Reconnect-Dedup: bestehende Verbindung mit gleicher Geräte-ID
+          // übernehmen (Identität/Punkte behalten), alte Verbindung schließen.
+          for (const [ws2, q] of this.conns) {
+            if (ws2 !== ws && q.uid === p.uid) {
+              p.id = q.id; p.score = q.score; p.guessed = q.guessed;
+              if (this.hostId === q.id) this.hostId = p.id;
+              this.conns.delete(ws2); try { ws2.close(); } catch (_) {}
+            }
+          }
+          try { ws.send(JSON.stringify({ t: "welcome", id: p.id })); } catch (_) {}
+        }
+        this.sendLobby();
+        this.sendCurrentTurn(ws, p);   // falls ein Zug läuft: direkt mitnehmen
+        break;
+      }
       case "start": if (p.id === this.hostId && (this.state === "lobby" || this.state === "over") && this.conns.size >= 2) this.startGame(); break;
       case "again": if (p.id === this.hostId && this.state === "over") { this.state = "lobby"; for (const q of this.conns.values()) q.score = 0; this.sendLobby(); } break;
       case "choose": if (this.state === "choosing" && p.id === this.drawerId && this.choices && this.choices.includes(m.word)) this.beginDrawing(m.word); break;
@@ -295,6 +313,22 @@ export class DrawRoom extends DurableObject {
     this.bc({ t: "clear" });
     this.sendLobby();
     this.timers.push(setTimeout(() => { if (this.state === "choosing") this.beginDrawing(this.choices[0]); }, D_CHOOSE * 1000));
+  }
+
+  // (Re-)Beitretenden den laufenden Zug schicken, damit sie sofort mitmachen können.
+  sendCurrentTurn(ws, p) {
+    const ids = this.order.filter(id => this.pget(id));
+    const round = Math.floor(this.turnIdx / Math.max(1, ids.length)) + 1;
+    try {
+      if (this.state === "choosing") {
+        ws.send(JSON.stringify({ t: "turn", phase: "choose", drawerId: this.drawerId, round, rounds: this.rounds }));
+        if (p.id === this.drawerId && this.choices) ws.send(JSON.stringify({ t: "choices", words: this.choices }));
+      } else if (this.state === "drawing") {
+        const time = Math.max(1, Math.round((this.turnEndsAt - Date.now()) / 1000));
+        ws.send(JSON.stringify({ t: "turn", phase: "draw", drawerId: this.drawerId, round, rounds: this.rounds, time, pattern: this.pattern() }));
+        if (p.id === this.drawerId) ws.send(JSON.stringify({ t: "word", word: this.word }));
+      }
+    } catch (_) {}
   }
 
   pickWords(n) { const out = [], used = new Set(); while (out.length < n) { const w = D_WORDS[Math.floor(Math.random() * D_WORDS.length)]; if (!used.has(w)) { used.add(w); out.push(w); } } return out; }
