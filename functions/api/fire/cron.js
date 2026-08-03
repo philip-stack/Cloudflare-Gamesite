@@ -119,7 +119,7 @@ export async function onRequestGet({ request, env }) {
       await env.DB.prepare("INSERT OR IGNORE INTO fire_seen (n) VALUES (?)").bind(n).run();
     }
     await env.DB.prepare("DELETE FROM fire_seen WHERE at < datetime('now','-2 days')").run();
-    await env.DB.prepare("DELETE FROM push_queue WHERE at < datetime('now','-1 day')").run();
+    await env.DB.prepare("DELETE FROM push_queue WHERE created_at < datetime('now','-1 day')").run();
   } catch (e) { await logError(env, "fire-cron: seen-mark " + e.message, "fire/cron"); }
 
   // ---- Historie schreiben (inkl. Wehren) ----
