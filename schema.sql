@@ -56,6 +56,18 @@ CREATE TABLE IF NOT EXISTS scores (
 
 CREATE INDEX IF NOT EXISTS idx_scores_game_score ON scores(game, score);
 CREATE INDEX IF NOT EXISTS idx_scores_device ON scores(device, created_at);
+-- Ausdrucks-Indizes fuer die case-insensitiven Namensabfragen
+-- (Bestenliste GROUP BY LOWER(name); Namensschutz WHERE LOWER(name)=...).
+CREATE INDEX IF NOT EXISTS idx_scores_game_lname ON scores(game, lower(name));
+CREATE INDEX IF NOT EXISTS idx_scores_lname ON scores(lower(name));
+
+-- Verbrauchte Lauf-Token (Replay-Schutz der Bestenlisten-API).
+-- jti = das ausgestellte Token; PRIMARY KEY macht Wiederverwendung unmoeglich.
+-- Token sind ohnehin nach 6 h ungueltig, alte Zeilen werden gelegentlich geloescht.
+CREATE TABLE IF NOT EXISTS used_token (
+  jti TEXT PRIMARY KEY,
+  at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
 
 -- Cloud-Backup der Spielstände (plattformweit, Details: functions/api/cloud.js)
 CREATE TABLE IF NOT EXISTS cloud_saves (

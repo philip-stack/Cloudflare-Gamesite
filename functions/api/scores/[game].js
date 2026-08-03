@@ -1,4 +1,4 @@
-import { json } from "../_util.js";
+import { json, rateLimit, clientIp } from "../_util.js";
 import { sendToName } from "../push.js";
 
 // Anzeigenamen für Push-Texte
@@ -24,6 +24,11 @@ const GAME_LABEL = {
 //    ausgestelltes, HMAC-signiertes Token mitschicken. Das bindet die
 //    Einsendung an einen echten Seitenaufruf und einen Zeitpunkt —
 //    blindes Absenden per Skript wird so deutlich erschwert.
+//  - Lauf-Token ist EINMAL gültig: ein bereits verbrauchtes Token wird
+//    abgelehnt (Replay-Schutz über die Tabelle used_token).
+//  - IP-Rate-Limit: Ausstellung UND Einsendung sind pro Client-IP
+//    gedrosselt. Die Geräte-Kennung ist client-seitig fälschbar, die
+//    Cloudflare-IP nicht — deshalb zusätzlich zur Geräte-Drosselung.
 // ====================================================================
 
 const GAMES = {
@@ -128,6 +133,23 @@ async function verifyToken(env, game, device, token) {
   return diff === 0;
 }
 
+// Verbraucht ein (bereits signaturgeprüftes) Token EINMALIG: liefert true,
+// wenn es frisch war, false bei Wiederverwendung (Replay). INSERT OR IGNORE
+// scheitert lautlos beim zweiten Mal (PRIMARY KEY) → changes === 0.
+// Fehlertolerant: bei DB-Problemen wird echten Spielern NIE der Score verwehrt.
+async function consumeToken(env, token) {
+  try {
+    const res = await env.DB.prepare("INSERT OR IGNORE INTO used_token (jti) VALUES (?)")
+      .bind(String(token)).run();
+    const changes = res && res.meta ? res.meta.changes : (res && res.changes);
+    // gelegentlich alte (ohnehin abgelaufene) Token wegräumen — kleine Tabelle halten
+    if (Math.random() < 0.03) {
+      await env.DB.prepare("DELETE FROM used_token WHERE at < datetime('now','-7 hours')").run();
+    }
+    return changes !== 0;
+  } catch { return true; }
+}
+
 function topQuery(mode) {
   return `SELECT name, MAX(score) AS score FROM scores WHERE game = ?${modeCond(mode)} GROUP BY LOWER(name) ORDER BY score DESC LIMIT 50`;
 }
@@ -142,6 +164,10 @@ export async function onRequestGet({ request, env, params }) {
   if (url.searchParams.get("token") === "1") {
     const device = String(url.searchParams.get("device") || "").trim();
     if (!/^[A-Za-z0-9_-]{8,40}$/.test(device)) return json({ error: "Ungültiges Gerät" }, 400);
+    // Pro IP höchstens 40 Token/Minute — bremst massenhaftes Skript-Ausstellen.
+    if (!(await rateLimit(env, `tok:${clientIp(request)}`, 40, 60))) {
+      return json({ error: "Zu viele Anfragen — kurz warten" }, 429);
+    }
     return json({ token: await issueToken(env, game, device, Date.now()) });
   }
 
@@ -194,8 +220,18 @@ export async function onRequestPost(context) {
     return json({ error: "Ungültiges Gerät" }, 400);
   }
 
+  // IP-Rate-Limit: höchstens 20 Einsendungen/Minute pro Client-IP (die
+  // Geräte-Kennung ist fälschbar, die Cloudflare-IP nicht).
+  if (!(await rateLimit(env, `post:${clientIp(request)}`, 20, 60))) {
+    return json({ error: "Zu viele Einsendungen — kurz warten" }, 429);
+  }
+
   // Lauf-Token prüfen (signierter Seed, kurz vorher ausgestellt)
   if (!(await verifyToken(env, game, device, b.token))) {
+    return json({ error: "Sitzung abgelaufen — lade das Spiel neu" }, 403);
+  }
+  // …und nur EINMAL gültig (Replay-Schutz).
+  if (!(await consumeToken(env, b.token))) {
     return json({ error: "Sitzung abgelaufen — lade das Spiel neu" }, 403);
   }
 
