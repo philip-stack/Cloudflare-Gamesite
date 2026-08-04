@@ -378,7 +378,6 @@ function buildVignette() {
   g.fillRect(0, 0, W, H);
 }
 
-function getName() { return (localStorage.getItem("bb_name") || "").trim(); }
 let best = Number(localStorage.getItem("ss_best") || 0);
 
 // ---------- Zustand ----------
@@ -1118,7 +1117,8 @@ requestAnimationFrame(frame);
 // ---------- Sound ----------
 const sound = (() => {
   let ctxA = null, noiseBuf = null;
-  let muted = localStorage.getItem("ss_muted") === "1";
+  // Einmalige Migration des alten spieleigenen Mute-Zustands in den globalen Schalter
+  try { const _m = localStorage.getItem("ss_muted"); if (_m !== null) { if (_m === "1" && GS.sound.on()) GS.sound.toggle(); localStorage.removeItem("ss_muted"); } } catch {}
   function ensure() {
     if (!ctxA) {
       try {
@@ -1131,7 +1131,7 @@ const sound = (() => {
     return ctxA;
   }
   function tone(f0, f1, dur, type = "square", gain = 0.06, when = 0) {
-    if (muted || !ensure()) return;
+    if (!GS.sound.on() || !ensure()) return;
     const t = ctxA.currentTime + when;
     const o = ctxA.createOscillator();
     const g = ctxA.createGain();
@@ -1145,7 +1145,7 @@ const sound = (() => {
     o.stop(t + dur + 0.02);
   }
   function noise(dur, gain = 0.12, freq = 800) {
-    if (muted || !ensure()) return;
+    if (!GS.sound.on() || !ensure()) return;
     const t = ctxA.currentTime;
     const src = ctxA.createBufferSource();
     src.buffer = noiseBuf;
@@ -1171,8 +1171,7 @@ const sound = (() => {
     alarm() { tone(520, 380, 0.3, "square", 0.05); tone(520, 380, 0.3, "square", 0.05, 0.4); },
     dead() { noise(0.9, 0.2, 400); tone(200, 40, 0.9, "sawtooth", 0.1); },
     fanfare() { [523, 659, 784, 1047].forEach((f, i) => tone(f, f, 0.22, "sine", 0.1, i * 0.09)); },
-    toggle() { muted = !muted; localStorage.setItem("ss_muted", muted ? "1" : "0"); return muted; },
-    get muted() { return muted; },
+    toggle() { return !GS.sound.toggle(); },
   };
 })();
 
@@ -1269,7 +1268,7 @@ function showLeaderboard() {
 // ---------- UI ----------
 $("#btn-top").onclick = () => showLeaderboard();
 const soundBtn = $("#btn-sound");
-soundBtn.textContent = sound.muted ? "🔇" : "🔊";
+soundBtn.textContent = !GS.sound.on() ? "🔇" : "🔊";
 soundBtn.onclick = () => { soundBtn.textContent = sound.toggle() ? "🔇" : "🔊"; };
 
 // ---------- Start ----------

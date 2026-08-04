@@ -1,4 +1,4 @@
-import { json, makeCode, clientIp, rateLimit, broadcastParty } from "./_util.js";
+import { json, makeCode, clientIp, rateLimit, broadcastParty, DEVICE_RE } from "./_util.js";
 
 // ====================================================================
 // Spieleabend-Raum ("Party"): mehrere Freunde spielen dieselben Spiele
@@ -14,7 +14,7 @@ import { json, makeCode, clientIp, rateLimit, broadcastParty } from "./_util.js"
 
 const ALLOWED = ["funkelfeld", "komet", "sternensturm", "galopp", "wumms", "meeri"];
 const CODE_RE = /^[A-Z0-9]{6}$/;
-const DEV_RE = /^[A-Za-z0-9_-]{8,40}$/;
+const DEV_RE = DEVICE_RE;   // gemeinsame Definition aus _util.js
 const MAX_SCORE = 2_000_000_000;
 const PTS = [10, 7, 5, 3, 2];               // Rang 1..5, danach 1 Punkt
 const REACTIONS = ["👏", "🔥", "😂", "😮", "🎉", "💪", "🍀", "😭"];
@@ -24,10 +24,14 @@ const cleanName = n => String(n || "").trim().slice(0, 16);
 // dass jemand mit dem Raum-Code unter fremdem Namen einreicht.
 // → true = Name gehört dir (oder ist frei), false = gehört anderem Gerät.
 async function ownName(env, code, name, device) {
-  const row = await env.DB.prepare("SELECT device FROM party_member WHERE code = ? AND name = ?").bind(code, name).first();
+  // Namensvergleich case-insensitiv (wie überall sonst auf der Plattform):
+  // "Tom" und "tom" gelten im Raum als dieselbe Person. Der case-insensitive
+  // SELECT verhindert zugleich, dass eine Groß-/Kleinschreib-Variante als neue
+  // Zeile eingefügt wird (der INSERT unten wird dann nicht erreicht).
+  const row = await env.DB.prepare("SELECT device FROM party_member WHERE code = ? AND LOWER(name) = LOWER(?)").bind(code, name).first();
   if (row) {
     if (row.device && device && row.device !== device) return false;
-    if (!row.device && device) await env.DB.prepare("UPDATE party_member SET device = ? WHERE code = ? AND name = ?").bind(device, code, name).run();
+    if (!row.device && device) await env.DB.prepare("UPDATE party_member SET device = ? WHERE code = ? AND LOWER(name) = LOWER(?)").bind(device, code, name).run();
     return true;
   }
   await env.DB.prepare("INSERT OR IGNORE INTO party_member (code, name, device) VALUES (?, ?, ?)").bind(code, name, device || null).run();

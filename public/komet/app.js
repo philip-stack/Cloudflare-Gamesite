@@ -62,8 +62,6 @@ let deathAt = 0;
 
 $("#hud-best").textContent = best;
 
-function getName() { return (localStorage.getItem("bb_name") || "").trim(); }
-
 // ---------- Weltgenerierung ----------
 function difficulty() { return Math.min(1, meters() / 300); } // 0 → 1 über 300 m
 function meters() { return Math.max(0, Math.round((pos.x - startX) / PX_PER_M)); }
@@ -419,13 +417,14 @@ document.addEventListener("visibilitychange", () => {
 // ---------- Sound ----------
 const sound = (() => {
   let ctxA = null;
-  let muted = localStorage.getItem("km_muted") === "1";
+  // Einmalige Migration des alten spieleigenen Mute-Zustands in den globalen Schalter
+  try { const _m = localStorage.getItem("km_muted"); if (_m !== null) { if (_m === "1" && GS.sound.on()) GS.sound.toggle(); localStorage.removeItem("km_muted"); } } catch {}
   function ensure() {
     if (!ctxA) try { ctxA = new (window.AudioContext || window.webkitAudioContext)(); } catch {}
     return ctxA;
   }
   function tone(freq, dur, type = "sine", gain = 0.1, when = 0) {
-    if (muted || !ensure()) return;
+    if (!GS.sound.on() || !ensure()) return;
     const t = ctxA.currentTime + when;
     const o = ctxA.createOscillator();
     const g = ctxA.createGain();
@@ -443,8 +442,7 @@ const sound = (() => {
     spark(i) { tone(880 + i * 110, 0.1, "sine", 0.09); },
     dead() { tone(196, 0.35, "sawtooth", 0.07); tone(147, 0.45, "sawtooth", 0.07, 0.13); },
     fanfare() { [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.22, "sine", 0.12, i * 0.09)); },
-    toggle() { muted = !muted; localStorage.setItem("km_muted", muted ? "1" : "0"); return muted; },
-    get muted() { return muted; },
+    toggle() { return !GS.sound.toggle(); },
   };
 })();
 
@@ -524,7 +522,7 @@ function showStart() {
         <b>Loslassen</b> = du fliegst.<br>
         Sammle <b>✦ Funken</b>, stürze nicht ab — wie weit kommst du?</p>
       <button class="btn-primary" id="st-go">🚀 Abflug!</button>
-      ${getName() ? "" : `<p class="sub" style="margin-top:8px">Tipp: Nach dem ersten Flug fragen wir einmal nach deinem Namen für die Bestenliste.</p>`}
+      ${GS.getName() ? "" : `<p class="sub" style="margin-top:8px">Tipp: Nach dem ersten Flug fragen wir einmal nach deinem Namen für die Bestenliste.</p>`}
     </div>`;
   document.body.appendChild(overlay);
   overlay.querySelector("#st-go").onclick = () => { overlay.remove(); startRun(); };
@@ -533,7 +531,7 @@ function showStart() {
 // ---------- UI ----------
 $("#btn-top").onclick = () => showLeaderboard();
 const soundBtn = $("#btn-sound");
-soundBtn.textContent = sound.muted ? "🔇" : "🔊";
+soundBtn.textContent = !GS.sound.on() ? "🔇" : "🔊";
 soundBtn.onclick = () => { soundBtn.textContent = sound.toggle() ? "🔇" : "🔊"; };
 
 GS.markPlayed("komet");

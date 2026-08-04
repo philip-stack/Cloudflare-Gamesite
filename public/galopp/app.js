@@ -532,7 +532,6 @@ const BASE_SPEED = 4.6, MAX_SPEED = 9.5;
 const JUMP_V = 560, GRAV = 1400;
 const SLIDE_DUR = 0.65;
 
-function getName() { return (localStorage.getItem("bb_name") || "").trim(); }
 let best = Number(localStorage.getItem("galopp_best") || 0);
 
 function newRun() {
@@ -1857,7 +1856,8 @@ function drawUnicorn(now) {
 // ==================== Sound (WebAudio, synthetisiert) ====================
 const sound = (() => {
   let ctxA = null;
-  let muted = localStorage.getItem("galopp_muted") === "1";
+  // Einmalige Migration des alten spieleigenen Mute-Zustands in den globalen Schalter
+  try { const _m = localStorage.getItem("galopp_muted"); if (_m !== null) { if (_m === "1" && GS.sound.on()) GS.sound.toggle(); localStorage.removeItem("galopp_muted"); } } catch {}
   function ac() {
     if (!ctxA) {
       try {
@@ -1868,7 +1868,7 @@ const sound = (() => {
     return ctxA;
   }
   function tone(f0, f1, dur, type = "sine", vol = 0.08, delay = 0) {
-    if (muted) return;
+    if (!GS.sound.on()) return;
     const a = ac(); if (!a) return;
     const t0 = a.currentTime + delay;
     const osc = a.createOscillator();
@@ -1905,8 +1905,7 @@ const sound = (() => {
       [440, 349, 262].forEach((f, i) => tone(f, f * 0.95, 0.3, "triangle", 0.08, 0.15 + i * 0.18));
     },
     fanfare() { [523, 659, 784, 1047].forEach((f, i) => tone(f, f, 0.22, "sine", 0.1, i * 0.09)); },
-    toggle() { muted = !muted; localStorage.setItem("galopp_muted", muted ? "1" : "0"); return muted; },
-    get muted() { return muted; },
+    toggle() { return !GS.sound.toggle(); },
   };
 })();
 
@@ -2027,7 +2026,7 @@ function showLeaderboard() {
 // ==================== UI ====================
 $("#btn-top").onclick = () => showLeaderboard();
 const soundBtn = $("#btn-sound");
-soundBtn.textContent = sound.muted ? "🔇" : "🔊";
+soundBtn.textContent = !GS.sound.on() ? "🔇" : "🔊";
 soundBtn.onclick = () => { soundBtn.textContent = sound.toggle() ? "🔇" : "🔊"; };
 $("#btn-pause").onclick = () => togglePause();
 
