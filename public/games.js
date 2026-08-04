@@ -64,7 +64,7 @@
     },
     {
       key: "kritzeln", name: "Kritzeln & Raten", icon: "🎨", href: "/kritzeln/",
-      desc: "Echtzeit-Multiplayer (2–8) — einer malt, die anderen raten live; Raum per Code teilen, Runden, Punkte und Sieger:in des Abends",
+      desc: "Echtzeit-Multiplayer (2–10) — einer malt, die anderen raten live; Kategorien, Fülleimer/Radierer/Undo, Speed-Punkte, Runden und Sieger:in des Abends",
       bestKey: null, scored: false, gsBadges: false, daily: false, weekly: false,
     },
     // Neon-Tron (/tron/) bleibt als Route bestehen, ist aber bewusst NICHT mehr
