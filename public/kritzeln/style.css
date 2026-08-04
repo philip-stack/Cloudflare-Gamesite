@@ -50,7 +50,9 @@ button:active { transform: scale(0.95); }
 .sizes i { width: 26px; height: 26px; border-radius: 8px; background: var(--card); display: grid; place-items: center; cursor: pointer; box-shadow: 0 0 0 1px var(--edge-soft) inset; }
 .sizes i.sel { box-shadow: 0 0 0 2px var(--accent) inset; }
 .sizes i b { display: block; border-radius: 50%; background: var(--ink); }
+.actions { display: flex; gap: 5px; }
 .tool-btn { width: 40px; height: 34px; border-radius: 10px; background: var(--card); color: var(--ink); box-shadow: 0 0 0 1px var(--edge-soft) inset; font-size: 1rem; }
+.tool-btn.on { box-shadow: 0 0 0 2px var(--accent) inset; color: var(--accent); }
 
 .chat { flex: 1; min-height: 40px; overflow-y: auto; display: flex; flex-direction: column; gap: 3px; padding: 6px 4px; font-size: 0.86rem; }
 .chat .c { line-height: 1.35; }
@@ -88,6 +90,26 @@ button:active { transform: scale(0.95); }
 .plist li.win { box-shadow: 0 0 0 1px var(--gold) inset; } .plist li.win .psc { color: var(--gold); }
 .msg { color: var(--muted); font-size: 0.86rem; min-height: 1.2em; margin-bottom: 8px; } .msg.err { color: var(--bad); }
 .wordpick { display: flex; flex-direction: column; gap: 10px; margin: 6px 0 4px; }
+
+/* Warteraum: Kategorien/Runden-Einstellungen */
+.lobby-set { text-align: left; margin: 4px 0 14px; }
+.set-lbl { font-size: 0.8rem; font-weight: 700; color: var(--muted); margin: 10px 0 6px; }
+.set-lbl .hint { font-weight: 500; opacity: 0.75; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { background: var(--card); color: var(--ink); font-size: 0.82rem; font-weight: 600; padding: 7px 11px; border-radius: 999px; box-shadow: 0 0 0 1px var(--edge-soft) inset; }
+.chip.on { background: rgba(122,162,255,0.18); box-shadow: 0 0 0 1.5px var(--accent) inset; color: var(--accent); }
+
+/* Runden-Zusammenfassung */
+.reveal-word { font-family: var(--font-display); font-weight: 800; font-size: 2rem; color: var(--gold); margin: 2px 0 14px; letter-spacing: 0.02em; }
+.plist.tight { gap: 5px; margin: 6px 0 4px; }
+.plist.tight li { padding: 8px 12px; }
+.plist li.none { justify-content: center; color: var(--muted); font-style: italic; }
+
+/* Konfetti (nur Erfolg, sehr kurz) */
+.confetti { position: fixed; inset: 0; pointer-events: none; z-index: 70; overflow: hidden; }
+.confetti i { position: absolute; top: -12px; width: 9px; height: 14px; border-radius: 2px; opacity: 0.95; animation: confetti-fall 1.5s cubic-bezier(0.3,0.6,0.5,1) forwards; }
+@keyframes confetti-fall { 0% { transform: translateY(-10px) rotate(0deg); opacity: 1; } 100% { transform: translateY(105vh) rotate(540deg); opacity: 0.9; } }
+
 .hidden { display: none !important; }
 @media (prefers-reduced-motion: reduce) { *,*::before,*::after { animation-duration:.001s !important; transition-duration:.001s !important; } }
 :root[data-theme="light"] { --card: rgba(255,255,255,0.82); --card-hi: rgba(255,255,255,0.95); --edge: rgba(60,110,200,0.28); --edge-soft: rgba(30,45,65,0.14); --ink:#122031; --muted:#516281; }

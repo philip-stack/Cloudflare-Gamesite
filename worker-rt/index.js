@@ -192,7 +192,7 @@ export class TronRoom extends DurableObject {
 }
 
 // ====================================================================
-// DrawRoom — Echtzeit „Kritzeln & Raten" (skribbl-artig, 2–8 Spieler).
+// DrawRoom — Echtzeit „Kritzeln & Raten" (skribbl-artig, 2–10 Spieler).
 // Event-getrieben (kein Dauer-Loop): eine:r malt, die anderen raten im
 // Chat. Das DO ist Wahrheit für Wort, Punkte, Runden & Timer; Zeichen-
 // Striche werden nur an die Ratenden weitergereicht. Reguläre WebSockets.
@@ -204,7 +204,18 @@ export class TronRoom extends DurableObject {
 //            {t:close} {t:hint,pattern} {t:turnEnd,word,players} {t:over,players}
 //            {t:full} {t:pong}
 // ====================================================================
-const D_WORDS = "Haus,Baum,Sonne,Mond,Stern,Auto,Zug,Flugzeug,Schiff,Fahrrad,Hund,Katze,Maus,Pferd,Kuh,Schwein,Huhn,Fisch,Vogel,Schlange,Elefant,Löwe,Affe,Bär,Igel,Biene,Schmetterling,Spinne,Marienkäfer,Blume,Baumhaus,Apfel,Banane,Karotte,Marille,Erdäpfel,Palatschinke,Sackerl,Jause,Semmel,Brezel,Torte,Eis,Pizza,Burger,Kaffee,Milch,Ei,Käse,Wurst,Brille,Hut,Schuh,Socke,Hose,Jacke,Krone,Ring,Uhr,Schlüssel,Schere,Stift,Buch,Zeitung,Ballon,Geschenk,Kerze,Lampe,Sessel,Tisch,Bett,Tür,Fenster,Leiter,Hammer,Säge,Schaufel,Regenschirm,Koffer,Rucksack,Zelt,Berg,Wolke,Regenbogen,Blitz,Schneemann,Vulkan,Insel,Brücke,Turm,Kirche,Schloss,Windmühle,Rakete,Roboter,Gespenst,Hexe,Drache,Krokodil,Pinguin,Wal,Hai,Qualle,Krebs,Frosch,Schnecke,Eule,Fuchs,Wolf,Reh,Giraffe,Zebra,Kamel,Känguru,Fußball,Gitarre,Klavier,Trommel,Trompete,Herz,Anker,Stern,Sonnenblume,Kaktus,Pilz,Eichhörnchen".split(",");
+// Wörter nach Kategorie (AT-Vokabular, alle gut zeichenbar). Der Host wählt im
+// Warteraum eine oder mehrere Kategorien; ohne Auswahl kommen alle zum Zug.
+const D_CATS = {
+  tiere: "Hund,Katze,Maus,Pferd,Kuh,Schwein,Huhn,Fisch,Vogel,Schlange,Elefant,Löwe,Affe,Bär,Igel,Biene,Schmetterling,Spinne,Marienkäfer,Krokodil,Pinguin,Wal,Hai,Qualle,Krebs,Frosch,Schnecke,Eule,Fuchs,Wolf,Reh,Giraffe,Zebra,Kamel,Känguru,Eichhörnchen".split(","),
+  essen: "Apfel,Banane,Karotte,Erdäpfel,Palatschinke,Semmel,Brezel,Torte,Eis,Pizza,Burger,Kaffee,Milch,Ei,Käse,Wurst,Pilz,Kipferl,Paradeiser".split(","),
+  dinge: "Brille,Hut,Schuh,Socke,Hose,Jacke,Krone,Ring,Uhr,Schlüssel,Schere,Stift,Buch,Zeitung,Ballon,Geschenk,Kerze,Lampe,Sessel,Tisch,Bett,Tür,Fenster,Leiter,Hammer,Säge,Schaufel,Regenschirm,Koffer,Rucksack,Anker,Gitarre,Klavier,Trommel,Trompete,Fußball".split(","),
+  fahrzeuge: "Auto,Zug,Flugzeug,Schiff,Fahrrad,Rakete,Traktor,Bagger,Bus,Motorrad,Hubschrauber,Ballon".split(","),
+  natur: "Haus,Baum,Sonne,Mond,Stern,Blume,Berg,Wolke,Regenbogen,Blitz,Vulkan,Insel,Brücke,Turm,Kirche,Windmühle,Sonnenblume,Kaktus,Herz,Zelt,Pilz".split(","),
+  fantasie: "Schneemann,Roboter,Gespenst,Hexe,Drache,Schloss,Krone,Zauberer,Einhorn,Meerjungfrau,Ritter,Pirat,Krake,Alien,Zombie".split(","),
+  at: "Palatschinke,Erdäpfel,Marille,Sackerl,Semmel,Jause,Kipferl,Paradeiser,Karotte,Lederhose,Dirndl,Krampus,Christbaum,Heuriger,Fiaker,Gugelhupf".split(","),
+};
+const D_CAT_KEYS = Object.keys(D_CATS);
 const D_TURN = 75, D_CHOOSE = 15, D_REVEAL = 6;
 
 function d_norm(s) { return String(s || "").toLowerCase().trim().replace(/\s+/g, " ").replace(/[^a-z0-9äöüß ]/g, ""); }
@@ -221,13 +232,16 @@ export class DrawRoom extends DurableObject {
     this.conns = new Map(); this.state = "lobby"; this.hostId = null; this.nextId = 1;
     this.order = []; this.turnIdx = 0; this.rounds = 2; this.drawerId = null;
     this.word = ""; this.revealed = []; this.timers = []; this.turnEndsAt = 0;
+    this.cats = [];          // ausgewählte Kategorien (leer = alle)
+    this.turnGains = [];     // Punkte-Zuwachs des laufenden Zugs (für die Zusammenfassung)
+    this.turnHits = 0;       // Anzahl korrekter Rater:innen im laufenden Zug (Platz-Bonus)
   }
 
   async fetch(request) {
     if (request.headers.get("Upgrade") !== "websocket") return new Response("expected websocket", { status: 426 });
     const pair = new WebSocketPair(); const [client, server] = Object.values(pair);
     server.accept();
-    if (this.conns.size >= 8) { try { server.send(JSON.stringify({ t: "full" })); server.close(); } catch (_) {} return new Response(null, { status: 101, webSocket: client }); }
+    if (this.conns.size >= 10) { try { server.send(JSON.stringify({ t: "full" })); server.close(); } catch (_) {} return new Response(null, { status: 101, webSocket: client }); }
     const id = this.nextId++;
     const p = { id, name: "Spieler", score: 0, guessed: false, drawer: false };
     this.conns.set(server, p);
@@ -247,7 +261,7 @@ export class DrawRoom extends DurableObject {
   partKey(p) { return p.uid || ("id" + p.id); }
   syncPart(p) { if (!this.parts) this.parts = new Map(); this.parts.set(this.partKey(p), { name: p.name, score: p.score | 0 }); }
   scoreboard() { return [...this.conns.values()].map(p => ({ id: p.id, name: p.name, score: p.score, guessed: p.guessed, drawer: p.id === this.drawerId })).sort((a, b) => b.score - a.score); }
-  sendLobby() { this.bc({ t: "lobby", state: this.state, hostId: this.hostId, players: this.scoreboard() }); }
+  sendLobby() { this.bc({ t: "lobby", state: this.state, hostId: this.hostId, players: this.scoreboard(), cats: this.cats, rounds: this.rounds }); }
   clearTimers() { for (const t of this.timers) clearTimeout(t); this.timers = []; }
 
   onMsg(ws, data) {
@@ -275,8 +289,13 @@ export class DrawRoom extends DurableObject {
       }
       case "start": if (p.id === this.hostId && (this.state === "lobby" || this.state === "over") && this.conns.size >= 2) this.startGame(); break;
       case "again": if (p.id === this.hostId && this.state === "over") { this.state = "lobby"; for (const q of this.conns.values()) q.score = 0; this.sendLobby(); } break;
+      // Host stellt Kategorien / Rundenzahl im Warteraum ein.
+      case "cat": if (p.id === this.hostId && (this.state === "lobby" || this.state === "over")) { this.cats = Array.isArray(m.cats) ? m.cats.filter(c => D_CAT_KEYS.includes(c)) : []; this.sendLobby(); } break;
+      case "rounds": if (p.id === this.hostId && (this.state === "lobby" || this.state === "over")) { const n = m.n | 0; if (n >= 1 && n <= 5) { this.rounds = n; this.sendLobby(); } } break;
       case "choose": if (this.state === "choosing" && p.id === this.drawerId && this.choices && this.choices.includes(m.word)) this.beginDrawing(m.word); break;
-      case "stroke": if (this.state === "drawing" && p.id === this.drawerId) this.bc({ t: "draw", pts: m.pts, c: m.c, w: m.w }, p.id); break;
+      case "stroke": if (this.state === "drawing" && p.id === this.drawerId) this.bc({ t: "draw", pts: m.pts, c: m.c, w: m.w, s: m.s, e: m.e }, p.id); break;
+      case "fill": if (this.state === "drawing" && p.id === this.drawerId) this.bc({ t: "fill", x: m.x, y: m.y, c: m.c }, p.id); break;
+      case "undo": if (this.state === "drawing" && p.id === this.drawerId) this.bc({ t: "undo" }, p.id); break;
       case "clear": if (this.state === "drawing" && p.id === this.drawerId) this.bc({ t: "clear" }, p.id); break;
       case "guess": this.onGuess(p, String(m.text || "")); break;
       case "ping": try { ws.send('{"t":"pong"}'); } catch (_) {} break;
@@ -343,12 +362,22 @@ export class DrawRoom extends DurableObject {
     } catch (_) {}
   }
 
-  pickWords(n) { const out = [], used = new Set(); while (out.length < n) { const w = D_WORDS[Math.floor(Math.random() * D_WORDS.length)]; if (!used.has(w)) { used.add(w); out.push(w); } } return out; }
+  // Wörter aus den gewählten Kategorien (oder allen). Dupes über Kategorien
+  // hinweg werden entfernt; Fallback auf alle, falls die Auswahl leer wäre.
+  wordPool() {
+    const keys = (this.cats && this.cats.length) ? this.cats : D_CAT_KEYS;
+    const set = new Set();
+    for (const k of keys) for (const w of (D_CATS[k] || [])) set.add(w);
+    const pool = [...set];
+    return pool.length ? pool : D_CAT_KEYS.flatMap(k => D_CATS[k]);
+  }
+  pickWords(n) { const pool = this.wordPool(), out = [], used = new Set(); let guard = 0; while (out.length < n && guard++ < 200) { const w = pool[Math.floor(Math.random() * pool.length)]; if (!used.has(w)) { used.add(w); out.push(w); } } return out; }
   pattern() { const chars = [...this.word]; return chars.map((c, i) => c === " " ? " " : (this.revealed[i] ? c : "_")).join(""); }
 
   beginDrawing(word) {
     this.clearTimers();
     this.word = word; this.revealed = [...word].map(() => false);
+    this.turnGains = []; this.turnHits = 0; this.turnDrawerGain = 0;
     this.state = "drawing"; this.turnEndsAt = Date.now() + D_TURN * 1000;
     const ids = this.order.filter(id => this.pget(id));
     const round = Math.floor(this.turnIdx / Math.max(1, ids.length)) + 1;
@@ -374,15 +403,22 @@ export class DrawRoom extends DurableObject {
     if (this.state !== "drawing" || p.id === this.drawerId || p.guessed) { this.bc({ t: "chat", kind: "msg", name: p.name, text: text.slice(0, 80) }); return; }
     if (d_norm(text) === d_norm(this.word)) {
       p.guessed = true;
+      // Punkte: Zeit-Bonus (früher = mehr) + Platz-Bonus (1./2./3. Treffer).
       const remain = Math.max(0, this.turnEndsAt - Date.now()) / 1000;
-      const gain = 50 + Math.round((remain / D_TURN) * 100);
+      const place = this.turnHits++;                 // 0 = erste:r
+      const placeBonus = [30, 20, 10][place] || 0;
+      const gain = 50 + Math.round((remain / D_TURN) * 100) + placeBonus;
       p.score += gain;
-      const drawer = this.pget(this.drawerId); if (drawer) drawer.score += 25;
+      // Zeichner:in bekommt pro Errater:in Punkte (skaliert leicht mit Tempo).
+      const drawer = this.pget(this.drawerId);
+      const dGain = 20 + Math.round((remain / D_TURN) * 15);
+      if (drawer) { drawer.score += dGain; this.turnDrawerGain += dGain; }
       this.syncPart(p); if (drawer) this.syncPart(drawer);
-      this.bc({ t: "guessed", id: p.id, name: p.name });
+      this.turnGains.push({ id: p.id, name: p.name, gain, place: place + 1 });
+      this.bc({ t: "guessed", id: p.id, name: p.name, place: place + 1, gain });
       this.sendLobby();
       const guessers = [...this.conns.values()].filter(q => q.id !== this.drawerId);
-      if (guessers.every(q => q.guessed)) this.endTurn();
+      if (guessers.length && guessers.every(q => q.guessed)) this.endTurn();
       return;
     }
     // Falsch: als Chat zeigen; nah dran → privater Hinweis
@@ -394,7 +430,8 @@ export class DrawRoom extends DurableObject {
     this.clearTimers();
     if (this.state === "over" || this.state === "lobby") return;
     this.state = "reveal";
-    this.bc({ t: "turnEnd", word: this.word, players: this.scoreboard() });
+    const drawer = this.pget(this.drawerId);
+    this.bc({ t: "turnEnd", word: this.word, players: this.scoreboard(), gains: this.turnGains, drawerId: this.drawerId, drawerName: drawer ? drawer.name : null, drawerGain: this.turnDrawerGain || 0 });
     this.timers.push(setTimeout(() => { this.turnIdx++; this.beginTurn(); }, D_REVEAL * 1000));
   }
 
