@@ -122,13 +122,40 @@ schaltet teure Dauer-Effekte ab und drosselt die Bildrate für schwächere Gerä
   Fire-Cron, Konfig in `app_config`). Zugriff nur mit dem Pages-Secret `ADMIN_TOKEN`
   (selbst erzeugt, gratis, kein externer Dienst); ohne Schlüssel `401`.
 - **Automatische Tests** (`tests/`, per GitHub Actions bei jedem Push):
-  Syntaxprüfung aller JS-Dateien, ein **statischer Qualitäts-/A11y-Check** aller
-  HTML-Seiten (keine externen Ressourcen, alt-Texte, lang/viewport), Tests für
-  QR-Encoder, Scores-, Cloud- und Party-API (mit gemocktem D1), ein
-  **Flow-/E2E-Test** des geteilten Würfelpoker-Pfades (anlegen → laden →
-  eintragen → volle Runde) sowie WUMMS!- und MEERI-Logik. Zusätzlich ein
-  **Lighthouse-Budget** (`lighthouserc.json`) als eigener, nicht-blockierender
-  Workflow für Performance, Barrierefreiheit, Best Practices & SEO.
+  Syntaxprüfung aller JS-Dateien (jetzt auch `worker-rt/` mit den Durable
+  Objects), ein **statischer Qualitäts-/A11y-Check** aller HTML-Seiten (keine
+  externen Ressourcen, alt-Texte, lang/viewport), Tests für QR-Encoder, Scores-,
+  Cloud- und Party-API (mit gemocktem D1), ein **Flow-/E2E-Test** des geteilten
+  Würfelpoker-Pfades (anlegen → laden → eintragen → volle Runde), WUMMS!- und
+  MEERI-Logik sowie die **Kritzeln-Logik** (`worker-rt/draw-logic.js`: Wort-
+  Normalisierung, Levenshtein, Kategorien/eigene Wörter, Punkte-Berechnung).
+  Zusätzlich ein **Lighthouse-Budget** (`lighthouserc.json`) als eigener,
+  nicht-blockierender Workflow für Performance, Barrierefreiheit, Best Practices & SEO.
+
+### Echtzeit-Architektur & bewusste Trade-offs
+
+Die Echtzeitspiele (Spieleabend-Raum, **Kritzeln & Raten**) laufen über Durable
+Objects im separaten Worker `philip-stack-rt`. Ein paar bewusst getroffene
+Entscheidungen, damit sie nachvollziehbar bleiben:
+
+- **State im RAM, nicht persistiert.** Der Spielzustand (laufende Runde, Punkte,
+  Zeichnung) lebt im DO-Speicher. Bei Redeploy/Eviction **mitten im Spiel** ist
+  die laufende Runde weg — die Clients verbinden neu in eine frische Lobby.
+  Bereits **gewertete** Spiele stehen sicher in D1 (`draw_score`); nur die gerade
+  laufende Runde geht verloren. Für ein Partyspiel bewusst so gelassen (Aufwand
+  für `ctx.storage`-Persistenz ≫ Nutzen).
+- **Reine Logik ist ausgelagert & getestet.** `worker-rt/draw-logic.js` enthält
+  nur deterministische Funktionen (keine DO-/Runtime-Abhängigkeit) und wird von
+  `tests/kritzeln.test.mjs` abgesichert.
+- **Härtung gegen böse Clients.** Der `DrawRoom` deckelt Strich-Größe, gepufferte
+  Zeichen-Ops pro Zug und die Nachrichten-Rate pro Verbindung; der Host kann
+  Spieler:innen kicken. Raum-Codes sind kurz (Partyspiel) — Grätscher fängt der
+  Kick ab.
+- **Doppelte Merge-Logik.** Die Strich-Zusammenführung (`s`-Flag → neuer Strich
+  bzw. anhängen) existiert im Server (`opStroke`) **und** im Client
+  (`public/kritzeln/app.js`); beide müssen synchron bleiben, sonst weicht der
+  Reconnect-Snapshot vom Live-Bild ab. Bewusste Kopplung zugunsten simpler
+  Protokoll-Nachrichten.
 - **Barrierefreiheit**: Dialoge als `role="dialog"`/`aria-modal` mit
   Escape-zum-Schließen und Fokus-Rückgabe, `aria-live`-Statusmeldungen,
   beschriftete Eingabefelder und ein plattformweit injizierter, sichtbarer

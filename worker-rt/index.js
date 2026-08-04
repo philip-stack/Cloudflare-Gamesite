@@ -1,4 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
+import { D_CATS, D_CAT_KEYS, D_TURN, D_CHOOSE, D_REVEAL, dNorm, dLev, wordPool, pickWords, guessGain, drawerGain, wordLetters } from "./draw-logic.js";
 
 // ====================================================================
 // Echtzeit-Worker der Gamesite: hostet das Durable Object PartyRoom
@@ -202,28 +203,23 @@ export class TronRoom extends DurableObject {
 // DO→Client: {t:welcome,id} {t:lobby,...} {t:choices,words} {t:turn,...}
 //            {t:word,word} {t:draw,...} {t:clear} {t:chat,...} {t:guessed,id}
 //            {t:close} {t:hint,pattern} {t:turnEnd,word,players} {t:over,players}
-//            {t:full} {t:pong}
+//            {t:full} {t:pong} {t:snapshot,ops} {t:kicked}
+//
+// BEWUSSTE TRADE-OFFS (Partyspiel, kein Bankensystem):
+//  • State liegt rein im RAM. Bei Redeploy/Eviction MITTEN im Spiel ist die
+//    laufende Runde weg — Clients verbinden neu in eine frische Lobby. Bereits
+//    gewertete Spiele stehen sicher in D1; nur die *laufende* Runde geht verloren.
+//    Bewusst nicht in ctx.storage persistiert (Aufwand ≫ Nutzen für ein Kritzelspiel).
+//  • Die Strich-Merge-Logik (s-Flag → neuer Strich / anhängen) existiert doppelt:
+//    hier in opStroke() und im Client (public/kritzeln/app.js). Beide MÜSSEN
+//    identisch bleiben, sonst weicht der Reconnect-Snapshot vom Live-Bild ab.
+//  • Pure Spiel-Logik (Wörter, Levenshtein, Punkte) liegt in draw-logic.js und
+//    ist per tests/kritzeln.test.mjs abgesichert.
 // ====================================================================
-// Wörter nach Kategorie (AT-Vokabular, alle gut zeichenbar). Der Host wählt im
-// Warteraum eine oder mehrere Kategorien; ohne Auswahl kommen alle zum Zug.
-const D_CATS = {
-  tiere: "Hund,Katze,Maus,Pferd,Kuh,Schwein,Huhn,Fisch,Vogel,Schlange,Elefant,Löwe,Affe,Bär,Igel,Biene,Schmetterling,Spinne,Marienkäfer,Krokodil,Pinguin,Wal,Hai,Qualle,Krebs,Frosch,Schnecke,Eule,Fuchs,Wolf,Reh,Giraffe,Zebra,Kamel,Känguru,Eichhörnchen".split(","),
-  essen: "Apfel,Banane,Karotte,Erdäpfel,Palatschinke,Semmel,Brezel,Torte,Eis,Pizza,Burger,Kaffee,Milch,Ei,Käse,Wurst,Pilz,Kipferl,Paradeiser".split(","),
-  dinge: "Brille,Hut,Schuh,Socke,Hose,Jacke,Krone,Ring,Uhr,Schlüssel,Schere,Stift,Buch,Zeitung,Ballon,Geschenk,Kerze,Lampe,Sessel,Tisch,Bett,Tür,Fenster,Leiter,Hammer,Säge,Schaufel,Regenschirm,Koffer,Rucksack,Anker,Gitarre,Klavier,Trommel,Trompete,Fußball".split(","),
-  fahrzeuge: "Auto,Zug,Flugzeug,Schiff,Fahrrad,Rakete,Traktor,Bagger,Bus,Motorrad,Hubschrauber,Ballon".split(","),
-  natur: "Haus,Baum,Sonne,Mond,Stern,Blume,Berg,Wolke,Regenbogen,Blitz,Vulkan,Insel,Brücke,Turm,Kirche,Windmühle,Sonnenblume,Kaktus,Herz,Zelt,Pilz".split(","),
-  fantasie: "Schneemann,Roboter,Gespenst,Hexe,Drache,Schloss,Krone,Zauberer,Einhorn,Meerjungfrau,Ritter,Pirat,Krake,Alien,Zombie".split(","),
-};
-const D_CAT_KEYS = Object.keys(D_CATS);
-const D_TURN = 75, D_CHOOSE = 15, D_REVEAL = 6;
-
-function d_norm(s) { return String(s || "").toLowerCase().trim().replace(/\s+/g, " ").replace(/[^a-z0-9äöüß ]/g, ""); }
-function d_lev(a, b) {
-  a = d_norm(a); b = d_norm(b); const m = a.length, n = b.length; if (Math.abs(m - n) > 2) return 9;
-  const dp = Array.from({ length: m + 1 }, (_, i) => [i, ...Array(n).fill(0)]); for (let j = 0; j <= n; j++) dp[0][j] = j;
-  for (let i = 1; i <= m; i++) for (let j = 1; j <= n; j++) dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
-  return dp[m][n];
-}
+// Zeichen-/Missbrauchs-Limits (Härtung gegen fehlerhafte oder böswillige Clients).
+const D_MAX_PTS = 300;        // Punkte pro stroke-Nachricht
+const D_MAX_OPS = 1500;       // gepufferte Ops pro Zug (begrenzt Snapshot-Größe)
+const D_RATE_N = 120, D_RATE_MS = 2000;   // max. Nachrichten je Verbindung pro Fenster
 
 export class DrawRoom extends DurableObject {
   constructor(ctx, env) {
@@ -247,7 +243,7 @@ export class DrawRoom extends DurableObject {
     const p = { id, name: "Spieler", score: 0, guessed: false, drawer: false };
     this.conns.set(server, p);
     if (this.hostId == null) this.hostId = id;
-    server.addEventListener("message", e => { try { this.onMsg(server, e.data); } catch (_) {} });
+    server.addEventListener("message", e => { try { this.onMsg(server, e.data); } catch (err) { console.error("DrawRoom.onMsg", err && err.stack || err); } });
     server.addEventListener("close", () => this.onClose(server));
     server.addEventListener("error", () => this.onClose(server));
     try { server.send(JSON.stringify({ t: "welcome", id })); } catch (_) {}
@@ -268,6 +264,7 @@ export class DrawRoom extends DurableObject {
   // Strich-Op in den Zug-Puffer rollen (identisch zur Client-Logik, damit der
   // Snapshot beim Reconnect exakt dieselbe Zeichnung ergibt).
   opStroke(m) {
+    if (this.drawOps.length >= D_MAX_OPS) return;   // Puffer gedeckelt (bounded Snapshot)
     const last = this.drawOps[this.drawOps.length - 1];
     if (m.s || !last || last.k !== "s") this.drawOps.push({ k: "s", pts: (m.pts || []).slice(), c: m.c, w: m.w, e: !!m.e });
     else last.pts.push(...(m.pts || []).slice(1));
@@ -291,6 +288,11 @@ export class DrawRoom extends DurableObject {
 
   onMsg(ws, data) {
     const p = this.conns.get(ws); if (!p) return;
+    // Rate-Limit pro Verbindung: überzählige Nachrichten im Fenster verwerfen.
+    const now = Date.now();
+    if (!p.rl || now - p.rl.t > D_RATE_MS) p.rl = { t: now, n: 0 };
+    if (++p.rl.n > D_RATE_N) return;
+    if (typeof data !== "string" || data.length > 20000) return;   // übergroße Frames abweisen
     let m; try { m = JSON.parse(data); } catch (_) { return; }
     switch (m.t) {
       case "join": {
@@ -328,8 +330,11 @@ export class DrawRoom extends DurableObject {
       // Host: laufenden Zug überspringen (Wort aufdecken, weiter).
       case "skip": if (p.id === this.hostId && (this.state === "choosing" || this.state === "drawing")) { if (this.state === "choosing") { this.beginDrawing(this.choices ? this.choices[0] : "?"); } this.endTurn(); } break;
       case "choose": if (this.state === "choosing" && p.id === this.drawerId && this.choices && this.choices.includes(m.word)) this.beginDrawing(m.word); break;
-      case "stroke": if (this.state === "drawing" && p.id === this.drawerId) { this.bc({ t: "draw", pts: m.pts, c: m.c, w: m.w, s: m.s, e: m.e }, p.id); this.opStroke(m); } break;
-      case "fill": if (this.state === "drawing" && p.id === this.drawerId) { this.bc({ t: "fill", x: m.x, y: m.y, c: m.c }, p.id); this.drawOps.push({ k: "f", x: m.x, y: m.y, c: m.c }); } break;
+      case "stroke": if (this.state === "drawing" && p.id === this.drawerId && Array.isArray(m.pts) && m.pts.length) {
+        if (m.pts.length > D_MAX_PTS) m.pts = m.pts.slice(0, D_MAX_PTS);   // übergroße Striche kappen
+        this.bc({ t: "draw", pts: m.pts, c: m.c, w: m.w, s: m.s, e: m.e }, p.id); this.opStroke(m);
+      } break;
+      case "fill": if (this.state === "drawing" && p.id === this.drawerId) { this.bc({ t: "fill", x: m.x, y: m.y, c: m.c }, p.id); if (this.drawOps.length < D_MAX_OPS) this.drawOps.push({ k: "f", x: m.x, y: m.y, c: m.c }); } break;
       case "undo": if (this.state === "drawing" && p.id === this.drawerId) { this.bc({ t: "undo" }, p.id); this.drawOps.pop(); } break;
       case "clear": if (this.state === "drawing" && p.id === this.drawerId) { this.bc({ t: "clear" }, p.id); this.drawOps = []; } break;
       case "guess": this.onGuess(p, String(m.text || "")); break;
@@ -399,17 +404,8 @@ export class DrawRoom extends DurableObject {
     } catch (_) {}
   }
 
-  // Wörter aus den gewählten Kategorien (oder allen). Dupes über Kategorien
-  // hinweg werden entfernt; Fallback auf alle, falls die Auswahl leer wäre.
-  wordPool() {
-    if (this.customWords && this.customWords.length >= 3) return this.customWords.slice();
-    const keys = (this.cats && this.cats.length) ? this.cats : D_CAT_KEYS;
-    const set = new Set();
-    for (const k of keys) for (const w of (D_CATS[k] || [])) set.add(w);
-    const pool = [...set];
-    return pool.length ? pool : D_CAT_KEYS.flatMap(k => D_CATS[k]);
-  }
-  pickWords(n) { const pool = this.wordPool(), out = [], used = new Set(); let guard = 0; while (out.length < n && guard++ < 200) { const w = pool[Math.floor(Math.random() * pool.length)]; if (!used.has(w)) { used.add(w); out.push(w); } } return out; }
+  // Delegiert an die reine (getestete) Logik in draw-logic.js.
+  pickWords(n) { return pickWords(wordPool(this.cats, this.customWords), n); }
   pattern() { const chars = [...this.word]; return chars.map((c, i) => c === " " ? " " : (this.revealed[i] ? c : "_")).join(""); }
 
   beginDrawing(word) {
@@ -439,19 +435,16 @@ export class DrawRoom extends DurableObject {
     if (!text.trim()) return;
     // Zeichner:in oder wer schon erraten hat → nur normaler Chat
     if (this.state !== "drawing" || p.id === this.drawerId || p.guessed) { this.bc({ t: "chat", kind: "msg", name: p.name, text: text.slice(0, 80) }); return; }
-    if (d_norm(text) === d_norm(this.word)) {
+    if (dNorm(text) === dNorm(this.word)) {
       p.guessed = true;
-      // Punkte: Zeit-Bonus (früher = mehr) + Platz-Bonus (1./2./3. Treffer).
+      // Punkte: Zeit-Bonus (früher = mehr) + Platz-Bonus (1./2./3.) + Längen-Bonus.
       const remain = Math.max(0, this.turnEndsAt - Date.now()) / 1000;
       const place = this.turnHits++;                 // 0 = erste:r
-      const placeBonus = [30, 20, 10][place] || 0;
-      const letters = [...this.word].filter(c => c !== " ").length;
-      const lenBonus = Math.min(60, Math.max(0, (letters - 4) * 8));   // längere Wörter = mehr
-      const gain = 50 + Math.round((remain / D_TURN) * 100) + placeBonus + lenBonus;
+      const gain = guessGain({ remain, turnTotal: D_TURN, place, letters: wordLetters(this.word) });
       p.score += gain;
       // Zeichner:in bekommt pro Errater:in Punkte (skaliert leicht mit Tempo).
       const drawer = this.pget(this.drawerId);
-      const dGain = 20 + Math.round((remain / D_TURN) * 15);
+      const dGain = drawerGain({ remain, turnTotal: D_TURN });
       if (drawer) { drawer.score += dGain; this.turnDrawerGain += dGain; }
       this.syncPart(p); if (drawer) this.syncPart(drawer);
       this.turnGains.push({ id: p.id, name: p.name, gain, place: place + 1 });
@@ -463,7 +456,7 @@ export class DrawRoom extends DurableObject {
     }
     // Falsch: als Chat zeigen; nah dran → privater Hinweis
     this.bc({ t: "chat", kind: "guess", name: p.name, text: text.slice(0, 80) });
-    if (d_lev(text, this.word) <= 1) this.toId(p.id, { t: "close" });
+    if (dLev(text, this.word) <= 1) this.toId(p.id, { t: "close" });
   }
 
   endTurn() {
@@ -486,7 +479,7 @@ export class DrawRoom extends DurableObject {
   // Wertung robust schreiben — via waitUntil, damit der D1-Schreibvorgang auch
   // dann durchläuft, wenn das Spiel abrupt endet (alle weg). parts = [{name,score}].
   saveScores(parts) {
-    const run = this.recordScores(parts).catch(() => {});
+    const run = this.recordScores(parts).catch(err => console.error("DrawRoom.recordScores", err && err.stack || err));
     try { this.ctx.waitUntil(run); } catch (_) {}
   }
 
@@ -506,7 +499,7 @@ export class DrawRoom extends DurableObject {
           "ON CONFLICT(name) DO UPDATE SET points = points + excluded.points, games = games + 1, " +
           "wins = wins + excluded.wins, best = MAX(best, excluded.best), updated_at = datetime('now')"
         ).bind(p.name, pts, win, pts).run();
-      } catch (_) { /* Bestenliste nie den Spielfluss stören */ }
+      } catch (err) { console.error("DrawRoom.recordScores row", p.name, err && err.stack || err); /* Bestenliste nie den Spielfluss stören */ }
     }
   }
 }

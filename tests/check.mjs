@@ -20,17 +20,20 @@ for (const f of walk(path.join(root, "public"))) {
   try { execFileSync(process.execPath, ["--check", f], { stdio: "pipe" }); console.log("OK   " + path.relative(root, f)); }
   catch (e) { console.log("FAIL " + path.relative(root, f) + "\n" + (e.stderr || e).toString()); ok = false; }
 }
-for (const f of walk(path.join(root, "functions"))) {
-  const rel = path.relative(root, f);
-  try { await import(pathToFileURL(f).href); console.log("OK   " + rel); }
-  catch (e) {
-    // Runtime-only-Importe (z. B. "cloudflare:workers" fürs Durable Object)
-    // kann Node nicht auflösen — dann nur die Syntax prüfen statt zu laden.
-    const msg = String((e && e.message) || e);
-    if (/cloudflare:/.test(msg) || (e && e.code === "ERR_MODULE_NOT_FOUND" && /cloudflare/.test(msg))) {
-      try { execFileSync(process.execPath, ["--check", f], { stdio: "pipe" }); console.log("OK   " + rel + " (nur Syntax — Runtime-Import)"); }
-      catch (e2) { console.log("FAIL " + rel + "\n" + ((e2.stderr || e2).toString())); ok = false; }
-    } else { console.log("FAIL " + rel + " — " + msg); ok = false; }
+// functions/* und worker-rt/* sind ES-Module; Import validiert Syntax UND
+// Auflösbarkeit. "cloudflare:workers" (Durable Objects) kann Node nicht laden
+// → dann nur die Syntax prüfen.
+for (const dir of ["functions", "worker-rt"]) {
+  for (const f of walk(path.join(root, dir))) {
+    const rel = path.relative(root, f);
+    try { await import(pathToFileURL(f).href); console.log("OK   " + rel); }
+    catch (e) {
+      const msg = String((e && e.message) || e);
+      if (/cloudflare:/.test(msg) || (e && e.code === "ERR_MODULE_NOT_FOUND" && /cloudflare/.test(msg))) {
+        try { execFileSync(process.execPath, ["--check", f], { stdio: "pipe" }); console.log("OK   " + rel + " (nur Syntax — Runtime-Import)"); }
+        catch (e2) { console.log("FAIL " + rel + "\n" + ((e2.stderr || e2).toString())); ok = false; }
+      } else { console.log("FAIL " + rel + " — " + msg); ok = false; }
+    }
   }
 }
 
