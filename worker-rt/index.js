@@ -1,6 +1,18 @@
 import { DurableObject } from "cloudflare:workers";
 import { D_CATS, D_CAT_KEYS, D_TURN, D_CHOOSE, D_REVEAL, dNorm, dLev, wordPool, pickWords, guessGain, drawerGain, wordLetters } from "./draw-logic.js";
 
+// Fehler aus dem Echtzeit-Worker in dieselbe D1-Tabelle error_log schreiben,
+// die auch die Pages-Seite nutzt — damit DO-/DrawRoom-Störungen im Betreiber-
+// Dashboard sichtbar werden statt nur in `wrangler tail`. Best-effort.
+async function rtLogError(env, msg, page, extra) {
+  try {
+    if (!env || !env.DB) return;
+    await env.DB.prepare("INSERT INTO error_log (msg, page, extra) VALUES (?, ?, ?)")
+      .bind(String(msg == null ? "" : msg).slice(0, 500), page || "worker-rt",
+            extra == null ? null : String(extra).slice(0, 1000)).run();
+  } catch (_) { /* Logging darf nie zum Problem werden */ }
+}
+
 // ====================================================================
 // Echtzeit-Worker der Gamesite: hostet das Durable Object PartyRoom
 // (ein DO pro Spieleabend-Raum). Cloudflare Pages kann keine Durable
@@ -243,7 +255,7 @@ export class DrawRoom extends DurableObject {
     const p = { id, name: "Spieler", score: 0, guessed: false, drawer: false };
     this.conns.set(server, p);
     if (this.hostId == null) this.hostId = id;
-    server.addEventListener("message", e => { try { this.onMsg(server, e.data); } catch (err) { console.error("DrawRoom.onMsg", err && err.stack || err); } });
+    server.addEventListener("message", e => { try { this.onMsg(server, e.data); } catch (err) { this.logErr("onMsg", err && err.stack || err); } });
     server.addEventListener("close", () => this.onClose(server));
     server.addEventListener("error", () => this.onClose(server));
     try { server.send(JSON.stringify({ t: "welcome", id })); } catch (_) {}
@@ -260,6 +272,8 @@ export class DrawRoom extends DurableObject {
   scoreboard() { return [...this.conns.values()].map(p => ({ id: p.id, name: p.name, score: p.score, guessed: p.guessed, drawer: p.id === this.drawerId })).sort((a, b) => b.score - a.score); }
   sendLobby() { this.bc({ t: "lobby", state: this.state, hostId: this.hostId, players: this.scoreboard(), cats: this.cats, rounds: this.rounds, customCount: this.customWords.length }); }
   clearTimers() { for (const t of this.timers) clearTimeout(t); this.timers = []; }
+  // Fehler sichtbar machen (Konsole + persistent in error_log via waitUntil).
+  logErr(msg, extra) { console.error("DrawRoom", msg, extra || ""); try { this.ctx.waitUntil(rtLogError(this.env, msg, "kritzeln", extra)); } catch (_) {} }
 
   // Strich-Op in den Zug-Puffer rollen (identisch zur Client-Logik, damit der
   // Snapshot beim Reconnect exakt dieselbe Zeichnung ergibt).
@@ -479,7 +493,7 @@ export class DrawRoom extends DurableObject {
   // Wertung robust schreiben — via waitUntil, damit der D1-Schreibvorgang auch
   // dann durchläuft, wenn das Spiel abrupt endet (alle weg). parts = [{name,score}].
   saveScores(parts) {
-    const run = this.recordScores(parts).catch(err => console.error("DrawRoom.recordScores", err && err.stack || err));
+    const run = this.recordScores(parts).catch(err => rtLogError(this.env, "recordScores", "kritzeln", err && err.stack || err));
     try { this.ctx.waitUntil(run); } catch (_) {}
   }
 
@@ -499,7 +513,7 @@ export class DrawRoom extends DurableObject {
           "ON CONFLICT(name) DO UPDATE SET points = points + excluded.points, games = games + 1, " +
           "wins = wins + excluded.wins, best = MAX(best, excluded.best), updated_at = datetime('now')"
         ).bind(p.name, pts, win, pts).run();
-      } catch (err) { console.error("DrawRoom.recordScores row", p.name, err && err.stack || err); /* Bestenliste nie den Spielfluss stören */ }
+      } catch (err) { await rtLogError(this.env, "recordScores row " + p.name, "kritzeln", err && err.stack || err); /* Bestenliste nie den Spielfluss stören */ }
     }
   }
 }
@@ -515,8 +529,9 @@ export default {
     ctx.waitUntil((async () => {
       try {
         const base = env.PAGES_ORIGIN || "https://philip-stack.pages.dev";
-        await fetch(base + "/api/fire/cron?key=" + encodeURIComponent(env.CRON_TOKEN || ""), {
-          headers: { "User-Agent": "philip-stack-rt/cron" },
+        // Token im Header statt in der URL-Query (kein Leak in Zugriffs-Logs).
+        await fetch(base + "/api/fire/cron", {
+          headers: { "User-Agent": "philip-stack-rt/cron", "x-cron-key": env.CRON_TOKEN || "" },
         });
       } catch (_) { /* nächster Lauf versucht es erneut */ }
     })());

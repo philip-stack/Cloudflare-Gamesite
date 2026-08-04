@@ -35,7 +35,9 @@ function mockDB() {
   };
 }
 
-const env = { DB: mockDB() };
+// SCORE_SECRET setzen: der Preflight (secretGuard) sperrt Score-Einsendung auf
+// nicht-lokalen Hosts ohne gesetztes Secret. Die Tests laufen gegen Host "x".
+const env = { DB: mockDB(), SCORE_SECRET: "test-secret-für-die-suite" };
 const device = "abcd1234efgh5678";
 const getToken = async (game = "galopp") => (await (await mod.onRequestGet({
   request: new Request(`https://x/?token=1&device=${device}`), env, params: { game },

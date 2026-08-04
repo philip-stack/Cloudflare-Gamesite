@@ -24,11 +24,30 @@ export async function rateLimit(env, key, max, windowSec) {
     ).bind(key, `-${windowSec} seconds`).first();
     if (row && row.n >= max) return false;
     await env.DB.prepare("INSERT INTO rate (k) VALUES (?)").bind(key).run();
-    // gelegentlich alte Einträge wegräumen (kleine Tabelle halten)
-    await env.DB.prepare("DELETE FROM rate WHERE at < datetime('now', '-1 day')").run();
+    // Nur gelegentlich alte Einträge wegräumen (statt bei JEDEM Request drei
+    // Schreibvorgänge auf die einzige D1 zu jagen).
+    if (Math.random() < 0.02) {
+      await env.DB.prepare("DELETE FROM rate WHERE at < datetime('now', '-1 day')").run();
+    }
     return true;
-  } catch { return true; }
+  } catch (e) { await logError(env, "rateLimit fehlgeschlagen (Drossel übersprungen)", "rate", e && e.message); return true; }
 }
+
+// Kleine D1-Lese-Helfer (früher privat in admin.js). one() = eine Zeile oder
+// null; many() = Ergebnis-Array. Beide fehlertolerant.
+export async function one(env, sql, ...args) {
+  try { return await env.DB.prepare(sql).bind(...args).first(); } catch { return null; }
+}
+export async function many(env, sql, ...args) {
+  try { return (await env.DB.prepare(sql).bind(...args).all()).results || []; } catch { return []; }
+}
+
+// EINE Quelle für die Wochen-/Tages-Buckets, damit Bestenliste (scores) und
+// Saison-Liga (season) nie auseinanderlaufen. Achtung: %Y-%W ist die Montags-
+// Woche von SQLite (NICHT die ISO-Woche) — bewusst konsistent überall gleich.
+export const WEEK_KEY = "strftime('%Y-%W','now')";
+export function weekCond(col = "created_at") { return ` AND strftime('%Y-%W', ${col}) = strftime('%Y-%W','now')`; }
+export function dayCond(col = "created_at") { return ` AND date(${col}) = date('now')`; }
 
 // Server-seitiges Fehler-Logging in die bestehende D1-Tabelle `error_log`.
 // Best-effort: darf den Aufrufer NIE stören (leerer catch). Ersetzt stumme
