@@ -1,4 +1,4 @@
-import { json, clientIp, rateLimit } from "./_util.js";
+import { json, clientIp, rateLimit, DEVICE_RE } from "./_util.js";
 
 // ====================================================================
 // Web-Push (VAPID). Bewusst OHNE verschlüsselte Payload: wir senden einen
@@ -20,7 +20,7 @@ import { json, clientIp, rateLimit } from "./_util.js";
 // Pages-Secret VAPID_PRIVATE_JWK und verlässt den Server nie.
 export const VAPID_PUBLIC = "BAIqSwEe8nr4OCdaYNvsJ1NGhYa_ewRj_J1IBRH0YuiKC9j5SqBhT1qH7cGSI494UMyHR-Wv0yLCykF58zw-GQI";
 const CONTACT = "mailto:philipstix@gmail.com";
-const DEV_RE = /^[A-Za-z0-9_-]{8,40}$/;
+const DEV_RE = DEVICE_RE;   // gemeinsame Definition aus _util.js
 
 const b64urlBytes = u8 => btoa(String.fromCharCode(...u8)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 const b64urlStr = str => b64urlBytes(new TextEncoder().encode(str));

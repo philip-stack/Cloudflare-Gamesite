@@ -1592,20 +1592,25 @@ function showSaveCode() {
 }
 
 // ---------- Bestenliste ----------
-async function openBoard() {
-  let name = "";
-  try { name = (localStorage.getItem("bb_name") || "").trim(); } catch (_) {}
-  if (!name) {
-    name = (prompt("Name für die Bestenliste (max. 16 Zeichen):") || "").trim().slice(0, 16);
-    if (name) { try { localStorage.setItem("bb_name", name); } catch (_) {} }
-  }
+function openBoard() {
   // Gewertet wird die HÖCHSTE erreichte Evolution (peak) — das wächst von
   // Anfang an und passt zum Spielziel. (Früher: goldene Karotten = Prestige-
   // Währung, die bei fast allen 0 ist → Bestenliste blieb leer.)
   const best = Math.max(peak, Number(localStorage.getItem("meeri_best") || 0));
   if (peak > 0) { try { localStorage.setItem("meeri_best", String(best)); } catch (_) {} }
-  if (name && peak > 0) await GS.submitScore("meeri", peak).catch(() => {});
-  GS.showLeaderboard({ game: "meeri", title: "Bestenliste", sub: "Höchste Evolution 🧬 weltweit" });
+  const showLb = () => GS.showLeaderboard({ game: "meeri", title: "Bestenliste", sub: "Höchste Evolution 🧬 weltweit" });
+  // Score über den gemeinsamen scoreFlow einsenden (Rang-/Rekord-/Namens-
+  // konflikt-UX wie in den anderen Spielen) statt still per prompt().
+  const ov = mkOverlay(`
+    <h2><span class="foil">Bestenliste</span></h2>
+    <p class="sub">Höchste Evolution 🧬 weltweit</p>
+    <div class="go-rank" id="mb-rank"></div>
+    <div id="mb-name"></div>
+    <button class="btn-primary" id="mb-top">🏆 Bestenliste ansehen</button>
+    <button class="btn-secondary" id="mb-close">Schließen</button>`);
+  ov.querySelector("#mb-top").onclick = () => { ov.remove(); showLb(); };
+  ov.querySelector("#mb-close").onclick = () => ov.remove();
+  GS.scoreFlow(ov.querySelector("#mb-name"), ov.querySelector("#mb-rank"), { game: "meeri", score: peak });
 }
 
 // ---------- Ganze Wiese als Bild teilen ----------

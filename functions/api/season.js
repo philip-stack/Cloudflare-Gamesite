@@ -1,4 +1,4 @@
-import { json, clientIp, rateLimit } from "./_util.js";
+import { json, clientIp, rateLimit, weekMatch } from "./_util.js";
 
 // ====================================================================
 // Saison / Liga: eine plattformweite Wochenwertung über ALLE gewerteten
@@ -25,9 +25,8 @@ const ptsFor = i => PTS[i] ?? 1;
 // Liest die Wochen-Bestenliste eines Spiels für "cur" (diese Woche) oder
 // "prev" (vorige Woche) und gibt [{name, score}] (max. 20) zurück.
 async function weekTop(env, gameKey, which) {
-  const cond = which === "prev"
-    ? "strftime('%Y-%W',created_at) = strftime('%Y-%W','now','-7 days')"
-    : "strftime('%Y-%W',created_at) = strftime('%Y-%W','now')";
+  // Gleiche Bucket-Definition wie die Bestenliste (scores) — aus _util.
+  const cond = which === "prev" ? weekMatch("created_at", ",'-7 days'") : weekMatch();
   const rows = (await env.DB.prepare(
     `SELECT name, MAX(score) AS score FROM scores WHERE game = ? AND ${cond} GROUP BY LOWER(name) ORDER BY score DESC LIMIT 20`
   ).bind(gameKey).all()).results;

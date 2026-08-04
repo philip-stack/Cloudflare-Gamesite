@@ -1,4 +1,4 @@
-import { json, clientIp, rateLimit } from "./_util.js";
+import { json, clientIp, rateLimit, one, many } from "./_util.js";
 
 // ====================================================================
 // Betreiber-Dashboard (privat) — bündelt die ohnehin gesammelten
@@ -37,12 +37,7 @@ function ageSec(s) {
   return Number.isFinite(t) ? Math.max(0, Math.round((Date.now() - t) / 1000)) : null;
 }
 
-const one = async (env, sql, ...bind) => {
-  try { return await env.DB.prepare(sql).bind(...bind).first(); } catch { return null; }
-};
-const many = async (env, sql, ...bind) => {
-  try { return (await env.DB.prepare(sql).bind(...bind).all()).results || []; } catch { return []; }
-};
+// one()/many() kommen jetzt aus _util.js (früher hier privat dupliziert).
 
 export async function onRequestGet({ request, env }) {
   if (!(await rateLimit(env, "admin:" + clientIp(request), 30, 60))) {

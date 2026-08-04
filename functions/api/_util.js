@@ -45,9 +45,13 @@ export async function many(env, sql, ...args) {
 // EINE Quelle für die Wochen-/Tages-Buckets, damit Bestenliste (scores) und
 // Saison-Liga (season) nie auseinanderlaufen. Achtung: %Y-%W ist die Montags-
 // Woche von SQLite (NICHT die ISO-Woche) — bewusst konsistent überall gleich.
-export const WEEK_KEY = "strftime('%Y-%W','now')";
-export function weekCond(col = "created_at") { return ` AND strftime('%Y-%W', ${col}) = strftime('%Y-%W','now')`; }
-export function dayCond(col = "created_at") { return ` AND date(${col}) = date('now')`; }
+// mod = optionaler strftime-Modifier, z. B. ",'-7 days'" für die Vorwoche.
+export function weekMatch(col = "created_at", mod = "") { return `strftime('%Y-%W', ${col}) = strftime('%Y-%W','now'${mod})`; }
+export function dayMatch(col = "created_at", mod = "") { return `date(${col}) = date('now'${mod})`; }
+
+// Häufig gebrauchte Eingabe-Validatoren (früher in scores/push/party dupliziert).
+export const DEVICE_RE = /^[A-Za-z0-9_-]{8,40}$/;
+export function isDevice(s) { return typeof s === "string" && DEVICE_RE.test(s); }
 
 // Server-seitiges Fehler-Logging in die bestehende D1-Tabelle `error_log`.
 // Best-effort: darf den Aufrufer NIE stören (leerer catch). Ersetzt stumme

@@ -67,10 +67,27 @@
       desc: "Echtzeit-Multiplayer (2–10) — einer malt, die anderen raten live; Kategorien, Fülleimer/Radierer/Undo, Speed-Punkte, Runden und Sieger:in des Abends",
       bestKey: null, scored: false, gsBadges: false, daily: false, weekly: false,
     },
-    // Neon-Tron (/tron/) bleibt als Route bestehen, ist aber bewusst NICHT mehr
-    // hier registriert (auf Wunsch von der Startseite genommen).
-    // Hinweis: /kochstudio/ ist bewusst NICHT hier registriert — es bleibt
-    // abgekapselt und nur direkt unter /kochstudio/ erreichbar.
+    // Neon-Tron (/tron/) bleibt als Route bestehen, ist aber bewusst NICHT
+    // registriert (dormant, nicht auf der Startseite verlinkt).
+  ];
+
+  // Werkzeuge / Neben-Apps: eigenständige Tools, KEINE Spiele (kein Rekord/Rang,
+  // keine Weltbestenliste). Bewusst getrennt von GAMES, damit Profil/Saison
+  // (die über GAMES iterieren) unberührt bleiben — aber über die Startseite
+  // auffindbar statt „verwaist". Reihenfolge = Anzeige-Reihenfolge.
+  const TOOLS = [
+    {
+      key: "kochstudio", name: "KI-Kochstudio", icon: "🍳", href: "/kochstudio/",
+      desc: "Sag, was im Kühlschrank ist — die KI schlägt Rezepte vor und sucht echte Links dazu",
+    },
+    {
+      key: "tanken", name: "Sprit-Radar", icon: "⛽", href: "/tanken/",
+      desc: "Günstigste Tankstellen im Umkreis oder entlang deiner Route (E-Control, gratis)",
+    },
+    {
+      key: "fire", name: "Feuerwehr NÖ", icon: "🚒", href: "/fire/noe/",
+      desc: "Aktuelle Feuerwehr-Einsätze in Niederösterreich — Karte, Bezirks-Alarm, Historie",
+    },
   ];
 
   const esc = s => String(s).replace(/[&<>"']/g, c => ({
@@ -90,6 +107,7 @@
   }
 
   window.GAMES = GAMES;
+  window.TOOLS = TOOLS;
   window.GAMES_BYKEY = Object.fromEntries(GAMES.map(g => [g.key, g]));
   window.gameCardHTML = cardHTML;
 })();

@@ -1,4 +1,4 @@
-import { json, rateLimit, clientIp, logError } from "../_util.js";
+import { json, rateLimit, clientIp, logError, weekMatch, dayMatch, DEVICE_RE } from "../_util.js";
 import { sendToName } from "../push.js";
 
 // Anzeigenamen für Push-Texte
@@ -105,8 +105,9 @@ function keyFor(game, mode) {
   return mode === "weekly" ? `${game}:weekly` : mode === "daily" ? `${game}:daily` : game;
 }
 function modeCond(mode) {
-  if (mode === "weekly") return " AND strftime('%Y-%W', created_at) = strftime('%Y-%W','now')";
-  if (mode === "daily") return " AND date(created_at) = date('now')";
+  // Gemeinsame Bucket-Ausdrücke aus _util (damit scores & season nie divergieren).
+  if (mode === "weekly") return " AND " + weekMatch();
+  if (mode === "daily") return " AND " + dayMatch();
   return "";
 }
 
@@ -187,7 +188,7 @@ export async function onRequestGet({ request, env, params }) {
   if (url.searchParams.get("token") === "1") {
     const guard = await secretGuard(request, env); if (guard) return guard;
     const device = String(url.searchParams.get("device") || "").trim();
-    if (!/^[A-Za-z0-9_-]{8,40}$/.test(device)) return json({ error: "Ungültiges Gerät" }, 400);
+    if (!DEVICE_RE.test(device)) return json({ error: "Ungültiges Gerät" }, 400);
     // Pro IP höchstens 40 Token/Minute — bremst massenhaftes Skript-Ausstellen.
     if (!(await rateLimit(env, `tok:${clientIp(request)}`, 40, 60))) {
       return json({ error: "Zu viele Anfragen — kurz warten" }, 429);
@@ -242,7 +243,7 @@ export async function onRequestPost(context) {
   if (!name) name = "Anonym";
 
   const device = String(b.device || "").trim();
-  if (!/^[A-Za-z0-9_-]{8,40}$/.test(device)) {
+  if (!DEVICE_RE.test(device)) {
     return json({ error: "Ungültiges Gerät" }, 400);
   }
 

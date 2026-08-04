@@ -104,7 +104,6 @@ GS.badges.define("funkelfeld", [
   { id: "runs25", icon: "🎖️", name: "Stammgast", desc: "25 Runden gespielt", test: (s, t) => t.runs >= 25 },
 ]);
 
-function getName() { return (localStorage.getItem("bb_name") || "").trim(); }
 
 // ---------- Karat & Ränge (Lebenszeit-Fortschritt) ----------
 const RANKS = ["Kiesel", "Quarz", "Amethyst", "Topas", "Smaragd", "Rubin", "Saphir", "Opal", "Brillant", "Diamant"];
@@ -561,13 +560,14 @@ function confetti() {
 // ---------- Sound (WebAudio, winzige Synth-Bleeps) ----------
 const sound = (() => {
   let ctx = null;
-  let muted = localStorage.getItem("bb_muted") === "1";
+  // Einmalige Migration des alten spieleigenen Mute-Zustands in den globalen Schalter
+  try { const _m = localStorage.getItem("bb_muted"); if (_m !== null) { if (_m === "1" && GS.sound.on()) GS.sound.toggle(); localStorage.removeItem("bb_muted"); } } catch {}
   function ensure() {
     if (!ctx) try { ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch {}
     return ctx;
   }
   function tone(freq, dur, type = "sine", gain = 0.12, when = 0) {
-    if (muted || !ensure()) return;
+    if (!GS.sound.on() || !ensure()) return;
     const t = ctx.currentTime + when;
     const o = ctx.createOscillator();
     const g = ctx.createGain();
@@ -589,12 +589,7 @@ const sound = (() => {
     fanfare() { [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.22, "sine", 0.12, i * 0.09)); },
     gem() { [1568, 2093, 2637].forEach((f, i) => tone(f, 0.12, "sine", 0.08, i * 0.05)); },
     dead() { tone(220, 0.3, "sawtooth", 0.06); tone(165, 0.4, "sawtooth", 0.06, 0.12); },
-    toggle() {
-      muted = !muted;
-      localStorage.setItem("bb_muted", muted ? "1" : "0");
-      return muted;
-    },
-    get muted() { return muted; },
+    toggle() { return !GS.sound.toggle(); },
   };
 })();
 
@@ -784,7 +779,7 @@ function showLeaderboard() {
 }
 // ---------- Name setzen / ändern ----------
 function updateNameLabel() {
-  $("#name-label").textContent = getName() || "Name";
+  $("#name-label").textContent = GS.getName() || "Name";
 }
 
 function showNameDialog(intro = false) {
@@ -797,7 +792,7 @@ function showNameDialog(intro = false) {
       <p class="sub">${intro
         ? "Dein Name wird auf diesem Gerät gespeichert und für die globale Bestenliste verwendet. Du kannst ihn jederzeit unten über ✏️ ändern."
         : "Wird auf diesem Gerät gespeichert und für die globale Bestenliste verwendet."}</p>
-      <input type="text" id="nm-input" maxlength="16" placeholder="Dein Name" autocomplete="off" value="${escHtml(getName())}">
+      <input type="text" id="nm-input" maxlength="16" placeholder="Dein Name" autocomplete="off" value="${escHtml(GS.getName())}">
       <button class="btn-primary" id="nm-save">${intro ? "Los geht's!" : "Speichern"}</button>
       <button class="btn-secondary" id="nm-cancel">${intro ? "Später" : "Abbrechen"}</button>
     </div>`;
@@ -810,8 +805,7 @@ function showNameDialog(intro = false) {
   overlay.querySelector("#nm-cancel").onclick = close;
   const save = () => {
     const v = input.value.trim().slice(0, 16);
-    if (v) localStorage.setItem("bb_name", v);
-    else localStorage.removeItem("bb_name");
+    GS.setName(v);   // "" leert den Namen (GS.getName liefert dann "")
     updateNameLabel();
     close();
   };
@@ -827,10 +821,10 @@ $("#btn-undo").onclick = () => undoMove();
 $("#btn-restart").onclick = () => {
   if (score > 0 && !over && !confirm("Laufendes Spiel wirklich verwerfen?")) return;
   newGame();
-  if (!getName()) showNameDialog(true);
+  if (!GS.getName()) showNameDialog(true);
 };
 const soundBtn = $("#btn-sound");
-soundBtn.textContent = sound.muted ? "🔇" : "🔊";
+soundBtn.textContent = !GS.sound.on() ? "🔇" : "🔊";
 soundBtn.onclick = () => { soundBtn.textContent = sound.toggle() ? "🔇" : "🔊"; };
 
 // ---------- Start ----------
@@ -853,4 +847,4 @@ GS.onboard("funkelfeld", {
   ],
 });
 // Beim Spielstart einmalig nach dem Namen fragen, falls noch keiner gesetzt ist
-if (!getName() && !over) showNameDialog(true);
+if (!GS.getName() && !over) showNameDialog(true);
