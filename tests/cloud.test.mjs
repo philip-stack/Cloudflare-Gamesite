@@ -36,6 +36,9 @@ function mockDB() {
           if (/SELECT updated_at, device FROM cloud_saves/.test(this.sql)) {
             const r = store.get(this.args[0]); return r ? { updated_at: r.updated_at, device: r.device } : null;
           }
+          if (/SELECT updated_at FROM cloud_saves/.test(this.sql)) {   // optimistische Sperre (one())
+            const r = store.get(this.args[0]); return r ? { updated_at: r.updated_at } : null;
+          }
           if (/SELECT data, updated_at, device, prev_data, prev_at FROM cloud_saves/.test(this.sql)) {
             return store.get(this.args[0]) || null;
           }
@@ -58,7 +61,7 @@ const get = async code => {
 
 // Neues Backup ohne Code → Server vergibt einen
 let r = await post({ data: { bb_name: "Tester", bb_best: "1234" }, writer: "geraeta12" });
-assert("Backup gesichert (200) + Code vergeben", r.status === 200 && /^[A-Z0-9]{6,12}$/.test(r.data.code));
+assert("Backup gesichert (200) + Code vergeben (genau 8)", r.status === 200 && /^[A-Z0-9]{8}$/.test(r.data.code));
 assert("Writer gespeichert", r.data.writer === "geraeta12");
 const code = r.data.code;
 
@@ -92,6 +95,26 @@ assert("Ungültiger Writer abgelehnt (400)", r.status === 400);
 // Ungültiger Code beim Laden
 r = await get("!!bad!!");
 assert("Ungültiger Code (400)", r.status === 400);
+
+// Code-Länge jetzt GENAU 8 (früher 6–12 erlaubt → größerer Ratraum)
+r = await post({ code: "ABC123", data: { x: "1" } });
+assert("6-stelliger Code abgelehnt (400)", r.status === 400);
+r = await get("ABCDEF");
+assert("6-stelliger Code beim Laden abgelehnt (400)", r.status === 400);
+
+// ---- Optimistische Sperre (Überschreib-Schutz) ----
+{
+  const e = { DB: mockDB() };
+  const p = async body => { const res = await mod.onRequestPost({ request: new Request("https://x/api/cloud", { method: "POST", body: JSON.stringify(body) }), env: e }); return { status: res.status, data: await res.json() }; };
+  const first = await p({ data: { v: "1" }, writer: "geraeta12" });
+  const c = first.data.code, at = first.data.updated_at;
+  const good = await p({ code: c, data: { v: "2" }, base: at });
+  assert("Überschreiben mit korrektem base → 200", good.status === 200);
+  const stale = await p({ code: c, data: { v: "3" }, base: "2000-01-01T00:00:00Z" });
+  assert("Überschreiben mit veraltetem base → 409 conflict", stale.status === 409 && stale.data.conflict === true);
+  const noBase = await p({ code: c, data: { v: "4" } });
+  assert("Überschreiben ohne base → 200 (rückwärtskompatibel)", noBase.status === 200);
+}
 
 // Unbekannter Code
 r = await get("ZZZZZZZZ");

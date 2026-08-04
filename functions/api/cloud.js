@@ -1,23 +1,32 @@
-import { json, clientIp, rateLimit } from "./_util.js";
+import { json, clientIp, rateLimit, one } from "./_util.js";
 
 // ====================================================================
 // Cloud-Backup der Spielstände (plattformweit).
 //
-//   POST /api/cloud   { code?, data, writer? }  → { ok, code, updated_at, writer }
+//   POST /api/cloud   { code?, data, writer?, base? }  → { ok, code, updated_at, writer }
+//        (base gesetzt & veraltet → 409 { conflict:true, updated_at })
 //   GET  /api/cloud?code=XXXXXXXX               → { data, updated_at, writer }
 //
 // Kein Login: der Code IST das Geheimnis. Er sichert einen kompletten
 // localStorage-Schnappschuss und stellt ihn auf einem anderen Gerät wieder her.
-// Codes sind 8-stellig aus einem 30er-Alphabet (≈6·10^11 Möglichkeiten).
+// Codes sind GENAU 8-stellig aus einem 30er-Alphabet (30^8 ≈ 6,5·10^11) — die
+// Regex ließ früher 6–12 zu, obwohl nie andere Längen erzeugt werden; das
+// vergrößerte den ratbaren Raum unnötig (6-stellig ≈ 900× kleiner).
 //
 // "writer" = zufällige, gerätelokale Kennung des zuletzt sichernden Geräts.
 // Damit kann der Client erkennen, ob der jüngste Cloud-Stand von einem
 // ANDEREN Gerät kommt (→ Angebot zum Laden) oder vom eigenen (→ still).
+//
+// Überschreib-Schutz (optimistische Sperre): schickt der Client ein `base`
+// (der updated_at-Stand, den er zuletzt kannte), lehnt der Server ab, wenn der
+// Cloud-Stand sich seither geändert hat (409) — verhindert versehentliches/
+// stilles Klobbern eines neueren Stands. Ohne `base` (Beacon, Erst-Sicherung):
+// last-write-wins wie bisher, mit prev_data als 1-Schritt-Netz.
 // ====================================================================
 
 const MAX_BYTES = 300_000;                 // ~300 KB pro Backup
 const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";   // ohne 0/O/1/I/L
-const CODE_RE = /^[A-Z0-9]{6,12}$/;
+const CODE_RE = /^[A-Z0-9]{8}$/;           // genau 8 (= wie newCode erzeugt)
 const WRITER_RE = /^[a-z0-9]{6,40}$/;
 
 function newCode() {
@@ -43,6 +52,17 @@ export async function onRequestPost({ request, env }) {
   const data = typeof b.data === "string" ? b.data : JSON.stringify(b.data || {});
   if (!data || data === "{}") return json({ error: "Nichts zu sichern" }, 400);
   if (data.length > MAX_BYTES) return json({ error: "Backup zu groß" }, 413);
+
+  // Optimistische Sperre beim Überschreiben eines bestehenden Codes: nur wenn der
+  // Client den aktuellen Stand kennt (base == current). Sonst 409, damit er erst
+  // abgleichen kann, statt einen neueren (evtl. von anderem Gerät) blind zu klobbern.
+  const base = typeof b.base === "string" ? b.base : null;
+  if (code && base !== null) {
+    const cur = await one(env, "SELECT updated_at FROM cloud_saves WHERE code = ?", code);
+    if (cur && cur.updated_at !== base) {
+      return json({ error: "Der Cloud-Stand hat sich seit deinem letzten Abgleich geändert", conflict: true, updated_at: cur.updated_at }, 409);
+    }
+  }
 
   if (!code) code = newCode();
 
