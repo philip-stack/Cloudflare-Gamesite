@@ -98,6 +98,9 @@ button:active { transform: scale(0.95); }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip { background: var(--card); color: var(--ink); font-size: 0.82rem; font-weight: 600; padding: 7px 11px; border-radius: 999px; box-shadow: 0 0 0 1px var(--edge-soft) inset; }
 .chip.on { background: rgba(122,162,255,0.18); box-shadow: 0 0 0 1.5px var(--accent) inset; color: var(--accent); }
+.words-in { width: 100%; font-family: inherit; font-size: 0.92rem; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--edge-soft); background: var(--card); color: var(--ink); resize: vertical; min-height: 46px; }
+.words-in:focus { outline: none; border-color: var(--accent); }
+.plist .kick { width: 28px; height: 28px; border-radius: 8px; background: rgba(255,106,90,0.14); color: var(--bad); font-weight: 800; font-size: 0.85rem; box-shadow: 0 0 0 1px rgba(255,106,90,0.3) inset; }
 
 /* Runden-Zusammenfassung */
 .reveal-word { font-family: var(--font-display); font-weight: 800; font-size: 2rem; color: var(--gold); margin: 2px 0 14px; letter-spacing: 0.02em; }
