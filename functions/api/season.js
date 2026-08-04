@@ -2,7 +2,9 @@ import { json, clientIp, rateLimit, weekMatch } from "./_util.js";
 
 // ====================================================================
 // Saison / Liga: eine plattformweite Wochenwertung über ALLE gewerteten
-// Spiele. Eine Saison = eine ISO-Woche (Mo–So). Pro Spiel bekommt man
+// Spiele. Eine Saison = eine Woche (SQLite %Y-%W, Montags-Woche — NICHT streng
+// ISO, weicht am Jahreswechsel um bis zu einen Tag ab; für die Wertung egal, da
+// scores UND season denselben Ausdruck (weekMatch in _util) nutzen). Pro Spiel
 // Liga-Punkte nach Platzierung in der Wochen-Bestenliste dieses Spiels;
 // über alle Spiele summiert ergibt das die Saison-Tabelle.
 //

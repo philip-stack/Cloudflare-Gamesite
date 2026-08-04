@@ -4,7 +4,8 @@
   "description": "Cloudflare-Pages-Gamesite (Würfelpoker, Funkelfeld, Komet, Sternensturm, Galopp)",
   "private": true,
   "scripts": {
-    "test": "node tests/check.mjs && node tests/quality.test.mjs && node tests/qr.test.js && node tests/api.test.mjs && node tests/cloud.test.mjs && node tests/party.test.mjs && node tests/season.test.mjs && node tests/push.test.mjs && node tests/flow.test.mjs && node tests/wumms.test.mjs && node tests/meeri.test.mjs && node tests/fire.test.mjs && node tests/kritzeln.test.mjs",
-    "check": "node tests/check.mjs"
+    "test": "node tests/check.mjs && node tests/quality.test.mjs && node tests/qr.test.js && node tests/api.test.mjs && node tests/cloud.test.mjs && node tests/party.test.mjs && node tests/season.test.mjs && node tests/push.test.mjs && node tests/flow.test.mjs && node tests/wumms.test.mjs && node tests/meeri.test.mjs && node tests/fire.test.mjs && node tests/kritzeln.test.mjs && node tests/admin.test.mjs && node tests/koch.test.mjs && node scripts/bump-assets.mjs --check",
+    "check": "node tests/check.mjs",
+    "bump": "node scripts/bump-assets.mjs"
   }
 }
