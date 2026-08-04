@@ -268,7 +268,7 @@ export class DrawRoom extends DurableObject {
   pget(id) { for (const p of this.conns.values()) if (p.id === id) return p; return null; }
   // Teilnehmer:innen eines Spiels (überlebt Disconnects) für die Wertung.
   partKey(p) { return p.uid || ("id" + p.id); }
-  syncPart(p) { if (!this.parts) this.parts = new Map(); this.parts.set(this.partKey(p), { name: p.name, score: p.score | 0 }); }
+  syncPart(p) { if (!this.parts) this.parts = new Map(); this.parts.set(this.partKey(p), { name: p.name, score: p.score | 0, device: p.dev || null }); }
   scoreboard() { return [...this.conns.values()].map(p => ({ id: p.id, name: p.name, score: p.score, guessed: p.guessed, drawer: p.id === this.drawerId })).sort((a, b) => b.score - a.score); }
   sendLobby() { this.bc({ t: "lobby", state: this.state, hostId: this.hostId, players: this.scoreboard(), cats: this.cats, rounds: this.rounds, customCount: this.customWords.length }); }
   clearTimers() { for (const t of this.timers) clearTimeout(t); this.timers = []; }
@@ -311,6 +311,8 @@ export class DrawRoom extends DurableObject {
     switch (m.t) {
       case "join": {
         p.name = (String(m.name || "").trim().slice(0, 14)) || "Spieler";
+        // Stabile Geräte-ID (wie bei der Scores-Bestenliste) für das Namens-Eigentum.
+        if (m.dev) p.dev = String(m.dev).slice(0, 64);
         if (m.uid) {
           p.uid = String(m.uid).slice(0, 40);
           // Reconnect-Dedup: bestehende Verbindung mit gleicher Geräte-ID
@@ -508,11 +510,24 @@ export class DrawRoom extends DurableObject {
       if (!p.name) continue;
       const pts = p.score | 0, win = p.name === winName ? 1 : 0;
       try {
+        // Namens-Eigentum (wie bei der Scores-Bestenliste): gehört der Name schon
+        // einem ANDEREN Gerät, nicht werten — sonst könnte man in einen fremden
+        // Raum joinen und unter fremdem Namen dessen Zeile vergiften.
+        if (p.device) {
+          const owner = await this.env.DB.prepare("SELECT device FROM draw_score WHERE name = ?").bind(p.name).first();
+          if (owner && owner.device && owner.device !== p.device) {
+            await rtLogError(this.env, "draw_score-Name gehört anderem Gerät, übersprungen: " + p.name, "kritzeln");
+            continue;
+          }
+        }
+        // device = COALESCE(bestehendes, neues): der erste Eintrag mit Geräte-ID
+        // beansprucht den Namen; danach bleibt der/die Eigentümer:in erhalten.
         await this.env.DB.prepare(
-          "INSERT INTO draw_score (name, points, games, wins, best) VALUES (?, ?, 1, ?, ?) " +
+          "INSERT INTO draw_score (name, points, games, wins, best, device) VALUES (?, ?, 1, ?, ?, ?) " +
           "ON CONFLICT(name) DO UPDATE SET points = points + excluded.points, games = games + 1, " +
-          "wins = wins + excluded.wins, best = MAX(best, excluded.best), updated_at = datetime('now')"
-        ).bind(p.name, pts, win, pts).run();
+          "wins = wins + excluded.wins, best = MAX(best, excluded.best), " +
+          "device = COALESCE(draw_score.device, excluded.device), updated_at = datetime('now')"
+        ).bind(p.name, pts, win, pts, p.device || null).run();
       } catch (err) { await rtLogError(this.env, "recordScores row " + p.name, "kritzeln", err && err.stack || err); /* Bestenliste nie den Spielfluss stören */ }
     }
   }
