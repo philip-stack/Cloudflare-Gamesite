@@ -226,7 +226,11 @@ sofort ein und synct im Hintergrund.
 ```
 wuerfelpoker/
 ├── wrangler.toml              Pages-Config + D1-Binding (DB) + AI-Binding (Kochstudio)
-├── schema.sql                 D1-Schema (Würfelpoker, scores, used_token, banned_device, cloud_saves, party*, push_*, error_log, rate, fire_*)
+├── migrations/                D1-Schema als versionierte, idempotente Migrationen
+│   ├── 0001_init.sql          Baseline (Würfelpoker, scores, used_token, banned_device, cloud_saves, party*, push_*, error_log, rate, draw_score, fire_*)
+│   └── 0002_*.sql             additive Änderungen (apply: wrangler d1 migrations apply wuerfelpoker --remote)
+├── reset-dev.sql              ⚠️ nur lokal: setzt Würfelpoker-Tabellen zurück (enthält DROPs)
+├── schema.sql                 nur noch Hinweis-Datei (zeigt auf migrations/)
 ├── public/                    statische Spiele (1 Ordner = 1 Spiel)
 │   ├── index.html             Landing Page mit App-Karten, Suche & Challenge
 │   ├── games.js               zentrale Spiele-Registry (Quelle für Startseite/Profil/Party)

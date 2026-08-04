@@ -1,4 +1,4 @@
-import { json, rateLimit, clientIp } from "../_util.js";
+import { json, rateLimit, clientIp, logError } from "../_util.js";
 import { sendToName } from "../push.js";
 
 // Anzeigenamen für Push-Texte
@@ -116,6 +116,19 @@ function modeCond(mode) {
 // Signatur ersetzen, sonst ließen sich Tokens fälschen.
 const SECRET_FALLBACK = "gamesite-dev-only-seed-do-not-use-in-prod";
 function secret(env) { return (env && env.SCORE_SECRET) || SECRET_FALLBACK; }
+function hasRealSecret(env) { return !!(env && env.SCORE_SECRET); }
+// Nur lokal (Dev) darf der Fallback-Schlüssel greifen. Auf einer echten Domain
+// ohne gesetztes SCORE_SECRET würden sich Lauf-Token fälschen lassen — deshalb
+// dort lieber laut abbrechen (fail-closed) als still ein Loch öffnen.
+function isLocalHost(request) {
+  try { const h = new URL(request.url).hostname; return h === "localhost" || h === "127.0.0.1" || h === "::1" || h.endsWith(".local"); }
+  catch { return false; }
+}
+async function secretGuard(request, env) {
+  if (hasRealSecret(env) || isLocalHost(request)) return null; // ok
+  await logError(env, "SCORE_SECRET fehlt in Produktion — Score-Einsendung gesperrt", "scores");
+  return json({ error: "Server nicht bereit — bitte später erneut versuchen" }, 503);
+}
 
 async function hmacHex(key, msg) {
   const enc = new TextEncoder();
@@ -157,7 +170,7 @@ async function consumeToken(env, token) {
       await env.DB.prepare("DELETE FROM used_token WHERE at < datetime('now','-7 hours')").run();
     }
     return changes !== 0;
-  } catch { return true; }
+  } catch (e) { await logError(env, "consumeToken fehlgeschlagen (Replay-Schutz übersprungen)", "scores", e && e.message); return true; }
 }
 
 function topQuery(mode) {
@@ -172,6 +185,7 @@ export async function onRequestGet({ request, env, params }) {
 
   // Token-Ausstellung für einen Lauf
   if (url.searchParams.get("token") === "1") {
+    const guard = await secretGuard(request, env); if (guard) return guard;
     const device = String(url.searchParams.get("device") || "").trim();
     if (!/^[A-Za-z0-9_-]{8,40}$/.test(device)) return json({ error: "Ungültiges Gerät" }, 400);
     // Pro IP höchstens 40 Token/Minute — bremst massenhaftes Skript-Ausstellen.
@@ -213,6 +227,8 @@ export async function onRequestPost(context) {
   const cfg = GAMES[game];
   if (!cfg) return json({ error: "Unbekanntes Spiel" }, 404);
 
+  const guard = await secretGuard(request, env); if (guard) return guard;
+
   const b = await request.json().catch(() => ({}));
   const mode = modeOf(cfg, b);
   const key = keyFor(game, mode);
@@ -241,7 +257,7 @@ export async function onRequestPost(context) {
   try {
     const ban = await env.DB.prepare("SELECT COUNT(*) AS n FROM banned_device WHERE device = ?").bind(device).first();
     if (ban && ban.n > 0) return json({ error: "Einsendung nicht möglich" }, 403);
-  } catch (_) {}
+  } catch (e) { await logError(env, "Ban-Prüfung fehlgeschlagen", "scores", e && e.message); }
 
   // Lauf-Token prüfen (signierter Seed, kurz vorher ausgestellt)
   if (!(await verifyToken(env, game, device, b.token))) {

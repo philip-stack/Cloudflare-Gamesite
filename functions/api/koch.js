@@ -1,4 +1,4 @@
-import { json } from "./_util.js";
+import { json, rateLimit, clientIp } from "./_util.js";
 
 // ====================================================================
 // Kochstudio-API: KI-Rezepte aus Kühlschrank-Zutaten + echte Websuche.
@@ -67,6 +67,12 @@ function searchLinks(ings) {
 
 export async function onRequestPost({ request, env }) {
   if (!env.AI) return json({ error: "KI ist auf diesem Deployment nicht verfügbar" }, 503);
+
+  // Rate-Limit: dieser Endpunkt verbrennt AI-Kontingent + externen Scrape pro
+  // Aufruf. Höchstens 6 Anfragen/Minute pro Client-IP, sonst Kosten-DoS möglich.
+  if (!(await rateLimit(env, `koch:${clientIp(request)}`, 6, 60))) {
+    return json({ error: "Zu viele Anfragen — kurz warten" }, 429);
+  }
 
   const b = await request.json().catch(() => ({}));
   const ings = String(b.ingredients || "").trim().slice(0, 400);

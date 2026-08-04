@@ -48,9 +48,19 @@ async function writeHealth(env, active, detailFetched, note) {
   } catch (_) { /* Health ist optional */ }
 }
 
+// Konstantzeitiger Vergleich (kein früher Abbruch bei erster Abweichung).
+function keyEq(got, want) {
+  if (!want || got.length !== want.length) return false;
+  let diff = 0;
+  for (let i = 0; i < want.length; i++) diff |= got.charCodeAt(i) ^ want.charCodeAt(i);
+  return diff === 0;
+}
+
 export async function onRequestGet({ request, env }) {
-  const key = new URL(request.url).searchParams.get("key") || "";
-  if (!env.CRON_TOKEN || key !== env.CRON_TOKEN) return json({ error: "forbidden" }, 403);
+  // Token bevorzugt im Header (landet nicht in Zugriffs-Logs wie ?key=);
+  // Query bleibt als Übergangs-Fallback erhalten.
+  const got = request.headers.get("x-cron-key") || new URL(request.url).searchParams.get("key") || "";
+  if (!keyEq(got, env.CRON_TOKEN)) return json({ error: "forbidden" }, 403);
 
   let list = [];
   try {

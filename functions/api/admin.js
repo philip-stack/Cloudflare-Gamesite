@@ -219,7 +219,7 @@ export async function onRequestPost({ request, env }) {
         const token = env && env.CRON_TOKEN;
         if (!token) return json({ error: "CRON_TOKEN nicht gesetzt" }, 400);
         const origin = new URL(request.url).origin;
-        const res = await fetch(`${origin}/api/fire/cron?key=${encodeURIComponent(token)}`);
+        const res = await fetch(`${origin}/api/fire/cron`, { headers: { "x-cron-key": token } });
         return json({ ok: res.ok, cronStatus: res.status });
       }
       default:
