@@ -105,6 +105,19 @@
     .xpfill { height:100%; border-radius:99px; background:var(--foil); background-size:250% 100%; transition:width 0.6s var(--ease-spring); }
     .xpsub { color:var(--muted); font-size:0.78rem; }
 
+    /* --- Tagesquests --- */
+    .quest-row { display:flex; align-items:center; gap:11px; padding:10px 4px; border-bottom:1px solid var(--edge-soft); }
+    .quest-row:last-child { border-bottom:0; }
+    .quest-row.done { opacity:0.6; }
+    .quest-row.done .qr-label { text-decoration:line-through; }
+    .qr-ic { flex-shrink:0; font-size:1.25rem; width:26px; text-align:center; }
+    .qr-mid { flex:1; min-width:0; }
+    .qr-label { display:block; font-size:0.9rem; }
+    .qr-track { display:block; height:6px; margin-top:5px; border-radius:99px; background:rgba(255,255,255,0.08); overflow:hidden; box-shadow:0 0 0 1px var(--edge-soft) inset; }
+    .qr-track i { display:block; height:100%; border-radius:99px; background:var(--foil); background-size:250% 100%; transition:width 0.5s var(--ease-spring,ease); }
+    .qr-prog { flex-shrink:0; color:var(--muted); font-size:0.78rem; font-variant-numeric:tabular-nums; }
+    .qr-xp { color:var(--gold); font-weight:700; }
+
     /* --- Kennzahlen --- */
     .stats { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:20px; }
     .stat { background:var(--card); border-radius:14px; padding:14px 8px; text-align:center;
@@ -214,6 +227,12 @@
       <div class="stat"><b id="s-worldrank">–</b><span>🌍 Bester Weltrang</span></div>
     </div>
 
+    <div class="sec-title">📋 Tagesquests <span id="quest-count" class="ach-count"></span></div>
+    <div class="cloud-card">
+      <p class="cloud-info">Jeden Tag 3 neue Aufgaben quer über alle Spiele — erfüllt = Bonus-XP fürs Level.</p>
+      <div id="quest-list"></div>
+    </div>
+
     <div class="sec-title">🏆 Erfolge <span id="ach-count" class="ach-count"></span></div>
     <div class="cloud-card">
       <p class="cloud-info" id="ach-intro">Plattformweite Erfolge — quer über alle Spiele.</p>
@@ -275,6 +294,7 @@
     </footer>
   </main>
 
+  <script src="/shared.js?v=e1c2cc9e"></script>
   <script src="/games.js?v=30cb5fa6"></script>
   <script src="/qr.js?v=af9706e4"></script>
   <script>
@@ -319,14 +339,32 @@
     const recordCount = GAMES.filter(g => g.bestKey && num(localStorage.getItem(g.bestKey)) > 0).length;
     const playedCount = GAMES.filter(played).length;
 
-    // --- Spieleabend-Level (XP aus Abzeichen, Rekorden, gespielten Spielen) ---
-    const xp = badgeSum * 100 + recordCount * 80 + playedCount * 40;
-    const PER = 400;                          // XP pro Level
-    const level = Math.floor(xp / PER) + 1;
-    const into = xp - (level - 1) * PER;
-    $("#lvl-line").textContent = `Spieleabend-Level ${level}`;
+    // --- Spieleabend-Level: GEMEINSAME Formel aus GS (Hub & Profil identisch) ---
+    // Basis = Abzeichen·100 + Rekorde·80 + gespielt·40, plus Quest-/Play-Bonus (gs_xp).
+    const li = (window.GS && GS.level)
+      ? GS.level.compute(badgeSum, recordCount, playedCount)
+      : (() => { const xp = badgeSum * 100 + recordCount * 80 + playedCount * 40, level = Math.floor(xp / 400) + 1; return { total: xp, level, into: xp - (level - 1) * 400, per: 400, title: "" }; })();
+    const level = li.level, PER = li.per, into = li.into;
+    $("#lvl-line").textContent = `Spieleabend-Level ${level}${li.title ? " · " + li.title : ""}`;
     $("#xpfill").style.width = Math.round(into / PER * 100) + "%";
-    $("#xpsub").textContent = `${into} / ${PER} XP bis Level ${level + 1}  ·  ${fmt(xp)} XP gesamt`;
+    $("#xpsub").textContent = `${into} / ${PER} XP bis Level ${level + 1}  ·  ${fmt(li.total)} XP gesamt${li.bonus ? ` (inkl. ${fmt(li.bonus)} Bonus)` : ""}`;
+
+    // --- Tagesquests ---
+    try {
+      if (window.GS && GS.quests) {
+        const qs = GS.quests.today();
+        $("#quest-count").textContent = qs.filter(q => q.done).length + " / " + qs.length;
+        $("#quest-list").innerHTML = qs.map(q => `
+          <div class="quest-row ${q.done ? "done" : ""}">
+            <span class="qr-ic">${q.done ? "✅" : q.icon}</span>
+            <span class="qr-mid">
+              <span class="qr-label">${GS.esc(q.label)}</span>
+              <span class="qr-track"><i style="width:${Math.round(Math.min(1, q.cur / q.goal) * 100)}%"></i></span>
+            </span>
+            <span class="qr-prog">${q.cur}/${q.goal} · <span class="qr-xp">+${q.xp}</span></span>
+          </div>`).join("");
+      }
+    } catch {}
     $("#s-badges").textContent = badgeSum;
     $("#s-games").textContent = playedCount;
     $("#s-records").textContent = recordCount;
