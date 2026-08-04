@@ -227,7 +227,7 @@ setInterval(() => { if (drawing && iAmDrawer) flush(); }, 55);
 // ---------- Werkzeuge ----------
 const COLORS = ["#111827", "#6b7280", "#ef4444", "#f97316", "#eab308", "#22c55e", "#14b8a6", "#3b82f6", "#8b5cf6", "#ec4899", "#8b5a2b"];
 const SIZES = [3, 6, 12, 20];
-const CAT_LABELS = { tiere: "🐾 Tiere", essen: "🍎 Essen", dinge: "🎒 Dinge", fahrzeuge: "🚗 Fahrzeuge", natur: "🌳 Natur", fantasie: "🐉 Fantasie", at: "🇦🇹 Österreich" };
+const CAT_LABELS = { tiere: "🐾 Tiere", essen: "🍎 Essen", dinge: "🎒 Dinge", fahrzeuge: "🚗 Fahrzeuge", natur: "🌳 Natur", fantasie: "🐉 Fantasie" };
 function buildTools() {
   $("#swatches").innerHTML = COLORS.map((c, i) => `<i data-c="${c}" style="background:${c}" class="${i === 0 ? "sel" : ""}"></i>`).join("");
   $("#sizes").innerHTML = SIZES.map((s, i) => `<i data-s="${s}" class="${i === 1 ? "sel" : ""}"><b style="width:${Math.min(18, s)}px;height:${Math.min(18, s)}px"></b></i>`).join("");

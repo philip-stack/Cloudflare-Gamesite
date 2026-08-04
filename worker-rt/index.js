@@ -213,7 +213,6 @@ const D_CATS = {
   fahrzeuge: "Auto,Zug,Flugzeug,Schiff,Fahrrad,Rakete,Traktor,Bagger,Bus,Motorrad,Hubschrauber,Ballon".split(","),
   natur: "Haus,Baum,Sonne,Mond,Stern,Blume,Berg,Wolke,Regenbogen,Blitz,Vulkan,Insel,Brücke,Turm,Kirche,Windmühle,Sonnenblume,Kaktus,Herz,Zelt,Pilz".split(","),
   fantasie: "Schneemann,Roboter,Gespenst,Hexe,Drache,Schloss,Krone,Zauberer,Einhorn,Meerjungfrau,Ritter,Pirat,Krake,Alien,Zombie".split(","),
-  at: "Palatschinke,Erdäpfel,Marille,Sackerl,Semmel,Jause,Kipferl,Paradeiser,Karotte,Lederhose,Dirndl,Krampus,Christbaum,Heuriger,Fiaker,Gugelhupf".split(","),
 };
 const D_CAT_KEYS = Object.keys(D_CATS);
 const D_TURN = 75, D_CHOOSE = 15, D_REVEAL = 6;
