@@ -23,7 +23,8 @@ let view = "menu";                 // menu | lobby | playing | over
 let players = [];                  // aus lobby/turnEnd
 let iAmDrawer = false, phase = "", curWord = "", timeEnd = 0, timeTotal = 1;
 let strokes = [];                  // Ops: {k:"s",pts:[{x,y}],c,w,e} Strich  |  {k:"f",x,y,c} Füllung
-let roomCats = [], roomRounds = 2; // aus lobby (Kategorien/Rundenzahl des Raums)
+let roomCats = [], roomRounds = 2, roomCustom = 0; // aus lobby (Kategorien/Runden/Anzahl eigene Wörter)
+let customText = "";               // Textfeld-Inhalt der eigenen Wortliste (überlebt Re-Render)
 let pingT = null, intentional = false, wantStartName = "", reTries = 0, reTimer = null;
 
 // Zeichnen
@@ -70,9 +71,11 @@ function onMsg(m) {
   switch (m.t) {
     case "welcome": myId = m.id; break;
     case "full": showMenu("Raum ist voll (max. 10)."); leave(); break;
+    case "kicked": leave(); showMenu("Du wurdest vom Host entfernt."); break;
     case "lobby":
       hostId = m.hostId; players = m.players || [];
       if (Array.isArray(m.cats)) roomCats = m.cats; if (m.rounds) roomRounds = m.rounds;
+      if (typeof m.customCount === "number") roomCustom = m.customCount;
       renderPlayers();
       if (view === "playing" || view === "over") break;
       view = "lobby"; showLobby(); break;
@@ -86,6 +89,7 @@ function onMsg(m) {
     } break;
     case "fill": if (!iAmDrawer) { strokes.push({ k: "f", x: m.x, y: m.y, c: m.c }); floodFill(m.x, m.y, m.c); } break;
     case "undo": if (!iAmDrawer) { strokes.pop(); redraw(); } break;
+    case "snapshot": applySnapshot(m.ops || []); break;
     case "clear": strokes = []; clearCanvas(); break;
     case "hint": $("#i-word").textContent = spaced(m.pattern); break;
     case "chat": addChat(m.kind, m.name, m.text); break;
@@ -105,7 +109,7 @@ function onMsg(m) {
 }
 
 function onTurn(m) {
-  closeOverlay(); view = "playing"; $("#board").classList.remove("hidden"); showLeave(true);
+  closeOverlay(); view = "playing"; $("#board").classList.remove("hidden"); showLeave(true); showSkip(myId === hostId);
   iAmDrawer = m.drawerId === myId; strokes = []; clearCanvas(); resize();
   $("#i-turn").textContent = "Runde " + (m.round || 1) + " · Zug " + (m.turn || (m.round || 1)) + (m.total ? "/" + m.total : "");
   const drawer = players.find(p => p.id === m.drawerId);
@@ -124,7 +128,7 @@ function onTurn(m) {
 }
 
 function onTurnEnd(m) {
-  phase = "reveal"; stopTimer(); setTools(false); setGuessEnabled(false); hideNote();
+  phase = "reveal"; stopTimer(); setTools(false); setGuessEnabled(false); hideNote(); showSkip(false);
   players = m.players || players; renderPlayers();
   const gains = m.gains || [];
   const rows = gains.length
@@ -167,6 +171,14 @@ function drawSeg(pts, c, w, erase) {
   ctx.stroke(); ctx.restore();
 }
 function redraw() { clearCanvas(); for (const s of strokes) { if (s.k === "f") floodFill(s.x, s.y, s.c); else drawSeg(s.pts, s.c, s.w, s.e); } }
+
+// Bisher Gemaltes vom Server übernehmen (Reconnect/Neuzugang mitten im Zug).
+function applySnapshot(ops) {
+  strokes = ops.map(o => o.k === "f"
+    ? { k: "f", x: o.x, y: o.y, c: o.c }
+    : { k: "s", pts: (o.pts || []).map(p => ({ x: p[0], y: p[1] })), c: o.c, w: o.w, e: !!o.e });
+  if (!cw || !ch) resize(); else redraw();
+}
 
 // Fülleimer: 4er-Flood-Fill auf Geräte-Pixeln. Normierte Startkoordinate (0..1),
 // damit es geräteübergreifend an derselben Bildstelle wirkt.
@@ -242,13 +254,16 @@ function updateToolBtns() { $("#t-fill").classList.toggle("on", tool === "fill")
 function setTools(on) { if (on) { tool = "pen"; updateToolBtns(); } $("#tools").classList.toggle("hidden", !on); }
 
 // ---------- Timer ----------
-let timerRAF = null;
-function startTimer(sec) { timeTotal = sec; timeEnd = performance.now() + sec * 1000; if (!timerRAF) tickTimer(); }
+let timerRAF = null, lastTickSec = -1;
+function startTimer(sec) { timeTotal = sec; timeEnd = performance.now() + sec * 1000; lastTickSec = -1; if (!timerRAF) tickTimer(); }
 function stopTimer() { if (timerRAF) cancelAnimationFrame(timerRAF); timerRAF = null; }
 function tickTimer() {
   const left = Math.max(0, timeEnd - performance.now());
+  const secs = Math.ceil(left / 1000);
   $("#timefill").style.width = (left / (timeTotal * 1000) * 100) + "%";
-  $("#i-time").textContent = Math.ceil(left / 1000) + "s";
+  $("#i-time").textContent = secs + "s";
+  // Warnton in den letzten 5 Sekunden (nur in der Zeichenphase, einmal pro Sekunde)
+  if (phase === "draw" && secs <= 5 && secs >= 1 && secs !== lastTickSec) { lastTickSec = secs; GS.sound.tone(secs <= 2 ? 880 : 640, 0.07, { type: "triangle", gain: 0.08 }); if (secs <= 2) GS.haptic(10); }
   if (left <= 0) { timerRAF = null; return; }
   timerRAF = requestAnimationFrame(tickTimer);
 }
@@ -301,7 +316,7 @@ async function showScores() {
 }
 
 function showMenu(msg) {
-  view = "menu"; $("#board").classList.add("hidden"); setGuessEnabled(false); players = []; showLeave(false);
+  view = "menu"; $("#board").classList.add("hidden"); setGuessEnabled(false); players = []; showLeave(false); showSkip(false);
   const o = overlay(`
     <h2><span class="foil">Kritzeln &amp; Raten</span></h2>
     <p class="sub">Einer malt, die anderen raten — live, für <b>2–10 Spieler</b>. Erstelle einen Raum und teile den Code.</p>
@@ -319,22 +334,27 @@ function showMenu(msg) {
 function showLobby() {
   showLeave(true);
   const meHost = myId === hostId;
+  showSkip(false);
   const catKeys = Object.keys(CAT_LABELS);
+  const custActive = roomCustom >= 3;
   const settings = meHost
     ? `<div class="lobby-set">
-        <div class="set-lbl">Kategorien <span class="hint">(keine = alle)</span></div>
+        <div class="set-lbl">Kategorien <span class="hint">(keine = alle${custActive ? "; von eigenen Wörtern überschrieben" : ""})</span></div>
         <div class="chips" id="lb-cats">${catKeys.map(k => `<button class="chip ${roomCats.includes(k) ? "on" : ""}" data-cat="${k}">${CAT_LABELS[k]}</button>`).join("")}</div>
         <div class="set-lbl">Runden</div>
         <div class="chips" id="lb-rounds">${[1, 2, 3].map(n => `<button class="chip ${roomRounds === n ? "on" : ""}" data-r="${n}">${n}</button>`).join("")}</div>
+        <div class="set-lbl">Eigene Wörter <span class="hint">(optional · Komma-getrennt · ab 3 Wörtern aktiv)</span></div>
+        <textarea id="lb-words" class="words-in" rows="2" placeholder="z. B. Oma, Netflix, Trampolin, Schnitzel …">${GS.esc(customText)}</textarea>
+        <div class="hint" id="lb-words-n">${roomCustom ? "✅ " + roomCustom + " eigene Wörter" + (custActive ? " aktiv" : " (mind. 3 nötig)") : ""}</div>
       </div>`
-    : `<p class="sub">${roomCats.length ? roomCats.map(k => CAT_LABELS[k] || k).join(" · ") : "Alle Kategorien"} · ${roomRounds} Runden</p>`;
+    : `<p class="sub">${custActive ? "✍️ Eigene Wörter (" + roomCustom + ")" : (roomCats.length ? roomCats.map(k => CAT_LABELS[k] || k).join(" · ") : "Alle Kategorien")} · ${roomRounds} Runden</p>`;
   const o = overlay(`
     <h2>Warteraum</h2>
     <p class="sub">Teile den Code — Freunde tippen ihn im Menü ein. Ab <b>2 Spielern</b> kann der Host starten (bis 10).</p>
     <div class="code-big">${GS.esc(code)}</div>
     <button class="btn-secondary" id="lb-share">📤 Code teilen</button>
     ${settings}
-    <ul class="plist">${players.map(p => `<li><span class="pname">${GS.esc(p.name)}${p.id === myId ? " (du)" : ""}</span>${p.id === hostId ? '<span class="phost">Host</span>' : ""}</li>`).join("")}</ul>
+    <ul class="plist">${players.map(p => `<li><span class="pname">${GS.esc(p.name)}${p.id === myId ? " (du)" : ""}</span>${p.id === hostId ? '<span class="phost">Host</span>' : (meHost ? `<button class="kick" data-kick="${p.id}" title="Entfernen">✕</button>` : "")}</li>`).join("")}</ul>
     <p class="msg">${players.length < 2 ? "Warte auf mindestens eine:n weitere:n …" : (meHost ? "Bereit zum Start!" : "Warte auf den Host …")}</p>
     ${meHost ? `<button class="btn-primary" id="lb-start" ${players.length >= 2 ? "" : "disabled style=\"opacity:.5\""}>🎨 Starten</button>` : ""}
     <button class="btn-secondary" id="lb-leave">Verlassen</button>`);
@@ -345,6 +365,9 @@ function showLobby() {
       b.classList.toggle("on"); send({ t: "cat", cats: roomCats });
     });
     o.querySelectorAll("#lb-rounds .chip").forEach(b => b.onclick = () => { roomRounds = +b.dataset.r; send({ t: "rounds", n: roomRounds }); o.querySelectorAll("#lb-rounds .chip").forEach(x => x.classList.toggle("on", x === b)); });
+    o.querySelectorAll("[data-kick]").forEach(b => b.onclick = () => { const id = +b.dataset.kick; const pl = players.find(x => x.id === id); if (confirm((pl ? pl.name : "Spieler:in") + " entfernen?")) send({ t: "kick", id }); });
+    const wa = o.querySelector("#lb-words");
+    if (wa) { wa.oninput = () => { customText = wa.value; }; wa.onblur = () => { const list = wa.value.split(/[,\n]/).map(s => s.trim()).filter(Boolean); send({ t: "words", list }); }; }
   }
   const st = o.querySelector("#lb-start"); if (st) st.onclick = () => send({ t: "start" });
   o.querySelector("#lb-leave").onclick = () => { leave(); showMenu(); };
@@ -356,7 +379,7 @@ function showWordPick(words) {
 }
 
 function showOver(list) {
-  showLeave(true);
+  showLeave(true); showSkip(false);
   const meHost = myId === hostId; const top = list[0];
   if (top && top.id === myId) { GS.sound.win(); confetti(); } else { GS.sound.good(); }
   const o = overlay(`
@@ -378,6 +401,8 @@ soundBtn.onclick = () => { soundBtn.textContent = GS.sound.toggle() ? "🔊" : "
 $("#btn-top").onclick = showScores;
 $("#btn-leave").onclick = () => { if (confirm("Raum verlassen?")) { leave(); showMenu(); } };
 function showLeave(on) { const b = $("#btn-leave"); if (b) b.classList.toggle("hidden", !on); }
+$("#btn-skip").onclick = () => { if (confirm("Diesen Zug überspringen?")) send({ t: "skip" }); };
+function showSkip(on) { const b = $("#btn-skip"); if (b) b.classList.toggle("hidden", !on); }
 window.addEventListener("beforeunload", leave);
 document.addEventListener("visibilitychange", () => { if (document.hidden || intentional || !code) return; if ((view === "lobby" || view === "over") && (!ws || ws.readyState > 1)) { reTries = 0; connect(code, true); } });
 

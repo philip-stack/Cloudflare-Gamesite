@@ -232,8 +232,10 @@ export class DrawRoom extends DurableObject {
     this.order = []; this.turnIdx = 0; this.rounds = 2; this.drawerId = null;
     this.word = ""; this.revealed = []; this.timers = []; this.turnEndsAt = 0;
     this.cats = [];          // ausgewählte Kategorien (leer = alle)
+    this.customWords = [];   // eigene Wortliste des Hosts (überschreibt Kategorien)
     this.turnGains = [];     // Punkte-Zuwachs des laufenden Zugs (für die Zusammenfassung)
     this.turnHits = 0;       // Anzahl korrekter Rater:innen im laufenden Zug (Platz-Bonus)
+    this.drawOps = [];       // Zeichen-Ops des laufenden Zugs (für Snapshot bei Reconnect)
   }
 
   async fetch(request) {
@@ -260,8 +262,32 @@ export class DrawRoom extends DurableObject {
   partKey(p) { return p.uid || ("id" + p.id); }
   syncPart(p) { if (!this.parts) this.parts = new Map(); this.parts.set(this.partKey(p), { name: p.name, score: p.score | 0 }); }
   scoreboard() { return [...this.conns.values()].map(p => ({ id: p.id, name: p.name, score: p.score, guessed: p.guessed, drawer: p.id === this.drawerId })).sort((a, b) => b.score - a.score); }
-  sendLobby() { this.bc({ t: "lobby", state: this.state, hostId: this.hostId, players: this.scoreboard(), cats: this.cats, rounds: this.rounds }); }
+  sendLobby() { this.bc({ t: "lobby", state: this.state, hostId: this.hostId, players: this.scoreboard(), cats: this.cats, rounds: this.rounds, customCount: this.customWords.length }); }
   clearTimers() { for (const t of this.timers) clearTimeout(t); this.timers = []; }
+
+  // Strich-Op in den Zug-Puffer rollen (identisch zur Client-Logik, damit der
+  // Snapshot beim Reconnect exakt dieselbe Zeichnung ergibt).
+  opStroke(m) {
+    const last = this.drawOps[this.drawOps.length - 1];
+    if (m.s || !last || last.k !== "s") this.drawOps.push({ k: "s", pts: (m.pts || []).slice(), c: m.c, w: m.w, e: !!m.e });
+    else last.pts.push(...(m.pts || []).slice(1));
+  }
+
+  // Host wirft eine:n Spieler:in raus (Nachbereitung wie onClose).
+  kick(id) {
+    for (const [ws, q] of this.conns) {
+      if (q.id !== id) continue;
+      try { ws.send(JSON.stringify({ t: "kicked" })); } catch (_) {}
+      this.conns.delete(ws); try { ws.close(); } catch (_) {}
+      if (this.hostId === q.id) { const f = this.conns.values().next().value; this.hostId = f ? f.id : null; }
+      const playing = this.state === "choosing" || this.state === "drawing" || this.state === "reveal";
+      this.bc({ t: "chat", kind: "system", text: (q.name || "Jemand") + " wurde entfernt." });
+      if (playing && this.conns.size < 2) return this.endGame();
+      if (playing && q.id === this.drawerId) return this.endTurn();
+      this.sendLobby();
+      return;
+    }
+  }
 
   onMsg(ws, data) {
     const p = this.conns.get(ws); if (!p) return;
@@ -291,11 +317,21 @@ export class DrawRoom extends DurableObject {
       // Host stellt Kategorien / Rundenzahl im Warteraum ein.
       case "cat": if (p.id === this.hostId && (this.state === "lobby" || this.state === "over")) { this.cats = Array.isArray(m.cats) ? m.cats.filter(c => D_CAT_KEYS.includes(c)) : []; this.sendLobby(); } break;
       case "rounds": if (p.id === this.hostId && (this.state === "lobby" || this.state === "over")) { const n = m.n | 0; if (n >= 1 && n <= 5) { this.rounds = n; this.sendLobby(); } } break;
+      // Host: eigene Wortliste (überschreibt Kategorien). Getrimmt, dedupliziert, begrenzt.
+      case "words": if (p.id === this.hostId && (this.state === "lobby" || this.state === "over")) {
+        const seen = new Set(), out = [];
+        for (const w of (Array.isArray(m.list) ? m.list : [])) { const t = String(w || "").trim().slice(0, 24); const k = t.toLowerCase(); if (t.length >= 2 && !seen.has(k)) { seen.add(k); out.push(t); if (out.length >= 120) break; } }
+        this.customWords = out; this.sendLobby();
+      } break;
+      // Host: Spieler:in rauswerfen.
+      case "kick": if (p.id === this.hostId && m.id !== this.hostId) this.kick(m.id); break;
+      // Host: laufenden Zug überspringen (Wort aufdecken, weiter).
+      case "skip": if (p.id === this.hostId && (this.state === "choosing" || this.state === "drawing")) { if (this.state === "choosing") { this.beginDrawing(this.choices ? this.choices[0] : "?"); } this.endTurn(); } break;
       case "choose": if (this.state === "choosing" && p.id === this.drawerId && this.choices && this.choices.includes(m.word)) this.beginDrawing(m.word); break;
-      case "stroke": if (this.state === "drawing" && p.id === this.drawerId) this.bc({ t: "draw", pts: m.pts, c: m.c, w: m.w, s: m.s, e: m.e }, p.id); break;
-      case "fill": if (this.state === "drawing" && p.id === this.drawerId) this.bc({ t: "fill", x: m.x, y: m.y, c: m.c }, p.id); break;
-      case "undo": if (this.state === "drawing" && p.id === this.drawerId) this.bc({ t: "undo" }, p.id); break;
-      case "clear": if (this.state === "drawing" && p.id === this.drawerId) this.bc({ t: "clear" }, p.id); break;
+      case "stroke": if (this.state === "drawing" && p.id === this.drawerId) { this.bc({ t: "draw", pts: m.pts, c: m.c, w: m.w, s: m.s, e: m.e }, p.id); this.opStroke(m); } break;
+      case "fill": if (this.state === "drawing" && p.id === this.drawerId) { this.bc({ t: "fill", x: m.x, y: m.y, c: m.c }, p.id); this.drawOps.push({ k: "f", x: m.x, y: m.y, c: m.c }); } break;
+      case "undo": if (this.state === "drawing" && p.id === this.drawerId) { this.bc({ t: "undo" }, p.id); this.drawOps.pop(); } break;
+      case "clear": if (this.state === "drawing" && p.id === this.drawerId) { this.bc({ t: "clear" }, p.id); this.drawOps = []; } break;
       case "guess": this.onGuess(p, String(m.text || "")); break;
       case "ping": try { ws.send('{"t":"pong"}'); } catch (_) {} break;
     }
@@ -357,6 +393,8 @@ export class DrawRoom extends DurableObject {
         const time = Math.max(1, Math.round((this.turnEndsAt - Date.now()) / 1000));
         ws.send(JSON.stringify({ t: "turn", phase: "draw", drawerId: this.drawerId, round, rounds: this.rounds, time, pattern: this.pattern() }));
         if (p.id === this.drawerId) ws.send(JSON.stringify({ t: "word", word: this.word }));
+        // Bisher Gemaltes nachliefern, damit (Neu-)Beitretende kein leeres Blatt sehen.
+        if (this.drawOps && this.drawOps.length) ws.send(JSON.stringify({ t: "snapshot", ops: this.drawOps }));
       }
     } catch (_) {}
   }
@@ -364,6 +402,7 @@ export class DrawRoom extends DurableObject {
   // Wörter aus den gewählten Kategorien (oder allen). Dupes über Kategorien
   // hinweg werden entfernt; Fallback auf alle, falls die Auswahl leer wäre.
   wordPool() {
+    if (this.customWords && this.customWords.length >= 3) return this.customWords.slice();
     const keys = (this.cats && this.cats.length) ? this.cats : D_CAT_KEYS;
     const set = new Set();
     for (const k of keys) for (const w of (D_CATS[k] || [])) set.add(w);
@@ -376,7 +415,7 @@ export class DrawRoom extends DurableObject {
   beginDrawing(word) {
     this.clearTimers();
     this.word = word; this.revealed = [...word].map(() => false);
-    this.turnGains = []; this.turnHits = 0; this.turnDrawerGain = 0;
+    this.turnGains = []; this.turnHits = 0; this.turnDrawerGain = 0; this.drawOps = [];
     this.state = "drawing"; this.turnEndsAt = Date.now() + D_TURN * 1000;
     const ids = this.order.filter(id => this.pget(id));
     const round = Math.floor(this.turnIdx / Math.max(1, ids.length)) + 1;
@@ -406,7 +445,9 @@ export class DrawRoom extends DurableObject {
       const remain = Math.max(0, this.turnEndsAt - Date.now()) / 1000;
       const place = this.turnHits++;                 // 0 = erste:r
       const placeBonus = [30, 20, 10][place] || 0;
-      const gain = 50 + Math.round((remain / D_TURN) * 100) + placeBonus;
+      const letters = [...this.word].filter(c => c !== " ").length;
+      const lenBonus = Math.min(60, Math.max(0, (letters - 4) * 8));   // längere Wörter = mehr
+      const gain = 50 + Math.round((remain / D_TURN) * 100) + placeBonus + lenBonus;
       p.score += gain;
       // Zeichner:in bekommt pro Errater:in Punkte (skaliert leicht mit Tempo).
       const drawer = this.pget(this.drawerId);
