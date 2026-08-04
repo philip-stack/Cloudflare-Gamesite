@@ -617,14 +617,30 @@
       return o;
     };
 
-    $("#cloud-save").onclick = async () => {
+    async function doCloudSave(force) {
       setStatus("Sichere …");
+      const code = savedCode();
+      // base = zuletzt bekannter Stand → optimistische Sperre (force überspringt sie).
+      const base = (code && !force) ? (localStorage.getItem("gs_sync_at") || undefined) : undefined;
       try {
         const res = await fetch("/api/cloud", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ code: savedCode() || undefined, data: snapshot(), writer: cloudWriter() }),
+          body: JSON.stringify({ code: code || undefined, data: snapshot(), writer: cloudWriter(), base }),
         });
         const d = await res.json().catch(() => ({}));
+        if (res.status === 409) {
+          // Cloud wurde inzwischen (evtl. anderes Gerät) geändert → Wahl lassen.
+          if (confirm("☁️ Der Cloud-Stand hat sich geändert (evtl. von einem anderen Gerät).\n\nOK = deinen Stand TROTZDEM hochladen (überschreibt den neueren).\nAbbrechen = erst den neueren Stand laden.")) {
+            return doCloudSave(true);
+          }
+          try {
+            const gr = await fetch("/api/cloud?code=" + encodeURIComponent(code));
+            const gd = await gr.json().catch(() => ({}));
+            if (gr.ok) applyBackup(gd, code, "Neueren Cloud-Stand jetzt laden? Der aktuelle Stand auf diesem Gerät wird überschrieben.");
+            else setStatus("Konflikt — der neuere Stand ließ sich nicht laden", "err");
+          } catch { setStatus("Keine Verbindung", "err"); }
+          return;
+        }
         if (!res.ok) return setStatus(d.error || "Sichern fehlgeschlagen", "err");
         try {
           localStorage.setItem("gs_sync_code", d.code);
@@ -635,7 +651,8 @@
         renderSaved();
         setStatus("✔ Gesichert! Notiere dir den Code für andere Geräte.", "ok");
       } catch { setStatus("Keine Verbindung", "err"); }
-    };
+    }
+    $("#cloud-save").onclick = () => doCloudSave(false);
 
     // Backup einer Antwort anwenden (überschreibt lokale Fortschrittsdaten)
     const applyBackup = (d, code, confirmMsg) => {
@@ -656,7 +673,7 @@
     $("#cloud-load").onclick = async () => {
       const code = (prompt("Backup-Code eingeben (von deinem anderen Gerät):", savedCode()) || "").trim().toUpperCase();
       if (!code) return;
-      if (!/^[A-Z0-9]{6,12}$/.test(code)) return setStatus("Ungültiger Code", "err");
+      if (!/^[A-Z0-9]{8}$/.test(code)) return setStatus("Ungültiger Code (8 Zeichen)", "err");
       setStatus("Lade …");
       try {
         const res = await fetch("/api/cloud?code=" + encodeURIComponent(code));

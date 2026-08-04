@@ -430,10 +430,15 @@
     async push() {
       const code = this.code(); if (!code) return null;
       try {
+        // base = zuletzt bekannter Cloud-Stand → optimistische Sperre serverseitig.
+        const base = localStorage.getItem("gs_sync_at") || undefined;
         const res = await fetch("/api/cloud", {
           method: "POST", headers: { "Content-Type": "application/json" }, keepalive: true,
-          body: JSON.stringify({ code, data: this.snapshot(), writer: this.writerId() }),
+          body: JSON.stringify({ code, data: this.snapshot(), writer: this.writerId(), base }),
         });
+        // Konflikt: der Cloud-Stand ist neuer (anderes Gerät) → nicht klobbern,
+        // sondern beim nächsten Laden abgleichen (syncOnLoad bietet das Laden an).
+        if (res.status === 409) { try { this.syncOnLoad(); } catch {} return null; }
         const d = await res.json().catch(() => ({}));
         if (d.updated_at) { localStorage.setItem("gs_sync_at", d.updated_at); localStorage.setItem("gs_sync_local_at", String(Date.now())); }
         return d;
