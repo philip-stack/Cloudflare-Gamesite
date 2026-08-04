@@ -1,0 +1,281 @@
+/* ==================================================================
+   SPIELEABEND — Gemeinsames Fundament ("Midnight Felt")
+   ------------------------------------------------------------------
+   Single Source of Truth für Design-Tokens und geteilte Komponenten.
+   Jede Seite bindet DIESE Datei zuerst ein und ergänzt danach nur
+   noch ihr Eigenes. Vorher waren Tokens + Topbar + Overlay/Bestenliste
+   in jede Seite kopiert und drifteten frei — das endet hier.
+
+   Regel: neue Seite = <link core.css> + eigene Akzentfarbe (--accent).
+   Nichts hier ist spiel-spezifisch. Spiel-Eigenheiten (Spielbrett,
+   HUD, eigene Palette) bleiben im jeweiligen style.css.
+   ================================================================== */
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  /* ---- Basis-Palette (Dunkel) ---- */
+  --bg0: #0a0e0b;
+  --felt: #0e1410;
+  --card: rgba(255, 252, 240, 0.045);
+  --card-hi: rgba(255, 252, 240, 0.09);
+  --edge: rgba(232, 193, 90, 0.14);
+  --edge-soft: rgba(255, 252, 240, 0.08);
+  --ink: #f4efe2;
+  --muted: #93a396;
+  --gold: #e8c15a;
+  --gold-glow: rgba(232, 193, 90, 0.35);
+  --red: #e2685a;
+  --foil: linear-gradient(115deg, #8a6a1c 0%, #e8c15a 25%, #fff3c4 50%, #e8c15a 75%, #8a6a1c 100%);
+
+  /* Akzentfarbe: pro Seite überschreibbar (Standard = das Signatur-Gold).
+     Damit dürfen Spiele eigene Farbe zeigen, OHNE das System zu forken. */
+  --accent: var(--gold);
+
+  --radius: 16px;
+  --font-display: "Fraunces", Georgia, serif;
+  --font-ui: "Outfit", system-ui, -apple-system, sans-serif;
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.5, 1);
+}
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  font-family: var(--font-ui);
+  background: radial-gradient(120% 90% at 50% -10%, #1a2a1d 0%, var(--felt) 45%, var(--bg0) 100%);
+  background-attachment: fixed;
+  color: var(--ink);
+  min-height: 100vh;
+  min-height: 100dvh;
+  overflow-x: hidden;
+}
+
+/* ---------- Ambiente (statischer Schein; Seiten dürfen animieren) ---------- */
+.ambience { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+.aurora {
+  position: absolute;
+  width: 70vmax; height: 70vmax;
+  border-radius: 50%;
+  filter: blur(60px);
+  opacity: 0.32;
+  mix-blend-mode: screen;
+}
+.aurora-a { top: -35vmax; left: -20vmax; background: radial-gradient(circle, rgba(232,193,90,0.28), transparent 65%); }
+.aurora-b { bottom: -40vmax; right: -25vmax; background: radial-gradient(circle, rgba(52,120,80,0.35), transparent 65%); }
+.grain {
+  position: absolute; inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E");
+  opacity: 0.05;
+}
+
+/* ---------- Topbar / Kopfzeile ---------- */
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.topbar h1 {
+  flex: 1;
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 800;
+  font-size: 1.6rem;
+  line-height: 1.1;
+}
+.foil {
+  background: var(--foil);
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: foil-sheen 5.5s ease-in-out infinite;
+}
+@keyframes foil-sheen {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
+/* ---------- Buttons ---------- */
+button {
+  font-family: inherit;
+  border: 0;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition: transform 0.15s var(--ease-spring);
+}
+button:active { transform: scale(0.94); }
+
+.btn-back {
+  display: grid; place-items: center;
+  width: 42px; height: 42px;
+  border-radius: 12px;
+  background: var(--card);
+  color: var(--ink);
+  text-decoration: none;
+  font-size: 1.15rem;
+  box-shadow: 0 0 0 1px var(--edge-soft) inset;
+  flex-shrink: 0;
+}
+.btn-icon {
+  width: 42px; height: 42px;
+  border-radius: 12px;
+  background: var(--card);
+  color: var(--ink);
+  font-size: 1.05rem;
+  box-shadow: 0 0 0 1px var(--edge-soft) inset;
+  flex-shrink: 0;
+}
+.btn-ghost {
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.92rem;
+  padding: 10px 12px;
+  border-radius: 10px;
+}
+.btn-ghost:hover { color: var(--ink); }
+.btn-ghost.used { opacity: 0.35; text-decoration: line-through; }
+.btn-primary {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(160deg, #f0cd6e 0%, var(--gold) 40%, #c39a30 100%);
+  color: #1a1508;
+  font-weight: 700;
+  font-size: 1.05rem;
+  padding: 15px;
+  width: 100%;
+  border-radius: 14px;
+  box-shadow: 0 0 0 1px rgba(255, 230, 160, 0.35) inset, 0 10px 30px -10px var(--gold-glow);
+  margin-bottom: 10px;
+}
+.btn-secondary {
+  background: var(--card-hi);
+  color: var(--ink);
+  font-size: 1rem;
+  padding: 13px;
+  width: 100%;
+  border-radius: 14px;
+  box-shadow: 0 0 0 1px var(--edge-soft) inset;
+}
+
+/* ---------- Overlays / Panels ---------- */
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(5, 8, 6, 0.6);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 40;
+  padding: 18px;
+  animation: overlay-in 0.25s ease;
+}
+@keyframes overlay-in { from { opacity: 0; } to { opacity: 1; } }
+.panel {
+  background: linear-gradient(180deg, #17201a, #101611);
+  border-radius: 22px;
+  box-shadow: 0 0 0 1px var(--edge) inset, 0 24px 70px -24px rgba(0,0,0,0.9);
+  padding: 26px 20px calc(20px + env(safe-area-inset-bottom));
+  width: 100%;
+  max-width: 420px;
+  max-height: 86vh;
+  overflow-y: auto;
+  animation: panel-up 0.4s var(--ease-spring);
+  text-align: center;
+}
+@keyframes panel-up {
+  from { transform: translateY(46px) scale(0.96); opacity: 0; }
+  to { transform: translateY(0) scale(1); opacity: 1; }
+}
+.panel h2 {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 800;
+  font-size: 1.7rem;
+  margin-bottom: 6px;
+}
+.panel .sub { color: var(--muted); font-size: 0.92rem; margin-bottom: 18px; }
+.panel input[type="text"] {
+  font-family: inherit;
+  font-size: 1.15rem;
+  text-align: center;
+  width: 100%;
+  padding: 14px;
+  border: 1px solid var(--edge-soft);
+  border-radius: 14px;
+  background: var(--card);
+  color: var(--ink);
+  margin-bottom: 14px;
+}
+.panel input:focus {
+  outline: none;
+  border-color: var(--gold);
+  box-shadow: 0 0 0 3px rgba(232, 193, 90, 0.18);
+}
+
+/* ---------- Bestenliste (GS.showLeaderboard nutzt diese Klassen) ---------- */
+.lb-list { list-style: none; text-align: left; margin: 6px 0 16px; }
+.lb-list li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 8px;
+  border-bottom: 1px solid var(--edge-soft);
+  font-size: 0.98rem;
+}
+.lb-list li:last-child { border-bottom: 0; }
+.lb-rank {
+  width: 34px;
+  flex-shrink: 0;
+  text-align: center;
+  color: var(--muted);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.lb-list li:nth-child(1) .lb-rank,
+.lb-list li:nth-child(2) .lb-rank,
+.lb-list li:nth-child(3) .lb-rank { font-size: 1.15rem; }
+.lb-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lb-list li.me .lb-name { color: var(--gold); font-weight: 700; }
+.lb-score { font-weight: 700; font-variant-numeric: tabular-nums; color: var(--ink); }
+.lb-empty { color: var(--muted); padding: 18px 0; }
+
+/* ---------- Barrierefreiheit / Sparmodus ---------- */
+*:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001s !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001s !important;
+  }
+  .grain, .aurora { animation: none !important; }
+}
+:root[data-lowpower] .aurora,
+:root[data-lowpower] .grain { display: none; }
+
+/* ==================================================================
+   HELLMODUS — Tokens umschalten; Komponenten erben automatisch.
+   ================================================================== */
+:root[data-theme="light"] {
+  --bg0: #f4f1e6;
+  --felt: #ece9db;
+  --card: rgba(255, 255, 252, 0.75);
+  --card-hi: rgba(255, 255, 252, 0.95);
+  --edge: rgba(138, 106, 28, 0.32);
+  --edge-soft: rgba(35, 45, 35, 0.15);
+  --ink: #26301f;
+  --muted: #64705f;
+  --gold: #a5851f;
+  --gold-glow: rgba(165, 133, 31, 0.28);
+  --foil: linear-gradient(115deg, #6d5416 0%, #a5851f 30%, #c9a13b 50%, #a5851f 70%, #6d5416 100%);
+}
+[data-theme="light"] body {
+  background: radial-gradient(120% 90% at 50% -10%, #dbe6d6 0%, var(--felt) 45%, var(--bg0) 100%);
+  background-attachment: fixed;
+}
+[data-theme="light"] .aurora { opacity: 0.18; mix-blend-mode: multiply; }
+[data-theme="light"] .grain { opacity: 0.028; }
+[data-theme="light"] .overlay { background: rgba(90, 100, 88, 0.35); }
+[data-theme="light"] .panel { background: linear-gradient(180deg, #fbf9f1, #f0ecdf); }
