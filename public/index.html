@@ -6,10 +6,11 @@
   <meta name="theme-color" content="#0a0e0b">
   <title>Spieleabend</title>
   <meta property="og:title" content="Spieleabend">
-  <meta property="og:description" content="Würfelpoker, Funkelfeld, Komet, Sternensturm und Galopp — kostenlose Spiele für den Spieleabend.">
+  <meta property="og:description" content="Neun Spiele, ein Zuhause — kostenlos, ohne Anmeldung, direkt im Browser. Dein Spieleabend.">
   <meta property="og:type" content="website">
   <meta property="og:image" content="https://philip-stack.pages.dev/icons/icon-512.png">
   <link rel="stylesheet" href="/fonts/fonts.css?v=8ff75776">
+  <link rel="stylesheet" href="/styles/core.css?v=296dc1b7">
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="apple-touch-icon" href="/icons/icon-180.png">
   <link rel="icon" href="/favicon.ico" sizes="any">
@@ -20,63 +21,11 @@
   <script src="/theme.js?v=bf8f92f8"></script>
   <style>
     /* ============================================================
-       PHILIP STACK — Landing Page ("Midnight Felt" Design System)
+       SPIELEABEND — Startseite. Basis (Tokens, Ambiente, Komponenten,
+       Hellmodus, a11y) kommt aus /styles/core.css. Hier steht NUR
+       Startseiten-Eigenes: Hero/Wortmarke, Karten-Grid, Meta-Karten.
        ============================================================ */
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-
-    :root {
-      --bg0: #0a0e0b;
-      --felt: #0e1410;
-      --card: rgba(255, 252, 240, 0.045);
-      --card-hi: rgba(255, 252, 240, 0.09);
-      --edge: rgba(232, 193, 90, 0.14);
-      --edge-soft: rgba(255, 252, 240, 0.08);
-      --ink: #f4efe2;
-      --muted: #93a396;
-      --gold: #e8c15a;
-      --gold-glow: rgba(232, 193, 90, 0.35);
-      --foil: linear-gradient(115deg, #8a6a1c 0%, #e8c15a 25%, #fff3c4 50%, #e8c15a 75%, #8a6a1c 100%);
-      --radius: 18px;
-      --font-display: "Fraunces", Georgia, serif;
-      --font-ui: "Outfit", system-ui, -apple-system, sans-serif;
-      --ease-spring: cubic-bezier(0.34, 1.4, 0.5, 1);
-    }
-
-    body {
-      font-family: var(--font-ui);
-      background: radial-gradient(120% 90% at 50% -10%, #1a2a1d 0%, var(--felt) 45%, var(--bg0) 100%);
-      background-attachment: fixed;
-      color: var(--ink);
-      min-height: 100vh;
-      min-height: 100dvh;
-      overflow-x: hidden;
-    }
-
-    .ambience { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
-    .aurora {
-      position: absolute;
-      width: 70vmax; height: 70vmax;
-      border-radius: 50%;
-      filter: blur(60px);
-      opacity: 0.32;
-      mix-blend-mode: screen;
-    }
-    /* Statischer Schein statt Dauer-Drift: eine animierte 90px-Blur-Fläche
-       zwingt die GPU zu Dauer-Neuberechnung (Akku/Hitze). Statisch wird sie
-       einmal gerendert und gecacht. */
-    .aurora-a {
-      top: -35vmax; left: -20vmax;
-      background: radial-gradient(circle, rgba(232,193,90,0.28), transparent 65%);
-    }
-    .aurora-b {
-      bottom: -40vmax; right: -25vmax;
-      background: radial-gradient(circle, rgba(52,120,80,0.35), transparent 65%);
-    }
-    .grain {
-      position: absolute; inset: 0;
-      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E");
-      opacity: 0.05;
-    }
+    :root { --radius: 18px; }   /* Startseite nutzt etwas rundere Karten */
 
     main {
       position: relative;
@@ -114,6 +63,11 @@
       50% { background-position: 100% 50%; }
     }
     .hero .tagline { color: var(--muted); margin-top: 10px; font-size: 0.98rem; }
+    /* Wortmarke: eigener Würfel-Merk (SVG) + Schriftzug = echte Identität
+       statt Emoji-Only. */
+    .wordmark { display: flex; align-items: center; justify-content: center; gap: 12px; }
+    .logo-mark { flex-shrink: 0; width: 44px; height: 44px; filter: drop-shadow(0 4px 12px var(--gold-glow)); }
+    @media (max-width: 360px) { .logo-mark { width: 38px; height: 38px; } }
     .mascot {
       font-size: 2.6rem; line-height: 1; margin: 6px 0 2px; cursor: pointer; user-select: none;
       display: inline-block; animation: mascot-bob 2.8s ease-in-out infinite;
@@ -131,7 +85,10 @@
     .confetti-wrap i { position: absolute; width: 9px; height: 14px; border-radius: 2px; top: -20px; animation: confetti-fall linear forwards; }
     @keyframes confetti-fall { to { transform: translateY(105vh) rotate(720deg); opacity: 0.9; } }
 
-    .apps { display: flex; flex-direction: column; gap: 14px; }
+    /* Spiele als 2-spaltiges Kachel-Raster ("App-Store"-Gefühl);
+       Meta-/Shortcut-Karten (Profil, Challenge …) laufen über die volle Breite. */
+    .apps { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .app-card:not([data-game]) { grid-column: 1 / -1; }
 
     .app-card {
       display: flex;
@@ -163,15 +120,27 @@
     }
     .app-card:active { transform: scale(0.98); }
 
+    /* Spielkacheln: Icon oben, Text darunter (vertikal), kein Pfeil. */
+    .app-card[data-game] {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 12px;
+      padding: 16px 15px;
+    }
+    .app-card[data-game] .app-arrow { display: none; }
+    .app-card[data-game] .app-name { font-size: 1.08rem; }
+    .app-card[data-game] .app-desc { font-size: 0.82rem; }
+
     .app-icon {
       flex-shrink: 0;
-      width: 58px; height: 58px;
+      width: 54px; height: 54px;
       display: grid;
       place-items: center;
-      font-size: 1.9rem;
+      font-size: 1.75rem;
       border-radius: 14px;
-      background: rgba(232, 193, 90, 0.1);
-      box-shadow: 0 0 0 1px var(--edge) inset;
+      /* Akzentfarbe der jeweiligen App (fällt auf Gold zurück) */
+      background: color-mix(in srgb, var(--accent, var(--gold)) 15%, transparent);
+      box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent, var(--gold)) 42%, transparent) inset;
     }
     .app-info { flex: 1; min-width: 0; }
     .app-name {
@@ -188,11 +157,6 @@
     }
     .app-card:hover .app-arrow { transform: translateX(4px); }
 
-    .app-card.soon {
-      opacity: 0.55;
-      pointer-events: none;
-      filter: saturate(0.4);
-    }
     .app-card.is-last { box-shadow: 0 0 0 1.5px var(--gold, #e8c15a) inset, 0 12px 30px -12px rgba(0,0,0,0.5); }
     .app-card.profile {
       background: linear-gradient(175deg, rgba(232,193,90,0.16), rgba(232,193,90,0.05));
@@ -229,6 +193,17 @@
       margin-bottom: 6px;
     }
     .app-card.saison .app-icon { background: rgba(232,193,90,0.22); }
+    /* Grid-Abstand übernimmt gap → alte Einzel-margins entfernen. */
+    .apps .app-card { margin-bottom: 0; }
+    /* Wettbewerbs-Shortcuts (Challenge/Party/Saison) als schlanke Regale,
+       damit die Spiele das Zentrum bleiben und nicht die Meta-Suppe. */
+    .app-card.challenge, .app-card.party, .app-card.saison { padding: 13px 16px; }
+    .app-card.challenge .app-icon,
+    .app-card.party .app-icon,
+    .app-card.saison .app-icon { width: 42px; height: 42px; font-size: 1.3rem; border-radius: 11px; }
+    .app-card.challenge .app-desc,
+    .app-card.party .app-desc,
+    .app-card.saison .app-desc { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .game-search {
       width: 100%; margin-bottom: 14px; padding: 13px 16px;
       font-family: inherit; font-size: 0.95rem;
@@ -275,16 +250,11 @@
       letter-spacing: 0.06em;
     }
 
-    *:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+    /* Startseiten-Deko zusätzlich ruhigstellen (Basis-a11y kommt aus core.css) */
     @media (prefers-reduced-motion: reduce) {
-      *, *::before, *::after {
-        animation-duration: 0.001s !important;
-        animation-iteration-count: 1 !important;
-        transition-duration: 0.001s !important;
-      }
-      .grain, .aurora, .mascot, .snow i, .confetti-wrap i { animation: none !important; }
+      .mascot, .snow i, .confetti-wrap i { animation: none !important; }
     }
-    :root[data-lowpower] .aurora, :root[data-lowpower] .grain, :root[data-lowpower] .snow { display: none; }
+    :root[data-lowpower] .snow { display: none; }
     :root[data-lowpower] .mascot, :root[data-lowpower] .app-icon.frame-rainbow::after { animation: none !important; }
 
     .app-rec {
@@ -349,32 +319,12 @@
     }
     .theme-toggle:active { transform: scale(0.92); }
 
-    /* ---------- Hellmodus ---------- */
-    :root[data-theme="light"] {
-      --bg0: #f4f1e6;
-      --felt: #ece9db;
-      --card: rgba(255, 255, 252, 0.72);
-      --card-hi: rgba(255, 255, 252, 0.95);
-      --edge: rgba(138, 106, 28, 0.3);
-      --edge-soft: rgba(35, 45, 35, 0.14);
-      --ink: #26301f;
-      --muted: #64705f;
-      --gold: #a5851f;
-      --gold-glow: rgba(165, 133, 31, 0.3);
-      --foil: linear-gradient(115deg, #6d5416 0%, #a5851f 30%, #c9a13b 50%, #a5851f 70%, #6d5416 100%);
-    }
-    [data-theme="light"] body {
-      background: radial-gradient(120% 90% at 50% -10%, #dbe6d6 0%, var(--felt) 45%, var(--bg0) 100%);
-      background-attachment: fixed;
-    }
-    [data-theme="light"] .aurora { opacity: 0.2; mix-blend-mode: multiply; }
-    [data-theme="light"] .grain { opacity: 0.03; }
+    /* ---------- Hellmodus (Tokens/Body/Ambiente kommen aus core.css) ---------- */
     [data-theme="light"] .app-card {
       box-shadow: 0 1px 0 rgba(255,255,255,0.6) inset,
                   0 8px 24px -14px rgba(40, 50, 40, 0.35),
                   0 0 0 1px var(--edge-soft) inset;
     }
-    [data-theme="light"] .app-icon { background: rgba(165, 133, 31, 0.12); }
     [data-theme="light"] .badge { background: rgba(35, 45, 35, 0.06); }
   </style>
 </head>
@@ -390,24 +340,38 @@
   <main>
     <header class="hero">
       <span class="overline" id="greeting">Was spielen wir?</span>
+      <div class="wordmark">
+        <svg class="logo-mark" viewBox="0 0 48 48" role="img" aria-label="Spieleabend-Logo">
+          <defs>
+            <linearGradient id="lm-face" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#1c261e"/>
+              <stop offset="1" stop-color="#0d1310"/>
+            </linearGradient>
+            <linearGradient id="lm-gold" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="#8a6a1c"/>
+              <stop offset="0.5" stop-color="#e8c15a"/>
+              <stop offset="1" stop-color="#fff3c4"/>
+            </linearGradient>
+          </defs>
+          <rect x="3.5" y="3.5" width="41" height="41" rx="12" fill="url(#lm-face)" stroke="url(#lm-gold)" stroke-width="2"/>
+          <g fill="url(#lm-gold)">
+            <circle cx="15" cy="15" r="3.1"/>
+            <circle cx="33" cy="15" r="3.1"/>
+            <circle cx="24" cy="24" r="3.1"/>
+            <circle cx="15" cy="33" r="3.1"/>
+            <circle cx="33" cy="33" r="3.1"/>
+          </g>
+        </svg>
+        <h1>Spieleabend</h1>
+      </div>
+      <p class="tagline">Neun Spiele, ein Zuhause.</p>
       <div class="mascot" id="mascot" title="Hallo!">🐹</div>
-      <h1>Spieleabend</h1>
-      <p class="tagline">Wähle eine App</p>
     </header>
 
     <input type="search" id="game-search" class="game-search" placeholder="🔍 Spiel suchen …" autocomplete="off" aria-label="Spiel suchen">
 
     <!-- Karten werden aus der zentralen Registry (/games.js) erzeugt -->
-    <nav class="apps" id="apps">
-      <a class="app-card soon" href="#" style="--i:8" aria-disabled="true">
-        <span class="app-icon">✨</span>
-        <span class="app-info">
-          <span class="app-name">Nächste App<span class="badge">bald</span></span>
-          <span class="app-desc" style="display:block">Hier ist Platz für die nächste Idee</span>
-        </span>
-        <span class="app-arrow">→</span>
-      </a>
-    </nav>
+    <nav class="apps" id="apps"></nav>
 
 
     <!-- Werkzeuge / Neben-Apps (aus der Registry, /games.js) -->
@@ -427,7 +391,7 @@
     </footer>
   </main>
 
-  <script src="/games.js?v=7bbfdfce"></script>
+  <script src="/games.js?v=30cb5fa6"></script>
   <script>
   // ================= Landing-Dynamik =================
   (function () {
@@ -438,15 +402,11 @@
     const myName = (localStorage.getItem("bb_name") || "").trim();
     const GAMES = window.GAMES || [];
     const nav = document.querySelector(".apps");
-    const soon = nav.querySelector(".app-card.soon");
 
     // --- Spielkarten aus der zentralen Registry erzeugen ---
     GAMES.forEach((g, i) => {
       nav.insertAdjacentHTML("beforeend", window.gameCardHTML(g, i));
-      nav.appendChild(soon);   // "bald"-Karte bleibt am Ende
     });
-    // "bald"-Karte direkt nach den Spielen einblenden (sonst 99×90ms Verzögerung)
-    if (soon) soon.style.setProperty("--i", GAMES.length + 1);
 
     // --- Werkzeuge (Neben-Apps) in eigener Sektion ---
     const TOOLS = window.TOOLS || [];
