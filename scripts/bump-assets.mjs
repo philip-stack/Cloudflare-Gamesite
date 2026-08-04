@@ -29,7 +29,12 @@ const hashCache = new Map();
 function hashOf(file) {
   if (hashCache.has(file)) return hashCache.get(file);
   let h = null;
-  try { h = createHash("sha1").update(readFileSync(file)).digest("hex").slice(0, 8); } catch { h = null; }
+  try {
+    // Zeilenenden normalisieren (\r\n → \n), damit der Hash plattformunabhängig
+    // ist — sonst weichen Windows-Arbeitskopie (CRLF) und CI (LF) voneinander ab.
+    const norm = readFileSync(file, "utf8").replace(/\r\n/g, "\n");
+    h = createHash("sha1").update(norm).digest("hex").slice(0, 8);
+  } catch { h = null; }
   hashCache.set(file, h);
   return h;
 }
