@@ -204,6 +204,49 @@
     .app-card.challenge .app-desc,
     .app-card.party .app-desc,
     .app-card.saison .app-desc { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    /* Spieleabend-Level-Leiste auf der Profil-Karte */
+    .prof-level { display: block; margin-top: 8px; }
+    .pl-top { display: flex; align-items: baseline; gap: 6px; font-size: 0.82rem; color: var(--muted); }
+    .pl-top b { color: var(--gold); font-size: 0.95rem; }
+    .pl-xp { margin-left: auto; font-variant-numeric: tabular-nums; }
+    .pl-track { display: block; height: 7px; margin-top: 5px; border-radius: 999px; background: rgba(255,252,240,0.08); overflow: hidden; box-shadow: 0 0 0 1px var(--edge-soft) inset; }
+    .pl-track i { display: block; height: 100%; border-radius: 999px; background: linear-gradient(90deg, #c39a30, var(--gold), #fff3c4); transition: width 0.6s var(--ease-spring); }
+
+    /* Tagesquests-Karte */
+    .app-card.quests {
+      background: linear-gradient(175deg, rgba(69,207,214,0.13), rgba(69,207,214,0.03));
+      box-shadow: 0 0 0 1px rgba(69,207,214,0.28) inset, 0 10px 28px -14px rgba(0,0,0,0.55);
+      align-items: flex-start;
+    }
+    .app-card.quests .app-icon { background: rgba(69,207,214,0.18); width: 42px; height: 42px; font-size: 1.3rem; border-radius: 11px; }
+    .q-count { font-size: 0.72rem; font-weight: 700; color: var(--gold); background: rgba(232,193,90,0.14); padding: 2px 8px; border-radius: 999px; box-shadow: 0 0 0 1px rgba(232,193,90,0.3) inset; vertical-align: 2px; margin-left: 6px; }
+    .quest-lines { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+    .quest-line { display: flex; align-items: center; gap: 8px; font-size: 0.82rem; color: var(--ink); }
+    .quest-line.done { color: var(--muted); text-decoration: line-through; }
+    .quest-line .ql-ic { flex-shrink: 0; width: 20px; text-align: center; }
+    .quest-line .ql-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .quest-line .ql-prog { flex-shrink: 0; color: var(--muted); font-variant-numeric: tabular-nums; font-size: 0.76rem; }
+
+    /* Duell-Einladung (in Akzentfarbe des Spiels) */
+    .app-card.duel {
+      background: linear-gradient(175deg, color-mix(in srgb, var(--accent, var(--gold)) 20%, transparent), color-mix(in srgb, var(--accent, var(--gold)) 5%, transparent));
+      box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent, var(--gold)) 45%, transparent) inset, 0 12px 30px -12px rgba(0,0,0,0.6);
+    }
+    .app-card.duel .app-icon { background: color-mix(in srgb, var(--accent, var(--gold)) 24%, transparent); }
+
+    /* Einblend-Meldung (Level/Quest) */
+    .gs-toast {
+      position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom));
+      transform: translate(-50%, 20px); opacity: 0; z-index: 60;
+      max-width: 88vw; padding: 12px 18px; border-radius: 14px;
+      font-weight: 700; font-size: 0.95rem; color: #1a1508;
+      background: linear-gradient(160deg, #f0cd6e, var(--gold) 45%, #c39a30);
+      box-shadow: 0 10px 30px -8px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,230,160,0.4) inset;
+      transition: transform 0.35s var(--ease-spring), opacity 0.35s ease;
+    }
+    .gs-toast.show { transform: translate(-50%, 0); opacity: 1; }
+
     .game-search {
       width: 100%; margin-bottom: 14px; padding: 13px 16px;
       font-family: inherit; font-size: 0.95rem;
@@ -391,6 +434,7 @@
     </footer>
   </main>
 
+  <script src="/shared.js?v=e1c2cc9e"></script>
   <script src="/games.js?v=30cb5fa6"></script>
   <script>
   // ================= Landing-Dynamik =================
@@ -402,6 +446,24 @@
     const myName = (localStorage.getItem("bb_name") || "").trim();
     const GAMES = window.GAMES || [];
     const nav = document.querySelector(".apps");
+    const reduceMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    // Konfetti-Regen (auch für Level-Aufstieg & Rekord wiederverwendet)
+    function fireConfetti() {
+      if (reduceMotion()) return;
+      const w = document.createElement("div"); w.className = "confetti-wrap";
+      const cols = ["#e8c15a", "#ff6f91", "#57e39b", "#5b9cff", "#b678ff", "#ffd23f"];
+      let html = "";
+      for (let i = 0; i < 70; i++) html += `<i style="left:${Math.random() * 100}%;background:${cols[i % cols.length]};animation-duration:${2 + Math.random() * 2}s;animation-delay:${Math.random() * 0.6}s;transform:rotate(${Math.random() * 360}deg)"></i>`;
+      w.innerHTML = html; document.body.appendChild(w); setTimeout(() => w.remove(), 5200);
+    }
+    // Kurze Einblend-Meldung unten (Level/Quest)
+    function showToast(msg) {
+      const t = document.createElement("div"); t.className = "gs-toast"; t.textContent = msg;
+      document.body.appendChild(t);
+      requestAnimationFrame(() => t.classList.add("show"));
+      setTimeout(() => { t.classList.remove("show"); setTimeout(() => t.remove(), 400); }, 3400);
+    }
 
     // --- Spielkarten aus der zentralen Registry erzeugen ---
     GAMES.forEach((g, i) => {
@@ -439,6 +501,18 @@
           <span class="app-desc" style="display:block">${sub}</span>
         </span>
         <span class="app-arrow">→</span>`;
+      // Spieleabend-Level als Fortschrittsleiste (zieht alle Spiele zusammen)
+      try {
+        if (window.GS && GS.level) {
+          const li = GS.level.computeFromGames(window.GAMES);
+          const bar = document.createElement("span");
+          bar.className = "prof-level";
+          bar.innerHTML = `
+            <span class="pl-top">Lvl <b>${li.level}</b> · ${esc(li.title)}<span class="pl-xp">${li.into}/${li.need} XP</span></span>
+            <span class="pl-track"><i style="width:${Math.max(5, li.pct)}%"></i></span>`;
+          prof.querySelector(".app-info").appendChild(bar);
+        }
+      } catch {}
       // Freigeschalteten Rahmen auf das Profil-Icon anwenden
       const FCOL = { bronze: "#cd7f32", silber: "#bfc7cf", gold: "#e8c15a", smaragd: "#4fd18b", rubin: "#ff5e7a" };
       const fr = localStorage.getItem("gs_frame") || "none";
@@ -566,6 +640,55 @@
       nav.insertBefore(saison, firstGame || null);
     } catch {}
 
+    // --- Tagesquests: 3 Aufgaben pro Tag, Fortschritt live ---
+    try {
+      if (window.GS && GS.quests) {
+        const qs = GS.quests.today();
+        const doneN = qs.filter(q => q.done).length;
+        const card = document.createElement("a");
+        card.className = "app-card quests";
+        card.style.setProperty("--i", 0);
+        card.href = "/profil/";
+        card.innerHTML = `
+          <span class="app-icon">📋</span>
+          <span class="app-info">
+            <span class="app-name">Tagesquests <span class="q-count">${doneN}/${qs.length}</span></span>
+            <span class="quest-lines">${qs.map(q => `
+              <span class="quest-line ${q.done ? "done" : ""}">
+                <span class="ql-ic">${q.done ? "✅" : q.icon}</span>
+                <span class="ql-label">${esc(q.label)}</span>
+                <span class="ql-prog">${q.cur}/${q.goal} · +${q.xp}</span>
+              </span>`).join("")}</span>
+          </span>`;
+        const firstGame = nav.querySelector(".app-card[data-game]");
+        nav.insertBefore(card, firstGame || null);
+      }
+    } catch {}
+
+    // --- Duell-Einladung (?duel=game&by=Name&sc=123) prominent zeigen ---
+    try {
+      const p = new URLSearchParams(location.search);
+      const dg = p.get("duel");
+      const game = dg && (window.GAMES_BYKEY || {})[dg];
+      if (game) {
+        const by = (p.get("by") || "Jemand").slice(0, 16) || "Jemand";
+        const sc = Math.max(0, parseInt(p.get("sc") || "0", 10) || 0);
+        const card = document.createElement("a");
+        card.className = "app-card duel";
+        card.href = game.href;
+        card.style.setProperty("--i", 0);
+        card.style.setProperty("--accent", game.accent || "#e8c15a");
+        card.innerHTML = `
+          <span class="app-icon">${game.icon}</span>
+          <span class="app-info">
+            <span class="app-name">${esc(by)} fordert dich heraus! ⚔️</span>
+            <span class="app-desc" style="display:block">${esc(game.name)} · zu schlagen: <b>${sc.toLocaleString("de-AT")}</b> — tritt an</span>
+          </span>
+          <span class="app-arrow">→</span>`;
+        nav.insertBefore(card, nav.firstElementChild);
+      }
+    } catch {}
+
     // --- Suche/Filter über die Spielkarten ---
     try {
       const search = document.getElementById("game-search");
@@ -591,9 +714,15 @@
       const gEl = document.getElementById("greeting");
       if (gEl) gEl.textContent = (myName ? `${greet}, ${myName}` : greet) + " —";
 
-      // Maskottchen hüpft beim Antippen
+      // Maskottchen hüpft beim Antippen — mit Funken & Ton
       const m = document.getElementById("mascot");
-      if (m) m.onclick = () => { m.classList.remove("hop"); void m.offsetWidth; m.classList.add("hop"); };
+      if (m) m.onclick = () => {
+        m.classList.remove("hop"); void m.offsetWidth; m.classList.add("hop");
+        try { if (window.GS) { GS.fx.burstAt(m, { count: 12 }); GS.sound.good(); GS.haptic(10); } } catch {}
+      };
+
+      // Sanftes Tap-Feedback auf allen Karten (haptisch)
+      try { nav.addEventListener("pointerdown", e => { if (e.target.closest(".app-card") && window.GS) GS.haptic(8); }, { passive: true }); } catch {}
 
       // Schnee im Dezember
       if (!reduce && now.getMonth() === 11) {
@@ -621,6 +750,23 @@
           setTimeout(() => w.remove(), 5200);
         }
       }
+
+      // Level-Aufstieg & erledigte Quest feiern (Flags von GS gesetzt)
+      try {
+        const lu = JSON.parse(localStorage.getItem("gs_levelup") || "null");
+        if (lu && Date.now() - lu.at < 60000) {
+          localStorage.removeItem("gs_levelup");
+          showToast(`⭐ Level ${lu.level} erreicht — ${lu.title}!`);
+          fireConfetti();
+          try { if (window.GS) { GS.sound.levelup(); GS.fx.burst(innerWidth / 2, innerHeight / 2, { count: 22 }); GS.haptic(20); } } catch {}
+        }
+        const qd = JSON.parse(localStorage.getItem("gs_quest_done") || "null");
+        if (qd && Date.now() - qd.at < 60000) {
+          localStorage.removeItem("gs_quest_done");
+          showToast(`${qd.icon || "✅"} Quest erledigt · +${qd.xp} XP`);
+          try { if (window.GS) { GS.sound.good(); GS.haptic(12); } } catch {}
+        }
+      } catch {}
     } catch {}
 
     // --- Profil-Karte immer ganz nach oben (nach allen Einfügungen) ---

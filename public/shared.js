@@ -57,7 +57,13 @@
       if (res.status === 409) return { error: data.error || "Name vergeben", nameTaken: true };
       if (!res.ok) return { error: data.error || "Fehler" };
       // Persönlicher Rekord? Für ein kleines Konfetti-Willkommen im Hub merken.
-      try { if (data && Number(data.best) > 0 && score >= Number(data.best)) localStorage.setItem("gs_celebrate", String(Date.now())); } catch {}
+      const isRecord = !!(data && Number(data.best) > 0 && score >= Number(data.best));
+      try { if (isRecord) localStorage.setItem("gs_celebrate", String(Date.now())); } catch {}
+      // Fortschritt: XP + Tagesquests (zentral → gilt für alle Spiele)
+      try {
+        GSP.award(10, "score"); GSP.bump("score", { game });
+        if (isRecord) { GSP.award(25, "record"); GSP.bump("record", { game }); }
+      } catch {}
       // Läuft ein Spieleabend-Raum? Ergebnis zusätzlich dorthin melden.
       try {
         const pc = (localStorage.getItem("gs_party_code") || "").trim().toUpperCase();
@@ -77,8 +83,31 @@
   // Kompletter Ranglisten-Block im Game-Over-Panel: fragt bei Bedarf
   // nach dem Namen, sendet ein, zeigt Platzierung; bei vergebenem
   // Namen darf man direkt einen neuen wählen.
-  function scoreFlow(container, rankEl, { game, score, meta, daily, weekly, onName }) {
-    let submitted = false;
+  function scoreFlow(container, rankEl, { game, score, meta, daily, weekly, onName, title, accent, icon }) {
+    let submitted = false, shareAdded = false;
+
+    // Teilen / Herausfordern — zentral, damit JEDES gewertete Spiel es bekommt.
+    function addShare() {
+      if (shareAdded || !container) return; shareAdded = true;
+      const b = document.createElement("button");
+      b.className = "btn-secondary gs-share-btn"; b.type = "button";
+      b.style.marginTop = "10px";
+      b.textContent = "📤 Teilen / Herausfordern";
+      b.onclick = () => {
+        const g = (window.GAMES_BYKEY || {})[game] || {};
+        const gName = title || g.name || "Spieleabend";
+        const nm = getName();
+        shareCard({
+          title: gName, big: score,
+          subtitle: nm ? `${nm} · schlag mich!` : "schlag meinen Score!",
+          accent: accent || g.accent || "#e8c15a",
+          emoji: icon || g.icon || "🎲",
+          url: duelLink(game, score),
+          text: `${nm ? nm + " hat " : "Ich hab "}${score} Punkte in ${gName} — schlag mich!`,
+        });
+      };
+      container.appendChild(b);
+    }
 
     const showResult = resp => {
       if (!resp) { rankEl.textContent = "Score konnte nicht übertragen werden"; return; }
@@ -90,6 +119,7 @@
       const extra = resp.best > score ? ` · dein Rekord: ${resp.best}` : "";
       const scope = weekly ? "Diese Woche" : daily ? "Heute" : "Weltweit";
       rankEl.innerHTML = `${scope} <b>Platz ${resp.rank}</b> als ${esc(getName())}${extra}`;
+      addShare();
     };
 
     const send = async () => {
@@ -186,6 +216,8 @@
         if (ok) { st.earned[def.id] = new Date().toISOString(); newly.push(def); }
       }
       localStorage.setItem("gs_badges_" + game, JSON.stringify(st));
+      // Fortschritt: XP + Abzeichen-Quest je frisch verdientem Meilenstein
+      try { for (const d of newly) { GSP.award(30, "badge:" + d.id); GSP.bump("badge", { game }); } } catch {}
       return newly;
     },
 
@@ -327,9 +359,62 @@
     great() { [660, 880, 1180].forEach((f, i) => this.tone(f, 0.12, { type: "triangle", delay: i * 0.05 })); },
     win() { [523, 659, 784, 1047].forEach((f, i) => this.tone(f, 0.18, { type: "triangle", delay: i * 0.09, gain: 0.14 })); },
     lose() { this.tone(300, 0.4, { type: "sawtooth", gain: 0.1, slideTo: 90 }); },
+    coin() { this.tone(880, 0.06, { type: "square", gain: 0.06 }); this.tone(1320, 0.09, { type: "square", gain: 0.05, delay: 0.05 }); },
+    power() { [440, 660, 880].forEach((f, i) => this.tone(f, 0.1, { type: "sawtooth", gain: 0.07, delay: i * 0.04 })); },
+    levelup() { [523, 659, 784, 1047, 1319].forEach((f, i) => this.tone(f, 0.2, { type: "triangle", delay: i * 0.08, gain: 0.13 })); },
     roll() { this.tone(180 + Math.floor((soundOn() ? Math.random() : 0) * 60), 0.06, { type: "square", gain: 0.05 }); },
   };
   const haptic = (ms = 12) => { try { navigator.vibrate && navigator.vibrate(ms); } catch {} };
+
+  // ---------- Effekte ("Juice"): Screenshake, Partikel, aufsteigender Text ----------
+  // Nutzt die Web-Animations-API (kein CSS nötig) und respektiert reduce-motion.
+  const reduceMotion = () => { try { return matchMedia("(prefers-reduced-motion: reduce)").matches; } catch { return false; } };
+  const FX_COLS = ["#e8c15a", "#ff6f91", "#57e39b", "#5b9cff", "#b678ff", "#ffd23f"];
+  const fx = {
+    shake(el, px = 6, ms = 380) {
+      if (!el || reduceMotion()) return;
+      const k = [];
+      for (let i = 0; i < 6; i++) k.push({ transform: `translate(${(Math.random() * 2 - 1) * px}px, ${(Math.random() * 2 - 1) * px}px)` });
+      k.push({ transform: "translate(0,0)" });
+      try { el.animate(k, { duration: ms, easing: "ease-out" }); } catch {}
+    },
+    burst(x, y, { colors = FX_COLS, count = 14 } = {}) {
+      if (reduceMotion()) return;
+      const layer = document.createElement("div");
+      layer.style.cssText = "position:fixed;inset:0;z-index:70;pointer-events:none;overflow:hidden";
+      document.body.appendChild(layer);
+      for (let i = 0; i < count; i++) {
+        const p = document.createElement("i");
+        const size = 6 + Math.random() * 6;
+        p.style.cssText = `position:fixed;left:${x}px;top:${y}px;width:${size}px;height:${size}px;border-radius:2px;background:${colors[i % colors.length]}`;
+        layer.appendChild(p);
+        const ang = Math.random() * Math.PI * 2, dist = 30 + Math.random() * 70;
+        try {
+          p.animate(
+            [{ transform: "translate(-50%,-50%) scale(1)", opacity: 1 },
+             { transform: `translate(${Math.cos(ang) * dist}px,${Math.sin(ang) * dist + 34}px) scale(0.3)`, opacity: 0 }],
+            { duration: 600 + Math.random() * 350, easing: "cubic-bezier(.2,.7,.3,1)" });
+        } catch {}
+      }
+      setTimeout(() => layer.remove(), 1050);
+    },
+    float(text, x, y, { color = "var(--gold, #e8c15a)", size = 1.4 } = {}) {
+      const el = document.createElement("div");
+      el.textContent = text;
+      el.style.cssText = `position:fixed;left:${x}px;top:${y}px;z-index:70;pointer-events:none;font-weight:800;font-family:var(--font-display,Georgia,serif);font-size:${size}rem;color:${color};text-shadow:0 2px 10px rgba(0,0,0,0.45)`;
+      document.body.appendChild(el);
+      try {
+        el.animate(
+          [{ transform: "translate(-50%,-50%) scale(0.8)", opacity: 0 },
+           { transform: "translate(-50%,-95%) scale(1)", opacity: 1, offset: 0.25 },
+           { transform: "translate(-50%,-165%) scale(1)", opacity: 0 }],
+          { duration: 1100, easing: "ease-out" });
+      } catch {}
+      setTimeout(() => el.remove(), 1150);
+    },
+    // Bequem: Effekt an der Mitte eines Elements auslösen
+    burstAt(el, opts) { try { const r = el.getBoundingClientRect(); this.burst(r.left + r.width / 2, r.top + r.height / 2, opts); } catch {} },
+  };
 
   // ---------- Onboarding (einmaliger Hinweis beim ersten Start) ----------
   function onboard(game, { title = "So geht's", steps = [], force = false } = {}) {
@@ -358,6 +443,62 @@
     try { await navigator.clipboard.writeText(full); return "copied"; } catch { return "failed"; }
   }
 
+  // ---------- Ergebnis-Bild (Canvas) + Duell-Link ----------
+  function roundRect(x, X, Y, W, H, r) {
+    if (x.roundRect) { x.beginPath(); x.roundRect(X, Y, W, H, r); return; }
+    x.beginPath(); x.moveTo(X + r, Y);
+    x.arcTo(X + W, Y, X + W, Y + H, r); x.arcTo(X + W, Y + H, X, Y + H, r);
+    x.arcTo(X, Y + H, X, Y, r); x.arcTo(X, Y, X + W, Y, r); x.closePath();
+  }
+  // Teilbares Ergebnisbild im Midnight-Felt-Look; mobil als Datei geteilt,
+  // sonst heruntergeladen + Text in die Zwischenablage.
+  async function shareCard(opt = {}) {
+    const { title = "Spieleabend", subtitle = "", big = "", accent = "#e8c15a", emoji = "🎲", url = location.origin, text = "" } = opt;
+    let blob = null;
+    try {
+      const S = 1080, c = document.createElement("canvas"); c.width = S; c.height = S;
+      const x = c.getContext("2d");
+      try { await document.fonts.ready; } catch {}
+      const g = x.createRadialGradient(S / 2, S * 0.1, 80, S / 2, S / 2, S * 0.95);
+      g.addColorStop(0, "#1a2a1d"); g.addColorStop(0.5, "#0e1410"); g.addColorStop(1, "#0a0e0b");
+      x.fillStyle = g; x.fillRect(0, 0, S, S);
+      x.lineWidth = 6; x.strokeStyle = accent; x.globalAlpha = 0.55; roundRect(x, 42, 42, S - 84, S - 84, 46); x.stroke(); x.globalAlpha = 1;
+      x.textAlign = "center";
+      x.fillStyle = "#93a396"; x.font = "700 30px 'Outfit', system-ui, sans-serif";
+      x.fillText("S P I E L E A B E N D", S / 2, 156);
+      x.font = "140px 'Apple Color Emoji','Segoe UI Emoji', serif"; x.fillText(emoji, S / 2, 362);
+      x.fillStyle = "#f4efe2"; x.font = "800 italic 62px 'Fraunces', Georgia, serif"; x.fillText(title, S / 2, 470);
+      if (big !== "") { x.fillStyle = accent; x.font = "800 200px 'Fraunces', Georgia, serif"; x.fillText(String(big), S / 2, 702); }
+      if (subtitle) { x.fillStyle = "#cbd8cd"; x.font = "500 40px 'Outfit', system-ui, sans-serif"; x.fillText(subtitle, S / 2, big !== "" ? 792 : 626); }
+      x.fillStyle = "#7d8c80"; x.font = "600 32px 'Outfit', system-ui, sans-serif";
+      x.fillText(String(url || "").replace(/^https?:\/\//, ""), S / 2, S - 82);
+      blob = await new Promise(res => c.toBlob(res, "image/png"));
+    } catch { blob = null; }
+
+    const full = url ? `${text}\n${url}`.trim() : text;
+    try {
+      if (blob && navigator.canShare) {
+        const file = new File([blob], "spieleabend.png", { type: "image/png" });
+        if (navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], text: full, title }); return "shared"; }
+      }
+    } catch { return "cancelled"; }
+    try {
+      if (blob) {
+        const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "spieleabend.png";
+        document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+      }
+    } catch {}
+    try { await navigator.clipboard.writeText(full); return blob ? "downloaded" : "copied"; } catch { return blob ? "downloaded" : "failed"; }
+  }
+
+  // Duell-Link: führt auf den Hub, der eine „X fordert dich heraus"-Karte zeigt.
+  function duelLink(game, score, opts = {}) {
+    const name = String(opts.name || getName() || "").slice(0, 16);
+    const base = opts.url || (location.origin + "/");
+    const p = new URLSearchParams({ duel: String(game), by: name, sc: String(score | 0) });
+    return base + "?" + p.toString();
+  }
+
   // ---------- Zuletzt gespieltes Spiel (für die Landing Page) ----------
   function markPlayed(game) {
     try { localStorage.setItem("gs_last_game", game); } catch {}
@@ -377,6 +518,13 @@
         if (cur > Number(localStorage.getItem("gs_streak_best") || 0)) localStorage.setItem("gs_streak_best", String(cur));
       }
     } catch {}
+    // Fortschritt: Play-Quests + Spiel-XP (max. 1×/Spiel/Tag, kein Farmen)
+    try {
+      const setKey = "gs_playxp_" + ymdOf(new Date());
+      let seen = {}; try { seen = JSON.parse(localStorage.getItem(setKey) || "{}"); } catch {}
+      if (!seen[game]) { seen[game] = 1; localStorage.setItem(setKey, JSON.stringify(seen)); GSP.award(12, "play"); }
+      GSP.bump("play", { game });
+    } catch {}
   }
 
   // Aktuellen Tages-Streak lesen — aber „abgelaufen" (weder heute noch gestern
@@ -391,6 +539,118 @@
       return 0;
     } catch { return 0; }
   }
+
+  // ---------- Fortschritt: Spieleabend-Level (XP) & Tagesquests ----------
+  // Zieht Spiele zusammen: ein einziges Level über ALLE Spiele, das über die
+  // zentralen Durchlaufpunkte (Score einsenden, gespielt markieren, Abzeichen
+  // verdienen) wächst — deshalb muss KEIN einzelnes Spiel angefasst werden.
+  const ymdOf = d => { const z = n => String(n).padStart(2, "0"); return d.getFullYear() + "-" + z(d.getMonth() + 1) + "-" + z(d.getDate()); };
+
+  // EINE gemeinsame Level-Formel für Hub UND Profil (früher rechnete das Profil
+  // sie separat → hier zentralisiert, damit beide dieselbe Zahl zeigen):
+  //   Gesamt-XP = Abzeichen·100 + Rekorde·80 + gespielte Spiele·40 + Bonus (gs_xp)
+  // Der Bonus kommt aus Quests/Score/Play/Abzeichen und macht Fortschritt fühlbar,
+  // ohne die bestehenden Freischalt-Schwellen zu entwerten (nur großzügiger).
+  const LEVEL_PER = 400;
+  const bonusXp = () => Math.max(0, Number(localStorage.getItem("gs_xp") || 0));
+  const LEVEL_TITLES = [[1, "Frischling"], [3, "Stammgast"], [5, "Kartenhai"], [8, "Würfelfuchs"], [12, "Spielmeister:in"], [16, "Abendlegende"], [22, "Großmeister:in"], [30, "Unantastbar"]];
+  function titleForLevel(L) { let n = LEVEL_TITLES[0][1]; for (const [lv, nm] of LEVEL_TITLES) if (L >= lv) n = nm; return n; }
+  function levelInfo(base) {
+    const total = Math.max(0, base | 0) + bonusXp();
+    const level = Math.floor(total / LEVEL_PER) + 1;
+    const into = total - (level - 1) * LEVEL_PER;
+    return { total, base: base | 0, bonus: bonusXp(), level, into, need: LEVEL_PER, per: LEVEL_PER, pct: Math.round((into / LEVEL_PER) * 100), title: titleForLevel(level) };
+  }
+  // Zählt Abzeichen/Rekorde/gespielt EXAKT wie das Profil (eine Wahrheit).
+  function countsFromGames(GAMES) {
+    const num = v => { const n = parseFloat(v); return isFinite(n) ? n : 0; };
+    const badgesOf = key => { try { return Object.keys(JSON.parse(localStorage.getItem("gs_badges_" + key) || "{}").earned || {}).length; } catch { return 0; } };
+    const played = g => (g.bestKey && num(localStorage.getItem(g.bestKey)) > 0) || (g.gsBadges && badgesOf(g.key) > 0) || !!localStorage.getItem("gs_onboard_" + g.key) || (g.key === "meeri" && !!localStorage.getItem("meeri_save_v1")) || (g.key === "wuerfelpoker" && !!localStorage.getItem("wp_local_games"));
+    const list = Array.isArray(GAMES) ? GAMES : (window.GAMES || []);
+    const badgeSum = list.filter(g => g.gsBadges).reduce((a, g) => a + badgesOf(g.key), 0);
+    const recordCount = list.filter(g => g.bestKey && num(localStorage.getItem(g.bestKey)) > 0).length;
+    const playedCount = list.filter(played).length;
+    return { badgeSum, recordCount, playedCount, base: badgeSum * 100 + recordCount * 80 + playedCount * 40 };
+  }
+
+  // Tagesquests: 3 pro Tag, deterministisch aus dem Datum gewählt (alle Geräte
+  // gleich). Fortschritt & erledigt werden pro Kalendertag lokal gehalten.
+  const QUEST_POOL = [
+    { id: "play2", type: "play", goal: 2, xp: 40, icon: "🎮", label: "Spiele 2 verschiedene Spiele" },
+    { id: "play3", type: "play", goal: 3, xp: 70, icon: "🕹️", label: "Spiele 3 verschiedene Spiele" },
+    { id: "score1", type: "score", goal: 1, xp: 30, icon: "📊", label: "Trag einen Score in eine Bestenliste ein" },
+    { id: "record1", type: "record", goal: 1, xp: 60, icon: "🏅", label: "Stell einen persönlichen Rekord auf" },
+    { id: "badge1", type: "badge", goal: 1, xp: 50, icon: "🎖️", label: "Verdien dir ein Abzeichen" },
+    { id: "streak1", type: "play", goal: 1, xp: 20, icon: "🔥", label: "Halte deinen Tages-Streak am Leben" },
+  ];
+
+  const GSP = {
+    // Bonus-XP gutschreiben. Level-Aufstieg wird gegen den zuletzt gesehenen
+    // Basiswert (gs_level_base, von compute() aktuell gehalten) geprüft.
+    award(n, reason) {
+      n = Math.round(n); if (!(n > 0)) return null;
+      const base = Number(localStorage.getItem("gs_level_base") || 0);
+      const before = Math.floor((base + bonusXp()) / LEVEL_PER) + 1;
+      const xp = bonusXp() + n;
+      try { localStorage.setItem("gs_xp", String(xp)); } catch {}
+      const after = Math.floor((base + xp) / LEVEL_PER) + 1;
+      try { localStorage.setItem("gs_title_name", titleForLevel(after)); } catch {}
+      if (after > before) { try { localStorage.setItem("gs_levelup", JSON.stringify({ level: after, title: titleForLevel(after), at: Date.now() })); } catch {} }
+      return { leveledUp: after > before, level: after, gained: n };
+    },
+    questKey() { return "gs_quests_" + ymdOf(new Date()); },
+    _pick() {
+      let h = 0; const s = ymdOf(new Date());
+      for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+      const ids = QUEST_POOL.map(q => q.id);
+      for (let i = ids.length - 1; i > 0; i--) { h = (h * 1103515245 + 12345) & 0x7fffffff; const j = h % (i + 1); [ids[i], ids[j]] = [ids[j], ids[i]]; }
+      const picks = [];
+      for (const id of ids) {
+        if (picks.length >= 3) break;
+        if (id === "play2" && picks.includes("play3")) continue;   // keine redundanten Zwillinge
+        if (id === "play3" && picks.includes("play2")) continue;
+        picks.push(id);
+      }
+      return picks.slice(0, 3);
+    },
+    _state() {
+      const key = this.questKey();
+      let st = null; try { st = JSON.parse(localStorage.getItem(key) || "null"); } catch {}
+      if (!st || !Array.isArray(st.picks)) st = { picks: this._pick(), prog: {}, done: {}, games: {} };
+      st.prog ||= {}; st.done ||= {}; st.games ||= {};
+      return st;
+    },
+    _save(st) { try { localStorage.setItem(this.questKey(), JSON.stringify(st)); } catch {} },
+    today() {
+      const st = this._state(); this._save(st);   // beim ersten Blick des Tages fixieren
+      return st.picks.map(id => {
+        const q = QUEST_POOL.find(x => x.id === id) || { id, goal: 1, xp: 0, label: id, icon: "•" };
+        return { ...q, cur: Math.min(q.goal, st.prog[id] || 0), done: !!st.done[id] };
+      });
+    },
+    // Ein Ereignis verbuchen; erfüllte Quests schalten XP frei + setzen Feier-Flag.
+    bump(type, ctx = {}) {
+      const st = this._state();
+      if (type === "play" && ctx.game) st.games[ctx.game] = 1;
+      const distinct = Object.keys(st.games).length;
+      let done = null;
+      for (const id of st.picks) {
+        if (st.done[id]) continue;
+        const q = QUEST_POOL.find(x => x.id === id);
+        if (!q || q.type !== type) continue;
+        const cur = type === "play" ? distinct : (st.prog[id] || 0) + 1;
+        st.prog[id] = cur;
+        if (cur >= q.goal) {
+          st.done[id] = Date.now();
+          this.award(q.xp, "quest:" + id);
+          try { localStorage.setItem("gs_quest_done", JSON.stringify({ label: q.label, xp: q.xp, icon: q.icon, at: Date.now() })); } catch {}
+          done = q;
+        }
+      }
+      this._save(st);
+      return done;
+    },
+  };
 
   // ---------- Cloud-Auto-Sync ----------
   // Sichert den localStorage-Schnappschuss automatisch, sobald ein
@@ -521,9 +781,29 @@
   `;
   document.head.appendChild(style);
 
+  const level = {
+    // Signale direkt übergeben …
+    compute(badgeSum, recordCount, playedCount) {
+      const base = (badgeSum | 0) * 100 + (recordCount | 0) * 80 + (playedCount | 0) * 40;
+      try { localStorage.setItem("gs_level_base", String(base)); } catch {}
+      return levelInfo(base);
+    },
+    // … oder bequem aus der Spiele-Registry zählen (identisch zum Profil).
+    computeFromGames(GAMES) {
+      const c = countsFromGames(GAMES);
+      try { localStorage.setItem("gs_level_base", String(c.base)); } catch {}
+      return { ...levelInfo(c.base), ...c };
+    },
+    counts: countsFromGames,
+    award: (n, r) => GSP.award(n, r),
+    titleFor: titleForLevel,
+  };
+  const quests = { today: () => GSP.today(), bump: (t, c) => GSP.bump(t, c), pool: () => QUEST_POOL.slice() };
+
   window.GS = {
     esc, deviceId, getName, setName, submitScore, scoreFlow, showLeaderboard,
-    badges, skins, sound, haptic, onboard, share, markPlayed, streak, cloud,
+    badges, skins, sound, haptic, fx, onboard, share, shareCard, duelLink, markPlayed, streak, cloud,
+    level, quests,
   };
 
   // Auto-Sync verdrahten (nur wenn ein Sync-Code existiert): beim Verlassen
