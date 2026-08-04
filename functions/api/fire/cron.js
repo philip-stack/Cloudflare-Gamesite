@@ -223,7 +223,30 @@ export async function onRequestGet({ request, env }) {
 
   await writeHealth(env, list.length, detailFetched, "ok");
   await checkAdminAlert(env);
+  // Gelegentliche plattformweite Aufräum-Runde (der Cron läuft alle 2 Min →
+  // ~2 %/Lauf ≈ alle ~1,5 h). Verhindert unbegrenztes Wachstum der Tabellen.
+  if (Math.random() < 0.02) await maintenance(env);
   return json({ ok: true, active: list.length, fresh: fresh.length, sent, detailFetched });
+}
+
+// Plattformweites Aufräumen wachsender Tabellen. Jede Löschung einzeln gekapselt,
+// damit ein Fehler die anderen nicht verhindert. Bewusst konservative Fristen.
+async function maintenance(env) {
+  const del = async (label, sql) => { try { await env.DB.prepare(sql).run(); } catch (e) { await logError(env, "maintenance " + label + ": " + e.message, "fire/cron"); } };
+  // Tages-/Wochen-Buckets der Bestenliste: nach ihrem Zeitfenster nie wieder
+  // gelesen → nach 2 Tagen / 2 Wochen löschen. Gesamtwertung (ohne Suffix) bleibt.
+  await del("scores:daily",  "DELETE FROM scores WHERE game LIKE '%:daily'  AND created_at < datetime('now','-2 days')");
+  await del("scores:weekly", "DELETE FROM scores WHERE game LIKE '%:weekly' AND created_at < datetime('now','-16 days')");
+  // Spieleabend-Räume > 14 Tage samt Kindern (kein FK-Cascade in D1).
+  const oldParty = "SELECT code FROM party WHERE created_at < datetime('now','-14 days')";
+  await del("party_member",   `DELETE FROM party_member   WHERE code IN (${oldParty})`);
+  await del("party_score",    `DELETE FROM party_score    WHERE code IN (${oldParty})`);
+  await del("party_reaction", `DELETE FROM party_reaction WHERE code IN (${oldParty})`);
+  await del("party",          "DELETE FROM party WHERE created_at < datetime('now','-14 days')");
+  // Cloud-Backups: alte 1-Schritt-Historie (prev_data) nach 30 Tagen freigeben.
+  await del("cloud_prev", "UPDATE cloud_saves SET prev_data = NULL, prev_at = NULL WHERE prev_at IS NOT NULL AND prev_at < datetime('now','-30 days')");
+  // Waisen in der Push-Queue (Sub existiert nicht mehr).
+  await del("push_queue_orphan", "DELETE FROM push_queue WHERE endpoint NOT IN (SELECT endpoint FROM push_sub)");
 }
 
 // ------------------------------------------------------------------

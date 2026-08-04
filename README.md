@@ -17,7 +17,7 @@ statisches HTML/CSS/JS in `public/`, dazu Pages Functions als API und eine
 | 🚀 **Sternensturm** | `/sternensturm/` | Roguelite-Space-Shooter — Wellen, Upgrades, NOVA, Bosse |
 | 🦄 **Galopp** | `/galopp/` | Temple-Run-artiger Endless-Runner — springen, ducken, abbiegen, und das wütende Einhorn nicht aufholen lassen |
 | 🦝 **WUMMS!** | `/wumms/` | Comic-Block-Puzzle mit Tier-Helden — Blöcke aufs 8×8-Feld legen, Reihen abräumen, Helden-Ultimates (Bombe/Laser/Nuke) zünden, Combo-Ketten bauen und den Bösewicht zurückschlagen, der Reihen von unten hochschiebt |
-| 🐹 **MEERI-MANIA** | `/meeri/` | Merge-Idle mit Meerschweinchen — Meeries kaufen, gleiche zusammenziehen für immer absurdere Evolutionen (Baby → Punk → Ritter → … → Drachen → Galaxie), Münz-Blasen antippen, Wiese ausbauen, Offline-Einnahmen, alle 16 im Meeri-Album entdecken. Rein lokal (kein Server) |
+| 🐹 **MEERI-MANIA** | `/meeri/` | Merge-Idle mit Meerschweinchen — Meeries kaufen, gleiche zusammenziehen für immer absurdere Evolutionen (Baby → Punk → Ritter → … → Drachen → Galaxie), Münz-Blasen antippen, Wiese ausbauen, Offline-Einnahmen, alle 16 im Meeri-Album entdecken. Fortschritt lokal; **weltweite Bestenliste** (höchste Evolution) über `/api/scores` |
 | 🐍 **Neon-Schlange** | `/schlange/` | Slither-**Arena** — große Welt mit Kamera & Minimap, **KI-Gegner** zum Abschneiden (laufen sie in dich, zerfallen sie in Orbs), **Power-ups** (Magnet/Schild/×2/Geist). Ziehen lenkt, ⚡/Halten boostet; Orbs fressen & wachsen, nicht selbst beißen. Skins & Meilensteine, weltweite Bestenliste |
 | 🎨 **Kritzeln & Raten** | `/kritzeln/` | **Echtzeit-Multiplayer** (2–10) — einer malt, die anderen raten live im Chat; Raum per Code teilen, **Kategorien & Rundenzahl** (Host), Wortwahl aus 3, Live-Striche mit **Fülleimer/Radierer/Undo**, Buchstaben-Hinweise, **Speed-/Platz-Punkte**, Runden-Zusammenfassung, Konfetti/Sound, Sieger:in & Revanche. Server = Durable Object (`DrawRoom`); dazu eine **dauerhafte, geräteübergreifende Bestenliste** (🏆), die das DO am Spielende autoritativ in D1 schreibt (Gesamtpunkte, Spiele, Siege, Bestleistung) |
 
@@ -272,15 +272,25 @@ wuerfelpoker/
 │   ├── log.js                 anonymer Fehler-Melder (→ D1, selbst-beschränkt)
 │   ├── admin.js               Betreiber-Dashboard-Aggregat (geschützt per ADMIN_TOKEN)
 │   └── koch.js                KI-Kochstudio (Workers AI + DuckDuckGo-Websuche)
-├── tests/                     Node-Tests (Syntax, Qualität/A11y, QR, Scores/Cloud/Party/Saison/Push-API, Flow-E2E, WUMMS/MEERI)
-├── worker-rt/                 separater Worker: Echtzeit-Durable-Object (PartyRoom)
+├── tests/                     Node-Tests (Syntax inkl. worker-rt, Qualität/A11y, QR, Scores/Cloud/Party/Saison/Push-API, Flow-E2E, WUMMS/MEERI/Kritzeln)
+├── scripts/
+│   └── bump-assets.mjs        Cache-Busting: setzt ?v=<Inhaltshash> für lokale JS/CSS (npm run bump; CI prüft mit --check)
+├── worker-rt/                 separater Worker: Echtzeit-Durable-Objects (PartyRoom/TronRoom/DrawRoom) + draw-logic.js
 ├── lighthouserc.json          Lighthouse-Budget (Performance/A11y/Best-Practices/SEO)
 └── .github/workflows/
     ├── ci.yml                 CI: führt `npm test` bei jedem Push aus
     └── lighthouse.yml         Lighthouse-Budget-Check (nicht blockierend)
 ```
 
-Tests lokal ausführen: `npm test` (Node ≥ 22).
+Tests lokal ausführen: `npm test` (Node ≥ 22). Nach jeder Änderung an geteiltem
+JS/CSS `npm run bump` ausführen (setzt inhaltsbasierte `?v=`-Hashes); die CI prüft
+das mit `--check` und schlägt fehl, wenn ein Bump vergessen wurde.
+
+**Design-Konvention:** Jedes Spiel bringt sein eigenes Farb-Theme in `style.css`
+mit (bewusst pro Spiel unterschiedlich — z. B. Kritzeln blau, Neon-Schlange grün,
+Würfelpoker/Funkelfeld gold). Universelle Primitive (Schriften, Foil-Verlauf,
+Reduced-Motion) liegen zentral in `fonts.css` + `theme.js` — kein gemeinsames
+Farb-Stylesheet, weil das die Themes einebnen würde.
 
 Jedes Spiel ist bewusst **selbst enthalten**: ein Ordner mit `index.html`,
 `app.js`, `style.css` — kein Framework, kein Bundler. Die Spiele rendern
