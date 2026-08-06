@@ -355,7 +355,9 @@ export class DrawRoom extends DurableObject {
       case "clear": if (this.state === "drawing" && p.id === this.drawerId) { this.bc({ t: "clear" }, p.id); this.drawOps = []; } break;
       case "guess": this.onGuess(p, String(m.text || "")); break;
       // Reaktionen/Emotes: nur eine feste Auswahl zulassen, dann an alle relayen.
-      case "emote": { const e = String(m.e || ""); if (["👍", "❤️", "😂", "😮", "🎉", "🔥"].includes(e)) this.bc({ t: "emote", e, name: p.name }); break; }
+      // Sender ausschließen (p.id): der/die zeigt das Emote schon lokal sofort an,
+      // sonst käme es doppelt (lokal + Server-Echo).
+      case "emote": { const e = String(m.e || ""); if (["👍", "❤️", "😂", "😮", "🎉", "🔥"].includes(e)) this.bc({ t: "emote", e, name: p.name }, p.id); break; }
       case "ping": try { ws.send('{"t":"pong"}'); } catch (_) {} break;
     }
   }
