@@ -1248,12 +1248,13 @@ async function gameOver() {
   overlay.querySelector("#go-top").onclick = () => showLeaderboard();
   const sb = overlay.querySelector("#go-share");
   sb.onclick = async () => {
-    const r = await GS.share({
-      title: "Sternensturm",
-      text: `Ich hab bei Sternensturm 🚀 Welle ${wave} erreicht (${score} Punkte) — schaffst du mehr?`,
-      url: location.origin + "/sternensturm/",
+    const r = await GS.shareCard({
+      title: "Sternensturm", emoji: "🚀", accent: "#8b5cf6", big: score,
+      subtitle: `Welle ${wave} erreicht`,
+      url: GS.duelLink("sternensturm", score),
+      text: `Ich hab bei Sternensturm 🚀 Welle ${wave} erreicht (${score} Punkte) — schlag mich!`,
     });
-    if (r === "copied") sb.textContent = "✔ Link kopiert";
+    if (r === "copied" || r === "downloaded") sb.textContent = "✔ geteilt";
   };
 
   GS.scoreFlow(overlay.querySelector("#go-name-area"), overlay.querySelector("#go-rank"), {

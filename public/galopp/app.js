@@ -2000,12 +2000,13 @@ async function gameOver() {
   overlay.querySelector("#go-top").onclick = () => showLeaderboard();
   const shareBtn = overlay.querySelector("#go-share");
   shareBtn.onclick = async () => {
-    const r = await GS.share({
-      title: "Galopp",
-      text: `Ich bin bei Galopp 🦄 ${Math.floor(meters)} m weit gerannt (${score} Punkte) — schaffst du mehr?`,
-      url: location.origin + "/galopp/",
+    const r = await GS.shareCard({
+      title: "Galopp", emoji: "🦄", accent: "#ff6f91", big: score,
+      subtitle: `${Math.floor(meters)} m gerannt`,
+      url: GS.duelLink("galopp", score),
+      text: `Ich bin bei Galopp 🦄 ${Math.floor(meters)} m weit gerannt (${score} Punkte) — schlag mich!`,
     });
-    if (r === "copied") shareBtn.textContent = "✔ Link kopiert";
+    if (r === "copied" || r === "downloaded") shareBtn.textContent = "✔ geteilt";
   };
 
   GS.scoreFlow(overlay.querySelector("#go-name-area"), overlay.querySelector("#go-rank"), {

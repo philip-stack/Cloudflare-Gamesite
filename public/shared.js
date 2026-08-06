@@ -83,31 +83,8 @@
   // Kompletter Ranglisten-Block im Game-Over-Panel: fragt bei Bedarf
   // nach dem Namen, sendet ein, zeigt Platzierung; bei vergebenem
   // Namen darf man direkt einen neuen wählen.
-  function scoreFlow(container, rankEl, { game, score, meta, daily, weekly, onName, title, accent, icon }) {
-    let submitted = false, shareAdded = false;
-
-    // Teilen / Herausfordern — zentral, damit JEDES gewertete Spiel es bekommt.
-    function addShare() {
-      if (shareAdded || !container) return; shareAdded = true;
-      const b = document.createElement("button");
-      b.className = "btn-secondary gs-share-btn"; b.type = "button";
-      b.style.marginTop = "10px";
-      b.textContent = "📤 Teilen / Herausfordern";
-      b.onclick = () => {
-        const g = (window.GAMES_BYKEY || {})[game] || {};
-        const gName = title || g.name || "Spieleabend";
-        const nm = getName();
-        shareCard({
-          title: gName, big: score,
-          subtitle: nm ? `${nm} · schlag mich!` : "schlag meinen Score!",
-          accent: accent || g.accent || "#e8c15a",
-          emoji: icon || g.icon || "🎲",
-          url: duelLink(game, score),
-          text: `${nm ? nm + " hat " : "Ich hab "}${score} Punkte in ${gName} — schlag mich!`,
-        });
-      };
-      container.appendChild(b);
-    }
+  function scoreFlow(container, rankEl, { game, score, meta, daily, weekly, onName }) {
+    let submitted = false;
 
     const showResult = resp => {
       if (!resp) { rankEl.textContent = "Score konnte nicht übertragen werden"; return; }
@@ -119,7 +96,6 @@
       const extra = resp.best > score ? ` · dein Rekord: ${resp.best}` : "";
       const scope = weekly ? "Diese Woche" : daily ? "Heute" : "Weltweit";
       rankEl.innerHTML = `${scope} <b>Platz ${resp.rank}</b> als ${esc(getName())}${extra}`;
-      addShare();
     };
 
     const send = async () => {

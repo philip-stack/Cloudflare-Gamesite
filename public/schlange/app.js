@@ -476,8 +476,8 @@ async function gameOver() {
   addBtn("🏅 Meilensteine", () => GS.badges.show("schlange", "Meilensteine — Neon-Schlange"));
   addBtn("🎨 Skins", () => GS.skins.picker("schlange", { title: "Schlangen-Skins", onChange: c => { SKIN = c; if (player) player.skin = c; } }));
   const sb = addBtn("📤 Teilen", async () => {
-    const r = await GS.share({ title: "Neon-Schlange", text: `Ich hab bei Neon-Schlange 🐍 ${score} Orbs gefressen und ${kills} Gegner erwischt — schaffst du mehr?`, url: location.origin + "/schlange/" });
-    if (r === "copied") sb.textContent = "✔ Link kopiert";
+    const r = await GS.shareCard({ title: "Neon-Schlange", emoji: "🐍", accent: "#57e39b", big: score, subtitle: `${score} Orbs · ${kills} Gegner`, url: GS.duelLink("schlange", score), text: `Ich hab bei Neon-Schlange 🐍 ${score} Orbs gefressen und ${kills} Gegner erwischt — schlag mich!` });
+    if (r === "copied" || r === "downloaded") sb.textContent = "✔ geteilt";
   });
   GS.scoreFlow(overlay.querySelector("#go-name-area"), overlay.querySelector("#go-rank"), { game: "schlange", score, meta: { orbs: score, time: tSec, len: 1 + score, kills } });
 }

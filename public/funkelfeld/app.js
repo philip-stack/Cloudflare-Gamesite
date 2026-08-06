@@ -754,12 +754,23 @@ async function gameOver() {
       <button class="btn-primary" id="go-again">Nochmal spielen</button>
       <button class="btn-secondary" id="go-top">🏆 Bestenliste ansehen</button>
       <button class="btn-secondary" id="go-badges">🏅 Meilensteine (${GS.badges.earnedCount("funkelfeld")}/9)</button>
+      <button class="btn-secondary" id="go-share">📤 Teilen / Herausfordern</button>
     </div>`;
   document.body.appendChild(overlay);
 
   overlay.querySelector("#go-again").onclick = () => { overlay.remove(); newGame(); };
   overlay.querySelector("#go-top").onclick = () => showLeaderboard();
   overlay.querySelector("#go-badges").onclick = () => GS.badges.show("funkelfeld", "Meilensteine");
+  const fsb = overlay.querySelector("#go-share");
+  fsb.onclick = async () => {
+    const r = await GS.shareCard({
+      title: "Funkelfeld", emoji: "💎", accent: "#4fd18b", big: score,
+      subtitle: `${run.lines} Linien · Combo x${run.bestCombo}`,
+      url: GS.duelLink("funkelfeld", score),
+      text: `Ich hab ${score} Punkte bei Funkelfeld 💎 geschafft — schlag mich!`,
+    });
+    if (r === "copied" || r === "downloaded") fsb.textContent = "✔ geteilt";
+  };
 
   GS.scoreFlow(overlay.querySelector("#go-name-area"), overlay.querySelector("#go-rank"), {
     game: "funkelfeld", score,
