@@ -492,13 +492,14 @@ async function gameOver() {
   };
   addBtn("🏅 Meilensteine", () => GS.badges.show("komet", "Meilensteine — Komet"));
   addBtn("🎨 Skins", () => GS.skins.picker("komet", { title: "Kometen-Skins", onChange: c => { KSKIN = c; } }));
-  const sb = addBtn("📤 Teilen", async () => {
-    const r = await GS.share({
-      title: "Komet",
-      text: `Ich bin bei Komet ☄️ ${meters()} m weit geflogen (${score} Punkte) — schaffst du mehr?`,
-      url: location.origin + "/komet/",
+  const sb = addBtn("📤 Teilen / Herausfordern", async () => {
+    const r = await GS.shareCard({
+      title: "Komet", emoji: "☄️", accent: "#5b9cff", big: score,
+      subtitle: `${meters()} m geflogen`,
+      url: GS.duelLink("komet", score),
+      text: `Ich bin bei Komet ☄️ ${meters()} m weit geflogen (${score} Punkte) — schlag mich!`,
     });
-    if (r === "copied") sb.textContent = "✔ Link kopiert";
+    if (r === "copied" || r === "downloaded") sb.textContent = "✔ geteilt";
   });
 
   GS.scoreFlow(overlay.querySelector("#go-name-area"), overlay.querySelector("#go-rank"), {
