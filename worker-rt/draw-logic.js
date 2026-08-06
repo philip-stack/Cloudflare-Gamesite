@@ -7,12 +7,12 @@
 
 // Wörter nach Kategorie (AT-Vokabular, alle gut zeichenbar).
 export const D_CATS = {
-  tiere: "Hund,Katze,Maus,Pferd,Kuh,Schwein,Huhn,Fisch,Vogel,Schlange,Elefant,Löwe,Affe,Bär,Igel,Biene,Schmetterling,Spinne,Marienkäfer,Krokodil,Pinguin,Wal,Hai,Qualle,Krebs,Frosch,Schnecke,Eule,Fuchs,Wolf,Reh,Giraffe,Zebra,Kamel,Känguru,Eichhörnchen".split(","),
-  essen: "Apfel,Banane,Karotte,Erdäpfel,Palatschinke,Semmel,Brezel,Torte,Eis,Pizza,Burger,Kaffee,Milch,Ei,Käse,Wurst,Pilz,Kipferl,Paradeiser".split(","),
-  dinge: "Brille,Hut,Schuh,Socke,Hose,Jacke,Krone,Ring,Uhr,Schlüssel,Schere,Stift,Buch,Zeitung,Ballon,Geschenk,Kerze,Lampe,Sessel,Tisch,Bett,Tür,Fenster,Leiter,Hammer,Säge,Schaufel,Regenschirm,Koffer,Rucksack,Anker,Gitarre,Klavier,Trommel,Trompete,Fußball".split(","),
-  fahrzeuge: "Auto,Zug,Flugzeug,Schiff,Fahrrad,Rakete,Traktor,Bagger,Bus,Motorrad,Hubschrauber,Ballon".split(","),
-  natur: "Haus,Baum,Sonne,Mond,Stern,Blume,Berg,Wolke,Regenbogen,Blitz,Vulkan,Insel,Brücke,Turm,Kirche,Windmühle,Sonnenblume,Kaktus,Herz,Zelt,Pilz".split(","),
-  fantasie: "Schneemann,Roboter,Gespenst,Hexe,Drache,Schloss,Krone,Zauberer,Einhorn,Meerjungfrau,Ritter,Pirat,Krake,Alien,Zombie".split(","),
+  tiere: "Hund,Katze,Maus,Pferd,Kuh,Schwein,Huhn,Fisch,Vogel,Schlange,Elefant,Löwe,Affe,Bär,Igel,Biene,Schmetterling,Spinne,Marienkäfer,Krokodil,Pinguin,Wal,Hai,Qualle,Krebs,Frosch,Schnecke,Eule,Fuchs,Wolf,Reh,Giraffe,Zebra,Kamel,Känguru,Eichhörnchen,Ente,Gans,Schaf,Ziege,Esel,Hase,Maulwurf,Fledermaus,Delfin,Seepferdchen,Seestern,Tintenfisch,Papagei,Storch,Schwan,Ameise,Wespe,Libelle,Schildkröte,Eidechse,Tiger,Nashorn,Nilpferd,Panda,Koala,Waschbär,Hirsch,Robbe,Dachs,Specht,Hummer,Raupe,Regenwurm".split(","),
+  essen: "Apfel,Banane,Karotte,Erdäpfel,Palatschinke,Semmel,Brezel,Torte,Eis,Pizza,Burger,Kaffee,Milch,Ei,Käse,Wurst,Pilz,Kipferl,Paradeiser,Birne,Erdbeere,Kirsche,Weintraube,Zitrone,Orange,Melone,Ananas,Gurke,Zwiebel,Brot,Kuchen,Keks,Donut,Popcorn,Pommes,Hotdog,Spaghetti,Suppe,Salat,Honig,Schokolade,Lutscher,Muffin,Krapfen,Marille,Nudel".split(","),
+  dinge: "Brille,Hut,Schuh,Socke,Hose,Jacke,Krone,Ring,Uhr,Schlüssel,Schere,Stift,Buch,Zeitung,Ballon,Geschenk,Kerze,Lampe,Sessel,Tisch,Bett,Tür,Fenster,Leiter,Hammer,Säge,Schaufel,Regenschirm,Koffer,Rucksack,Anker,Gitarre,Klavier,Trommel,Trompete,Fußball,Teller,Gabel,Löffel,Messer,Tasse,Flasche,Topf,Pfanne,Zahnbürste,Kamm,Spiegel,Telefon,Fernseher,Computer,Glühbirne,Batterie,Magnet,Waage,Kompass,Fahne,Knopf,Handschuh,Mütze,Krawatte,Gürtel,Besen,Nagel,Schraube,Zange,Pinsel,Radiergummi".split(","),
+  fahrzeuge: "Auto,Zug,Flugzeug,Schiff,Fahrrad,Rakete,Traktor,Bagger,Bus,Motorrad,Hubschrauber,Ballon,LKW,Feuerwehrauto,Polizeiauto,Krankenwagen,Taxi,Rennwagen,Panzer,U-Boot,Segelboot,Ruderboot,Kanu,Straßenbahn,Seilbahn,Roller,Skateboard,Einrad,Kutsche,Schlitten,Gondel,Lokomotive".split(","),
+  natur: "Haus,Baum,Sonne,Mond,Stern,Blume,Berg,Wolke,Regenbogen,Blitz,Vulkan,Insel,Brücke,Turm,Kirche,Windmühle,Sonnenblume,Kaktus,Herz,Zelt,Pilz,Fluss,See,Palme,Wald,Wüste,Höhle,Wasserfall,Tornado,Schneeflocke,Eiszapfen,Feuer,Regen,Tal,Wiese,Teich,Stein,Blatt,Tanne,Tulpe,Rose,Muschel,Planet,Strand,Klee".split(","),
+  fantasie: "Schneemann,Roboter,Gespenst,Hexe,Drache,Schloss,Krone,Zauberer,Einhorn,Meerjungfrau,Ritter,Pirat,Krake,Alien,Zombie,Fee,Kobold,Troll,Riese,Zwerg,Elf,Vampir,Werwolf,Monster,Dinosaurier,Zauberstab,Zaubertrank,Kristallkugel,Schatztruhe,Yeti,Phönix,Greif,UFO,Sternschnuppe,Zauberhut".split(","),
 };
 export const D_CAT_KEYS = Object.keys(D_CATS);
 

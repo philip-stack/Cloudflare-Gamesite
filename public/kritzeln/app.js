@@ -78,7 +78,13 @@ function onMsg(m) {
       if (typeof m.customCount === "number") roomCustom = m.customCount;
       renderPlayers();
       if (view === "playing" || view === "over") break;
-      view = "lobby"; showLobby(); break;
+      view = "lobby";
+      // Läuft der Warteraum schon? Nur die dynamischen Teile aktualisieren statt
+      // den ganzen Overlay neu zu bauen — sonst flackert es bei jeder Einstellung
+      // und der Host verliert beim Tippen den Fokus im Wörter-Feld.
+      if (document.getElementById("ov") && document.querySelector("#ov .plist")) updateLobby();
+      else showLobby();
+      break;
     case "choices": showWordPick(m.words); break;
     case "turn": onTurn(m); break;
     case "word": curWord = m.word; if (iAmDrawer) $("#i-word").innerHTML = "<b>" + GS.esc(m.word) + "</b>"; break;
@@ -354,7 +360,7 @@ function showLobby() {
         <textarea id="lb-words" class="words-in" rows="2" placeholder="z. B. Oma, Netflix, Trampolin, Schnitzel …">${GS.esc(customText)}</textarea>
         <div class="hint" id="lb-words-n">${roomCustom ? "✅ " + roomCustom + " eigene Wörter" + (custActive ? " aktiv" : " (mind. 3 nötig)") : ""}</div>
       </div>`
-    : `<p class="sub">${custActive ? "✍️ Eigene Wörter (" + roomCustom + ")" : (roomCats.length ? roomCats.map(k => CAT_LABELS[k] || k).join(" · ") : "Alle Kategorien")} · ${roomRounds} Runden</p>`;
+    : `<p class="sub lobby-sub">${custActive ? "✍️ Eigene Wörter (" + roomCustom + ")" : (roomCats.length ? roomCats.map(k => CAT_LABELS[k] || k).join(" · ") : "Alle Kategorien")} · ${roomRounds} Runden</p>`;
   const o = overlay(`
     <h2>Warteraum</h2>
     <p class="sub">Teile den Code — Freunde tippen ihn im Menü ein. Ab <b>2 Spielern</b> kann der Host starten (bis 10).</p>
@@ -362,7 +368,7 @@ function showLobby() {
     <button class="btn-secondary" id="lb-share">📤 Code teilen</button>
     ${settings}
     <ul class="plist">${players.map(p => `<li><span class="pname">${GS.esc(p.name)}${p.id === myId ? " (du)" : ""}</span>${p.id === hostId ? '<span class="phost">Host</span>' : (meHost ? `<button class="kick" data-kick="${p.id}" title="Entfernen">✕</button>` : "")}</li>`).join("")}</ul>
-    <p class="msg">${players.length < 2 ? "Warte auf mindestens eine:n weitere:n …" : (meHost ? "Bereit zum Start!" : "Warte auf den Host …")}</p>
+    <p class="msg" id="lb-msg">${players.length < 2 ? "Warte auf mindestens eine:n weitere:n …" : (meHost ? "Bereit zum Start!" : "Warte auf den Host …")}</p>
     ${meHost ? `<button class="btn-primary" id="lb-start" ${players.length >= 2 ? "" : "disabled style=\"opacity:.5\""}>🎨 Starten</button>` : ""}
     <button class="btn-secondary" id="lb-leave">Verlassen</button>`);
   o.querySelector("#lb-share").onclick = async () => { const r = await GS.share({ title: "Kritzeln & Raten", text: `Mal & rate mit mir 🎨 — tipp auf den Link, dann bist du direkt im Raum ${code}:`, url: location.origin + "/kritzeln/?code=" + encodeURIComponent(code) }); if (r === "copied") o.querySelector("#lb-share").textContent = "✔ kopiert"; };
@@ -378,6 +384,35 @@ function showLobby() {
   }
   const st = o.querySelector("#lb-start"); if (st) st.onclick = () => send({ t: "start" });
   o.querySelector("#lb-leave").onclick = () => { leave(); showMenu(); };
+}
+
+// Warteraum-Update OHNE Neuaufbau (verhindert Flackern + Fokusverlust). Rührt
+// beim Host bewusst NICHT an Kategorie-/Runden-Chips oder dem Wörter-Textfeld —
+// die steuert der Host lokal; hier werden nur Anzeige-Teile nachgezogen.
+function updateLobby() {
+  const o = document.getElementById("ov"); if (!o) return showLobby();
+  const meHost = myId === hostId;
+  const hostControls = !!o.querySelector("#lb-cats");
+  if (meHost !== hostControls) return showLobby();   // Host-Wechsel → Layout neu bauen
+
+  const list = o.querySelector(".plist");
+  if (list) {
+    list.innerHTML = players.map(p => `<li><span class="pname">${GS.esc(p.name)}${p.id === myId ? " (du)" : ""}</span>${p.id === hostId ? '<span class="phost">Host</span>' : (meHost ? `<button class="kick" data-kick="${p.id}" title="Entfernen">✕</button>` : "")}</li>`).join("");
+    if (meHost) list.querySelectorAll("[data-kick]").forEach(b => b.onclick = () => { const id = +b.dataset.kick; const pl = players.find(x => x.id === id); if (confirm((pl ? pl.name : "Spieler:in") + " entfernen?")) send({ t: "kick", id }); });
+  }
+  const msg = o.querySelector("#lb-msg");
+  if (msg) msg.textContent = players.length < 2 ? "Warte auf mindestens eine:n weitere:n …" : (meHost ? "Bereit zum Start!" : "Warte auf den Host …");
+  const st = o.querySelector("#lb-start");
+  if (st) { const ok = players.length >= 2; st.disabled = !ok; st.style.opacity = ok ? "" : ".5"; }
+
+  const custActive = roomCustom >= 3;
+  if (meHost) {
+    const wn = o.querySelector("#lb-words-n");
+    if (wn) wn.textContent = roomCustom ? "✅ " + roomCustom + " eigene Wörter" + (custActive ? " aktiv" : " (mind. 3 nötig)") : "";
+  } else {
+    const sub = o.querySelector(".lobby-sub");
+    if (sub) sub.innerHTML = (custActive ? "✍️ Eigene Wörter (" + roomCustom + ")" : (roomCats.length ? roomCats.map(k => CAT_LABELS[k] || k).join(" · ") : "Alle Kategorien")) + " · " + roomRounds + " Runden";
+  }
 }
 
 function showWordPick(words) {
