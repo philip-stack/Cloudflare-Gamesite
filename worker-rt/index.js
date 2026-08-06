@@ -510,18 +510,13 @@ export class DrawRoom extends DurableObject {
       if (!p.name) continue;
       const pts = p.score | 0, win = p.name === winName ? 1 : 0;
       try {
-        // Namens-Eigentum (wie bei der Scores-Bestenliste): gehört der Name schon
-        // einem ANDEREN Gerät, nicht werten — sonst könnte man in einen fremden
-        // Raum joinen und unter fremdem Namen dessen Zeile vergiften.
-        if (p.device) {
-          const owner = await this.env.DB.prepare("SELECT device FROM draw_score WHERE name = ?").bind(p.name).first();
-          if (owner && owner.device && owner.device !== p.device) {
-            await rtLogError(this.env, "draw_score-Name gehört anderem Gerät, übersprungen: " + p.name, "kritzeln");
-            continue;
-          }
-        }
-        // device = COALESCE(bestehendes, neues): der erste Eintrag mit Geräte-ID
-        // beansprucht den Namen; danach bleibt der/die Eigentümer:in erhalten.
+        // Punkte je Name aggregieren. BEWUSST keine Geräte-Eigentumssperre:
+        // die Plattform nutzt EINEN gemeinsamen Namen über alle Spiele und Geräte
+        // (GS.getName). Eine Sperre würde legitimes Weiterspielen auf einem zweiten
+        // Gerät / nach Beitritt über den Einladungslink blockieren („nimm einen
+        // anderen Namen") und harmlose Normalfälle als Fehler ins Log schreiben
+        // (Admin-Dashboard). Der Raum ist autoritativ — Punkte entstehen nur durch
+        // echtes Mitspielen, Impersonation zum Cheaten lohnt also nicht.
         await this.env.DB.prepare(
           "INSERT INTO draw_score (name, points, games, wins, best, device) VALUES (?, ?, 1, ?, ?, ?) " +
           "ON CONFLICT(name) DO UPDATE SET points = points + excluded.points, games = games + 1, " +
