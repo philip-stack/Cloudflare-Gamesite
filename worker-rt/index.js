@@ -354,6 +354,8 @@ export class DrawRoom extends DurableObject {
       case "undo": if (this.state === "drawing" && p.id === this.drawerId) { this.bc({ t: "undo" }, p.id); this.drawOps.pop(); } break;
       case "clear": if (this.state === "drawing" && p.id === this.drawerId) { this.bc({ t: "clear" }, p.id); this.drawOps = []; } break;
       case "guess": this.onGuess(p, String(m.text || "")); break;
+      // Reaktionen/Emotes: nur eine feste Auswahl zulassen, dann an alle relayen.
+      case "emote": { const e = String(m.e || ""); if (["👍", "❤️", "😂", "😮", "🎉", "🔥"].includes(e)) this.bc({ t: "emote", e, name: p.name }); break; }
       case "ping": try { ws.send('{"t":"pong"}'); } catch (_) {} break;
     }
   }
@@ -380,6 +382,7 @@ export class DrawRoom extends DurableObject {
     for (const q of this.conns.values()) { q.score = 0; q.guessed = false; this.syncPart(q); }
     this.order = [...this.conns.values()].map(p => p.id);
     this.turnIdx = 0; this.state = "playing";
+    this.used = new Set();   // in DIESEM Spiel bereits gespielte Wörter (keine Wiederholung)
     this.beginTurn();
   }
 
@@ -395,8 +398,9 @@ export class DrawRoom extends DurableObject {
     this.word = ""; this.revealed = [];
     this.choices = this.pickWords(3);
     this.state = "choosing";
-    this.bc({ t: "turn", phase: "choose", drawerId: this.drawerId, round, rounds: this.rounds, turn: this.turnIdx + 1, total });
-    this.toId(this.drawerId, { t: "choices", words: this.choices });
+    this.chooseEndsAt = Date.now() + D_CHOOSE * 1000;
+    this.bc({ t: "turn", phase: "choose", drawerId: this.drawerId, round, rounds: this.rounds, turn: this.turnIdx + 1, total, chooseTime: D_CHOOSE });
+    this.toId(this.drawerId, { t: "choices", words: this.choices, time: D_CHOOSE });
     this.bc({ t: "clear" });
     this.sendLobby();
     this.timers.push(setTimeout(() => { if (this.state === "choosing") this.beginDrawing(this.choices[0]); }, D_CHOOSE * 1000));
@@ -408,8 +412,9 @@ export class DrawRoom extends DurableObject {
     const round = Math.floor(this.turnIdx / Math.max(1, ids.length)) + 1;
     try {
       if (this.state === "choosing") {
-        ws.send(JSON.stringify({ t: "turn", phase: "choose", drawerId: this.drawerId, round, rounds: this.rounds }));
-        if (p.id === this.drawerId && this.choices) ws.send(JSON.stringify({ t: "choices", words: this.choices }));
+        const ctime = Math.max(1, Math.round(((this.chooseEndsAt || Date.now()) - Date.now()) / 1000));
+        ws.send(JSON.stringify({ t: "turn", phase: "choose", drawerId: this.drawerId, round, rounds: this.rounds, chooseTime: ctime }));
+        if (p.id === this.drawerId && this.choices) ws.send(JSON.stringify({ t: "choices", words: this.choices, time: ctime }));
       } else if (this.state === "drawing") {
         const time = Math.max(1, Math.round((this.turnEndsAt - Date.now()) / 1000));
         ws.send(JSON.stringify({ t: "turn", phase: "draw", drawerId: this.drawerId, round, rounds: this.rounds, time, pattern: this.pattern() }));
@@ -420,12 +425,20 @@ export class DrawRoom extends DurableObject {
     } catch (_) {}
   }
 
-  // Delegiert an die reine (getestete) Logik in draw-logic.js.
-  pickWords(n) { return pickWords(wordPool(this.cats, this.customWords), n); }
+  // Delegiert an die reine (getestete) Logik in draw-logic.js. Schließt Wörter
+  // aus, die in DIESEM Spiel schon dran waren — erst wenn zu wenige übrig sind,
+  // wird der „benutzt"-Speicher zurückgesetzt (Pool erschöpft).
+  pickWords(n) {
+    const full = wordPool(this.cats, this.customWords);
+    let pool = this.used ? full.filter(w => !this.used.has(w)) : full;
+    if (pool.length < n) { this.used = new Set(); pool = full; }
+    return pickWords(pool, n);
+  }
   pattern() { const chars = [...this.word]; return chars.map((c, i) => c === " " ? " " : (this.revealed[i] ? c : "_")).join(""); }
 
   beginDrawing(word) {
     this.clearTimers();
+    if (this.used) this.used.add(word);   // Wort für dieses Spiel als benutzt markieren
     this.word = word; this.revealed = [...word].map(() => false);
     this.turnGains = []; this.turnHits = 0; this.turnDrawerGain = 0; this.drawOps = [];
     this.state = "drawing"; this.turnEndsAt = Date.now() + D_TURN * 1000;

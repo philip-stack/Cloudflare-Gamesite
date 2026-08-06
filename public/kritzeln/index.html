@@ -15,7 +15,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <script src="/theme.js?v=bf8f92f8"></script>
   <script src="/shared.js?v=7b79bde8"></script>
-  <link rel="stylesheet" href="style.css?v=f7fea94b">
+  <link rel="stylesheet" href="style.css?v=0b707edc">
 </head>
 <body>
   <main id="app">
@@ -54,15 +54,17 @@
         </div>
       </div>
 
+      <div id="emotes" class="emotes hidden"></div>
+
       <div id="chat" class="chat"></div>
     </div>
 
     <div id="inputbar" class="inputbar hidden">
-      <input id="guess" type="text" maxlength="60" placeholder="Tippe deinen Tipp …" autocomplete="off">
+      <input id="guess" type="text" maxlength="60" placeholder="Tippe deinen Tipp …" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="send">
       <button id="guess-send" class="btn-send">➤</button>
     </div>
   </main>
 
-  <script src="app.js?v=4a277c8f"></script>
+  <script src="app.js?v=873abe4e"></script>
 </body>
 </html>

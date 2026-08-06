@@ -54,6 +54,16 @@ button:active { transform: scale(0.95); }
 .tool-btn { width: 40px; height: 34px; border-radius: 10px; background: var(--card); color: var(--ink); box-shadow: 0 0 0 1px var(--edge-soft) inset; font-size: 1rem; }
 .tool-btn.on { box-shadow: 0 0 0 2px var(--accent) inset; color: var(--accent); }
 
+/* Reaktionen/Emotes: für ALLE sichtbar (auch die zeichnende Person) */
+.emotes { display: flex; gap: 6px; justify-content: center; }
+.emotes button { width: 40px; height: 34px; border-radius: 10px; background: var(--card); box-shadow: 0 0 0 1px var(--edge-soft) inset; font-size: 1.15rem; line-height: 1; }
+.emotes button:active { transform: scale(0.88); }
+/* Über die Leinwand aufsteigendes Emote */
+.emote-fly { position: absolute; bottom: 6px; font-size: 2rem; pointer-events: none; z-index: 5; animation: emote-rise 1.4s ease-out forwards; }
+@keyframes emote-rise { 0% { transform: translateY(0) scale(0.6); opacity: 0; } 15% { transform: translateY(-10%) scale(1.15); opacity: 1; } 100% { transform: translateY(-190%) scale(1); opacity: 0; } }
+.wp-time { color: var(--accent); font-weight: 800; font-variant-numeric: tabular-nums; }
+@media (prefers-reduced-motion: reduce) { .emote-fly { animation-duration: 0.9s; } }
+
 .chat { flex: 1; min-height: 40px; overflow-y: auto; display: flex; flex-direction: column; gap: 3px; padding: 6px 4px; font-size: 0.86rem; }
 .chat .c { line-height: 1.35; }
 .chat .c .nm { font-weight: 700; }

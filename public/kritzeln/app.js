@@ -85,7 +85,8 @@ function onMsg(m) {
       if (document.getElementById("ov") && document.querySelector("#ov .plist")) updateLobby();
       else showLobby();
       break;
-    case "choices": showWordPick(m.words); break;
+    case "choices": showWordPick(m.words, m.time); break;
+    case "emote": floatEmote(m.e); break;
     case "turn": onTurn(m); break;
     case "word": curWord = m.word; if (iAmDrawer) $("#i-word").innerHTML = "<b>" + GS.esc(m.word) + "</b>"; break;
     case "draw": if (!iAmDrawer) {
@@ -116,6 +117,7 @@ function onMsg(m) {
 
 function onTurn(m) {
   closeOverlay(); view = "playing"; $("#board").classList.remove("hidden"); showLeave(true); showSkip(myId === hostId);
+  stopChoose(); showEmotes(true);
   iAmDrawer = m.drawerId === myId; strokes = []; clearCanvas(); resize();
   $("#i-turn").textContent = "Runde " + (m.round || 1) + " · Zug " + (m.turn || (m.round || 1)) + (m.total ? "/" + m.total : "");
   const drawer = players.find(p => p.id === m.drawerId);
@@ -124,6 +126,7 @@ function onTurn(m) {
     $("#i-word").textContent = "";
     showNote(iAmDrawer ? "Wähle ein Wort …" : ((drawer ? drawer.name : "Jemand") + " wählt ein Wort …"));
     $("#i-time").textContent = "—"; $("#timefill").style.width = "100%";
+    startChoose(m.chooseTime || 15, iAmDrawer, drawer ? drawer.name : "Jemand");
   } else if (m.phase === "draw") {
     phase = "draw"; hideNote();
     if (iAmDrawer) { $("#i-word").innerHTML = curWord ? "<b>" + GS.esc(curWord) + "</b>" : "…"; setTools(true); setGuessEnabled(false); }
@@ -134,7 +137,7 @@ function onTurn(m) {
 }
 
 function onTurnEnd(m) {
-  phase = "reveal"; stopTimer(); setTools(false); setGuessEnabled(false); hideNote(); showSkip(false);
+  phase = "reveal"; stopTimer(); stopChoose(); setTools(false); setGuessEnabled(false); hideNote(); showSkip(false);
   players = m.players || players; renderPlayers();
   const gains = m.gains || [];
   const rows = gains.length
@@ -274,6 +277,38 @@ function tickTimer() {
   timerRAF = requestAnimationFrame(tickTimer);
 }
 
+// ---------- Wähl-Countdown (Wortauswahl) ----------
+let chooseTimer = null;
+function startChoose(sec, isDrawer, drawerName) {
+  stopChoose();
+  const end = performance.now() + (sec || 15) * 1000;
+  const tick = () => {
+    const left = Math.max(0, Math.ceil((end - performance.now()) / 1000));
+    const wt = $("#wp-time"); if (wt) wt.textContent = left + "s";
+    if (!isDrawer) { const n = $("#cv-note"); if (n && !n.classList.contains("hidden")) n.textContent = (drawerName || "Jemand") + " wählt ein Wort … " + left + "s"; }
+    if (left <= 0) { chooseTimer = null; return; }
+    chooseTimer = setTimeout(tick, 250);
+  };
+  tick();
+}
+function stopChoose() { if (chooseTimer) { clearTimeout(chooseTimer); chooseTimer = null; } }
+
+// ---------- Emotes / Reaktionen ----------
+const EMOTES = ["👍", "❤️", "😂", "😮", "🎉", "🔥"];
+function buildEmotes() {
+  const bar = $("#emotes"); if (!bar) return;
+  bar.innerHTML = EMOTES.map(e => `<button type="button" data-emote="${e}" aria-label="Reaktion ${e}">${e}</button>`).join("");
+  bar.querySelectorAll("[data-emote]").forEach(b => b.onclick = () => { send({ t: "emote", e: b.dataset.emote }); floatEmote(b.dataset.emote); GS.haptic(6); });
+}
+function showEmotes(on) { const b = $("#emotes"); if (b) b.classList.toggle("hidden", !on); }
+function floatEmote(e) {
+  const wrap = $("#cv-wrap"); if (!wrap || !e) return;
+  const el = document.createElement("div"); el.className = "emote-fly"; el.textContent = e;
+  el.style.left = (12 + Math.random() * 70) + "%";
+  wrap.appendChild(el);
+  setTimeout(() => el.remove(), 1400);
+}
+
 // ---------- Chat / Spieler ----------
 function addChat(kind, name, text) {
   const box = $("#chat"); const d = document.createElement("div");
@@ -323,6 +358,7 @@ async function showScores() {
 
 function showMenu(msg, prefillCode) {
   view = "menu"; $("#board").classList.add("hidden"); setGuessEnabled(false); players = []; showLeave(false); showSkip(false);
+  showEmotes(false); stopChoose();
   const invited = !!prefillCode;
   const o = overlay(`
     <h2><span class="foil">Kritzeln &amp; Raten</span></h2>
@@ -345,7 +381,7 @@ function showMenu(msg, prefillCode) {
 }
 
 function showLobby() {
-  showLeave(true);
+  showLeave(true); showEmotes(false); stopChoose();
   const meHost = myId === hostId;
   showSkip(false);
   const catKeys = Object.keys(CAT_LABELS);
@@ -415,13 +451,13 @@ function updateLobby() {
   }
 }
 
-function showWordPick(words) {
-  const o = overlay(`<h2>Dein Wort</h2><p class="sub">Wähle, was du zeichnest:</p><div class="wordpick">${words.map(w => `<button class="btn-primary" data-w="${GS.esc(w)}">${GS.esc(w)}</button>`).join("")}</div>`);
-  o.querySelectorAll("[data-w]").forEach(b => b.onclick = () => { send({ t: "choose", word: b.dataset.w }); closeOverlay(); });
+function showWordPick(words, time) {
+  const o = overlay(`<h2>Dein Wort</h2><p class="sub">Wähle, was du zeichnest — <span id="wp-time" class="wp-time">${(time || 15)}s</span></p><div class="wordpick">${words.map(w => `<button class="btn-primary" data-w="${GS.esc(w)}">${GS.esc(w)}</button>`).join("")}</div>`);
+  o.querySelectorAll("[data-w]").forEach(b => b.onclick = () => { stopChoose(); send({ t: "choose", word: b.dataset.w }); closeOverlay(); });
 }
 
 function showOver(list) {
-  showLeave(true); showSkip(false);
+  showLeave(true); showSkip(false); showEmotes(false); stopChoose();
   const meHost = myId === hostId; const top = list[0];
   if (top && top.id === myId) { GS.sound.win(); confetti(); } else { GS.sound.good(); }
   const o = overlay(`
@@ -449,6 +485,7 @@ window.addEventListener("beforeunload", leave);
 document.addEventListener("visibilitychange", () => { if (document.hidden || intentional || !code) return; if ((view === "lobby" || view === "over") && (!ws || ws.readyState > 1)) { reTries = 0; connect(code, true); } });
 
 buildTools();
+buildEmotes();
 GS.markPlayed("kritzeln");
 const pre = new URLSearchParams(location.search).get("code");
 const preCode = pre && /^[A-Z0-9]{4,6}$/i.test(pre) ? pre.toUpperCase() : "";
