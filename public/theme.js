@@ -54,7 +54,9 @@
       "@media (prefers-reduced-motion: reduce){*,::before,::after{" +
       "animation-duration:.001ms!important;animation-iteration-count:1!important;" +
       "transition-duration:.001ms!important;scroll-behavior:auto!important}}" +
-      ":focus-visible{outline:3px solid #57c7ff!important;outline-offset:2px!important}";
+      ":focus-visible{outline:3px solid #57c7ff!important;outline-offset:2px!important}" +
+      // Energiesparen: teure Blur-Filter (Karten, Overlays) plattformweit aus.
+      ":root[data-lowpower] *{backdrop-filter:none!important;-webkit-backdrop-filter:none!important}";
     const st = document.createElement("style");
     st.id = "gs-a11y";
     st.textContent = css;

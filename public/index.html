@@ -18,7 +18,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <script src="/theme.js?v=bf8f92f8"></script>
+  <script src="/theme.js?v=2ed9f24a"></script>
   <style>
     /* ============================================================
        SPIELEABEND — Startseite. Basis (Tokens, Ambiente, Komponenten,
@@ -129,7 +129,15 @@
     }
     .app-card[data-game] .app-arrow { display: none; }
     .app-card[data-game] .app-name { font-size: 1.08rem; }
-    .app-card[data-game] .app-desc { font-size: 0.82rem; }
+    /* Beschreibung auf 2 Zeilen begrenzen → ruhiges, gleichmäßiges Kachel-Raster.
+       !important überschreibt das inline display:block aus der Karten-Vorlage. */
+    .app-card[data-game] .app-desc {
+      font-size: 0.82rem;
+      display: -webkit-box !important;
+      -webkit-line-clamp: 2; line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
 
     .app-icon {
       flex-shrink: 0;
