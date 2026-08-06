@@ -315,20 +315,27 @@ async function showScores() {
   } catch { const el = $("#sc-list"); if (el) el.innerHTML = `<p class="msg err">Bestenliste nicht erreichbar</p>`; }
 }
 
-function showMenu(msg) {
+function showMenu(msg, prefillCode) {
   view = "menu"; $("#board").classList.add("hidden"); setGuessEnabled(false); players = []; showLeave(false); showSkip(false);
+  const invited = !!prefillCode;
   const o = overlay(`
     <h2><span class="foil">Kritzeln &amp; Raten</span></h2>
-    <p class="sub">Einer malt, die anderen raten — live, für <b>2–10 Spieler</b>. Erstelle einen Raum und teile den Code.</p>
+    <p class="sub">${invited
+      ? `Du wurdest in Raum <b>${GS.esc(prefillCode)}</b> eingeladen 🎨 — gib deinen Namen ein und tritt bei.`
+      : `Einer malt, die anderen raten — live, für <b>2–10 Spieler</b>. Erstelle einen Raum und teile den Code.`}</p>
     <p class="msg ${msg ? "err" : ""}">${msg ? GS.esc(msg) : ""}</p>
     <input type="text" id="mp-name" maxlength="14" placeholder="Dein Name" value="${GS.esc(GS.getName())}">
-    <button class="btn-primary" id="mp-create">➕ Raum erstellen</button>
-    <div class="btn-row"><input type="text" id="mp-code" class="code" maxlength="6" placeholder="CODE"><button class="btn-secondary" id="mp-join">Beitreten</button></div>
+    ${invited ? `<button class="btn-primary" id="mp-joinbig">🎨 Raum ${GS.esc(prefillCode)} beitreten</button>` : `<button class="btn-primary" id="mp-create">➕ Raum erstellen</button>`}
+    <div class="btn-row"><input type="text" id="mp-code" class="code" maxlength="6" placeholder="CODE" value="${GS.esc(prefillCode || "")}"><button class="btn-secondary" id="mp-join">Beitreten</button></div>
     <button class="btn-secondary" id="mp-scores" style="margin-top:10px">🏆 Bestenliste</button>`);
   const save = () => { const v = o.querySelector("#mp-name").value.trim().slice(0, 14); if (v) GS.setName(v); };
-  o.querySelector("#mp-create").onclick = () => { save(); connect(randCode()); };
-  o.querySelector("#mp-join").onclick = () => { save(); const c = o.querySelector("#mp-code").value.trim().toUpperCase(); if (/^[A-Z0-9]{4,6}$/.test(c)) connect(c); else o.querySelector(".msg").textContent = "Bitte gültigen Code eingeben."; };
+  const join = () => { save(); const c = o.querySelector("#mp-code").value.trim().toUpperCase(); if (/^[A-Z0-9]{4,6}$/.test(c)) connect(c); else o.querySelector(".msg").textContent = "Bitte gültigen Code eingeben."; };
+  const create = o.querySelector("#mp-create"); if (create) create.onclick = () => { save(); connect(randCode()); };
+  const joinBig = o.querySelector("#mp-joinbig"); if (joinBig) joinBig.onclick = join;
+  o.querySelector("#mp-join").onclick = join;
   o.querySelector("#mp-scores").onclick = showScores;
+  // Bei Einladung ohne Namen direkt ins Namensfeld springen
+  if (invited && !GS.getName()) { const n = o.querySelector("#mp-name"); if (n) n.focus(); }
 }
 
 function showLobby() {
@@ -358,7 +365,7 @@ function showLobby() {
     <p class="msg">${players.length < 2 ? "Warte auf mindestens eine:n weitere:n …" : (meHost ? "Bereit zum Start!" : "Warte auf den Host …")}</p>
     ${meHost ? `<button class="btn-primary" id="lb-start" ${players.length >= 2 ? "" : "disabled style=\"opacity:.5\""}>🎨 Starten</button>` : ""}
     <button class="btn-secondary" id="lb-leave">Verlassen</button>`);
-  o.querySelector("#lb-share").onclick = async () => { const r = await GS.share({ title: "Kritzeln & Raten", text: `Mal & rate mit mir 🎨 — Raum-Code ${code}`, url: location.origin + "/kritzeln/" }); if (r === "copied") o.querySelector("#lb-share").textContent = "✔ kopiert"; };
+  o.querySelector("#lb-share").onclick = async () => { const r = await GS.share({ title: "Kritzeln & Raten", text: `Mal & rate mit mir 🎨 — tipp auf den Link, dann bist du direkt im Raum ${code}:`, url: location.origin + "/kritzeln/?code=" + encodeURIComponent(code) }); if (r === "copied") o.querySelector("#lb-share").textContent = "✔ kopiert"; };
   if (meHost) {
     o.querySelectorAll("#lb-cats .chip").forEach(b => b.onclick = () => {
       const k = b.dataset.cat; roomCats = roomCats.includes(k) ? roomCats.filter(x => x !== k) : [...roomCats, k];
@@ -409,4 +416,9 @@ document.addEventListener("visibilitychange", () => { if (document.hidden || int
 buildTools();
 GS.markPlayed("kritzeln");
 const pre = new URLSearchParams(location.search).get("code");
-if (pre && /^[A-Z0-9]{4,6}$/i.test(pre)) connect(pre.toUpperCase()); else showMenu();
+const preCode = pre && /^[A-Z0-9]{4,6}$/i.test(pre) ? pre.toUpperCase() : "";
+// Per Einladungslink: mit gesetztem Namen direkt rein, sonst Menü mit
+// vorbefülltem Code (Name zuerst eingeben, statt still als „Spieler" landen).
+if (preCode && GS.getName()) connect(preCode);
+else if (preCode) showMenu("", preCode);
+else showMenu();
