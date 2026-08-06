@@ -17,3 +17,12 @@
 /api/*
   Cache-Control: no-store
   X-Content-Type-Options: nosniff
+
+# Inhaltsstabile Assets langfristig cachen (Wiederbesuch = keine Revalidierung).
+# Bewusst NUR Fonts + Icons: die sind stabil. JS/CSS werden über ?v= (Content-Hash)
+# gebustet UND vom Service Worker über nackte Pfade vorab gecacht — dort würde
+# „immutable" auf dem nackten Pfad Updates verzögern, daher hier ausgespart.
+/fonts/*
+  Cache-Control: public, max-age=31536000, immutable
+/icons/*
+  Cache-Control: public, max-age=31536000, immutable
