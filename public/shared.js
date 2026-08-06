@@ -86,6 +86,29 @@
   function scoreFlow(container, rankEl, { game, score, meta, daily, weekly, onName }) {
     let submitted = false;
 
+    // Duell-Ergebnis (falls über einen Herausforderungs-Link gekommen): schließt
+    // die Schleife — sag der Person, ob sie das Ziel geknackt hat.
+    try {
+      const dr = duel.check(game, score);
+      if (dr) {
+        const el = document.createElement("div");
+        el.className = "gs-duel-result " + (dr.beaten ? "won" : "lost");
+        el.innerHTML = dr.beaten
+          ? `🏆 Du hast <b>${esc(dr.by)}</b> geschlagen! <span>Ziel war ${dr.target}</span>`
+          : `⚔️ <b>${esc(dr.by)}</b> hatte ${dr.target} — dir fehlen noch <b>${dr.diff}</b>`;
+        if (rankEl && rankEl.insertAdjacentElement) rankEl.insertAdjacentElement("beforebegin", el);
+        else if (container) container.appendChild(el);
+        if (dr.beaten) {
+          try {
+            sound.win(); haptic(24);
+            fx.burst(innerWidth / 2, innerHeight * 0.4, { count: 24 });
+            fx.float("🏆", innerWidth / 2, innerHeight * 0.32, { size: 3 });
+          } catch {}
+          duel.clear();
+        }
+      }
+    } catch {}
+
     const showResult = resp => {
       if (!resp) { rankEl.textContent = "Score konnte nicht übertragen werden"; return; }
       if (resp.error) {
@@ -475,6 +498,31 @@
     return base + "?" + p.toString();
   }
 
+  // Duell-Schleife: kommt jemand über einen Herausforderungs-Link (…?duel=…&sc=X)
+  // auf eine Spielseite, merken wir uns das Ziel für die Session. scoreFlow zeigt
+  // beim Game-Over automatisch, ob es geschlagen wurde. So schließt sich die Schleife.
+  const duel = {
+    _key: "gs_duel_active",
+    capture() {
+      try {
+        const p = new URLSearchParams(location.search);
+        const g = p.get("duel"); if (!g) return;
+        const by = String(p.get("by") || "").slice(0, 16);
+        const sc = Math.max(0, parseInt(p.get("sc") || "0", 10) || 0);
+        sessionStorage.setItem(this._key, JSON.stringify({ game: g, by, score: sc }));
+      } catch {}
+    },
+    target(game) {
+      try { const d = JSON.parse(sessionStorage.getItem(this._key) || "null"); return (d && d.game === game) ? d : null; } catch { return null; }
+    },
+    // → { by, target, beaten, diff } | null
+    check(game, score) {
+      const t = this.target(game); if (!t) return null;
+      return { by: t.by || "jemand", target: t.score, beaten: (score | 0) >= t.score, diff: Math.max(0, t.score - (score | 0)) };
+    },
+    clear() { try { sessionStorage.removeItem(this._key); } catch {} },
+  };
+
   // ---------- Zuletzt gespieltes Spiel (für die Landing Page) ----------
   function markPlayed(game) {
     try { localStorage.setItem("gs_last_game", game); } catch {}
@@ -754,6 +802,13 @@
     .gs-steps { list-style: none; text-align: left; margin: 8px 0 18px; display: flex; flex-direction: column; gap: 12px; }
     .gs-steps li { display: flex; align-items: flex-start; gap: 12px; line-height: 1.35; }
     .gs-steps .gs-step-ic { font-size: 1.5rem; flex-shrink: 0; width: 30px; text-align: center; }
+    .gs-duel-result {
+      margin: 4px auto 12px; padding: 10px 14px; border-radius: 12px; font-weight: 700; font-size: 0.95rem;
+      animation: gs-chip-in 0.4s cubic-bezier(0.34, 1.4, 0.5, 1);
+    }
+    .gs-duel-result span { display: block; font-weight: 500; font-size: 0.78rem; opacity: 0.85; margin-top: 2px; }
+    .gs-duel-result.won { background: rgba(87,227,155,0.16); color: #57e39b; box-shadow: 0 0 0 1px rgba(87,227,155,0.35) inset; }
+    .gs-duel-result.lost { background: rgba(232,193,90,0.12); color: var(--gold, #e8c15a); box-shadow: 0 0 0 1px rgba(232,193,90,0.3) inset; }
   `;
   document.head.appendChild(style);
 
@@ -778,9 +833,12 @@
 
   window.GS = {
     esc, deviceId, getName, setName, submitScore, scoreFlow, showLeaderboard,
-    badges, skins, sound, haptic, fx, onboard, share, shareCard, duelLink, markPlayed, streak, cloud,
+    badges, skins, sound, haptic, fx, onboard, share, shareCard, duelLink, duel, markPlayed, streak, cloud,
     level, quests,
   };
+
+  // Eingehende Duell-Herausforderung aus der URL für diese Session merken.
+  try { duel.capture(); } catch {}
 
   // Auto-Sync verdrahten (nur wenn ein Sync-Code existiert): beim Verlassen
   // automatisch sichern; beim Start einen neueren Stand eines ANDEREN Geraets
