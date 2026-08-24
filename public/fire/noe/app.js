@@ -919,6 +919,14 @@
   const locBtn = $("#loc-btn");
   if (locBtn) locBtn.addEventListener("click", toggleNear);
 
+  // Manuelles Aktualisieren: lädt sofort neu (zusätzlich zur 30-s-Auto-Aktualisierung).
+  const refreshBtn = $("#refresh-btn");
+  if (refreshBtn) refreshBtn.addEventListener("click", () => {
+    refreshBtn.classList.remove("spin"); void refreshBtn.offsetWidth; refreshBtn.classList.add("spin");
+    load();
+    setTimeout(() => refreshBtn.classList.remove("spin"), 700);
+  });
+
   // ---- Standort / Nähe ----
   function rerenderNear() {
     if (view === "list") { listEl.innerHTML = ""; shownIds.clear(); render(); }

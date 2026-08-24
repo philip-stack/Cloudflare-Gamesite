@@ -25,7 +25,7 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Feuerwehr NÖ" />
-  <link rel="stylesheet" href="style.css?v=c279d88b" />
+  <link rel="stylesheet" href="style.css?v=635849e7" />
 </head>
 <body>
   <div id="app">
@@ -42,6 +42,7 @@
         <button id="loc-btn" class="icon-btn" title="Einsätze in meiner Nähe" aria-label="Einsätze in meiner Nähe zuerst">📍</button>
         <button id="theme-btn" class="icon-btn" title="Hell/Dunkel" aria-label="Hell- oder Dunkelmodus umschalten">🌙</button>
         <button id="alarm-btn" class="icon-btn" title="Bezirks-Alarm" aria-label="Bezirks-Alarm einrichten">🔔</button>
+        <button id="refresh-btn" class="icon-btn" title="Aktualisieren" aria-label="Einsätze jetzt aktualisieren"><span class="ref-ic">🔄</span></button>
         <div class="status">
           <span class="live" id="live-dot" aria-hidden="true"></span>
           <span id="stand">verbinde…</span>
@@ -87,7 +88,7 @@
       <p>Daten: NÖ Landesfeuerwehrverband (öffentliche <em>Wastl/GRISU</em>-Schnittstelle).
          Kartengrundlage: Bezirksgrenzen <em>Statistik Austria</em> (vereinfacht).
          Privates, inoffizielles Projekt, ohne Gewähr – kein Ersatz für den Notruf <strong>122</strong>.
-         Standort wird nur lokal genutzt, nicht gespeichert. <strong>Build v30</strong></p>
+         Standort wird nur lokal genutzt, nicht gespeichert. <strong>Build v31</strong></p>
     </footer>
   </div>
 
@@ -128,7 +129,7 @@
   </div>
 
   <script src="noe-geo.js?v=140f03b0"></script>
-  <script src="app.js?v=09ff1588"></script>
+  <script src="app.js?v=43631b70"></script>
   <script>
     // Eigener Service Worker (Scope /fire/noe/) → installierbar als eigene PWA.
     if ("serviceWorker" in navigator) {

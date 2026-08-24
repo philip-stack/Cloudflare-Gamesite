@@ -295,6 +295,12 @@ select:focus, input:focus { border-color: rgba(255, 59, 48, 0.6); }
    stattdessen im JS abgefangen (classList.contains("loading")). */
 /* Statischer Lade-Zustand (keine Animation → kein Render-Artefakt). */
 .icon-btn.loading { opacity: 0.55; }
+/* Aktualisieren-Button: nur das innere Icon dreht sich (der Button selbst ist
+   contain:strict → die Animation bleibt sauber in der Box, kein Artefakt). */
+.ref-ic { display: inline-block; line-height: 1; }
+.icon-btn.spin .ref-ic { animation: refspin 0.7s linear; }
+@keyframes refspin { from { transform: rotate(0); } to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .icon-btn.spin .ref-ic { animation: none; } }
 @keyframes locpulse { 50% { opacity: 0.3; } }
 
 .view-toggle { display: inline-flex; background: var(--panel); border: 1px solid var(--panel-line); border-radius: 999px; padding: 3px; backdrop-filter: blur(8px); }
