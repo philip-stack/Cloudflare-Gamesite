@@ -978,6 +978,23 @@
   // Das Runterziehen oben kollidierte mit den Kopf-Buttons (v. a. dem 📍-
   // Standort-Button, dessen erster Tap während der GPS-Suche als Pull galt).
 
+  // Natives Pull-to-Refresh / Overscroll HART unterbinden: manche Browser
+  // (ältere iOS-Safari, einige Android) ignorieren `overscroll-behavior`. Am
+  // oberen Rand fangen wir ein Runterziehen per preventDefault ab — dadurch
+  // kann der Browser keinen „Zieh"-Balken mehr über die Kopf-Buttons legen.
+  // Normales Scrollen (scrollTop>0) und Hochwischen bleiben unberührt; in
+  // offenen Overlays greift es nicht (die dürfen normal scrollen).
+  (function killNativePull() {
+    let sy = 0;
+    window.addEventListener("touchstart", e => { sy = e.touches[0] ? e.touches[0].clientY : 0; }, { passive: true });
+    window.addEventListener("touchmove", e => {
+      if (!overlay.hidden || !alarmOvl.hidden || !statsOvl.hidden) return;
+      if (!e.touches[0] || e.touches.length > 1) return;
+      const sc = document.scrollingElement || document.documentElement;
+      if ((sc.scrollTop || 0) <= 0 && e.touches[0].clientY > sy) e.preventDefault();
+    }, { passive: false });
+  })();
+
   // ---- Live-Zeiten ohne Neuladen aktualisieren ----
   setInterval(() => {
     if (view === "list") {
