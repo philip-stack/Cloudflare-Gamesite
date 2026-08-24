@@ -979,6 +979,9 @@
     const TH = 70;
     window.addEventListener("touchstart", e => {
       if (!overlay.hidden || !alarmOvl.hidden) return;
+      // Nicht auf Bedienelementen ziehen: sonst wird ein Tap auf einen Button
+      // (z. B. 📍 Standort) oben als Pull gewertet und der Klick geht verloren.
+      if (e.target.closest && e.target.closest("button, a, input, select, textarea, label")) { pulling = false; return; }
       // Auch in der Karte erlauben — das gezeichnete SVG kennt kein eigenes
       // Pan/Zoom, ein kurzer Tap auf einen Marker bewegt sich nicht (dist≈0),
       // erst ein deutliches Ziehen (>Schwelle) löst den Refresh aus.
