@@ -273,6 +273,11 @@ select:focus, input:focus { border-color: rgba(255, 59, 48, 0.6); }
      solange der Standort gesucht wird. Ein statischer Button ohne Filter/
      Transition/Transform kann so ein Render-Artefakt nicht erzeugen. */
   transition: none; backdrop-filter: none; -webkit-backdrop-filter: none;
+  /* Nuklear: Größe + Paint strikt auf die Box beschränken. Der Browser darf
+     nichts außerhalb der 42×42px rendern (kein Schatten/Filter/Artefakt), und
+     die Größe ist inhaltsunabhängig fix. Damit ist eine „hohe Pille" technisch
+     ausgeschlossen — egal welche native Eigenart dahintersteckt. */
+  contain: strict;
   touch-action: none;
   -webkit-user-select: none; user-select: none;
   -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent;
