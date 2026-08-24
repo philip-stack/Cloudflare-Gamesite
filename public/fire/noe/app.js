@@ -973,36 +973,10 @@
   // Gespeicherten Filter/Chip auf UI anwenden
   document.querySelectorAll(".chip").forEach(c => { const on = c.dataset.kind === filterKind; c.classList.toggle("on", on); c.setAttribute("aria-selected", String(on)); });
 
-  // ---- Pull-to-refresh (nur oben, nur Touch) ----
-  (function ptr() {
-    const el = $("#ptr"); let startY = 0, pulling = false, dist = 0;
-    const TH = 70;
-    window.addEventListener("touchstart", e => {
-      if (!overlay.hidden || !alarmOvl.hidden) return;
-      // Nicht auf Bedienelementen ziehen: sonst wird ein Tap auf einen Button
-      // (z. B. 📍 Standort) oben als Pull gewertet und der Klick geht verloren.
-      if (e.target.closest && e.target.closest("button, a, input, select, textarea, label")) { pulling = false; return; }
-      // Der gesamte obere Bereich (Kopfleiste mit den Buttons) startet KEINEN
-      // Pull — auch wenn man knapp neben einen Button tippt. Ziehen zum
-      // Aktualisieren beginnt erst unterhalb der Kopfleiste.
-      if (e.touches[0].clientY < 150) { pulling = false; return; }
-      // Auch in der Karte erlauben — das gezeichnete SVG kennt kein eigenes
-      // Pan/Zoom, ein kurzer Tap auf einen Marker bewegt sich nicht (dist≈0),
-      // erst ein deutliches Ziehen (>Schwelle) löst den Refresh aus.
-      if (window.scrollY > 0) { pulling = false; return; }
-      startY = e.touches[0].clientY; pulling = true; dist = 0;
-    }, { passive: true });
-    window.addEventListener("touchmove", e => {
-      if (!pulling) return;
-      dist = e.touches[0].clientY - startY;
-      if (dist > 0) { el.style.transform = "translateX(-50%) translateY(" + Math.min(dist, TH + 30) + "px)"; el.classList.toggle("ready", dist > TH); }
-    }, { passive: true });
-    window.addEventListener("touchend", () => {
-      if (!pulling) return; pulling = false;
-      if (dist > TH) { el.classList.add("spin"); load().finally(() => setTimeout(() => { el.classList.remove("spin", "ready"); el.style.transform = ""; }, 400)); }
-      else { el.classList.remove("ready"); el.style.transform = ""; }
-    });
-  })();
+  // Pull-to-refresh wurde entfernt: Die Liste aktualisiert sich ohnehin
+  // automatisch alle 30 s (REFRESH_MS) und beim Zurückkehren auf die Seite.
+  // Das Runterziehen oben kollidierte mit den Kopf-Buttons (v. a. dem 📍-
+  // Standort-Button, dessen erster Tap während der GPS-Suche als Pull galt).
 
   // ---- Live-Zeiten ohne Neuladen aktualisieren ----
   setInterval(() => {
