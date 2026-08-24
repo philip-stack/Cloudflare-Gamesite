@@ -945,7 +945,9 @@
       if (view === "map") centerOnUser(); else { rerenderNear(); toast("Einsätze in deiner Nähe zuerst"); }
     }, err => {
       locSearching = false;
-      toast(err && err.code === 1 ? "Standort-Freigabe verweigert" : "Standort nicht ermittelbar");
+      toast(err && err.code === 1
+        ? "Standort blockiert — im Browser übers 🔒-Symbol in der Adressleiste → Standort wieder erlauben."
+        : "Standort nicht ermittelbar");
     }, { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 });
   }
   $("#a-save").addEventListener("click", saveAlarm);
