@@ -4,7 +4,7 @@
 // installierbar und offline-tauglich. Strategie: Netz zuerst,
 // Cache als Fallback. /api/… liegt außerhalb des Scopes → immer live.
 // ====================================================================
-const CACHE = "fire-noe-v28";
+const CACHE = "fire-noe-v29";
 // Nackte Pfade (ohne ?v=): der Offline-Fallback matcht per ignoreSearch, und die
 // aktuell gültige Version landet ohnehin beim ersten Online-Laden im Cache.
 const SHELL = [

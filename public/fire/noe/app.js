@@ -42,6 +42,7 @@
   let newFlash = 0;
   let shownIds = new Set();         // schon eingeblendete Karten (keine Re-Animation)
   let userPos = null;              // [lat,lng] eigener Standort (Session)
+  let locSearching = false;        // läuft gerade eine GPS-Abfrage? (Doppel-Tap-Sperre)
   let nearMode = false;           // Liste nach Nähe sortieren + Distanz zeigen
 
   // ---- Hell/Dunkel ----
@@ -931,15 +932,19 @@
       return;
     }
     if (!navigator.geolocation) { toast("Standort wird nicht unterstützt"); return; }
-    if (locBtn && locBtn.classList.contains("loading")) return;   // GPS-Suche läuft schon → Doppel-Tap ignorieren
-    locBtn && locBtn.classList.add("loading");
+    if (locSearching) return;                      // GPS-Suche läuft schon → Doppel-Tap ignorieren
+    // BEWUSST kein Button-Lade-Zustand: der Browser hängt sonst während der
+    // GPS-Abfrage ein natives Overlay an den Button (hohe helle „Pille"), das
+    // per CSS nicht erreichbar ist. Rückmeldung stattdessen nur als Toast.
+    locSearching = true;
+    toast("📍 Standort wird gesucht …");
     navigator.geolocation.getCurrentPosition(p => {
-      locBtn && locBtn.classList.remove("loading");
+      locSearching = false;
       userPos = [p.coords.latitude, p.coords.longitude];
       nearMode = true; locBtn && locBtn.classList.add("on");
       if (view === "map") centerOnUser(); else { rerenderNear(); toast("Einsätze in deiner Nähe zuerst"); }
     }, err => {
-      locBtn && locBtn.classList.remove("loading");
+      locSearching = false;
       toast(err && err.code === 1 ? "Standort-Freigabe verweigert" : "Standort nicht ermittelbar");
     }, { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 });
   }
