@@ -264,7 +264,10 @@ select:focus, input:focus { border-color: rgba(255, 59, 48, 0.6); }
 .icon-btn {
   width: 42px; height: 42px; border-radius: 12px; flex: none; cursor: pointer;
   background: var(--panel); border: 1px solid var(--panel-line); color: var(--ink);
-  font-size: 1.15rem; line-height: 1; backdrop-filter: blur(8px); transition: all 0.15s;
+  font-size: 1.15rem; line-height: 1; transition: border-color 0.15s, transform 0.15s, background 0.15s;
+  /* KEIN backdrop-filter: In Chromium (Edge/Chrome) „verschmiert" ein Element
+     mit backdrop-filter, wenn darauf eine Animation/Transition läuft — beim
+     Pin-Button (einziger mit Lade-Animation) ergab das eine hohe helle Pille. */
   /* Touch auf dem Button ist NUR ein Klick — keine Zieh-/Pull-/Auswahl-Geste.
      Verhindert, dass der Browser einen Tap (v. a. während der GPS-Suche) als
      Runterziehen/Overscroll interpretiert und den Button „streckt". */
@@ -283,7 +286,8 @@ select:focus, input:focus { border-color: rgba(255, 59, 48, 0.6); }
    durch den Button auf die Seite dahinter, und der Browser zeigt dort sein
    natives Zieh-/Auswahl-Artefakt (die hohe helle Pille). Doppel-Tippen wird
    stattdessen im JS abgefangen (classList.contains("loading")). */
-.icon-btn.loading { opacity: 0.6; animation: locpulse 1s ease-in-out infinite; }
+/* Statischer Lade-Zustand (keine Animation → kein Render-Artefakt). */
+.icon-btn.loading { opacity: 0.55; }
 @keyframes locpulse { 50% { opacity: 0.3; } }
 
 .view-toggle { display: inline-flex; background: var(--panel); border: 1px solid var(--panel-line); border-radius: 999px; padding: 3px; backdrop-filter: blur(8px); }
