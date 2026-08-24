@@ -982,6 +982,10 @@
       // Nicht auf Bedienelementen ziehen: sonst wird ein Tap auf einen Button
       // (z. B. 📍 Standort) oben als Pull gewertet und der Klick geht verloren.
       if (e.target.closest && e.target.closest("button, a, input, select, textarea, label")) { pulling = false; return; }
+      // Der gesamte obere Bereich (Kopfleiste mit den Buttons) startet KEINEN
+      // Pull — auch wenn man knapp neben einen Button tippt. Ziehen zum
+      // Aktualisieren beginnt erst unterhalb der Kopfleiste.
+      if (e.touches[0].clientY < 150) { pulling = false; return; }
       // Auch in der Karte erlauben — das gezeichnete SVG kennt kein eigenes
       // Pan/Zoom, ein kurzer Tap auf einen Marker bewegt sich nicht (dist≈0),
       // erst ein deutliches Ziehen (>Schwelle) löst den Refresh aus.
