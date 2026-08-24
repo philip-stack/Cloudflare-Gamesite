@@ -931,6 +931,7 @@
       return;
     }
     if (!navigator.geolocation) { toast("Standort wird nicht unterstützt"); return; }
+    if (locBtn && locBtn.classList.contains("loading")) return;   // GPS-Suche läuft schon → Doppel-Tap ignorieren
     locBtn && locBtn.classList.add("loading");
     navigator.geolocation.getCurrentPosition(p => {
       locBtn && locBtn.classList.remove("loading");

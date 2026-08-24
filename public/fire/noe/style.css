@@ -279,7 +279,11 @@ select:focus, input:focus { border-color: rgba(255, 59, 48, 0.6); }
 }
 .a-note { font-size: 0.78rem; color: var(--faint); line-height: 1.5; margin: 2px 0 14px; }
 .icon-btn.on { background: #2f7bff; border-color: #2f7bff; color: #fff; }
-.icon-btn.loading { opacity: 0.6; pointer-events: none; animation: locpulse 1s ease-in-out infinite; }
+/* KEIN pointer-events:none: sonst „fällt" der Finger während der GPS-Suche
+   durch den Button auf die Seite dahinter, und der Browser zeigt dort sein
+   natives Zieh-/Auswahl-Artefakt (die hohe helle Pille). Doppel-Tippen wird
+   stattdessen im JS abgefangen (classList.contains("loading")). */
+.icon-btn.loading { opacity: 0.6; animation: locpulse 1s ease-in-out infinite; }
 @keyframes locpulse { 50% { opacity: 0.3; } }
 
 .view-toggle { display: inline-flex; background: var(--panel); border: 1px solid var(--panel-line); border-radius: 999px; padding: 3px; backdrop-filter: blur(8px); }
