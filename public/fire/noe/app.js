@@ -664,7 +664,8 @@
 
   // Einsatz teilen — native Teilen-Ansicht (WhatsApp, …) auf Mobil,
   // sonst in die Zwischenablage. Deep-Link per #n=<Einsatznummer>.
-  function shareText(base) {
+  async function shareOp(base) {
+    if (!base) return;
     const c = base._c || classify(base.a);
     const line = [
       "🚒 " + (c.label || "Einsatz") + (c.stufe ? " · Stufe " + c.stufe : ""),
@@ -673,91 +674,15 @@
       base._when ? (base._ended ? "beendet " : "") + fmtWhen(base._when) : "",
     ].filter(Boolean).join("\n");
     const url = location.origin + location.pathname + "#n=" + encodeURIComponent(base.n || "");
-    return { line, url };
-  }
-  // Wörter auf maxW umbrechen (für die Teilen-Grafik).
-  function wrapText(x, text, maxW) {
-    const words = String(text || "").split(/\s+/), lines = []; let cur = "";
-    for (const w of words) {
-      const t = cur ? cur + " " + w : w;
-      if (x.measureText(t).width > maxW && cur) { lines.push(cur); cur = w; } else cur = t;
-    }
-    if (cur) lines.push(cur);
-    return lines;
-  }
-  function roundRect(x, X, Y, w, h, r) {
-    x.beginPath(); x.moveTo(X + r, Y);
-    x.arcTo(X + w, Y, X + w, Y + h, r); x.arcTo(X + w, Y + h, X, Y + h, r);
-    x.arcTo(X, Y + h, X, Y, r); x.arcTo(X, Y, X + w, Y, r); x.closePath();
-  }
-  // Einsatz als quadratische Teilen-Grafik (1080²) rein lokal zeichnen.
-  function buildShareCanvas(base) {
-    const W = 1080, H = 1080, PAD = 90;
-    const cv = document.createElement("canvas"); cv.width = W; cv.height = H;
-    const x = cv.getContext("2d"); if (!x) return null;
-    const c = base._c || classify(base.a);
-    const col = KIND_COLOR[c.kind] || KIND_COLOR.X;
-    const FONT = "-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica Neue, Arial, sans-serif";
-    x.fillStyle = "#0b0c10"; x.fillRect(0, 0, W, H);
-    const grd = x.createRadialGradient(W * 0.82, -80, 40, W * 0.82, -80, 950);
-    grd.addColorStop(0, "rgba(255,59,48,0.28)"); grd.addColorStop(1, "rgba(255,59,48,0)");
-    x.fillStyle = grd; x.fillRect(0, 0, W, H);
-    x.fillStyle = col; x.fillRect(0, 0, 16, H);
-    x.textBaseline = "alphabetic";
-    x.font = "700 40px " + FONT; x.fillStyle = "#ff6a60";
-    x.fillText("🚒 Feuerwehr Niederösterreich", PAD, 130);
-    // Art-Badge
-    x.font = "800 34px " + FONT;
-    const bt = (c.label || "Einsatz") + (c.stufe ? " · Stufe " + c.stufe : "") + (base._ended ? "  ·  beendet" : "");
-    const bw = x.measureText(bt).width + 56;
-    roundRect(x, PAD, 190, bw, 66, 16); x.fillStyle = hexA(col, 0.22); x.fill();
-    x.fillStyle = "#fff"; x.fillText(bt, PAD + 28, 234);
-    // Meldung
-    x.fillStyle = "#eef1f7"; x.font = "800 66px " + FONT;
-    let y = 380;
-    for (const ln of wrapText(x, base.m || "Einsatz", W - PAD * 2).slice(0, 4)) { x.fillText(ln, PAD, y); y += 82; }
-    // Ort
-    x.fillStyle = "#9aa3b4"; x.font = "600 44px " + FONT; y += 20;
-    for (const ln of wrapText(x, "📍 " + (base.o || "") + (base._bez ? " · Bezirk " + base._bez : ""), W - PAD * 2).slice(0, 2)) { x.fillText(ln, PAD, y); y += 58; }
-    if (base._when) { x.fillStyle = "#6b7386"; x.font = "600 38px " + FONT; x.fillText((base._ended ? "beendet " : "") + fmtWhen(base._when), PAD, y + 24); }
-    x.fillStyle = "#6b7386"; x.font = "600 34px " + FONT;
-    x.fillText("philip-stack.pages.dev/fire/noe", PAD, H - 80);
-    return cv;
-  }
-  // #rrggbb + Alpha → rgba() (für halbtransparente Flächen im Canvas).
-  function hexA(hex, a) {
-    const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex || "");
-    if (!m) return "rgba(255,255,255," + a + ")";
-    return `rgba(${parseInt(m[1], 16)},${parseInt(m[2], 16)},${parseInt(m[3], 16)},${a})`;
-  }
-  // Einsatz teilen — bevorzugt als Bild (Datei-Teilen auf Mobil, sonst Download),
-  // Text/Link als Rückfall. Deep-Link per #n=<Einsatznummer>.
-  async function shareOp(base) {
-    if (!base) return;
-    const { line, url } = shareText(base);
-    try {
-      const cv = buildShareCanvas(base);
-      if (cv && cv.toBlob) {
-        const blob = await new Promise(res => cv.toBlob(res, "image/png"));
-        if (blob) {
-          const file = new File([blob], "feuerwehr-einsatz.png", { type: "image/png" });
-          if (navigator.canShare && navigator.canShare({ files: [file] })) {
-            try { await navigator.share({ files: [file], text: line, url }); } catch (_) {}
-            return;   // geteilt oder abgebrochen — kein weiterer Fallback
-          }
-          const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
-          a.download = "feuerwehr-einsatz.png"; document.body.appendChild(a); a.click(); a.remove();
-          setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-          toast("Bild gespeichert");
-          return;
-        }
-      }
-    } catch (_) { /* Bild ging nicht → Text-Fallback */ }
     try {
       if (navigator.share) { await navigator.share({ title: "Feuerwehr NÖ", text: line, url }); return; }
-    } catch (_) { return; }
-    try { await navigator.clipboard.writeText(line + "\n" + url); toast("Einsatz kopiert — zum Teilen einfügen"); }
-    catch (_) { window.open("https://wa.me/?text=" + encodeURIComponent(line + "\n" + url), "_blank", "noopener"); }
+    } catch (_) { return; }   // Nutzer hat abgebrochen
+    try {
+      await navigator.clipboard.writeText(line + "\n" + url);
+      toast("Einsatz kopiert — zum Teilen einfügen");
+    } catch (_) {
+      window.open("https://wa.me/?text=" + encodeURIComponent(line + "\n" + url), "_blank", "noopener");
+    }
   }
 
   function openDetail(key) {
