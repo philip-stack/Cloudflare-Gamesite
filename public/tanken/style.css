@@ -141,6 +141,40 @@ input[type="search"]:focus { outline: 2px solid var(--accent2); outline-offset: 
 #ac .ac-item b { font-weight: 700; }
 #ac .ac-item small { display: block; color: var(--muted); font-size: 0.78rem; }
 
+/* Karten-Glocke (Preis-Alarm) */
+.alarm { border: 1px solid var(--panel-line); background: var(--panel); color: var(--muted); font-size: 1.02rem;
+  border-radius: 10px; cursor: pointer; padding: 6px 10px; line-height: 1; }
+.alarm.on { color: var(--gold); border-color: rgba(232,177,0,0.5); background: rgba(232,177,0,0.10); }
+.head-btns { display: flex; gap: 8px; }
+
+/* Overlay / Sheet (Preis-Alarm) */
+.ovl { position: fixed; inset: 0; z-index: 5000; display: grid; place-items: end center; background: rgba(6,12,9,0.6); backdrop-filter: blur(5px); }
+.ovl[hidden] { display: none !important; }
+.ovl .sheet { position: relative; width: 100%; max-width: 460px; max-height: 88dvh; overflow: auto;
+  background: var(--bg2); border: 1px solid var(--panel-line); border-radius: 18px 18px 0 0;
+  padding: 22px 20px calc(24px + var(--safe-b)); box-shadow: 0 -18px 50px -20px rgba(0,0,0,0.8); }
+@media (min-width: 560px) { .ovl { place-items: center; } .ovl .sheet { border-radius: 18px; } }
+.ovl-x { position: absolute; top: 12px; right: 12px; width: 34px; height: 34px; border-radius: 50%;
+  border: 1px solid var(--panel-line); background: var(--panel); color: var(--ink); cursor: pointer; font-size: 0.9rem; }
+.ovl h2 { margin: 2px 0 12px; font-size: 1.2rem; font-weight: 800; }
+.al-add { background: var(--panel); border: 1px solid var(--panel-line); border-radius: 12px; padding: 14px; margin-bottom: 16px; }
+.al-st { font-size: 0.95rem; margin-bottom: 10px; }
+.al-st b { font-weight: 800; }
+.al-target { display: flex; flex-direction: column; gap: 6px; font-size: 0.82rem; color: var(--muted); font-weight: 600; margin-bottom: 12px; }
+.al-target input { padding: 11px 12px; border-radius: 10px; border: 1px solid var(--panel-line); background: var(--bg);
+  color: var(--ink); font: 800 1.05rem inherit; font-variant-numeric: tabular-nums; -webkit-appearance: none; }
+.al-add .btn-primary { width: 100%; }
+.al-h { margin: 4px 0 8px; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+.al-list { display: flex; flex-direction: column; gap: 8px; }
+.al-empty { color: var(--faint); font-size: 0.86rem; padding: 6px 2px; }
+.al-item { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: var(--panel); border: 1px solid var(--panel-line); border-radius: 10px; }
+.al-i-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.al-i-txt b { font-weight: 800; font-size: 0.9rem; }
+.al-i-txt span { color: var(--muted); font-size: 0.8rem; }
+.al-del { flex: none; border: 1px solid var(--panel-line); background: transparent; color: var(--muted); border-radius: 8px; cursor: pointer; padding: 6px 9px; }
+.al-del:hover { color: var(--danger); }
+.al-note { color: var(--faint); font-size: 0.76rem; line-height: 1.5; margin: 14px 0 0; }
+
 @media (max-width: 560px) {
   .price { min-width: 78px; font-size: 1.25rem; }
   .nav { padding: 0 11px; }

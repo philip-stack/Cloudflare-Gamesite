@@ -88,6 +88,8 @@
             data-id="${esc(s.id)}" data-name="${esc(s.name)}" data-lat="${s.lat}" data-lng="${s.lng}" data-addr="${esc(addr)}">★</button>
           <button class="share" title="Teilen" aria-label="Teilen"
             data-name="${esc(s.name)}" data-price="${esc(eur(s.price))}" data-addr="${esc(addr)}" data-lat="${s.lat}" data-lng="${s.lng}">⤴</button>
+          <button class="alarm${isAlerted(s.id) ? " on" : ""}" title="Preis-Alarm" aria-label="Preis-Alarm"
+            data-id="${esc(s.id)}" data-name="${esc(s.name)}" data-lat="${s.lat}" data-lng="${s.lng}" data-price="${s.price}">🔔</button>
         </div>
         <a class="nav" href="${navUrl(s.lat, s.lng)}" target="_blank" rel="noopener">Navi ▸</a>
       </div>
@@ -320,7 +322,9 @@
       b.classList.toggle("on"); renderQuickNear(); return;
     }
     const sh = e.target.closest(".share");
-    if (sh) shareStation(sh.dataset);
+    if (sh) { shareStation(sh.dataset); return; }
+    const al = e.target.closest(".alarm");
+    if (al) openAlarm({ id: al.dataset.id, name: al.dataset.name, lat: +al.dataset.lat, lng: +al.dataset.lng, price: +al.dataset.price });
   });
   const FUEL_LABEL = { DIE: "Diesel", SUP: "Super 95", GAS: "CNG" };
   function flashMsg(t) { setMsg(t, "load"); setTimeout(() => { if ($("#msg").textContent === t) setMsg(""); }, 2500); }
@@ -382,6 +386,97 @@
     $("#tip-x").addEventListener("click", () => { LS.set("sprit_tip2", "x"); el.hidden = true; });
   }
 
+  // ================= Preis-Alarm (Push) =================
+  let alertIds = new Set();      // "stationId|fuel" mit aktivem Alarm (für 🔔-Status)
+  let alarmCtx = null;           // aktueller Stations-Kontext im Formular
+  const isAlerted = id => alertIds.has(id + "|" + fuel);
+
+  function b64ToU8(k) {
+    const pad = "=".repeat((4 - k.length % 4) % 4);
+    const s = (k + pad).replace(/-/g, "+").replace(/_/g, "/");
+    const raw = atob(s); const u = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i++) u[i] = raw.charCodeAt(i);
+    return u;
+  }
+  async function ensureSub(create) {
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) return null;
+    const reg = await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub && create) {
+      const key = (await (await fetch("/api/push")).json()).key;
+      sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToU8(key) });
+    }
+    return sub;
+  }
+  const alertApi = body => fetch("/api/sprit/alert", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(r => r.json());
+  function setAlStatus(msg, kind) {
+    const el = $("#al-status"); if (!el) return;
+    if (!msg) { el.hidden = true; return; }
+    el.className = "msg" + (kind ? " " + kind : ""); el.textContent = msg; el.hidden = false;
+  }
+  function renderAlarmList(list) {
+    const el = $("#al-list"); if (!el) return;
+    if (!list.length) { el.innerHTML = `<div class="al-empty">Noch keine Alarme. Tippe bei einer Tankstelle auf 🔔.</div>`; return; }
+    el.innerHTML = list.map(a =>
+      `<div class="al-item"><div class="al-i-txt"><b>${esc(a.name || "Tankstelle")}</b><span>${esc(FUEL_LABEL[a.fuel] || a.fuel)} · ≤ ${esc(eur(a.target))}</span></div>` +
+      `<button class="al-del" data-id="${esc(a.id)}" data-fuel="${esc(a.fuel)}" aria-label="Entfernen">✕</button></div>`).join("");
+  }
+  async function refreshAlerts() {
+    try {
+      const sub = await ensureSub(false);
+      if (!sub) { alertIds = new Set(); renderAlarmList([]); return; }
+      const d = await alertApi({ action: "list", endpoint: sub.endpoint });
+      const list = Array.isArray(d.alerts) ? d.alerts : [];
+      alertIds = new Set(list.map(a => a.id + "|" + a.fuel));
+      renderAlarmList(list);
+    } catch (_) { renderAlarmList([]); }
+  }
+  function openAlarm(ctx) {
+    alarmCtx = ctx || null;
+    $("#alarm").hidden = false; document.body.style.overflow = "hidden";
+    setAlStatus("", "");
+    const add = $("#al-add");
+    if (alarmCtx) {
+      add.hidden = false;
+      $("#al-name").textContent = alarmCtx.name || "Tankstelle";
+      $("#al-fuel").textContent = FUEL_LABEL[fuel] || fuel;
+      const t = Math.max(0.5, (alarmCtx.price || 1.5) - 0.01);   // Standard: 1 Cent unter aktuell
+      $("#al-target").value = t.toFixed(3);
+    } else add.hidden = true;
+    refreshAlerts();
+  }
+  function closeAlarm() { $("#alarm").hidden = true; document.body.style.overflow = ""; }
+  async function saveAlarm() {
+    if (!alarmCtx) return;
+    const target = Math.round(parseFloat(String($("#al-target").value).replace(",", ".").trim()) * 1000) / 1000;
+    if (!(target >= 0.5 && target <= 5)) { setAlStatus("Bitte einen Zielpreis zwischen 0,50 und 5,00 € eingeben.", "warn"); return; }
+    setAlStatus("Wird eingerichtet…", "load");
+    try {
+      if (!("Notification" in window)) { setAlStatus("Dieser Browser unterstützt keine Benachrichtigungen.", "warn"); return; }
+      if (Notification.permission !== "granted") {
+        const p = await Notification.requestPermission();
+        if (p !== "granted") { setAlStatus("Benachrichtigungen wurden nicht erlaubt.", "warn"); return; }
+      }
+      const sub = await ensureSub(true);
+      if (!sub) { setAlStatus("Push wird hier nicht unterstützt.", "warn"); return; }
+      const d = await alertApi({ action: "subscribe", subscription: sub.toJSON(), station: { id: alarmCtx.id, name: alarmCtx.name, lat: alarmCtx.lat, lng: alarmCtx.lng }, fuel, target });
+      if (d.error) { setAlStatus(d.error, "warn"); return; }
+      setAlStatus("Alarm aktiv — Meldung, sobald " + (FUEL_LABEL[fuel] || fuel) + " ≤ " + eur(target) + ".", "load");
+      alarmCtx = null; $("#al-add").hidden = true;
+      await refreshAlerts(); rerender();
+    } catch (_) { setAlStatus("Konnte nicht aktivieren — später erneut versuchen.", "warn"); }
+  }
+  async function removeAlarm(id, f) {
+    try { const sub = await ensureSub(false); if (sub) await alertApi({ action: "remove", endpoint: sub.endpoint, id, fuel: f }); } catch (_) {}
+    await refreshAlerts(); rerender();
+  }
+  $("#alarm-btn").addEventListener("click", () => openAlarm(null));
+  $("#al-close").addEventListener("click", closeAlarm);
+  $("#alarm").addEventListener("click", e => { if (e.target.id === "alarm") closeAlarm(); });
+  $("#al-save").addEventListener("click", saveAlarm);
+  $("#al-list").addEventListener("click", e => { const b = e.target.closest(".al-del"); if (b) removeAlarm(b.dataset.id, b.dataset.fuel); });
+  document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("#alarm").hidden) closeAlarm(); });
+
   // ---- Start ----
   applyThemeUI();
   document.querySelectorAll(".fuel").forEach(b => { const on = b.dataset.fuel === fuel; b.classList.toggle("on", on); b.setAttribute("aria-selected", String(on)); });
@@ -391,4 +486,6 @@
   ensureMap();
   // Im Umkreis-Modus direkt den aktuellen Standort laden (wie Button-Druck).
   if (mode === "near" && !nearData) locate((lat, lng) => fetchNear({ lat, lng }));
+  // Bestehende Alarme laden → 🔔-Status auf den Karten (best-effort).
+  refreshAlerts().then(rerender).catch(() => {});
 })();

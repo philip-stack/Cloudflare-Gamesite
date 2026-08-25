@@ -25,7 +25,7 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="Sprit-Radar" />
   <link rel="stylesheet" href="vendor/leaflet.css?v=340720ef" />
-  <link rel="stylesheet" href="style.css?v=1f0adbf9" />
+  <link rel="stylesheet" href="style.css?v=e299c40f" />
 </head>
 <body>
   <div id="app">
@@ -37,7 +37,10 @@
           <p class="sub">Günstig tanken · Österreich</p>
         </div>
       </div>
-      <button id="theme-btn" class="icon-btn" title="Hell/Dunkel" aria-label="Hell- oder Dunkelmodus umschalten">🌙</button>
+      <div class="head-btns">
+        <button id="alarm-btn" class="icon-btn" title="Preis-Alarm" aria-label="Preis-Alarm verwalten">🔔</button>
+        <button id="theme-btn" class="icon-btn" title="Hell/Dunkel" aria-label="Hell- oder Dunkelmodus umschalten">🌙</button>
+      </div>
     </header>
 
     <section class="controls">
@@ -100,8 +103,27 @@
     </footer>
   </div>
 
+  <!-- Preis-Alarm-Overlay -->
+  <div id="alarm" class="ovl" hidden>
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="al-title">
+      <button class="ovl-x" id="al-close" aria-label="Schließen">✕</button>
+      <h2 id="al-title">🔔 Preis-Alarm</h2>
+      <div id="al-status" class="msg" hidden></div>
+      <div id="al-add" class="al-add" hidden>
+        <div class="al-st"><b id="al-name"></b> · <span id="al-fuel"></span></div>
+        <label class="al-target">Melden, sobald der Preis ≤ (€/l)
+          <input id="al-target" type="number" inputmode="decimal" step="0.001" min="0.5" max="5" />
+        </label>
+        <button id="al-save" class="btn-primary">Alarm aktivieren</button>
+      </div>
+      <h3 class="al-h">Aktive Alarme</h3>
+      <div id="al-list" class="al-list"></div>
+      <p class="al-note">Gespeichert wird nur dein anonymer Push-Endpunkt + Station und Zielpreis. Läuft auch bei geschlossener App; jederzeit hier wieder löschbar. Preisprüfung ca. alle 15&nbsp;min.</p>
+    </div>
+  </div>
+
   <script src="vendor/leaflet.js?v=5a640ff8"></script>
-  <script src="app.js?v=1665e7a7"></script>
+  <script src="app.js?v=8170e085"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));

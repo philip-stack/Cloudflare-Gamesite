@@ -1,7 +1,7 @@
 // Service Worker der Sprit-Radar-PWA. Scope /tanken/. Netz zuerst, Cache als
 // Fallback. /api/… (Preise/Route) und /sprit/tiles/… (Kacheln) werden NICHT
 // vom SW gecacht — Preise sollen frisch sein, Kacheln cachen Edge/Browser selbst.
-const CACHE = "sprit-v9";
+const CACHE = "sprit-v10";
 const SHELL = [
   "./", "./index.html", "./app.js?v=8", "./style.css?v=4",
   "./vendor/leaflet.js", "./vendor/leaflet.css",
@@ -14,6 +14,61 @@ self.addEventListener("install", e => {
 self.addEventListener("activate", e => {
   e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim()));
 });
+
+// ---- Web-Push (Preis-Alarm) ----
+// Payload-loser „Tickle": die eigentlichen Nachrichten aus der Server-Queue
+// holen (/api/push, action:"pending") — derselbe Mechanismus wie bei Fire.
+self.addEventListener("push", e => {
+  e.waitUntil((async () => {
+    let messages = [];
+    try {
+      const sub = await self.registration.pushManager.getSubscription();
+      if (sub) {
+        const res = await fetch("/api/push", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "pending", endpoint: sub.endpoint }),
+        });
+        if (res.ok) messages = (await res.json()).messages || [];
+      }
+    } catch (_) {}
+    if (!messages.length) messages = [{ title: "⛽ Sprit-Radar", body: "Preis-Alarm.", url: "/tanken/" }];
+    await Promise.all(messages.map(m =>
+      self.registration.showNotification(m.title || "Sprit-Radar", {
+        body: m.body || "",
+        icon: "/tanken/icons/icon-192.png",
+        badge: "/tanken/icons/icon-192.png",
+        data: { url: m.url || "/tanken/" },
+        tag: "sprit-" + (m.title || ""),
+      })
+    ));
+  })());
+});
+
+self.addEventListener("notificationclick", e => {
+  e.notification.close();
+  const url = (e.notification.data && e.notification.data.url) || "/tanken/";
+  e.waitUntil((async () => {
+    const all = await clients.matchAll({ type: "window", includeUncontrolled: true });
+    for (const c of all) { if ("focus" in c) return c.focus(); }
+    if (clients.openWindow) return clients.openWindow(url);
+  })());
+});
+
+// Abo rotiert/abgelaufen → neu anlegen (Alarme sind endpoint-gebunden; der
+// Client richtet sie beim nächsten Öffnen ggf. neu ein).
+self.addEventListener("pushsubscriptionchange", e => {
+  e.waitUntil((async () => {
+    try {
+      const key = (await (await fetch("/api/push")).json()).key;
+      const pad = "=".repeat((4 - key.length % 4) % 4);
+      const s = (key + pad).replace(/-/g, "+").replace(/_/g, "/");
+      const raw = atob(s); const appKey = new Uint8Array(raw.length);
+      for (let i = 0; i < raw.length; i++) appKey[i] = raw.charCodeAt(i);
+      await self.registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: appKey });
+    } catch (_) {}
+  })());
+});
+
 self.addEventListener("fetch", e => {
   if (e.request.method !== "GET") return;
   const url = new URL(e.request.url);

@@ -554,10 +554,14 @@ export default {
     ctx.waitUntil((async () => {
       try {
         const base = env.PAGES_ORIGIN || "https://philip-stack.pages.dev";
+        const headers = { "User-Agent": "philip-stack-rt/cron", "x-cron-key": env.CRON_TOKEN || "" };
         // Token im Header statt in der URL-Query (kein Leak in Zugriffs-Logs).
-        await fetch(base + "/api/fire/cron", {
-          headers: { "User-Agent": "philip-stack-rt/cron", "x-cron-key": env.CRON_TOKEN || "" },
-        });
+        // Feuerwehr-Alarm (jeder Lauf) und Sprit-Preis-Alarm (drosselt selbst auf
+        // ~12 min) — unabhängig, ein Fehler darf den anderen nicht verhindern.
+        await Promise.allSettled([
+          fetch(base + "/api/fire/cron", { headers }),
+          fetch(base + "/api/sprit/cron", { headers }),
+        ]);
       } catch (_) { /* nächster Lauf versucht es erneut */ }
     })());
   },
