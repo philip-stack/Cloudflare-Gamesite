@@ -78,11 +78,11 @@ input[type="search"]:focus { outline: 2px solid var(--accent2); outline-offset: 
 .tag { font-size: 0.64rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; padding: 2px 7px; border-radius: 6px; }
 .tag.best { background: rgba(232,177,0,0.18); color: var(--gold); }
 .tag.closed { background: rgba(255,91,77,0.16); color: var(--danger); }
-.actions { flex: none; display: flex; flex-direction: column; gap: 6px; align-self: stretch; }
+.actions { flex: none; display: flex; flex-direction: column; gap: 6px; align-self: center; }
 .act-row { display: flex; gap: 6px; }
-.nav { flex: 1; display: flex; align-items: center; justify-content: center; text-decoration: none;
+.nav { display: flex; align-items: center; justify-content: center; text-decoration: none;
   background: linear-gradient(160deg, var(--accent2), var(--accent)); color: #06130d; font-weight: 800;
-  padding: 0 14px; border-radius: 12px; }
+  padding: 10px 14px; border-radius: 12px; }
 .fav, .share { border: 1px solid var(--panel-line); background: var(--panel); color: var(--faint); font-size: 1.05rem;
   border-radius: 10px; cursor: pointer; padding: 6px 10px; line-height: 1; }
 .fav.on { color: var(--gold); border-color: rgba(232,177,0,0.5); background: rgba(232,177,0,0.10); }
