@@ -208,6 +208,11 @@
       if (f.ageSec > 900) return '<span class="pill warn">verzögert</span>';
       return '<span class="pill ok">ok</span>';
     }
+    function spritPill(s) {
+      if (s.ageSec == null) return '<span class="pill warn">kein Lauf</span>';
+      if (s.ageSec > 1800) return '<span class="pill warn">verzögert</span>';
+      return '<span class="pill ok">ok</span>';
+    }
 
     function render(d) {
       // Ampel
@@ -217,7 +222,7 @@
         (d.warns && d.warns.length ? `<span class="warns">· ${d.warns.map(esc).join(" · ")}</span>` : "");
       $("#stamp").textContent = "Stand: " + new Date(d.generatedAt).toLocaleString("de-AT");
 
-      const s = d.scores, e = d.errors, p = d.push, f = d.fire, db = d.db, k = d.kritzeln || {};
+      const s = d.scores, e = d.errors, p = d.push, f = d.fire, db = d.db, k = d.kritzeln || {}, sp = d.sprit || {};
 
       const gameRows = (s.games || []).map(g =>
         `<div class="kv"><span>${esc(g.game)} <span class="muted">· ${nf(g.players)} Sp.</span></span><b class="mono">${nf(g.subs)}</b></div>`).join("") || '<p class="muted">keine</p>';
@@ -255,6 +260,11 @@
             <div class="kv"><span class="muted">letzter Lauf</span><b class="mono">${fmtAge(f.ageSec)}</b></div>
             <div class="kv"><span class="muted">aktive Einsätze</span><b class="mono">${nf(f.active)}</b></div>
             <div class="kv"><span class="muted">gespeichert</span><b class="mono">${nf(f.keptOps)}</b></div>
+          </div>
+          <div class="card"><h2>Sprit-Cron ${spritPill(sp)}</h2>
+            <div class="kv"><span class="muted">letzter Lauf</span><b class="mono">${fmtAge(sp.ageSec)}</b></div>
+            <div class="kv"><span class="muted">aktive Alarme</span><b class="mono">${nf(sp.alerts)} · ${nf(sp.subscribers)} Abos</b></div>
+            <div class="kv"><span class="muted">Preis-Log</span><b class="mono">${nf(sp.priceLog)}</b></div>
           </div>
         </div>
 
@@ -331,6 +341,7 @@
         <div class="card">
           <div class="toolbar" style="margin-bottom:10px">
             <button class="btn" id="trigger-cron">🚒 Fire-Cron jetzt laufen lassen</button>
+            <button class="btn" id="trigger-sprit">⛽ Sprit-Cron jetzt laufen lassen</button>
           </div>
           <label class="muted" style="display:block;font-size:.82rem;margin-bottom:6px">Betreiber-Alarm an Bestenlisten-Namen (leer = aus):</label>
           <div class="toolbar">
@@ -353,7 +364,8 @@
       $("#err-522").onclick = () => act({ action: "clear522" }, "Alle 522-Meldungen (externe Quelle) löschen?");
       $("#err-clear").onclick = () => act({ action: "clearErrors" }, "Das GESAMTE Fehler-Log löschen?");
       $("#flush-queue").onclick = () => act({ action: "flushQueue" }, "Push-Warteschlange komplett leeren?");
-      $("#trigger-cron").onclick = async () => { const d = await act({ action: "triggerCron" }); if (d) alert("Cron-Status: " + d.cronStatus); };
+      $("#trigger-cron").onclick = async () => { const d = await act({ action: "triggerCron" }); if (d) alert("Fire-Cron-Status: " + d.cronStatus); };
+      const ts = $("#trigger-sprit"); if (ts) ts.onclick = async () => { const d = await act({ action: "triggerCron", which: "sprit" }); if (d) alert("Sprit-Cron: " + d.cronStatus + " · geprüft " + ((d.result && d.result.checked) ?? "–") + ", gesendet " + ((d.result && d.result.sent) ?? "–")); };
       document.querySelectorAll("[data-del]").forEach(b => b.onclick = () => act({ action: "deleteScore", id: Number(b.dataset.del) }, "Diesen Score löschen?"));
       document.querySelectorAll("[data-ban]").forEach(b => b.onclick = () => { const dev = b.dataset.ban; if (dev) act({ action: "banDevice", device: dev }, "Dieses Gerät sperren und alle seine Scores löschen?"); });
       document.querySelectorAll("[data-unban]").forEach(b => b.onclick = () => act({ action: "unbanDevice", device: b.dataset.unban }, "Gerät wieder entsperren?"));

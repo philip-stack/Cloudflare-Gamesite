@@ -30,10 +30,11 @@ export async function onRequestGet({ request, env }) {
   if (!keyEq(got, env.CRON_TOKEN)) return json({ error: "forbidden" }, 403);
   if (!env.DB) return json({ ok: false, error: "no-db" });
 
-  // ---- Selbst-Drosselung (~12 min) ----
+  // ---- Selbst-Drosselung (~12 min); force=1 (Admin-Handauslösung) umgeht sie ----
+  const force = new URL(request.url).searchParams.get("force") === "1";
   try {
     const last = (await env.DB.prepare("SELECT v FROM app_config WHERE k='sprit_cron_at'").first())?.v;
-    if (last) { const age = Date.now() - Date.parse(last); if (isFinite(age) && age < MIN_INTERVAL_MS) return json({ ok: true, skipped: true }); }
+    if (!force && last) { const age = Date.now() - Date.parse(last); if (isFinite(age) && age < MIN_INTERVAL_MS) return json({ ok: true, skipped: true }); }
     await env.DB.prepare(
       "INSERT INTO app_config (k, v) VALUES ('sprit_cron_at', ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v"
     ).bind(new Date().toISOString()).run();

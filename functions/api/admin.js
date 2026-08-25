@@ -103,6 +103,13 @@ export async function onRequestGet({ request, env }) {
   const fOpen = (await one(env, "SELECT COUNT(*) n FROM fire_op WHERE ended=0"))?.n ?? 0;
   const fKept = (await one(env, "SELECT COUNT(*) n FROM fire_op"))?.n ?? 0;
 
+  // ---- Sprit (Preis-Alarm) ----
+  const sh = (await one(env, "SELECT v FROM app_config WHERE k='sprit_cron_at'"))?.v || null;
+  const sAge = sh ? Math.max(0, Math.round((Date.now() - Date.parse(sh)) / 1000)) : null;   // ISO → Alter
+  const sAlerts = (await one(env, "SELECT COUNT(*) n FROM sprit_alert"))?.n ?? 0;
+  const sSubs = (await one(env, "SELECT COUNT(DISTINCT endpoint) n FROM sprit_alert"))?.n ?? 0;
+  const sLog = (await one(env, "SELECT COUNT(*) n FROM sprit_price_log"))?.n ?? 0;
+
   // ---- DB-Hilfstabellen ----
   const rate = (await one(env, "SELECT COUNT(*) n FROM rate"))?.n ?? 0;
   const usedTok = (await one(env, "SELECT COUNT(*) n FROM used_token"))?.n ?? 0;
@@ -132,6 +139,7 @@ export async function onRequestGet({ request, env }) {
   if (fh?.note && fh.note !== "ok") { status = "warn"; warns.push("Fire: " + fh.note); }
   if (e24 - e522 > 20) { status = "warn"; warns.push(`${e24 - e522} interne Fehler/24 h`); }
   if (pQueue > 200) { status = "warn"; warns.push(`Push-Queue: ${pQueue}`); }
+  if (sAge != null && sAge > 1800) { status = "warn"; warns.push("Sprit-Cron verzögert"); }
 
   return json({
     generatedAt: new Date().toISOString(),
@@ -144,6 +152,7 @@ export async function onRequestGet({ request, env }) {
       active: fh?.active ?? null, detailFetched: fh?.detail_fetched ?? null,
       note: fh?.note || null, openOps: fOpen, keptOps: fKept,
     },
+    sprit: { lastRun: sh, ageSec: sAge, alerts: sAlerts, subscribers: sSubs, priceLog: sLog },
     db: { rateRows: rate, usedTokens: usedTok, bannedDevices: banned.length },
     kritzeln: { players: kPlayers, games: kGames, topName: kTop?.name || null, topPoints: kTop?.points ?? 0, entries: kEntries },
     trends: { days, scores: tScores, errors: tErrors, devices: tDevices },
@@ -213,9 +222,13 @@ export async function onRequestPost({ request, env }) {
       case "triggerCron": {
         const token = env && env.CRON_TOKEN;
         if (!token) return json({ error: "CRON_TOKEN nicht gesetzt" }, 400);
+        const which = b.which === "sprit" ? "sprit" : "fire";
         const origin = new URL(request.url).origin;
-        const res = await fetch(`${origin}/api/fire/cron`, { headers: { "x-cron-key": token } });
-        return json({ ok: res.ok, cronStatus: res.status });
+        // Sprit-Cron drosselt sich selbst → force=1 umgeht die Sperre beim Handauslösen.
+        const path = which === "sprit" ? "/api/sprit/cron?force=1" : "/api/fire/cron";
+        const res = await fetch(`${origin}${path}`, { headers: { "x-cron-key": token } });
+        const body = await res.json().catch(() => ({}));
+        return json({ ok: res.ok, cronStatus: res.status, which, result: body });
       }
       default:
         return json({ error: "Unbekannte Aktion" }, 400);
