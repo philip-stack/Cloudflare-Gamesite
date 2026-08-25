@@ -177,5 +177,5 @@ input[type="search"]:focus { outline: 2px solid var(--accent2); outline-offset: 
 
 @media (max-width: 560px) {
   .price { min-width: 78px; font-size: 1.25rem; }
-  .nav { padding: 0 11px; }
+  .nav { padding: 18px 11px; }
 }
