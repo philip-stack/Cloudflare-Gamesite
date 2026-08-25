@@ -1,6 +1,7 @@
 import { json, logError } from "../_util.js";
 import { pushToEndpoint, sendToName } from "../push.js";
 import { BEZIRK, bezName } from "./_bezirk.js";
+import { kindOf } from "./_parse.js";
 
 // ====================================================================
 // Zeitgesteuerte Prüfung neuer Feuerwehr-Einsätze (NÖ) und Bezirks-Alarm.
@@ -96,12 +97,20 @@ export async function onRequestGet({ request, env }) {
 
   for (const e of fresh) {
     const bez = String(e.b || "");
+    const kind = kindOf(e.a);   // B/T/S/X — für den optionalen Art-Filter je Abo
     let targets = [];
     try {
       targets = (await env.DB.prepare(
-        "SELECT DISTINCT endpoint FROM fire_alert WHERE bezirk = ? OR bezirk = '*'"
+        "SELECT DISTINCT endpoint, kinds FROM fire_alert WHERE bezirk = ? OR bezirk = '*'"
       ).bind(bez).all()).results || [];
-    } catch (_) {}
+    } catch (_) {
+      // Spalte kinds noch nicht migriert → ohne Art-Filter (alle Arten).
+      try {
+        targets = (await env.DB.prepare(
+          "SELECT DISTINCT endpoint FROM fire_alert WHERE bezirk = ? OR bezirk = '*'"
+        ).bind(bez).all()).results || [];
+      } catch (_) {}
+    }
 
     const msg = {
       title: "🚒 " + (e.a ? e.a + " · " : "") + (e.m || "Einsatz"),
@@ -111,6 +120,9 @@ export async function onRequestGet({ request, env }) {
       url: "/fire/noe/#n=" + encodeURIComponent(String(e.n || "")),
     };
     for (const t of targets) {
+      // Art-Filter: leer/NULL = alle Arten; sonst nur gewählte (X = Sonstige
+      // wird dann bewusst nicht gepusht, außer alle Arten aktiv).
+      if (t.kinds && !String(t.kinds).includes(kind)) continue;
       const r = await pushToEndpoint(env, t.endpoint, msg);
       if (r.ok) sent++;
       if (r.gone) {

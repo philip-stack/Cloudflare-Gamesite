@@ -260,7 +260,7 @@ select:focus, input:focus { border-color: rgba(255, 59, 48, 0.6); }
    Erweiterungen: Kopf-Buttons, Ansicht-Umschalter, Karte, Alarm,
    Toast, Pull-to-refresh
    ================================================================== */
-.head-right { display: flex; align-items: center; gap: 10px; }
+.head-right { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 10px; }
 .icon-btn {
   width: 42px; height: 42px; min-height: 42px; max-height: 42px; box-sizing: border-box;
   border-radius: 12px; flex: none; cursor: pointer; overflow: hidden;
@@ -351,6 +351,58 @@ select:focus, input:focus { border-color: rgba(255, 59, 48, 0.6); }
 .btn-primary:hover { filter: brightness(1.05); }
 .btn-ghost { border: 1px solid var(--panel-line); background: transparent; color: var(--muted); border-radius: 12px; padding: 13px 16px; font: 700 0.9rem inherit; cursor: pointer; }
 .btn-ghost:hover { color: var(--ink); }
+
+/* Einsatzart-Filter im Alarm-Overlay */
+.a-sub { margin: 4px 0 2px; font-size: 0.9rem; font-weight: 800; }
+.a-hint { margin: 0 0 10px; font-size: 0.78rem; color: var(--faint); line-height: 1.5; }
+.a-kinds { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
+.a-kind {
+  display: inline-flex; align-items: center; gap: 7px; padding: 9px 13px; cursor: pointer;
+  background: rgba(255,255,255,0.03); border: 1px solid var(--panel-line); border-radius: 999px;
+  font: 700 0.85rem inherit; color: var(--muted); transition: all 0.12s; user-select: none;
+}
+.a-kind input { display: none; }
+.a-kind.on { color: var(--ink); background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.22); }
+.a-kind .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; opacity: 0.5; }
+.a-kind.on .dot { opacity: 1; }
+:root[data-theme="light"] .a-kind { background: rgba(12,18,34,0.03); }
+
+/* ---------- Einstellungen-Overlay ---------- */
+.set-h { margin: 20px 0 4px; font-size: 0.98rem; font-weight: 800; }
+.set-h:first-of-type { margin-top: 8px; }
+.set-lead { margin: 0 0 12px; color: var(--muted); font-size: 0.86rem; line-height: 1.5; }
+.set-home { display: flex; gap: 10px; }
+.set-home input {
+  flex: 1; min-width: 0; appearance: none; -webkit-appearance: none;
+  background: var(--panel); color: var(--ink); border: 1px solid var(--panel-line);
+  border-radius: 12px; padding: 13px 15px; font: 600 0.95rem inherit; outline: none;
+}
+.set-home input:focus { border-color: rgba(255,59,48,0.6); }
+.set-home .btn-primary { flex: 0 0 auto; }
+.set-status { margin: 12px 0 0; padding: 10px 13px; border-radius: 11px; font-size: 0.85rem; font-weight: 600; background: rgba(255,255,255,0.05); border: 1px solid var(--panel-line); }
+.set-status.ok { background: rgba(53,208,127,0.12); color: #6fe0a6; border-color: rgba(53,208,127,0.3); }
+.set-status.err { background: rgba(255,59,48,0.12); color: #ff8079; border-color: rgba(255,59,48,0.3); }
+.set-cur { display: flex; align-items: center; gap: 10px; margin-top: 12px; padding: 12px 14px; background: rgba(255,176,32,0.09); border: 1px solid rgba(255,176,32,0.28); border-radius: 12px; font-size: 0.9rem; }
+.set-cur b { font-weight: 800; }
+.set-cur button { margin-left: auto; flex: none; border: 1px solid var(--panel-line); background: transparent; color: var(--muted); border-radius: 999px; padding: 7px 13px; font: 700 0.82rem inherit; cursor: pointer; }
+.set-cur button:hover { color: var(--ink); }
+.set-toggle { display: flex; align-items: center; gap: 11px; cursor: pointer; padding: 12px 14px; background: rgba(255,255,255,0.03); border: 1px solid var(--panel-line); border-radius: 12px; font-size: 0.92rem; font-weight: 600; }
+.set-toggle input { accent-color: var(--brand); width: 18px; height: 18px; flex: none; }
+:root[data-theme="light"] .set-toggle { background: rgba(12,18,34,0.03); }
+
+/* Heimatort-Hervorhebung in der Liste */
+.card.home { border-color: rgba(255,176,32,0.45); box-shadow: var(--shadow), 0 0 0 1px rgba(255,176,32,0.35); }
+.card.home::before { background: linear-gradient(var(--amber), #d98a00); }
+.home-tag { font-size: 0.66rem; font-weight: 800; color: var(--amber); text-transform: uppercase; letter-spacing: 0.06em; white-space: nowrap; }
+
+/* „Neu eingetroffen"-Blink (nur für frisch gemeldete Einsätze, spielt einmal) */
+.card.justnew { animation: rise 0.35s cubic-bezier(0.22,1,0.36,1) both, justnew 2.4s ease-out 1; }
+@keyframes justnew {
+  0%, 100% { box-shadow: var(--shadow); }
+  15% { box-shadow: var(--shadow), 0 0 0 2px rgba(255,59,48,0.75), 0 0 28px -4px rgba(255,59,48,0.75); }
+  55% { box-shadow: var(--shadow), 0 0 0 1px rgba(255,59,48,0.3); }
+}
+@media (prefers-reduced-motion: reduce) { .card.justnew { animation: none; } }
 
 /* ---------- Toast ---------- */
 #toast {

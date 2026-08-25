@@ -44,6 +44,9 @@
   let userPos = null;              // [lat,lng] eigener Standort (Session)
   let locSearching = false;        // läuft gerade eine GPS-Abfrage? (Doppel-Tap-Sperre)
   let nearMode = false;           // Liste nach Nähe sortieren + Distanz zeigen
+  let justNew = new Set();         // Einsatznummern, die gerade neu eintrafen (einmaliger Blink)
+  let homePlace = (() => { try { return JSON.parse(LS.get("fire_home", "null")); } catch (_) { return null; } })();  // {name,lat,lng} | null
+  let soundOn = LS.get("fire_sound", "0") === "1";   // Signalton bei neuem Einsatz
 
   // ---- Hell/Dunkel ----
   const curTheme = () => document.documentElement.dataset.theme === "light" ? "light" : "dark";
@@ -171,14 +174,16 @@
 
   function detectNew(list) {
     const nums = new Set(list.map(e => String(e.n)).filter(Boolean));
+    justNew = new Set();
     if (prevNums) {
-      let fresh = 0;
-      nums.forEach(n => { if (!prevNums.has(n)) fresh++; });
+      nums.forEach(n => { if (!prevNums.has(n)) justNew.add(n); });
+      const fresh = justNew.size;
       if (fresh > 0) {
         try { navigator.vibrate && navigator.vibrate([70, 40, 70]); } catch (_) {}
         newFlash += fresh;
         flashTitle();
         toast(fresh === 1 ? "Neuer Einsatz gemeldet" : fresh + " neue Einsätze");
+        if (soundOn && !document.hidden) playChime();
       }
     }
     prevNums = nums;
@@ -226,6 +231,40 @@
     if (!isFinite(km)) return "";
     return km < 1 ? Math.round(km * 1000) + " m" : (km < 10 ? km.toFixed(1) : Math.round(km)) + " km";
   }
+
+  // Heimatort: Einsatz zählt als „daheim", wenn der Ortsname exakt passt
+  // (greift sofort, ohne Geokodierung) ODER die Koordinaten nah genug liegen.
+  const HOME_RADIUS_KM = 5;
+  function isHome(e) {
+    if (!homePlace) return false;
+    if (e.o && normKey(e.o) === normKey(homePlace.name)) return true;
+    if (typeof homePlace.lat !== "number") return false;
+    const c = coordsOf(e);
+    return !!(c && distKm([homePlace.lat, homePlace.lng], c) <= HOME_RADIUS_KM);
+  }
+
+  // Kurzer, dezenter Zwei-Ton-Signalton bei neuem Einsatz. Rein per WebAudio
+  // erzeugt (kein Audio-Asset → CSP-konform). Best-effort: klappt, sobald der
+  // Nutzer die Seite einmal berührt hat (Autoplay-Politik der Browser).
+  let audioCtx = null;
+  function playChime() {
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      audioCtx = audioCtx || new AC();
+      if (audioCtx.state === "suspended") audioCtx.resume();
+      const t0 = audioCtx.currentTime;
+      [[880, 0], [1245, 0.16]].forEach(([f, dt]) => {
+        const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+        o.type = "sine"; o.frequency.value = f;
+        g.gain.setValueAtTime(0.0001, t0 + dt);
+        g.gain.exponentialRampToValueAtTime(0.2, t0 + dt + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + dt + 0.28);
+        o.connect(g).connect(audioCtx.destination);
+        o.start(t0 + dt); o.stop(t0 + dt + 0.3);
+      });
+    } catch (_) {}
+  }
   function filtered() {
     const q = searchEl.value.trim().toLowerCase(), bez = bezirkSel.value;
     const list = all.filter(e => {
@@ -236,9 +275,14 @@
     });
     if (nearMode && userPos) {
       // Nach Nähe: verortete zuerst (aufsteigend), nicht-verortete ans Ende.
-      return list.sort((a, b) => distOf(a) - distOf(b));
+      list.sort((a, b) => distOf(a) - distOf(b));
+    } else {
+      list.sort((a, b) => (b._when ? b._when.getTime() : 0) - (a._when ? a._when.getTime() : 0));
     }
-    return list.sort((a, b) => (b._when ? b._when.getTime() : 0) - (a._when ? a._when.getTime() : 0));
+    // Heimatort-Einsätze stabil ganz nach oben (Array.sort ist stabil → die
+    // Reihenfolge innerhalb „daheim" und „übrige" bleibt wie zuvor sortiert).
+    if (homePlace) list.sort((a, b) => (isHome(b) ? 1 : 0) - (isHome(a) ? 1 : 0));
+    return list;
   }
 
   function renderStats() {
@@ -301,7 +345,8 @@
     const fresh = !e._ended && e._when && (Date.now() - e._when.getTime()) < FRESH_MS;
     const badge = `${e._c.label}${e._c.stufe ? ' <span class="stufe">St. ' + esc(e._c.stufe) + "</span>" : ""}`;
     const km = (nearMode && userPos) ? fmtKm(distOf(e)) : "";
-    return `<div class="row1"><span class="badge k-${k}">${badge}</span>${fresh ? '<span class="fresh-tag">neu</span>' : ""}${km ? `<span class="dist">📍 ${esc(km)}</span>` : ""}<span class="when">${esc(whenText(e))}</span></div>
+    const home = isHome(e) ? '<span class="home-tag">★ Heimat</span>' : "";
+    return `<div class="row1"><span class="badge k-${k}">${badge}</span>${home}${fresh ? '<span class="fresh-tag">neu</span>' : ""}${km ? `<span class="dist">📍 ${esc(km)}</span>` : ""}<span class="when">${esc(whenText(e))}</span></div>
         <h3>${esc(e.m || "Einsatz")}</h3>
         <div class="loc">${PIN}<span>${esc(e.o || "Unbekannt")}${e.o2 ? " · " + esc(e.o2) : ""}</span></div>
         ${e._bez ? `<div class="bez">Bezirk ${esc(e._bez)}</div>` : ""}`;
@@ -309,8 +354,10 @@
   function buildCard(e, isNew, order) {
     const k = e._c.kind;
     const fresh = !e._ended && e._when && (Date.now() - e._when.getTime()) < FRESH_MS;
+    const flash = justNew.has(String(e.n));   // gerade neu eingetroffen → einmaliger Blink
     const card = document.createElement("button");
-    card.className = "card k-" + k + (fresh ? " fresh" : "") + (e._ended ? " ended" : "") + (isNew ? " enter" : "");
+    card.className = "card k-" + k + (fresh ? " fresh" : "") + (e._ended ? " ended" : "") +
+      (isHome(e) ? " home" : "") + (flash ? " justnew" : (isNew ? " enter" : ""));
     card.dataset.key = e._key;
     if (e.i) card.dataset.id = e.i;                 // nur aktive haben Detail
     card.dataset.when = e._when ? e._when.getTime() : 0;
@@ -321,7 +368,8 @@
   function updateCard(card, e) {
     const k = e._c.kind;
     const fresh = !e._ended && e._when && (Date.now() - e._when.getTime()) < FRESH_MS;
-    const cls = "card k-" + k + (fresh ? " fresh" : "") + (e._ended ? " ended" : "");
+    // Bestehende Karte: Blink/Enter sind einmalig → beim Update nicht erneut setzen.
+    const cls = "card k-" + k + (fresh ? " fresh" : "") + (e._ended ? " ended" : "") + (isHome(e) ? " home" : "");
     if (card.className !== cls) card.className = cls;
     const w = card.querySelector(".when");
     if (w) { const t = whenText(e); if (w.textContent !== t) w.textContent = t; }
@@ -769,6 +817,21 @@
   }
   function setAStatus(msg, cls) { aStatus.hidden = !msg; aStatus.textContent = msg || ""; aStatus.className = "a-status" + (cls ? " " + cls : ""); }
 
+  // Einsatzart-Umschalter: leere/vollständige Auswahl = „alle Arten".
+  function setKindsUI(kinds) {
+    const active = (!kinds || !kinds.length) ? ["B", "T", "S"] : kinds;
+    document.querySelectorAll(".a-kind").forEach(l => {
+      const on = active.includes(l.dataset.kind);
+      l.classList.toggle("on", on);
+      const cb = l.querySelector("input"); if (cb) cb.checked = on;
+    });
+  }
+  function chosenKinds() {
+    const out = [];
+    document.querySelectorAll(".a-kind").forEach(l => { const cb = l.querySelector("input"); if (cb && cb.checked) out.push(l.dataset.kind); });
+    return out;
+  }
+
   function b64ToU8(k) {
     const pad = "=".repeat((4 - k.length % 4) % 4);
     const s = (k + pad).replace(/-/g, "+").replace(/_/g, "/");
@@ -798,6 +861,7 @@
       buildAlarmGrid([]); setAStatus("Dieser Browser unterstützt keine Push-Benachrichtigungen.", "err"); return;
     }
     buildAlarmGrid([]);
+    setKindsUI(null);
     try {
       const sub = await getSub(false);
       if (sub) {
@@ -806,6 +870,7 @@
         if (bez.length) {
           aAll.checked = bez.includes("*");
           buildAlarmGrid(bez);
+          setKindsUI(d.kinds);
           $("#a-off").hidden = false;
           $("#a-save").textContent = "Auswahl speichern";
           setAStatus("Alarm ist aktiv.", "ok");
@@ -829,7 +894,7 @@
         if (p !== "granted") { setAStatus("Benachrichtigungen wurden nicht erlaubt.", "err"); return; }
       }
       const sub = await getSub(true);
-      const r = await fetch("/api/fire/alert", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "subscribe", subscription: sub.toJSON(), bezirke: codes }) });
+      const r = await fetch("/api/fire/alert", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "subscribe", subscription: sub.toJSON(), bezirke: codes, kinds: chosenKinds() }) });
       if (!r.ok) throw new Error("save");
       LS.set("fire_alert_on", "1");
       $("#a-off").hidden = false; $("#a-save").textContent = "Auswahl speichern";
@@ -877,6 +942,14 @@
     const trendBlock = trSum
       ? `<h4 class="s-h">Verlauf · 30 Tage <span class="s-sub">${trSum} Einsätze</span></h4><div class="tchart">${tbars}</div>`
       : `<h4 class="s-h">Verlauf · 30 Tage</h4><p class="s-empty">Noch keine Historie – der Verlauf wächst ab jetzt Tag für Tag.</p>`;
+    // ---- Nach Wochentag (aus dem Tages-Trend abgeleitet, kein Extra-Request) ----
+    const WD = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
+    const wdSum = [0, 0, 0, 0, 0, 0, 0];
+    tr.forEach(d => { const dt = new Date(d.day + "T00:00:00Z"); const w = dt.getUTCDay(); if (!isNaN(w)) wdSum[w] += (d.total || 0); });
+    const wmax = Math.max(1, ...wdSum);
+    const wbars = [1, 2, 3, 4, 5, 6, 0].map(i =>   // Mo…So (europäische Reihenfolge)
+      `<div class="hbar" title="${WD[i]}: ${wdSum[i]} Einsätze"><i style="height:${Math.round(wdSum[i] / wmax * 100)}%"></i><em>${WD[i]}</em></div>`).join("");
+    const weekdayBlock = trSum ? `<h4 class="s-h">Nach Wochentag</h4><div class="hchart">${wbars}</div>` : "";
     sBody.innerHTML =
       `<div class="s-tiles">
         <div class="stat"><b>${s.active || 0}</b><span>aktiv jetzt</span></div>
@@ -887,8 +960,54 @@
       <h4 class="s-h">Nach Art</h4>
       ${kindRow("Brand", k.B, "B")}${kindRow("Technisch", k.T, "T")}${kindRow("Schadstoff", k.S, "S")}${k.X ? kindRow("Sonstige", k.X, "X") : ""}
       ${trendBlock}
+      ${weekdayBlock}
       <h4 class="s-h">Einsätze nach Tagesstunde</h4>
       <div class="hchart">${bars}</div>`;
+  }
+
+  // ---- Einstellungen-Overlay (Heimatort + Ton) ----
+  const setOvl = $("#settings"), homeInput = $("#home-input"), homeStatus = $("#home-status"), homeCur = $("#home-cur"), soundCb = $("#sound-cb");
+  function setHomeStatus(msg, cls) { homeStatus.hidden = !msg; homeStatus.textContent = msg || ""; homeStatus.className = "set-status" + (cls ? " " + cls : ""); }
+  function renderHomeCur() {
+    if (homePlace && homePlace.name) {
+      homeCur.innerHTML = `🏠 Heimatort: <b>${esc(homePlace.name)}</b><button id="home-clear" type="button">Entfernen</button>`;
+      homeCur.hidden = false;
+      const c = $("#home-clear"); if (c) c.addEventListener("click", clearHome);
+    } else { homeCur.hidden = true; homeCur.innerHTML = ""; }
+  }
+  function openSettings() {
+    setOvl.hidden = false; document.body.style.overflow = "hidden";
+    homeInput.value = ""; setHomeStatus("", ""); soundCb.checked = soundOn;
+    renderHomeCur();
+  }
+  function closeSettings() { setOvl.hidden = true; document.body.style.overflow = ""; }
+  // Nach Home-Änderung Liste/Karte neu aufbauen, damit Hervorhebung + Sortierung greifen.
+  function rerenderHome() {
+    if (view === "list") { listEl.innerHTML = ""; shownIds.clear(); render(); }
+    else addMarkers();
+  }
+  async function saveHome() {
+    const name = homeInput.value.trim();
+    if (!name) { setHomeStatus("Bitte einen Ort eingeben.", "err"); return; }
+    if (name.length > 60) { setHomeStatus("Ortsname zu lang.", "err"); return; }
+    setHomeStatus("Suche Ort …", "");
+    try {
+      const d = await (await fetch("/api/fire/geo?q=" + encodeURIComponent(name))).json();
+      if (d && typeof d.lat === "number") {
+        homePlace = { name, lat: d.lat, lng: d.lng };
+        LS.set("fire_home", JSON.stringify(homePlace));
+        homeInput.value = "";
+        setHomeStatus("Heimatort gesetzt: " + name, "ok");
+        renderHomeCur(); rerenderHome();
+      } else {
+        setHomeStatus("Ort nicht gefunden — anders schreiben (nur Niederösterreich).", "err");
+      }
+    } catch (_) { setHomeStatus("Ort konnte gerade nicht gesucht werden.", "err"); }
+  }
+  function clearHome() {
+    homePlace = null;
+    try { localStorage.removeItem("fire_home"); } catch (_) {}
+    renderHomeCur(); setHomeStatus("Heimatort entfernt.", ""); rerenderHome();
   }
 
   // ---- Events ----
@@ -913,9 +1032,18 @@
   $("#stats-btn").addEventListener("click", openStats);
   $("#s-close").addEventListener("click", closeStats);
   statsOvl.addEventListener("click", e => { if (e.target === statsOvl) closeStats(); });
-  document.addEventListener("keydown", e => { if (e.key === "Escape") { if (!overlay.hidden) closeDetail(); else if (!alarmOvl.hidden) closeAlarm(); else if (!statsOvl.hidden) closeStats(); } });
+  document.addEventListener("keydown", e => { if (e.key === "Escape") { if (!overlay.hidden) closeDetail(); else if (!alarmOvl.hidden) closeAlarm(); else if (!statsOvl.hidden) closeStats(); else if (!setOvl.hidden) closeSettings(); } });
   $("#theme-btn").addEventListener("click", toggleTheme);
   $("#alarm-btn").addEventListener("click", openAlarm);
+  $("#settings-btn").addEventListener("click", openSettings);
+  $("#set-close").addEventListener("click", closeSettings);
+  setOvl.addEventListener("click", e => { if (e.target === setOvl) closeSettings(); });
+  $("#home-save").addEventListener("click", saveHome);
+  homeInput.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); saveHome(); } });
+  soundCb.addEventListener("change", () => {
+    soundOn = soundCb.checked; LS.set("fire_sound", soundOn ? "1" : "0");
+    if (soundOn) playChime();   // sofortiges Feedback + „entsperrt" den AudioContext (Nutzergeste)
+  });
   const locBtn = $("#loc-btn");
   if (locBtn) locBtn.addEventListener("click", toggleNear);
 
@@ -962,6 +1090,10 @@
   $("#a-off").addEventListener("click", offAlarm);
   aAll.addEventListener("change", syncAllToggle);
   aGrid.addEventListener("change", e => { const l = e.target.closest(".a-item"); if (l) l.classList.toggle("on", e.target.checked); });
+  document.querySelectorAll(".a-kind").forEach(l => {
+    const cb = l.querySelector("input");
+    if (cb) cb.addEventListener("change", () => l.classList.toggle("on", cb.checked));
+  });
 
   $("#kind-chips").addEventListener("click", e => {
     const chip = e.target.closest(".chip"); if (!chip) return;
@@ -1004,7 +1136,7 @@
     let sy = 0;
     window.addEventListener("touchstart", e => { sy = e.touches[0] ? e.touches[0].clientY : 0; }, { passive: true });
     window.addEventListener("touchmove", e => {
-      if (!overlay.hidden || !alarmOvl.hidden || !statsOvl.hidden) return;
+      if (!overlay.hidden || !alarmOvl.hidden || !statsOvl.hidden || !setOvl.hidden) return;
       if (!e.touches[0] || e.touches.length > 1) return;
       const sc = document.scrollingElement || document.documentElement;
       if ((sc.scrollTop || 0) <= 0 && e.touches[0].clientY > sy) e.preventDefault();

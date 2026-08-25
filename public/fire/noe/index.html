@@ -25,7 +25,7 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Feuerwehr NÖ" />
-  <link rel="stylesheet" href="style.css?v=635849e7" />
+  <link rel="stylesheet" href="style.css?v=961457e3" />
 </head>
 <body>
   <div id="app">
@@ -42,6 +42,7 @@
         <button id="loc-btn" class="icon-btn" title="Einsätze in meiner Nähe" aria-label="Einsätze in meiner Nähe zuerst">📍</button>
         <button id="theme-btn" class="icon-btn" title="Hell/Dunkel" aria-label="Hell- oder Dunkelmodus umschalten">🌙</button>
         <button id="alarm-btn" class="icon-btn" title="Bezirks-Alarm" aria-label="Bezirks-Alarm einrichten">🔔</button>
+        <button id="settings-btn" class="icon-btn" title="Einstellungen" aria-label="Einstellungen">⚙️</button>
         <button id="refresh-btn" class="icon-btn" title="Aktualisieren" aria-label="Einsätze jetzt aktualisieren"><span class="ref-ic">🔄</span></button>
         <div class="status">
           <span class="live" id="live-dot" aria-hidden="true"></span>
@@ -88,7 +89,7 @@
       <p>Daten: NÖ Landesfeuerwehrverband (öffentliche <em>Wastl/GRISU</em>-Schnittstelle).
          Kartengrundlage: Bezirksgrenzen <em>Statistik Austria</em> (vereinfacht).
          Privates, inoffizielles Projekt, ohne Gewähr – kein Ersatz für den Notruf <strong>122</strong>.
-         Standort wird nur lokal genutzt, nicht gespeichert. <strong>Build v31</strong></p>
+         Standort wird nur lokal genutzt, nicht gespeichert. <strong>Build v32</strong></p>
     </footer>
   </div>
 
@@ -111,6 +112,13 @@
       <div id="a-status" class="a-status" hidden></div>
       <div class="a-all"><label><input type="checkbox" id="a-all-cb" /> <b>Ganz Niederösterreich</b> (alle Bezirke)</label></div>
       <div id="a-grid" class="a-grid"></div>
+      <h3 class="a-sub">Nur diese Einsatzarten</h3>
+      <p class="a-hint">Nichts oder alle ausgewählt = jede Art. Sonst nur die gewählten.</p>
+      <div class="a-kinds">
+        <label class="a-kind on" data-kind="B"><input type="checkbox" checked /><i class="dot b"></i>Brand</label>
+        <label class="a-kind on" data-kind="T"><input type="checkbox" checked /><i class="dot t"></i>Technisch</label>
+        <label class="a-kind on" data-kind="S"><input type="checkbox" checked /><i class="dot s"></i>Schadstoff</label>
+      </div>
       <div class="a-actions">
         <button id="a-save" class="btn-primary">Alarm aktivieren</button>
         <button id="a-off" class="btn-ghost" hidden>Alarm ausschalten</button>
@@ -128,8 +136,29 @@
     </div>
   </div>
 
+  <!-- Einstellungen-Overlay -->
+  <div id="settings" class="overlay" hidden>
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="set-title">
+      <button class="x" id="set-close" aria-label="Schließen">✕</button>
+      <h2 id="set-title">⚙️ Einstellungen</h2>
+
+      <h3 class="set-h">🏠 Heimatort</h3>
+      <p class="set-lead">Einsätze in deinem Ort werden hervorgehoben und immer zuerst gezeigt – auch ohne Standortfreigabe.</p>
+      <div class="set-home">
+        <input id="home-input" type="text" placeholder="z. B. Neunkirchen" autocomplete="off" enterkeyhint="done" />
+        <button id="home-save" class="btn-primary">Setzen</button>
+      </div>
+      <div id="home-status" class="set-status" hidden></div>
+      <div id="home-cur" class="set-cur" hidden></div>
+
+      <h3 class="set-h">🔊 Ton bei neuem Einsatz</h3>
+      <p class="set-lead">Kurzer Signalton, wenn ein neuer Einsatz eintrifft – nur, solange die App offen ist.</p>
+      <label class="set-toggle"><input type="checkbox" id="sound-cb" /> <span>Signalton aktivieren</span></label>
+    </div>
+  </div>
+
   <script src="noe-geo.js?v=140f03b0"></script>
-  <script src="app.js?v=43631b70"></script>
+  <script src="app.js?v=8eb12b76"></script>
   <script>
     // Eigener Service Worker (Scope /fire/noe/) → installierbar als eigene PWA.
     if ("serviceWorker" in navigator) {

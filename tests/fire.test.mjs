@@ -9,6 +9,7 @@ const f = (...p) => "file://" + path.join(__dirname, "..", "functions", "api", .
 const { kindOf, classify, parseWhen, haversineKm } = await import(f("fire", "_parse.js"));
 const { BEZIRK, bezName } = await import(f("fire", "_bezirk.js"));
 const { normKey } = await import(f("fire", "geo.js"));
+const { normKinds } = await import(f("fire", "alert.js"));
 const stats = await import(f("fire", "stats.js"));
 
 let ok = true;
@@ -44,6 +45,14 @@ assert("BEZIRK vollständig (22 Codes)", Object.keys(BEZIRK).length >= 22);
 
 // ---- geo.normKey ----
 assert("normKey trimmt/kleinschreibt", normKey("  St.  Pölten ") === "st. pölten");
+
+// ---- alert.normKinds (Einsatzart-Filter) ----
+assert("normKinds leer → null (alle)", normKinds([]) === null);
+assert("normKinds alle drei → null (alle)", normKinds(["B", "T", "S"]) === null);
+assert("normKinds nur Brand", normKinds(["B"]) === "B");
+assert("normKinds sortiert+dedupt", normKinds(["s", "b", "b"]) === "BS");
+assert("normKinds ignoriert Müll", normKinds(["B", "Z", "x"]) === "B");
+assert("normKinds undefined → null", normKinds(undefined) === null);
 
 // ---- stats.js mit gemockter D1 ----
 function mockDB(rows) {

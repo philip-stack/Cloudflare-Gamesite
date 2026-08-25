@@ -1,0 +1,11 @@
+-- 0004_fire_alert_kinds — Einsatzart-Filter für den Bezirks-Alarm.
+-- Bisher meldet der Alarm ALLE Einsätze in den gewählten Bezirken. Diese
+-- Spalte hält je Abo (endpoint) optional die gewünschten Arten als kompakten
+-- String (Teilmenge von "BTS", z. B. "B" = nur Brände, "BS" = Brand+Schadstoff).
+-- NULL/leer = keine Einschränkung (alle Arten, wie bisher).
+--
+-- Der Wert ist pro Endpoint gleich (auf allen Bezirks-Zeilen dupliziert) — so
+-- bleibt der Cron-Versand ein einfaches JOIN-freies SELECT. alert.js und
+-- cron.js lesen/schreiben die Spalte schema-tolerant: fehlt sie (Migration noch
+-- nicht angewandt), fallen sie sauber auf „alle Arten" zurück.
+ALTER TABLE fire_alert ADD COLUMN kinds TEXT;
