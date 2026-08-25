@@ -10,6 +10,9 @@ export const kindOf = a => {
   return "BTS".includes(c) ? c : "X";
 };
 
+// Numerischer Teil der Alarmstufe („B3"→3, „B"→0) — für die Eskalations-Erkennung.
+export const stufeNum = a => { const m = String(a || "").match(/\d+/); return m ? parseInt(m[0], 10) : 0; };
+
 // Alarmstufe („T2", „B0", …) → { kind, stufe, label }.
 export function classify(a) {
   const s = String(a || "").trim().toUpperCase();

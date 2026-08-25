@@ -6,7 +6,7 @@ import path from "node:path";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const f = (...p) => "file://" + path.join(__dirname, "..", "functions", "api", ...p).replace(/\\/g, "/");
 
-const { kindOf, classify, parseWhen, haversineKm } = await import(f("fire", "_parse.js"));
+const { kindOf, classify, parseWhen, haversineKm, stufeNum } = await import(f("fire", "_parse.js"));
 const { BEZIRK, bezName } = await import(f("fire", "_bezirk.js"));
 const { normKey } = await import(f("fire", "geo.js"));
 const { normKinds, normHome } = await import(f("fire", "alert.js"));
@@ -21,6 +21,12 @@ assert("kindOf T", kindOf("t1") === "T");
 assert("kindOf S", kindOf("S0") === "S");
 assert("kindOf leer→X", kindOf("") === "X");
 assert("kindOf unbekannt→X", kindOf("Z9") === "X");
+
+assert("stufeNum B3=3", stufeNum("B3") === 3);
+assert("stufeNum ohne Zahl=0", stufeNum("B") === 0);
+assert("stufeNum leer=0", stufeNum("") === 0);
+assert("stufeNum mehrstellig", stufeNum("T10") === 10);
+assert("stufeNum Eskalation B2<B3", stufeNum("B2") < stufeNum("B3"));
 
 const cB = classify("B3");
 assert("classify Art", cB.kind === "B" && cB.label === "Brand");

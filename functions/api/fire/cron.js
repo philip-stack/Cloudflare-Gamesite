@@ -1,7 +1,7 @@
 import { json, logError } from "../_util.js";
 import { pushToEndpoint, sendToName } from "../push.js";
 import { BEZIRK, bezName } from "./_bezirk.js";
-import { kindOf, haversineKm } from "./_parse.js";
+import { kindOf, haversineKm, stufeNum } from "./_parse.js";
 import { geocode } from "./geo.js";
 
 // ====================================================================
@@ -182,7 +182,7 @@ export async function onRequestGet({ request, env }) {
   } catch (e) { await logError(env, "fire-cron: seen-mark " + e.message, "fire/cron"); }
 
   // ---- Historie schreiben (inkl. Wehren) ----
-  let detailFetched = 0;
+  let detailFetched = 0, esc = 0;
   try {
     // Bekannten Stand der aktuellen Einsätze laden → entscheiden, für welche
     // wir das Detail (Wehren/PLZ) (neu) holen. So bleibt die Upstream-Last
@@ -190,7 +190,7 @@ export async function onRequestGet({ request, env }) {
     const existing = new Map();
     try {
       const rows = (await env.DB.prepare(
-        `SELECT n, (dispo IS NOT NULL) AS has_dispo, last_detail FROM fire_op WHERE n IN (${nums.map(() => "?").join(",")})`
+        `SELECT n, a AS prev_a, (dispo IS NOT NULL) AS has_dispo, last_detail FROM fire_op WHERE n IN (${nums.map(() => "?").join(",")})`
       ).bind(...nums).all()).results || [];
       for (const r of rows) existing.set(String(r.n), r);
     } catch (_) {}
@@ -226,6 +226,25 @@ export async function onRequestGet({ request, env }) {
     for (const e of list) {
       const det = detailMap.get(String(e.n));
       const touched = det ? 1 : 0;
+      // Eskalation: Alarmstufe eines noch aktiven Einsatzes ist gestiegen →
+      // einmal an alle melden, die den Start-Push bekamen (vor dem Überschreiben
+      // von a). Sinkt/gleich bleibt → kein Push (kein Spam, jede Stufe 1×).
+      const prev = existing.get(String(e.n));
+      if (prev && stufeNum(e.a) > stufeNum(prev.prev_a)) {
+        try {
+          const recips = (await env.DB.prepare("SELECT endpoint FROM fire_alert_sent WHERE n = ?").bind(String(e.n)).all()).results || [];
+          const bz = bezName(String(e.b || ""));
+          for (const r of recips) {
+            const pr = await pushToEndpoint(env, r.endpoint, {
+              title: "⬆️ Hochgestuft: " + (prev.prev_a || "?") + " → " + (e.a || "?"),
+              body: (e.m || "") + (e.o ? " · " + e.o : "") + (bz ? " · " + bz : ""),
+              url: "/fire/noe/#n=" + encodeURIComponent(String(e.n || "")),
+            });
+            if (pr.ok) esc++;
+            if (pr.gone) await dropEndpoint(r.endpoint);
+          }
+        } catch (err) { await logError(env, "fire-cron: escalation " + err.message, "fire/cron"); }
+      }
       await env.DB.prepare(
         `INSERT INTO fire_op (n, m, a, o, o2, b, plz, d, t, dispo, last_detail, last_seen, ended)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${touched ? "CURRENT_TIMESTAMP" : "NULL"}, CURRENT_TIMESTAMP, 0)
@@ -303,7 +322,7 @@ export async function onRequestGet({ request, env }) {
   // Gelegentliche plattformweite Aufräum-Runde (der Cron läuft alle 2 Min →
   // ~2 %/Lauf ≈ alle ~1,5 h). Verhindert unbegrenztes Wachstum der Tabellen.
   if (Math.random() < 0.02) await maintenance(env);
-  return json({ ok: true, active: list.length, fresh: fresh.length, sent, detailFetched });
+  return json({ ok: true, active: list.length, fresh: fresh.length, sent, esc, detailFetched });
 }
 
 // Plattformweites Aufräumen wachsender Tabellen. Jede Löschung einzeln gekapselt,
