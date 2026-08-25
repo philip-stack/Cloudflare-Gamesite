@@ -79,14 +79,15 @@ input[type="search"]:focus { outline: 2px solid var(--accent2); outline-offset: 
 .tag.best { background: rgba(232,177,0,0.18); color: var(--gold); }
 .tag.closed { background: rgba(255,91,77,0.16); color: var(--danger); }
 .actions { flex: none; display: flex; flex-direction: column; gap: 6px; align-self: stretch; }
+.act-row { display: flex; gap: 6px; }
 .nav { flex: 1; display: flex; align-items: center; justify-content: center; text-decoration: none;
   background: linear-gradient(160deg, var(--accent2), var(--accent)); color: #06130d; font-weight: 800;
   padding: 0 14px; border-radius: 12px; }
-.fav { border: 1px solid var(--panel-line); background: var(--panel); color: var(--faint); font-size: 1.05rem;
+.fav, .share { border: 1px solid var(--panel-line); background: var(--panel); color: var(--faint); font-size: 1.05rem;
   border-radius: 10px; cursor: pointer; padding: 6px 10px; line-height: 1; }
 .fav.on { color: var(--gold); border-color: rgba(232,177,0,0.5); background: rgba(232,177,0,0.10); }
-.save { margin-top: 5px; display: inline-block; font-size: 0.82rem; font-weight: 800; color: var(--accent2);
-  background: rgba(47,212,138,0.12); border-radius: 8px; padding: 3px 9px; }
+.share { color: var(--muted); }
+.share:hover { color: var(--ink); border-color: rgba(140,220,180,0.35); }
 .oh.open { color: var(--accent2); font-weight: 700; }
 .oh.closed { color: var(--danger); font-weight: 700; }
 
@@ -97,6 +98,8 @@ input[type="search"]:focus { outline: 2px solid var(--accent2); outline-offset: 
 .opt-grid label { font-size: 0.82rem; color: var(--muted); font-weight: 600; display: flex; align-items: center; gap: 6px; }
 .opt-grid input, .opt-grid select { width: 74px; padding: 7px 9px; border-radius: 9px; border: 1px solid var(--panel-line); background: var(--bg2); color: var(--ink); font: inherit; }
 .opt-grid select { width: auto; }
+.opt-grid label.chk { gap: 8px; cursor: pointer; }
+.opt-grid label.chk input { width: 17px; height: 17px; accent-color: var(--accent); padding: 0; }
 
 .quick { display: flex; flex-wrap: wrap; gap: 7px; }
 .quick:empty { display: none; }
@@ -107,8 +110,9 @@ input[type="search"]:focus { outline: 2px solid var(--accent2); outline-offset: 
 
 .tip { display: flex; align-items: flex-start; gap: 10px; background: rgba(232,177,0,0.12); border: 1px solid rgba(232,177,0,0.35);
   color: var(--ink); border-radius: 12px; padding: 10px 14px; font-size: 0.86rem; line-height: 1.45; margin-bottom: 12px; }
+.tip.good { background: rgba(47,212,138,0.12); border-color: rgba(47,212,138,0.35); }
 .tip-t { flex: 1; min-width: 0; }
-.tip-t b { white-space: nowrap; }
+.tip-sub { display: block; margin-top: 3px; color: var(--muted); font-size: 0.78rem; font-weight: 500; }
 .tip-x { flex: none; border: 0; background: transparent; color: var(--muted); cursor: pointer; font-size: 0.95rem; padding: 0 2px; line-height: 1.4; }
 
 #map { height: min(52vh, 460px); border-radius: var(--radius); overflow: hidden; border: 1px solid var(--panel-line); box-shadow: var(--shadow); background: var(--bg2); z-index: 0; }

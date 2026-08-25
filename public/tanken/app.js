@@ -11,13 +11,12 @@
   let mode = LS.get("sprit_mode", "near") === "route" ? "route" : "near";
   let lastNear = null;   // {lat,lng} | {q}
   let nearData = null, routeData = null;   // letztes Ergebnis je Modus (für Umschalten)
-  let curAvg = null;     // Durchschnittspreis der aktuellen Ansicht (für Ersparnis)
   let map = null, layer = null;
 
   // ---- Einstellungen / gespeicherte Listen (localStorage) ----
-  const liters = () => Math.max(1, Math.min(200, parseInt(LS.get("sprit_liters", "50"), 10) || 50));
   const jget = (k, d) => { try { const v = JSON.parse(LS.get(k, "")); return v == null ? d : v; } catch (_) { return d; } };
   const jset = (k, v) => LS.set(k, JSON.stringify(v));
+  const openOnly = () => LS.get("sprit_open", "0") === "1";   // Filter „nur offene"
   const favs = () => jget("sprit_favs", []);
   const isFav = id => favs().some(f => String(f.id) === String(id));
   function toggleFav(f) {
@@ -84,25 +83,30 @@
         <div class="meta">${meta}</div>
       </div>
       <div class="actions">
-        <button class="fav${fav ? " on" : ""}" title="Favorit" aria-label="Favorit"
-          data-id="${esc(s.id)}" data-name="${esc(s.name)}" data-lat="${s.lat}" data-lng="${s.lng}" data-addr="${esc(addr)}">★</button>
+        <div class="act-row">
+          <button class="fav${fav ? " on" : ""}" title="Favorit" aria-label="Favorit"
+            data-id="${esc(s.id)}" data-name="${esc(s.name)}" data-lat="${s.lat}" data-lng="${s.lng}" data-addr="${esc(addr)}">★</button>
+          <button class="share" title="Teilen" aria-label="Teilen"
+            data-name="${esc(s.name)}" data-price="${esc(eur(s.price))}" data-addr="${esc(addr)}" data-lat="${s.lat}" data-lng="${s.lng}">⤴</button>
+        </div>
         <a class="nav" href="${navUrl(s.lat, s.lng)}" target="_blank" rel="noopener">Navi ▸</a>
       </div>
     </div>`;
   }
   const shortLabel = l => String(l || "").split(",").slice(0, 2).join(",").trim();
   function renderNear(d) {
-    nearData = d; curAvg = d.avgPrice || null;
+    nearData = d;
     ensureMap(); layer.clearLayers(); renderQuickNear();
     let st = (d.stations || []).slice();
     const radius = +LS.get("sprit_radius", "0");
     if (radius) st = st.filter(s => s.dist == null || s.dist <= radius);
+    if (openOnly()) st = st.filter(s => s.open);
     const minPrice = st.reduce((m, s) => Math.min(m, s.price), Infinity);
     if (LS.get("sprit_sort", "price") === "dist") st.sort((a, b) => (a.dist == null ? 1e9 : a.dist) - (b.dist == null ? 1e9 : b.dist));
     else st.sort((a, b) => a.price - b.price);
 
     if (!st.length) {
-      setMsg((d.stations && d.stations.length) ? "Keine Tankstelle im gewählten Radius." : "Keine Tankstellen mit " + d.fuelLabel + " in der Nähe gefunden.", "warn");
+      setMsg((d.stations && d.stations.length) ? "Keine Tankstelle mit den aktuellen Filtern (Radius / nur offene)." : "Keine Tankstellen mit " + d.fuelLabel + " in der Nähe gefunden.", "warn");
       $("#results").innerHTML = "";
     } else {
       setMsg("");
@@ -119,14 +123,19 @@
   }
   const detourTxt = s => (s.detourMin != null ? "↩ Umweg +" + s.detourMin + " min" : "↩ Umweg ca. " + km(s.offKm));
   function renderRoute(d) {
-    routeData = d; curAvg = d.avgPrice || null;
-    const st = d.stations || [];
+    routeData = d;
+    let st = d.stations || [];
+    const hadStations = st.length;
+    if (openOnly()) st = st.filter(s => s.open);
     ensureMap(); layer.clearLayers(); renderQuickRoute();
     if (d.route && d.route.geometry) L.polyline(d.route.geometry, { color: "#2f7bff", weight: 5, opacity: 0.75 }).addTo(layer);
     if (d.from) L.marker([d.from.lat, d.from.lng], { icon: dot("#35d07f") }).addTo(layer).bindPopup("Start");
     if (d.to) L.marker([d.to.lat, d.to.lng], { icon: dot("#ff3b30") }).addTo(layer).bindPopup("Ziel");
     const head = d.route ? `<div class="rinfo">Strecke ${d.route.distanceKm} km · ${d.route.durationMin} min · ${d.checked} Tankstellen am Weg geprüft</div>` : "";
-    if (!st.length) { setMsg("Keine Tankstelle mit " + d.fuelLabel + " nah genug an der Route (Umweg ≤ " + d.off + " km).", "warn"); $("#results").innerHTML = head; }
+    if (!st.length) {
+      setMsg(hadStations ? "Keine offene Tankstelle am Weg — Filter „nur offene“ ist aktiv." : "Keine Tankstelle mit " + d.fuelLabel + " nah genug an der Route (Umweg ≤ " + d.off + " km).", "warn");
+      $("#results").innerHTML = head;
+    }
     else {
       setMsg("");
       $("#results").innerHTML = head + st.map((s, i) => stationCard(s, i === 0, detourTxt(s))).join("");
@@ -303,12 +312,25 @@
   ac.attach($("#rt-from"), () => {}, null);
   ac.attach($("#rt-to"), () => {}, doRoute);
 
-  // Favoriten-Stern in den Ergebniskarten
+  // Aktionen in den Ergebniskarten: Favorit-Stern + Teilen
   $("#results").addEventListener("click", e => {
-    const b = e.target.closest(".fav"); if (!b) return;
-    toggleFav({ id: b.dataset.id, name: b.dataset.name, lat: +b.dataset.lat, lng: +b.dataset.lng, addr: b.dataset.addr });
-    b.classList.toggle("on"); renderQuickNear();
+    const b = e.target.closest(".fav");
+    if (b) {
+      toggleFav({ id: b.dataset.id, name: b.dataset.name, lat: +b.dataset.lat, lng: +b.dataset.lng, addr: b.dataset.addr });
+      b.classList.toggle("on"); renderQuickNear(); return;
+    }
+    const sh = e.target.closest(".share");
+    if (sh) shareStation(sh.dataset);
   });
+  const FUEL_LABEL = { DIE: "Diesel", SUP: "Super 95", GAS: "CNG" };
+  function flashMsg(t) { setMsg(t, "load"); setTimeout(() => { if ($("#msg").textContent === t) setMsg(""); }, 2500); }
+  async function shareStation(d) {
+    const line = "⛽ " + (FUEL_LABEL[fuel] || "Sprit") + " " + d.price + " — " + d.name + (d.addr ? ", " + d.addr : "");
+    const url = navUrl(+d.lat, +d.lng);
+    try { if (navigator.share) { await navigator.share({ title: "Sprit-Radar", text: line, url }); return; } } catch (_) { return; }
+    try { await navigator.clipboard.writeText(line + "\n" + url); flashMsg("Kopiert — zum Teilen einfügen."); }
+    catch (_) { window.open("https://wa.me/?text=" + encodeURIComponent(line + "\n" + url), "_blank", "noopener"); }
+  }
 
   // Schnellzugriff-Chips (Umkreis)
   $("#q-near").addEventListener("click", e => {
@@ -336,16 +358,28 @@
   function rerender() { if (mode === "near" && nearData) renderNear(nearData); else if (mode === "route" && routeData) renderRoute(routeData); }
   $("#opt-radius").value = LS.get("sprit_radius", "0");
   $("#opt-sort").value = LS.get("sprit_sort", "price");
+  $("#opt-open").checked = openOnly();
   $("#opt-radius").addEventListener("change", e => { LS.set("sprit_radius", e.target.value); rerender(); });
   $("#opt-sort").addEventListener("change", e => { LS.set("sprit_sort", e.target.value); rerender(); });
+  $("#opt-open").addEventListener("change", e => { LS.set("sprit_open", e.target.checked ? "1" : "0"); rerender(); });
 
-  // Spar-Tipp (einmalig ausblendbar)
+  // Tank-Timing: In Österreich dürfen Spritpreise nur um 12:00 steigen, sonst
+  // nur fallen → tageszeitabhängige Empfehlung (lokale Uhrzeit).
+  function timingAdvice() {
+    const h = new Date().getHours();
+    if (h < 11) return { cls: "good", t: "⏰ Gute Zeit zum Tanken – bis 12:00 dürfen die Preise nur fallen." };
+    if (h < 12) return { cls: "good", t: "⏰ Kurz vor 12:00 ist es oft am günstigsten – jetzt tanken, ab Mittag darf der Preis steigen." };
+    if (h < 17) return { cls: "warn", t: "⏰ Rund um Mittag steigen die Preise oft – im Lauf des Nachmittags/Abends fallen sie meist wieder." };
+    return { cls: "good", t: "⏰ Abends ist es häufig günstig – bis morgen 12:00 dürfen die Preise nur fallen." };
+  }
   function showTip() {
     const el = $("#tip"); if (!el) return;
-    if (LS.get("sprit_tip", "") === "x") { el.hidden = true; return; }
-    el.innerHTML = `<span class="tip-t">💡 In Österreich dürfen Spritpreise nur um <b>12:00 Uhr</b> steigen, sonst nur fallen – vormittags tanken ist meist günstiger.</span><button id="tip-x" class="tip-x" aria-label="Ausblenden">✕</button>`;
+    if (LS.get("sprit_tip2", "") === "x") { el.hidden = true; return; }
+    const a = timingAdvice();
+    el.className = "tip " + a.cls;
+    el.innerHTML = `<span class="tip-t"><b>${esc(a.t)}</b><br><span class="tip-sub">In Österreich dürfen Spritpreise nur um 12:00 Uhr steigen, sonst nur fallen.</span></span><button id="tip-x" class="tip-x" aria-label="Ausblenden">✕</button>`;
     el.hidden = false;
-    $("#tip-x").addEventListener("click", () => { LS.set("sprit_tip", "x"); el.hidden = true; });
+    $("#tip-x").addEventListener("click", () => { LS.set("sprit_tip2", "x"); el.hidden = true; });
   }
 
   // ---- Start ----
