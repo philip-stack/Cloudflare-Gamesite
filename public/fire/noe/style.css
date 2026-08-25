@@ -389,6 +389,18 @@ select:focus, input:focus { border-color: rgba(255, 59, 48, 0.6); }
 .set-toggle { display: flex; align-items: center; gap: 11px; cursor: pointer; padding: 12px 14px; background: rgba(255,255,255,0.03); border: 1px solid var(--panel-line); border-radius: 12px; font-size: 0.92rem; font-weight: 600; }
 .set-toggle input { accent-color: var(--brand); width: 18px; height: 18px; flex: none; }
 :root[data-theme="light"] .set-toggle { background: rgba(12,18,34,0.03); }
+.set-stat { margin-top: 12px; padding: 12px 14px; background: rgba(59,155,255,0.09); border: 1px solid rgba(59,155,255,0.28); border-radius: 12px; font-size: 0.9rem; font-weight: 600; color: var(--ink); }
+
+/* Umkreis-Zeile im Alarm-Overlay */
+.a-radius-row { display: flex; align-items: center; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+.a-radius-row[hidden] { display: none; }
+#a-radius-home { font-weight: 700; color: var(--amber); }
+#a-radius-km { flex: none; }
+#a-radius-toggle { margin-top: 4px; }
+
+/* Heimatort-Marker auf der Karte */
+.mk-home { pointer-events: none; }
+.mk-home-pulse { transform-box: fill-box; transform-origin: center; opacity: 0.4; animation: mkpulse 2.2s ease-out infinite; }
 
 /* Heimatort-Hervorhebung in der Liste */
 .card.home { border-color: rgba(255,176,32,0.45); box-shadow: var(--shadow), 0 0 0 1px rgba(255,176,32,0.35); }

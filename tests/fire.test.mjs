@@ -9,7 +9,7 @@ const f = (...p) => "file://" + path.join(__dirname, "..", "functions", "api", .
 const { kindOf, classify, parseWhen, haversineKm } = await import(f("fire", "_parse.js"));
 const { BEZIRK, bezName } = await import(f("fire", "_bezirk.js"));
 const { normKey } = await import(f("fire", "geo.js"));
-const { normKinds } = await import(f("fire", "alert.js"));
+const { normKinds, normHome } = await import(f("fire", "alert.js"));
 const stats = await import(f("fire", "stats.js"));
 
 let ok = true;
@@ -53,6 +53,13 @@ assert("normKinds nur Brand", normKinds(["B"]) === "B");
 assert("normKinds sortiert+dedupt", normKinds(["s", "b", "b"]) === "BS");
 assert("normKinds ignoriert Müll", normKinds(["B", "Z", "x"]) === "B");
 assert("normKinds undefined → null", normKinds(undefined) === null);
+
+// ---- alert.normHome (Umkreis-Heimatpunkt) ----
+assert("normHome gültig (NÖ)", (() => { const h = normHome({ lat: 47.72, lng: 16.08 }); return h && h.lat === 47.72 && h.lng === 16.08; })());
+assert("normHome außerhalb → null", normHome({ lat: 10, lng: 10 }) === null);
+assert("normHome ohne Zahlen → null", normHome({ lat: "x", lng: 1 }) === null);
+assert("normHome null → null", normHome(null) === null);
+assert("normHome rundet", (() => { const h = normHome({ lat: 47.1234567, lng: 16.7654321 }); return h.lat === 47.123457 && h.lng === 16.765432; })());
 
 // ---- stats.js mit gemockter D1 ----
 function mockDB(rows) {

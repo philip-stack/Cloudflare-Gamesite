@@ -1,7 +1,8 @@
 import { json, logError } from "../_util.js";
 import { pushToEndpoint, sendToName } from "../push.js";
 import { BEZIRK, bezName } from "./_bezirk.js";
-import { kindOf } from "./_parse.js";
+import { kindOf, haversineKm } from "./_parse.js";
+import { geocode } from "./geo.js";
 
 // ====================================================================
 // Zeitgesteuerte Prüfung neuer Feuerwehr-Einsätze (NÖ) und Bezirks-Alarm.
@@ -95,21 +96,58 @@ export async function onRequestGet({ request, env }) {
   const fresh = list.filter(e => e.n && !seen.has(String(e.n)));
   let sent = 0;
 
+  // Umkreis-Abos (Marker-Bezirk '~') einmal je Lauf laden — nicht je Einsatz.
+  let radiusSubs = [];
+  if (fresh.length) {
+    try {
+      radiusSubs = (await env.DB.prepare(
+        "SELECT DISTINCT endpoint, kinds, home_lat, home_lng, radius_km FROM fire_alert WHERE bezirk = '~'"
+      ).all()).results || [];
+    } catch (_) { /* Spalten evtl. noch nicht migriert → kein Umkreis */ }
+  }
+  let geoCalls = 0;                 // Nominatim je Lauf begrenzen (Umkreis)
+  const GEO_CAP = 10;
+
+  const dropEndpoint = async ep => {
+    try {
+      await env.DB.prepare("DELETE FROM fire_alert WHERE endpoint = ?").bind(ep).run();
+      await env.DB.prepare("DELETE FROM push_queue WHERE endpoint = ?").bind(ep).run();
+      await env.DB.prepare("DELETE FROM fire_alert_sent WHERE endpoint = ?").bind(ep).run();
+    } catch (_) {}
+  };
+
   for (const e of fresh) {
     const bez = String(e.b || "");
     const kind = kindOf(e.a);   // B/T/S/X — für den optionalen Art-Filter je Abo
-    let targets = [];
+    // Ziel-Endpoints (Bezirk ∪ Umkreis), dedupliziert; Wert = kinds je Endpoint.
+    const targets = new Map();
     try {
-      targets = (await env.DB.prepare(
+      const rows = (await env.DB.prepare(
         "SELECT DISTINCT endpoint, kinds FROM fire_alert WHERE bezirk = ? OR bezirk = '*'"
       ).bind(bez).all()).results || [];
+      for (const t of rows) targets.set(t.endpoint, t.kinds);
     } catch (_) {
-      // Spalte kinds noch nicht migriert → ohne Art-Filter (alle Arten).
       try {
-        targets = (await env.DB.prepare(
+        const rows = (await env.DB.prepare(
           "SELECT DISTINCT endpoint FROM fire_alert WHERE bezirk = ? OR bezirk = '*'"
         ).bind(bez).all()).results || [];
-      } catch (_) {}
+        for (const t of rows) targets.set(t.endpoint, null);
+      } catch (_2) {}
+    }
+
+    // Umkreis: Koordinaten des Einsatzes bestimmen (Cache zuerst, dann begrenzt
+    // Nominatim). Nur nötig, wenn es überhaupt Umkreis-Abos gibt.
+    if (radiusSubs.length) {
+      let ic = await geocode(env, e.o, e.p || "", { cacheOnly: true });
+      if (!ic && geoCalls < GEO_CAP) { geoCalls++; ic = await geocode(env, e.o, e.p || ""); }
+      if (ic) {
+        for (const s of radiusSubs) {
+          if (s.home_lat == null || s.radius_km == null) continue;
+          if (haversineKm([s.home_lat, s.home_lng], [ic.lat, ic.lng]) <= s.radius_km && !targets.has(s.endpoint)) {
+            targets.set(s.endpoint, s.kinds);
+          }
+        }
+      }
     }
 
     const msg = {
@@ -119,18 +157,17 @@ export async function onRequestGet({ request, env }) {
       // und lädt automatisch den passenden Feed (aktiv/beendet).
       url: "/fire/noe/#n=" + encodeURIComponent(String(e.n || "")),
     };
-    for (const t of targets) {
+    for (const [endpoint, kinds] of targets) {
       // Art-Filter: leer/NULL = alle Arten; sonst nur gewählte (X = Sonstige
       // wird dann bewusst nicht gepusht, außer alle Arten aktiv).
-      if (t.kinds && !String(t.kinds).includes(kind)) continue;
-      const r = await pushToEndpoint(env, t.endpoint, msg);
-      if (r.ok) sent++;
-      if (r.gone) {
-        try {
-          await env.DB.prepare("DELETE FROM fire_alert WHERE endpoint = ?").bind(t.endpoint).run();
-          await env.DB.prepare("DELETE FROM push_queue WHERE endpoint = ?").bind(t.endpoint).run();
-        } catch (_) {}
+      if (kinds && !String(kinds).includes(kind)) continue;
+      const r = await pushToEndpoint(env, endpoint, msg);
+      if (r.ok) {
+        sent++;
+        // Für den Abschluss-Push merken, wer den Start bekommen hat.
+        try { await env.DB.prepare("INSERT OR IGNORE INTO fire_alert_sent (endpoint, n) VALUES (?, ?)").bind(endpoint, String(e.n || "")).run(); } catch (_) {}
       }
+      if (r.gone) await dropEndpoint(endpoint);
     }
   }
 
@@ -204,6 +241,34 @@ export async function onRequestGet({ request, env }) {
     }
 
     const placeholders = nums.map(() => "?").join(",");
+
+    // ---- Abschluss-Push: Einsätze, die JETZT enden (waren aktiv, nicht mehr
+    // in der Liste), an alle melden, die den Start-Push bekamen. Muss VOR dem
+    // ended-UPDATE laufen (nutzt dieselbe ended=0-Bedingung).
+    try {
+      const justEnded = (await env.DB.prepare(
+        `SELECT n, o, b, first_seen FROM fire_op WHERE ended = 0 AND n NOT IN (${placeholders})`
+      ).bind(...nums).all()).results || [];
+      for (const e of justEnded) {
+        const recips = (await env.DB.prepare("SELECT endpoint FROM fire_alert_sent WHERE n = ?").bind(String(e.n)).all()).results || [];
+        if (!recips.length) continue;
+        const startMs = e.first_seen ? Date.parse(String(e.first_seen).replace(" ", "T") + "Z") : NaN;
+        const min = isNaN(startMs) ? -1 : Math.round((Date.now() - startMs) / 60000);
+        const dur = min < 0 ? "" : (min < 60 ? min + " min" : Math.floor(min / 60) + " h " + (min % 60) + " min");
+        const bz = bezName(String(e.b || ""));
+        const msg = {
+          title: "✅ Einsatz beendet",
+          body: (e.o || "") + (bz ? " · " + bz : "") + (dur ? " · Dauer " + dur : ""),
+          url: "/fire/noe/#n=" + encodeURIComponent(String(e.n || "")),
+        };
+        for (const r of recips) {
+          const pr = await pushToEndpoint(env, r.endpoint, msg);
+          if (pr.gone) await dropEndpoint(r.endpoint);
+        }
+        try { await env.DB.prepare("DELETE FROM fire_alert_sent WHERE n = ?").bind(String(e.n)).run(); } catch (_) {}
+      }
+    } catch (e) { await logError(env, "fire-cron: ended-push " + e.message, "fire/cron"); }
+
     await env.DB.prepare(
       `UPDATE fire_op SET ended=1, ended_at=CURRENT_TIMESTAMP WHERE ended=0 AND n NOT IN (${placeholders})`
     ).bind(...nums).run();
@@ -259,6 +324,9 @@ async function maintenance(env) {
   await del("cloud_prev", "UPDATE cloud_saves SET prev_data = NULL, prev_at = NULL WHERE prev_at IS NOT NULL AND prev_at < datetime('now','-30 days')");
   // Waisen in der Push-Queue (Sub existiert nicht mehr).
   await del("push_queue_orphan", "DELETE FROM push_queue WHERE endpoint NOT IN (SELECT endpoint FROM push_sub)");
+  // Abschluss-Tracking: Einträge zu Einsätzen, die längst beendet/gelöscht sind
+  // (normal beim Ende entfernt; das ist der Sicherheitsnetz-TTL).
+  await del("fire_alert_sent_ttl", "DELETE FROM fire_alert_sent WHERE at < datetime('now','-3 days')");
 }
 
 // ------------------------------------------------------------------

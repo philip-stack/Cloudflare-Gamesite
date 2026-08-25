@@ -18,6 +18,19 @@ export async function onRequestGet({ request, env }) {
   const empty = { active: 0, last24: 0, byKind: { B: 0, T: 0, S: 0, X: 0 }, avgMin: null, topBezirk: null, byHour: new Array(24).fill(0) };
   if (!env || !env.DB) return json(empty);
 
+  // Optionale Heimat-Mini-Statistik: Einsätze eines Orts über die Roh-Historie
+  // (fire_op hält ~3 Tage). Für das Einstellungen-Overlay.
+  const ortQ = String(new URL(request.url).searchParams.get("ort") || "").trim().toLowerCase();
+  let ort = null;
+  if (ortQ && ortQ.length <= 80) {
+    try {
+      const r = await env.DB.prepare(
+        "SELECT COUNT(*) total, SUM(CASE WHEN ended = 0 THEN 1 ELSE 0 END) active FROM fire_op WHERE lower(o) = ?"
+      ).bind(ortQ).first();
+      ort = { total: (r && r.total) || 0, active: (r && r.active) || 0 };
+    } catch (_) {}
+  }
+
   try {
     const rows = (await env.DB.prepare(
       `SELECT a, b, ended, first_seen, ended_at FROM fire_op
@@ -82,8 +95,9 @@ export async function onRequestGet({ request, env }) {
       byHour,
       trend,
       byBezirk,
+      ort,
     });
   } catch (_) {
-    return json(empty);
+    return json(Object.assign({}, empty, { ort }));
   }
 }

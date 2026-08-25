@@ -492,6 +492,7 @@
     });
     markerGroups = groups;
     if (nearMode && userPos) addUserDot();
+    addHomeDot();
     setMapNote(items.length, coded, items.length - coded);
   }
 
@@ -510,6 +511,26 @@
     dot.setAttribute("fill", "#2f7bff"); dot.setAttribute("stroke", "#fff");
     dot.setAttribute("stroke-width", (r * 0.22).toFixed(2));
     g.appendChild(dot);
+    markerG.appendChild(g);
+  }
+  // Heimatort als 🏠-Marker (amber) auf der Karte.
+  function addHomeDot() {
+    if (!markerG || !homePlace || typeof homePlace.lat !== "number") return;
+    const cx = projX(homePlace.lng), cy = projY(homePlace.lat);
+    const r = Math.max(5, markerR() * 0.9);
+    const g = document.createElementNS(NS, "g"); g.setAttribute("class", "mk-home");
+    const pulse = document.createElementNS(NS, "circle");
+    pulse.setAttribute("class", "mk-home-pulse"); pulse.setAttribute("cx", cx); pulse.setAttribute("cy", cy);
+    pulse.setAttribute("r", r); pulse.setAttribute("fill", "#ffb020");
+    g.appendChild(pulse);
+    const dot = document.createElementNS(NS, "circle");
+    dot.setAttribute("cx", cx); dot.setAttribute("cy", cy); dot.setAttribute("r", (r * 0.7).toFixed(1));
+    dot.setAttribute("fill", "#ffb020"); dot.setAttribute("stroke", "#0b0c10"); dot.setAttribute("stroke-width", (r * 0.2).toFixed(2));
+    g.appendChild(dot);
+    const t = document.createElementNS(NS, "text");
+    t.setAttribute("x", cx); t.setAttribute("y", cy); t.setAttribute("text-anchor", "middle"); t.setAttribute("dominant-baseline", "central");
+    t.setAttribute("font-size", (r * 0.85).toFixed(1)); t.textContent = "🏠";
+    g.appendChild(t);
     markerG.appendChild(g);
   }
   function centerOnUser() {
@@ -643,8 +664,7 @@
 
   // Einsatz teilen — native Teilen-Ansicht (WhatsApp, …) auf Mobil,
   // sonst in die Zwischenablage. Deep-Link per #n=<Einsatznummer>.
-  async function shareOp(base) {
-    if (!base) return;
+  function shareText(base) {
     const c = base._c || classify(base.a);
     const line = [
       "🚒 " + (c.label || "Einsatz") + (c.stufe ? " · Stufe " + c.stufe : ""),
@@ -653,15 +673,91 @@
       base._when ? (base._ended ? "beendet " : "") + fmtWhen(base._when) : "",
     ].filter(Boolean).join("\n");
     const url = location.origin + location.pathname + "#n=" + encodeURIComponent(base.n || "");
+    return { line, url };
+  }
+  // Wörter auf maxW umbrechen (für die Teilen-Grafik).
+  function wrapText(x, text, maxW) {
+    const words = String(text || "").split(/\s+/), lines = []; let cur = "";
+    for (const w of words) {
+      const t = cur ? cur + " " + w : w;
+      if (x.measureText(t).width > maxW && cur) { lines.push(cur); cur = w; } else cur = t;
+    }
+    if (cur) lines.push(cur);
+    return lines;
+  }
+  function roundRect(x, X, Y, w, h, r) {
+    x.beginPath(); x.moveTo(X + r, Y);
+    x.arcTo(X + w, Y, X + w, Y + h, r); x.arcTo(X + w, Y + h, X, Y + h, r);
+    x.arcTo(X, Y + h, X, Y, r); x.arcTo(X, Y, X + w, Y, r); x.closePath();
+  }
+  // Einsatz als quadratische Teilen-Grafik (1080²) rein lokal zeichnen.
+  function buildShareCanvas(base) {
+    const W = 1080, H = 1080, PAD = 90;
+    const cv = document.createElement("canvas"); cv.width = W; cv.height = H;
+    const x = cv.getContext("2d"); if (!x) return null;
+    const c = base._c || classify(base.a);
+    const col = KIND_COLOR[c.kind] || KIND_COLOR.X;
+    const FONT = "-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica Neue, Arial, sans-serif";
+    x.fillStyle = "#0b0c10"; x.fillRect(0, 0, W, H);
+    const grd = x.createRadialGradient(W * 0.82, -80, 40, W * 0.82, -80, 950);
+    grd.addColorStop(0, "rgba(255,59,48,0.28)"); grd.addColorStop(1, "rgba(255,59,48,0)");
+    x.fillStyle = grd; x.fillRect(0, 0, W, H);
+    x.fillStyle = col; x.fillRect(0, 0, 16, H);
+    x.textBaseline = "alphabetic";
+    x.font = "700 40px " + FONT; x.fillStyle = "#ff6a60";
+    x.fillText("🚒 Feuerwehr Niederösterreich", PAD, 130);
+    // Art-Badge
+    x.font = "800 34px " + FONT;
+    const bt = (c.label || "Einsatz") + (c.stufe ? " · Stufe " + c.stufe : "") + (base._ended ? "  ·  beendet" : "");
+    const bw = x.measureText(bt).width + 56;
+    roundRect(x, PAD, 190, bw, 66, 16); x.fillStyle = hexA(col, 0.22); x.fill();
+    x.fillStyle = "#fff"; x.fillText(bt, PAD + 28, 234);
+    // Meldung
+    x.fillStyle = "#eef1f7"; x.font = "800 66px " + FONT;
+    let y = 380;
+    for (const ln of wrapText(x, base.m || "Einsatz", W - PAD * 2).slice(0, 4)) { x.fillText(ln, PAD, y); y += 82; }
+    // Ort
+    x.fillStyle = "#9aa3b4"; x.font = "600 44px " + FONT; y += 20;
+    for (const ln of wrapText(x, "📍 " + (base.o || "") + (base._bez ? " · Bezirk " + base._bez : ""), W - PAD * 2).slice(0, 2)) { x.fillText(ln, PAD, y); y += 58; }
+    if (base._when) { x.fillStyle = "#6b7386"; x.font = "600 38px " + FONT; x.fillText((base._ended ? "beendet " : "") + fmtWhen(base._when), PAD, y + 24); }
+    x.fillStyle = "#6b7386"; x.font = "600 34px " + FONT;
+    x.fillText("philip-stack.pages.dev/fire/noe", PAD, H - 80);
+    return cv;
+  }
+  // #rrggbb + Alpha → rgba() (für halbtransparente Flächen im Canvas).
+  function hexA(hex, a) {
+    const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex || "");
+    if (!m) return "rgba(255,255,255," + a + ")";
+    return `rgba(${parseInt(m[1], 16)},${parseInt(m[2], 16)},${parseInt(m[3], 16)},${a})`;
+  }
+  // Einsatz teilen — bevorzugt als Bild (Datei-Teilen auf Mobil, sonst Download),
+  // Text/Link als Rückfall. Deep-Link per #n=<Einsatznummer>.
+  async function shareOp(base) {
+    if (!base) return;
+    const { line, url } = shareText(base);
+    try {
+      const cv = buildShareCanvas(base);
+      if (cv && cv.toBlob) {
+        const blob = await new Promise(res => cv.toBlob(res, "image/png"));
+        if (blob) {
+          const file = new File([blob], "feuerwehr-einsatz.png", { type: "image/png" });
+          if (navigator.canShare && navigator.canShare({ files: [file] })) {
+            try { await navigator.share({ files: [file], text: line, url }); } catch (_) {}
+            return;   // geteilt oder abgebrochen — kein weiterer Fallback
+          }
+          const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+          a.download = "feuerwehr-einsatz.png"; document.body.appendChild(a); a.click(); a.remove();
+          setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+          toast("Bild gespeichert");
+          return;
+        }
+      }
+    } catch (_) { /* Bild ging nicht → Text-Fallback */ }
     try {
       if (navigator.share) { await navigator.share({ title: "Feuerwehr NÖ", text: line, url }); return; }
-    } catch (_) { return; }   // Nutzer hat abgebrochen
-    try {
-      await navigator.clipboard.writeText(line + "\n" + url);
-      toast("Einsatz kopiert — zum Teilen einfügen");
-    } catch (_) {
-      window.open("https://wa.me/?text=" + encodeURIComponent(line + "\n" + url), "_blank", "noopener");
-    }
+    } catch (_) { return; }
+    try { await navigator.clipboard.writeText(line + "\n" + url); toast("Einsatz kopiert — zum Teilen einfügen"); }
+    catch (_) { window.open("https://wa.me/?text=" + encodeURIComponent(line + "\n" + url), "_blank", "noopener"); }
   }
 
   function openDetail(key) {
@@ -831,6 +927,17 @@
     document.querySelectorAll(".a-kind").forEach(l => { const cb = l.querySelector("input"); if (cb && cb.checked) out.push(l.dataset.kind); });
     return out;
   }
+  // Umkreis-UI (hängt am gesetzten Heimatort). home/radius aus dem Server-Get.
+  function setRadiusUI(home, radius) {
+    const cb = $("#a-radius-cb"), row = $("#a-radius-row"), none = $("#a-radius-none"), kmSel = $("#a-radius-km"), lbl = $("#a-radius-home");
+    if (!cb) return;
+    if (!homePlace) { cb.checked = false; cb.disabled = true; row.hidden = true; none.hidden = false; return; }
+    cb.disabled = false; none.hidden = true;
+    if (lbl) lbl.textContent = "um " + homePlace.name;
+    const on = !!(home && radius);
+    cb.checked = on; row.hidden = !on;
+    if (radius && kmSel) kmSel.value = String(radius);
+  }
 
   function b64ToU8(k) {
     const pad = "=".repeat((4 - k.length % 4) % 4);
@@ -862,15 +969,17 @@
     }
     buildAlarmGrid([]);
     setKindsUI(null);
+    setRadiusUI(null, null);
     try {
       const sub = await getSub(false);
       if (sub) {
         const d = await (await fetch("/api/fire/alert", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "get", endpoint: sub.endpoint }) })).json();
         const bez = d.bezirke || [];
-        if (bez.length) {
+        if (bez.length || (d.home && d.radius)) {
           aAll.checked = bez.includes("*");
           buildAlarmGrid(bez);
           setKindsUI(d.kinds);
+          setRadiusUI(d.home, d.radius);
           $("#a-off").hidden = false;
           $("#a-save").textContent = "Auswahl speichern";
           setAStatus("Alarm ist aktiv.", "ok");
@@ -886,7 +995,9 @@
   }
   async function saveAlarm() {
     const codes = chosenCodes();
-    if (!codes.length) { setAStatus("Bitte mindestens einen Bezirk wählen.", "err"); return; }
+    const radCb = $("#a-radius-cb");
+    const wantRadius = !!(homePlace && radCb && radCb.checked);
+    if (!codes.length && !wantRadius) { setAStatus("Bitte Bezirk(e) oder den Umkreis wählen.", "err"); return; }
     setAStatus("Wird eingerichtet…", "");
     try {
       if (Notification.permission !== "granted") {
@@ -894,7 +1005,9 @@
         if (p !== "granted") { setAStatus("Benachrichtigungen wurden nicht erlaubt.", "err"); return; }
       }
       const sub = await getSub(true);
-      const r = await fetch("/api/fire/alert", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "subscribe", subscription: sub.toJSON(), bezirke: codes, kinds: chosenKinds() }) });
+      const payload = { action: "subscribe", subscription: sub.toJSON(), bezirke: codes, kinds: chosenKinds() };
+      if (wantRadius) { payload.home = { lat: homePlace.lat, lng: homePlace.lng }; payload.radius = Number($("#a-radius-km").value); }
+      const r = await fetch("/api/fire/alert", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       if (!r.ok) throw new Error("save");
       LS.set("fire_alert_on", "1");
       $("#a-off").hidden = false; $("#a-save").textContent = "Auswahl speichern";
@@ -966,8 +1079,19 @@
   }
 
   // ---- Einstellungen-Overlay (Heimatort + Ton) ----
-  const setOvl = $("#settings"), homeInput = $("#home-input"), homeStatus = $("#home-status"), homeCur = $("#home-cur"), soundCb = $("#sound-cb");
+  const setOvl = $("#settings"), homeInput = $("#home-input"), homeStatus = $("#home-status"), homeCur = $("#home-cur"), homeStat = $("#home-stat"), soundCb = $("#sound-cb");
   function setHomeStatus(msg, cls) { homeStatus.hidden = !msg; homeStatus.textContent = msg || ""; homeStatus.className = "set-status" + (cls ? " " + cls : ""); }
+  // Kleine Heimat-Statistik (aus der ~3-Tage-Roh-Historie, /api/fire/stats?ort=).
+  async function loadHomeStat() {
+    if (!homeStat) return;
+    if (!homePlace) { homeStat.hidden = true; homeStat.textContent = ""; return; }
+    homeStat.hidden = false; homeStat.textContent = "🏠 lädt …";
+    try {
+      const d = await (await fetch("/api/fire/stats?ort=" + encodeURIComponent(homePlace.name))).json();
+      const o = d.ort || { active: 0, total: 0 };
+      homeStat.textContent = `🏠 ${homePlace.name}: ${o.active || 0} laufend · ${o.total || 0} in den letzten Tagen`;
+    } catch (_) { homeStat.hidden = true; }
+  }
   function renderHomeCur() {
     if (homePlace && homePlace.name) {
       homeCur.innerHTML = `🏠 Heimatort: <b>${esc(homePlace.name)}</b><button id="home-clear" type="button">Entfernen</button>`;
@@ -978,7 +1102,7 @@
   function openSettings() {
     setOvl.hidden = false; document.body.style.overflow = "hidden";
     homeInput.value = ""; setHomeStatus("", ""); soundCb.checked = soundOn;
-    renderHomeCur();
+    renderHomeCur(); loadHomeStat();
   }
   function closeSettings() { setOvl.hidden = true; document.body.style.overflow = ""; }
   // Nach Home-Änderung Liste/Karte neu aufbauen, damit Hervorhebung + Sortierung greifen.
@@ -998,7 +1122,7 @@
         LS.set("fire_home", JSON.stringify(homePlace));
         homeInput.value = "";
         setHomeStatus("Heimatort gesetzt: " + name, "ok");
-        renderHomeCur(); rerenderHome();
+        renderHomeCur(); loadHomeStat(); rerenderHome();
       } else {
         setHomeStatus("Ort nicht gefunden — anders schreiben (nur Niederösterreich).", "err");
       }
@@ -1007,7 +1131,7 @@
   function clearHome() {
     homePlace = null;
     try { localStorage.removeItem("fire_home"); } catch (_) {}
-    renderHomeCur(); setHomeStatus("Heimatort entfernt.", ""); rerenderHome();
+    renderHomeCur(); loadHomeStat(); setHomeStatus("Heimatort entfernt.", ""); rerenderHome();
   }
 
   // ---- Events ----
@@ -1094,6 +1218,8 @@
     const cb = l.querySelector("input");
     if (cb) cb.addEventListener("change", () => l.classList.toggle("on", cb.checked));
   });
+  const aRadCb = $("#a-radius-cb");
+  if (aRadCb) aRadCb.addEventListener("change", () => { const row = $("#a-radius-row"); if (row) row.hidden = !(aRadCb.checked && homePlace); });
 
   $("#kind-chips").addEventListener("click", e => {
     const chip = e.target.closest(".chip"); if (!chip) return;
@@ -1167,6 +1293,13 @@
   }
   listEl.innerHTML = `<div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>`;
   if (view === "map") setView("map"); else setView("list");
+  // PWA-Shortcuts / Deep-Links: #view=map, #alarm, #stats (aus dem Manifest).
+  (function launchIntent() {
+    const h = location.hash || "";
+    if (/[#&]view=map/.test(h) && view !== "map") setView("map");
+    if (/[#&]alarm(\b|=)/.test(h)) openAlarm();
+    else if (/[#&]stats(\b|=)/.test(h)) openStats();
+  })();
   load().then(openFromHash);
   window.addEventListener("hashchange", openFromHash);
   setInterval(() => { if (!document.hidden) load(); }, REFRESH_MS);

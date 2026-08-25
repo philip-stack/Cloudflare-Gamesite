@@ -16,29 +16,16 @@ export function normKey(ort) {
   return String(ort || "").toLowerCase().trim().replace(/\s+/g, " ");
 }
 
-export async function onRequestGet({ request, env }) {
-  const url = new URL(request.url);
-  const ort = String(url.searchParams.get("q") || "").trim();
-  const plz = String(url.searchParams.get("plz") || "").trim();
-  if (!ort || ort.length > 80) return json({ error: "kein Ort" }, 400);
-  if (!env || !env.DB) return json({ miss: true });
-
+// Wiederverwendbarer Kern: Ort(+PLZ) → { lat, lng } | null. Cache zuerst
+// (geo_cache), sonst Nominatim (Ergebnis inkl. Fehltreffer wird gecacht).
+// opts.cacheOnly=true fragt NUR den Cache ab (keine Nominatim-Last) — genutzt
+// vom Cron. Wird sowohl vom Client-Endpoint als auch vom Umkreis-Alarm genutzt.
+export async function geocode(env, ort, plz, opts = {}) {
+  if (!env || !env.DB || !ort) return null;
   const key = normKey(ort);
-
-  // 1) Cache
   const hit = await env.DB.prepare("SELECT lat, lng, miss FROM geo_cache WHERE q = ?").bind(key).first();
-  if (hit) {
-    if (hit.miss) return json({ miss: true });
-    return cacheable(json({ lat: hit.lat, lng: hit.lng }));
-  }
-
-  // Nur neue Orte lösen aus (schützt Nominatim). Bei zu vielen neuen Orten
-  // in kurzer Zeit: höflich ablehnen, der Client versucht es später erneut.
-  if (env.DB && !(await rateLimit(env, "geo:" + clientIp(request), 30, 60))) {
-    return json({ retry: true }, 429);
-  }
-
-  // 2) Nominatim (OpenStreetMap)
+  if (hit) return hit.miss ? null : { lat: hit.lat, lng: hit.lng };
+  if (opts.cacheOnly) return null;
   try {
     const q = (plz ? plz + " " : "") + ort + ", Niederösterreich, Österreich";
     const api = "https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=at&accept-language=de&q=" + encodeURIComponent(q);
@@ -48,14 +35,33 @@ export async function onRequestGet({ request, env }) {
       const lat = Math.round(parseFloat(arr[0].lat) * 1e6) / 1e6;
       const lng = Math.round(parseFloat(arr[0].lon) * 1e6) / 1e6;
       await env.DB.prepare("INSERT OR REPLACE INTO geo_cache (q, lat, lng, miss) VALUES (?, ?, ?, 0)").bind(key, lat, lng).run();
-      return cacheable(json({ lat, lng }));
+      return { lat, lng };
     }
-    // Fehltreffer merken, damit wir nicht ständig neu anfragen
+    // Fehltreffer merken, damit wir nicht ständig neu anfragen.
     await env.DB.prepare("INSERT OR REPLACE INTO geo_cache (q, lat, lng, miss) VALUES (?, NULL, NULL, 1)").bind(key).run();
-    return json({ miss: true });
+    return null;
   } catch (_) {
-    return json({ miss: true });  // nicht cachen: nächster Versuch darf's nochmal probieren
+    return null;   // nicht cachen: nächster Versuch darf's nochmal probieren
   }
+}
+
+export async function onRequestGet({ request, env }) {
+  const url = new URL(request.url);
+  const ort = String(url.searchParams.get("q") || "").trim();
+  const plz = String(url.searchParams.get("plz") || "").trim();
+  if (!ort || ort.length > 80) return json({ error: "kein Ort" }, 400);
+  if (!env || !env.DB) return json({ miss: true });
+
+  const key = normKey(ort);
+  // 1) Cache (ohne Rate-Limit — nur Treffer)
+  const hit = await env.DB.prepare("SELECT lat, lng, miss FROM geo_cache WHERE q = ?").bind(key).first();
+  if (hit) return hit.miss ? json({ miss: true }) : cacheable(json({ lat: hit.lat, lng: hit.lng }));
+
+  // Nur neue Orte lösen Nominatim aus → hier greift das Rate-Limit.
+  if (!(await rateLimit(env, "geo:" + clientIp(request), 30, 60))) return json({ retry: true }, 429);
+
+  const r = await geocode(env, ort, plz);
+  return r ? cacheable(json(r)) : json({ miss: true });
 }
 
 function cacheable(res) {

@@ -25,7 +25,7 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Feuerwehr NÖ" />
-  <link rel="stylesheet" href="style.css?v=961457e3" />
+  <link rel="stylesheet" href="style.css?v=ea964496" />
 </head>
 <body>
   <div id="app">
@@ -89,7 +89,7 @@
       <p>Daten: NÖ Landesfeuerwehrverband (öffentliche <em>Wastl/GRISU</em>-Schnittstelle).
          Kartengrundlage: Bezirksgrenzen <em>Statistik Austria</em> (vereinfacht).
          Privates, inoffizielles Projekt, ohne Gewähr – kein Ersatz für den Notruf <strong>122</strong>.
-         Standort wird nur lokal genutzt, nicht gespeichert. <strong>Build v32</strong></p>
+         Standort wird nur lokal genutzt, nicht gespeichert. <strong>Build v33</strong></p>
     </footer>
   </div>
 
@@ -118,6 +118,20 @@
         <label class="a-kind on" data-kind="B"><input type="checkbox" checked /><i class="dot b"></i>Brand</label>
         <label class="a-kind on" data-kind="T"><input type="checkbox" checked /><i class="dot t"></i>Technisch</label>
         <label class="a-kind on" data-kind="S"><input type="checkbox" checked /><i class="dot s"></i>Schadstoff</label>
+      </div>
+      <h3 class="a-sub">🏠 Umkreis um Heimatort</h3>
+      <div id="a-radius-wrap">
+        <label class="set-toggle" id="a-radius-toggle"><input type="checkbox" id="a-radius-cb" /> <span>Auch Einsätze im Umkreis melden</span></label>
+        <div class="a-radius-row" id="a-radius-row" hidden>
+          <span id="a-radius-home"></span>
+          <select id="a-radius-km" aria-label="Radius">
+            <option value="5">5 km</option>
+            <option value="10" selected>10 km</option>
+            <option value="20">20 km</option>
+            <option value="50">50 km</option>
+          </select>
+        </div>
+        <p class="a-hint" id="a-radius-none" hidden>Kein Heimatort gesetzt — im ⚙️-Menü festlegen, dann lässt sich hier der Umkreis wählen.</p>
       </div>
       <div class="a-actions">
         <button id="a-save" class="btn-primary">Alarm aktivieren</button>
@@ -150,6 +164,7 @@
       </div>
       <div id="home-status" class="set-status" hidden></div>
       <div id="home-cur" class="set-cur" hidden></div>
+      <div id="home-stat" class="set-stat" hidden></div>
 
       <h3 class="set-h">🔊 Ton bei neuem Einsatz</h3>
       <p class="set-lead">Kurzer Signalton, wenn ein neuer Einsatz eintrifft – nur, solange die App offen ist.</p>
@@ -158,7 +173,7 @@
   </div>
 
   <script src="noe-geo.js?v=140f03b0"></script>
-  <script src="app.js?v=8eb12b76"></script>
+  <script src="app.js?v=bd88537a"></script>
   <script>
     // Eigener Service Worker (Scope /fire/noe/) → installierbar als eigene PWA.
     if ("serviceWorker" in navigator) {
