@@ -414,12 +414,40 @@
     if (!msg) { el.hidden = true; return; }
     el.className = "msg" + (kind ? " " + kind : ""); el.textContent = msg; el.hidden = false;
   }
+  // Mini-Preisverlauf (fallend = grün, steigend = rot) aus den Tages-Tiefstpreisen.
+  function sparkline(vals) {
+    if (!Array.isArray(vals) || vals.length < 2) return "";
+    const w = 88, h = 26, min = Math.min(...vals), max = Math.max(...vals), rng = (max - min) || 1;
+    const pts = vals.map((v, i) => `${(i / (vals.length - 1) * (w - 4) + 2).toFixed(1)},${(h - 3 - (v - min) / rng * (h - 6)).toFixed(1)}`).join(" ");
+    const col = vals[vals.length - 1] <= vals[0] ? "var(--accent2)" : "var(--danger)";
+    return `<svg class="spark" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true"><polyline points="${pts}" fill="none" stroke="${col}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+  }
   function renderAlarmList(list) {
     const el = $("#al-list"); if (!el) return;
     if (!list.length) { el.innerHTML = `<div class="al-empty">Noch keine Alarme. Tippe bei einer Tankstelle auf 🔔.</div>`; return; }
-    el.innerHTML = list.map(a =>
-      `<div class="al-item"><div class="al-i-txt"><b>${esc(a.name || "Tankstelle")}</b><span>${esc(FUEL_LABEL[a.fuel] || a.fuel)} · ≤ ${esc(eur(a.target))}</span></div>` +
-      `<button class="al-del" data-id="${esc(a.id)}" data-fuel="${esc(a.fuel)}" aria-label="Entfernen">✕</button></div>`).join("");
+    el.innerHTML = list.map(a => {
+      const last = a.hist && a.hist.length ? " · zuletzt " + eur(a.hist[a.hist.length - 1]) : "";
+      return `<div class="al-item"><div class="al-i-txt"><b>${esc(a.name || "Tankstelle")}</b><span>${esc(FUEL_LABEL[a.fuel] || a.fuel)} · ≤ ${esc(eur(a.target))}${esc(last)}</span></div>` +
+        sparkline(a.hist) +
+        `<button class="al-del" data-id="${esc(a.id)}" data-fuel="${esc(a.fuel)}" aria-label="Entfernen">✕</button></div>`;
+    }).join("");
+  }
+  function renderAlarmFavs() {
+    const wrap = $("#al-favs-wrap"), el = $("#al-favs"); if (!wrap || !el) return;
+    const l = favs();
+    if (!l.length) { wrap.hidden = true; return; }
+    wrap.hidden = false;
+    el.innerHTML = l.map(f => `<button class="al-fav-btn" data-id="${esc(f.id)}" data-name="${esc(f.name)}" data-lat="${f.lat}" data-lng="${f.lng}">★ ${esc(f.name)}</button>`).join("");
+  }
+  function fillAddForm(ctx) {
+    const add = $("#al-add");
+    if (!ctx) { add.hidden = true; return; }
+    add.hidden = false;
+    $("#al-name").textContent = ctx.name || "Tankstelle";
+    $("#al-fuel").textContent = FUEL_LABEL[fuel] || fuel;
+    const inp = $("#al-target");
+    if (ctx.price) { inp.value = Math.max(0.5, ctx.price - 0.01).toFixed(3); inp.placeholder = ""; }
+    else { inp.value = ""; inp.placeholder = "z. B. 1,499"; }
   }
   async function refreshAlerts() {
     try {
@@ -435,14 +463,8 @@
     alarmCtx = ctx || null;
     $("#alarm").hidden = false; document.body.style.overflow = "hidden";
     setAlStatus("", "");
-    const add = $("#al-add");
-    if (alarmCtx) {
-      add.hidden = false;
-      $("#al-name").textContent = alarmCtx.name || "Tankstelle";
-      $("#al-fuel").textContent = FUEL_LABEL[fuel] || fuel;
-      const t = Math.max(0.5, (alarmCtx.price || 1.5) - 0.01);   // Standard: 1 Cent unter aktuell
-      $("#al-target").value = t.toFixed(3);
-    } else add.hidden = true;
+    fillAddForm(alarmCtx);
+    renderAlarmFavs();
     refreshAlerts();
   }
   function closeAlarm() { $("#alarm").hidden = true; document.body.style.overflow = ""; }
@@ -475,6 +497,12 @@
   $("#alarm").addEventListener("click", e => { if (e.target.id === "alarm") closeAlarm(); });
   $("#al-save").addEventListener("click", saveAlarm);
   $("#al-list").addEventListener("click", e => { const b = e.target.closest(".al-del"); if (b) removeAlarm(b.dataset.id, b.dataset.fuel); });
+  $("#al-favs").addEventListener("click", e => {
+    const b = e.target.closest(".al-fav-btn"); if (!b) return;
+    alarmCtx = { id: b.dataset.id, name: b.dataset.name, lat: +b.dataset.lat, lng: +b.dataset.lng };
+    setAlStatus("", ""); fillAddForm(alarmCtx);
+    $("#al-add").scrollIntoView({ block: "nearest" });
+  });
   document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("#alarm").hidden) closeAlarm(); });
 
   // ---- Start ----

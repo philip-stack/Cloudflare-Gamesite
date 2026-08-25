@@ -69,6 +69,23 @@ export async function onRequestGet({ request, env }) {
     const priceById = new Map();
     for (const s of list) priceById.set(String(s.id), s);
 
+    // Preise dieser Gruppe fürs Verlaufsdiagramm festhalten (Tiefstpreis/Tag).
+    const seen = new Set();
+    for (const a of g.items) {
+      const s = priceById.get(String(a.station_id));
+      if (!s || typeof s.price !== "number") continue;
+      const lk = a.station_id + "|" + g.fuel;
+      if (!seen.has(lk)) {
+        seen.add(lk);
+        try {
+          await env.DB.prepare(
+            "INSERT INTO sprit_price_log (station_id, fuel, day, price) VALUES (?, ?, date('now'), ?) " +
+            "ON CONFLICT(station_id, fuel, day) DO UPDATE SET price = MIN(price, excluded.price)"
+          ).bind(String(a.station_id), g.fuel, s.price).run();
+        } catch (_) {}
+      }
+    }
+
     for (const a of g.items) {
       const s = priceById.get(String(a.station_id));
       if (!s || typeof s.price !== "number") continue;   // Station nicht in der Antwort → überspringen
@@ -92,5 +109,6 @@ export async function onRequestGet({ request, env }) {
     }
   }
 
+  try { await env.DB.prepare("DELETE FROM sprit_price_log WHERE day < date('now','-30 days')").run(); } catch (_) {}
   return json({ ok: true, alerts: alerts.length, checked, sent });
 }

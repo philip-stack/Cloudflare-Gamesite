@@ -65,6 +65,19 @@ export async function onRequestPost({ request, env }) {
     const rows = (await env.DB.prepare(
       "SELECT station_id AS id, name, fuel, target FROM sprit_alert WHERE endpoint = ? ORDER BY at DESC"
     ).bind(endpoint).all()).results || [];
+    // Preisverlauf (letzte 14 Tage) je Station+Treibstoff anhängen.
+    try {
+      const ids = [...new Set(rows.map(r => r.id))];
+      if (ids.length) {
+        const ph = ids.map(() => "?").join(",");
+        const logs = (await env.DB.prepare(
+          `SELECT station_id, fuel, price FROM sprit_price_log WHERE station_id IN (${ph}) AND day >= date('now','-14 days') ORDER BY day ASC`
+        ).bind(...ids).all()).results || [];
+        const hist = {};
+        for (const l of logs) (hist[l.station_id + "|" + l.fuel] ||= []).push(l.price);
+        for (const r of rows) r.hist = hist[r.id + "|" + r.fuel] || [];
+      }
+    } catch (_) { for (const r of rows) r.hist = r.hist || []; }
     return json({ alerts: rows });
   }
 

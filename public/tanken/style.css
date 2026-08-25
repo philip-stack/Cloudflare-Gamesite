@@ -165,9 +165,14 @@ input[type="search"]:focus { outline: 2px solid var(--accent2); outline-offset: 
   color: var(--ink); font: 800 1.05rem inherit; font-variant-numeric: tabular-nums; -webkit-appearance: none; }
 .al-add .btn-primary { width: 100%; }
 .al-h { margin: 4px 0 8px; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+.al-favs { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 16px; }
+.al-fav-btn { border: 1px solid var(--panel-line); background: var(--panel); color: var(--gold); font: 700 0.8rem inherit;
+  padding: 8px 12px; border-radius: 999px; cursor: pointer; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.al-fav-btn:hover { border-color: rgba(232,177,0,0.5); }
 .al-list { display: flex; flex-direction: column; gap: 8px; }
 .al-empty { color: var(--faint); font-size: 0.86rem; padding: 6px 2px; }
 .al-item { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: var(--panel); border: 1px solid var(--panel-line); border-radius: 10px; }
+.spark { flex: none; }
 .al-i-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .al-i-txt b { font-weight: 800; font-size: 0.9rem; }
 .al-i-txt span { color: var(--muted); font-size: 0.8rem; }

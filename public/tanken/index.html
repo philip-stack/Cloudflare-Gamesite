@@ -25,7 +25,7 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="Sprit-Radar" />
   <link rel="stylesheet" href="vendor/leaflet.css?v=340720ef" />
-  <link rel="stylesheet" href="style.css?v=a096e6a0" />
+  <link rel="stylesheet" href="style.css?v=0840f8b6" />
 </head>
 <body>
   <div id="app">
@@ -116,6 +116,10 @@
         </label>
         <button id="al-save" class="btn-primary">Alarm aktivieren</button>
       </div>
+      <div id="al-favs-wrap" hidden>
+        <h3 class="al-h">Alarm für Favorit anlegen</h3>
+        <div id="al-favs" class="al-favs"></div>
+      </div>
       <h3 class="al-h">Aktive Alarme</h3>
       <div id="al-list" class="al-list"></div>
       <p class="al-note">Gespeichert wird nur dein anonymer Push-Endpunkt + Station und Zielpreis. Läuft auch bei geschlossener App; jederzeit hier wieder löschbar. Preisprüfung ca. alle 15&nbsp;min.</p>
@@ -123,7 +127,7 @@
   </div>
 
   <script src="vendor/leaflet.js?v=5a640ff8"></script>
-  <script src="app.js?v=8170e085"></script>
+  <script src="app.js?v=cc17cf02"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
