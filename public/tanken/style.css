@@ -82,7 +82,7 @@ input[type="search"]:focus { outline: 2px solid var(--accent2); outline-offset: 
 .act-row { display: flex; gap: 6px; }
 .nav { display: flex; align-items: center; justify-content: center; text-decoration: none;
   background: linear-gradient(160deg, var(--accent2), var(--accent)); color: #06130d; font-weight: 800;
-  padding: 10px 14px; border-radius: 12px; }
+  padding: 20px 14px; border-radius: 12px; }
 .fav, .share { border: 1px solid var(--panel-line); background: var(--panel); color: var(--faint); font-size: 1.05rem;
   border-radius: 10px; cursor: pointer; padding: 6px 10px; line-height: 1; }
 .fav.on { color: var(--gold); border-color: rgba(232,177,0,0.5); background: rgba(232,177,0,0.10); }
