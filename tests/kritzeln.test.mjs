@@ -69,5 +69,22 @@ assert("drawerGain: sofort 35, spät 20",
 // ---------- wordLetters ----------
 assert("wordLetters: zählt ohne Leerzeichen", L.wordLetters("roter bus") === 8 && L.wordLetters("Haus") === 4);
 
+// ---------- hintCount (skaliert mit Wortlänge) ----------
+assert("hintCount: kurz (≤4) = 1", L.hintCount(4) === 1 && L.hintCount(3) === 1);
+assert("hintCount: mittel (5–7) = 2", L.hintCount(5) === 2 && L.hintCount(7) === 2);
+assert("hintCount: lang (8–10) = 3", L.hintCount(8) === 3 && L.hintCount(10) === 3);
+assert("hintCount: sehr lang (11+) = 4", L.hintCount(11) === 4 && L.hintCount(20) === 4);
+assert("hintCount: monoton steigend", L.hintCount(4) <= L.hintCount(8) && L.hintCount(8) <= L.hintCount(12));
+
+// ---------- catOf (Kategorie-Hinweis) ----------
+assert("catOf: Tier", L.catOf("Hund") === "tiere");
+assert("catOf: neue Kategorie Beruf", L.catOf("Astronaut") === "berufe");
+assert("catOf: unbekannt/eigenes Wort → null", L.catOf("Trampolinxyz") === null);
+assert("catOf: leer → null", L.catOf("") === null);
+
+// ---------- neue Kategorien vorhanden & gut gefüllt ----------
+assert("neue Kategorien da", ["berufe", "sport", "koerper", "musik", "werkzeug", "weltall"].every(k => Array.isArray(L.D_CATS[k]) && L.D_CATS[k].length >= 15));
+assert("wordPool zieht auch neue Kategorien", L.wordPool(["sport"]).includes("Tennis"));
+
 console.log(ok ? "\n✅ kritzeln: alle Tests grün" : "\n❌ kritzeln: Tests fehlgeschlagen");
 process.exit(ok ? 0 : 1);

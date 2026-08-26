@@ -63,6 +63,11 @@ button:active { transform: scale(0.95); }
 @keyframes emote-rise { 0% { transform: translateY(0) scale(0.6); opacity: 0; } 15% { transform: translateY(-10%) scale(1.15); opacity: 1; } 100% { transform: translateY(-190%) scale(1); opacity: 0; } }
 .wp-time { color: var(--accent); font-weight: 800; font-variant-numeric: tabular-nums; }
 @media (prefers-reduced-motion: reduce) { .emote-fly { animation-duration: 0.9s; } }
+/* Punkte-Popup beim Erraten */
+.points-fly { position: absolute; bottom: 12px; font-weight: 900; font-variant-numeric: tabular-nums; color: var(--muted); font-size: 1.1rem; pointer-events: none; z-index: 5; text-shadow: 0 2px 6px rgba(0,0,0,0.5); animation: points-rise 1.3s ease-out forwards; }
+.points-fly.mine { color: var(--gold); font-size: 1.8rem; }
+@keyframes points-rise { 0% { transform: translateY(0) scale(0.7); opacity: 0; } 18% { transform: translateY(-14%) scale(1.15); opacity: 1; } 100% { transform: translateY(-150%) scale(1); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .points-fly { animation-duration: 0.9s; } }
 
 .chat { flex: 1; min-height: 40px; overflow-y: auto; display: flex; flex-direction: column; gap: 3px; padding: 6px 4px; font-size: 0.86rem; }
 .chat .c { line-height: 1.35; }

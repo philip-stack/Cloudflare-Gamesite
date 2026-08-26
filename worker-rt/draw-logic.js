@@ -13,8 +13,30 @@ export const D_CATS = {
   fahrzeuge: "Auto,Zug,Flugzeug,Schiff,Fahrrad,Rakete,Traktor,Bagger,Bus,Motorrad,Hubschrauber,Ballon,LKW,Feuerwehrauto,Polizeiauto,Krankenwagen,Taxi,Rennwagen,Panzer,U-Boot,Segelboot,Ruderboot,Kanu,Straßenbahn,Seilbahn,Roller,Skateboard,Einrad,Kutsche,Schlitten,Gondel,Lokomotive".split(","),
   natur: "Haus,Baum,Sonne,Mond,Stern,Blume,Berg,Wolke,Regenbogen,Blitz,Vulkan,Insel,Brücke,Turm,Kirche,Windmühle,Sonnenblume,Kaktus,Herz,Zelt,Pilz,Fluss,See,Palme,Wald,Wüste,Höhle,Wasserfall,Tornado,Schneeflocke,Eiszapfen,Feuer,Regen,Tal,Wiese,Teich,Stein,Blatt,Tanne,Tulpe,Rose,Muschel,Planet,Strand,Klee".split(","),
   fantasie: "Schneemann,Roboter,Gespenst,Hexe,Drache,Schloss,Krone,Zauberer,Einhorn,Meerjungfrau,Ritter,Pirat,Krake,Alien,Zombie,Fee,Kobold,Troll,Riese,Zwerg,Elf,Vampir,Werwolf,Monster,Dinosaurier,Zauberstab,Zaubertrank,Kristallkugel,Schatztruhe,Yeti,Phönix,Greif,UFO,Sternschnuppe,Zauberhut".split(","),
+  berufe: "Arzt,Koch,Polizist,Feuerwehrmann,Lehrer,Bäcker,Pilot,Clown,Maler,Gärtner,Friseur,Bauer,Fischer,Astronaut,Krankenschwester,Briefträger,Tänzer,Sänger,Zahnarzt,Richter,Detektiv,Cowboy,Taucher,Imker,Müllmann,Kellner,Schäfer,Schmied,Metzger,Tierarzt,Kapitän,Bergsteiger,Jongleur".split(","),
+  sport: "Fußball,Tennis,Ski,Boxen,Klettern,Golf,Reiten,Turnen,Basketball,Volleyball,Eishockey,Rodeln,Surfen,Tauchen,Bogenschießen,Segeln,Snowboard,Karate,Tischtennis,Handball,Angeln,Skaten,Yoga,Gewichtheben,Hürde,Dart,Kegeln,Rudern,Trampolin,Schaukel,Slalom".split(","),
+  koerper: "Hand,Fuß,Auge,Nase,Mund,Ohr,Kopf,Haar,Zahn,Zunge,Finger,Herz,Bauch,Bein,Arm,Knie,Rücken,Schulter,Ellbogen,Daumen,Zeh,Wimper,Augenbraue,Lippe,Kinn,Gehirn,Skelett,Faust,Locke,Bart".split(","),
+  musik: "Geige,Flöte,Saxofon,Harfe,Mikrofon,Note,Kopfhörer,Schallplatte,Lautsprecher,Xylophon,Akkordeon,Dudelsack,Triangel,Mundharmonika,Cello,Tuba,Banjo,Keyboard,Notenschlüssel,Metronom,Plattenspieler".split(","),
+  werkzeug: "Schraubenzieher,Bohrer,Rechen,Maßband,Wasserwaage,Axt,Beil,Feile,Meißel,Bohrmaschine,Spachtel,Schleifpapier,Werkzeugkasten,Dübel,Winkel,Kelle,Schweißgerät,Zollstock,Bügelsäge,Akkuschrauber".split(","),
+  weltall: "Galaxie,Satellit,Teleskop,Saturn,Erde,Mars,Außerirdischer,Raumschiff,Raumanzug,Mondlandung,Sternbild,Meteorit,Milchstraße,Komet,Umlaufbahn,Sonnensystem,Mondkrater,Sternwarte,Weltraum".split(","),
 };
 export const D_CAT_KEYS = Object.keys(D_CATS);
+
+// Erste Kategorie, die dieses Wort enthält (für den Kategorie-Hinweis an
+// Ratende). null = keine (z. B. eigenes Wort des Hosts).
+export function catOf(word) {
+  for (const k of D_CAT_KEYS) if (D_CATS[k].includes(word)) return k;
+  return null;
+}
+
+// Anzahl der Buchstaben-Hinweise je nach Wortlänge (kurze Wörter weniger,
+// lange mehr → fairer). Der DrawRoom verteilt sie über die Zugzeit.
+export function hintCount(len) {
+  if (len <= 4) return 1;
+  if (len <= 7) return 2;
+  if (len <= 10) return 3;
+  return 4;
+}
 
 // Zug-/Punkte-Konstanten (auch von den Tests referenziert).
 export const D_TURN = 75, D_CHOOSE = 15, D_REVEAL = 6;

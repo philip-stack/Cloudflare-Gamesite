@@ -23,7 +23,8 @@ let view = "menu";                 // menu | lobby | playing | over
 let players = [];                  // aus lobby/turnEnd
 let iAmDrawer = false, phase = "", curWord = "", timeEnd = 0, timeTotal = 1;
 let strokes = [];                  // Ops: {k:"s",pts:[{x,y}],c,w,e} Strich  |  {k:"f",x,y,c} Füllung
-let roomCats = [], roomRounds = 2, roomCustom = 0; // aus lobby (Kategorien/Runden/Anzahl eigene Wörter)
+let roomCats = [], roomRounds = 2, roomTime = 75, roomCustom = 0; // aus lobby (Kategorien/Runden/Zeit/Anzahl eigene Wörter)
+let curCat = "";                   // Kategorie des laufenden Worts (Hinweis für Ratende)
 let customText = "";               // Textfeld-Inhalt der eigenen Wortliste (überlebt Re-Render)
 let pingT = null, intentional = false, wantStartName = "", reTries = 0, reTimer = null;
 
@@ -75,6 +76,7 @@ function onMsg(m) {
     case "lobby":
       hostId = m.hostId; players = m.players || [];
       if (Array.isArray(m.cats)) roomCats = m.cats; if (m.rounds) roomRounds = m.rounds;
+      if (m.turnTime) roomTime = m.turnTime;
       if (typeof m.customCount === "number") roomCustom = m.customCount;
       renderPlayers();
       if (view === "playing" || view === "over") break;
@@ -103,6 +105,7 @@ function onMsg(m) {
     case "guessed": {
       const mine = m.id === myId;
       addChat("good", null, mine ? ("Richtig! 🎉 +" + (m.gain || "")) : GS.esc(m.name) + " hat es erraten! ✅");
+      if (m.gain) floatPoints("+" + m.gain, mine);
       if (mine) { setGuessEnabled(false); GS.sound.great(); GS.haptic(20); confetti(); }
       else if (iAmDrawer) { GS.sound.good(); }
       const pl = players.find(p => p.id === m.id); if (pl) pl.guessed = true; renderPlayers();
@@ -129,8 +132,13 @@ function onTurn(m) {
     startChoose(m.chooseTime || 15, iAmDrawer, drawer ? drawer.name : "Jemand");
   } else if (m.phase === "draw") {
     phase = "draw"; hideNote();
+    curCat = m.cat || "";
     if (iAmDrawer) { $("#i-word").innerHTML = curWord ? "<b>" + GS.esc(curWord) + "</b>" : "…"; setTools(true); setGuessEnabled(false); }
-    else { $("#i-word").textContent = spaced(m.pattern || ""); setTools(false); setGuessEnabled(true); }
+    else {
+      $("#i-word").textContent = spaced(m.pattern || ""); setTools(false); setGuessEnabled(true);
+      // Kategorie-Hinweis: hilft Ratenden, ohne das Wort zu verraten.
+      if (curCat && CAT_LABELS[curCat]) $("#i-turn").textContent += " · " + CAT_LABELS[curCat];
+    }
     startTimer(m.time || 75);
   }
   renderPlayers(m.drawerId);
@@ -248,7 +256,7 @@ setInterval(() => { if (drawing && iAmDrawer) flush(); }, 55);
 // ---------- Werkzeuge ----------
 const COLORS = ["#111827", "#6b7280", "#ef4444", "#f97316", "#eab308", "#22c55e", "#14b8a6", "#3b82f6", "#8b5cf6", "#ec4899", "#8b5a2b"];
 const SIZES = [3, 6, 12, 20];
-const CAT_LABELS = { tiere: "🐾 Tiere", essen: "🍎 Essen", dinge: "🎒 Dinge", fahrzeuge: "🚗 Fahrzeuge", natur: "🌳 Natur", fantasie: "🐉 Fantasie" };
+const CAT_LABELS = { tiere: "🐾 Tiere", essen: "🍎 Essen", dinge: "🎒 Dinge", fahrzeuge: "🚗 Fahrzeuge", natur: "🌳 Natur", fantasie: "🐉 Fantasie", berufe: "👷 Berufe", sport: "⚽ Sport", koerper: "✋ Körper", musik: "🎵 Musik", werkzeug: "🔧 Werkzeug", weltall: "🚀 Weltall" };
 function buildTools() {
   $("#swatches").innerHTML = COLORS.map((c, i) => `<i data-c="${c}" style="background:${c}" class="${i === 0 ? "sel" : ""}"></i>`).join("");
   $("#sizes").innerHTML = SIZES.map((s, i) => `<i data-s="${s}" class="${i === 1 ? "sel" : ""}"><b style="width:${Math.min(18, s)}px;height:${Math.min(18, s)}px"></b></i>`).join("");
@@ -307,6 +315,14 @@ function floatEmote(e) {
   el.style.left = (12 + Math.random() * 70) + "%";
   wrap.appendChild(el);
   setTimeout(() => el.remove(), 1400);
+}
+// Punkte-Popup beim Erraten (steigt auf, blendet aus). „mine" = eigener Treffer (größer/golden).
+function floatPoints(txt, mine) {
+  const wrap = $("#cv-wrap"); if (!wrap) return;
+  const el = document.createElement("div"); el.className = "points-fly" + (mine ? " mine" : "");
+  el.textContent = txt; el.style.left = (30 + Math.random() * 40) + "%";
+  wrap.appendChild(el);
+  setTimeout(() => el.remove(), 1300);
 }
 
 // ---------- Chat / Spieler ----------
@@ -392,11 +408,13 @@ function showLobby() {
         <div class="chips" id="lb-cats">${catKeys.map(k => `<button class="chip ${roomCats.includes(k) ? "on" : ""}" data-cat="${k}">${CAT_LABELS[k]}</button>`).join("")}</div>
         <div class="set-lbl">Runden</div>
         <div class="chips" id="lb-rounds">${[1, 2, 3].map(n => `<button class="chip ${roomRounds === n ? "on" : ""}" data-r="${n}">${n}</button>`).join("")}</div>
+        <div class="set-lbl">Zeit pro Zug</div>
+        <div class="chips" id="lb-time">${[45, 60, 75, 90].map(n => `<button class="chip ${roomTime === n ? "on" : ""}" data-t="${n}">${n}s</button>`).join("")}</div>
         <div class="set-lbl">Eigene Wörter <span class="hint">(optional · Komma-getrennt · ab 3 Wörtern aktiv)</span></div>
         <textarea id="lb-words" class="words-in" rows="2" placeholder="z. B. Oma, Netflix, Trampolin, Schnitzel …">${GS.esc(customText)}</textarea>
         <div class="hint" id="lb-words-n">${roomCustom ? "✅ " + roomCustom + " eigene Wörter" + (custActive ? " aktiv" : " (mind. 3 nötig)") : ""}</div>
       </div>`
-    : `<p class="sub lobby-sub">${custActive ? "✍️ Eigene Wörter (" + roomCustom + ")" : (roomCats.length ? roomCats.map(k => CAT_LABELS[k] || k).join(" · ") : "Alle Kategorien")} · ${roomRounds} Runden</p>`;
+    : `<p class="sub lobby-sub">${custActive ? "✍️ Eigene Wörter (" + roomCustom + ")" : (roomCats.length ? roomCats.map(k => CAT_LABELS[k] || k).join(" · ") : "Alle Kategorien")} · ${roomRounds} Runden · ${roomTime}s</p>`;
   const o = overlay(`
     <h2>Warteraum</h2>
     <p class="sub">Teile den Code — Freunde tippen ihn im Menü ein. Ab <b>2 Spielern</b> kann der Host starten (bis 10).</p>
@@ -414,6 +432,7 @@ function showLobby() {
       b.classList.toggle("on"); send({ t: "cat", cats: roomCats });
     });
     o.querySelectorAll("#lb-rounds .chip").forEach(b => b.onclick = () => { roomRounds = +b.dataset.r; send({ t: "rounds", n: roomRounds }); o.querySelectorAll("#lb-rounds .chip").forEach(x => x.classList.toggle("on", x === b)); });
+    o.querySelectorAll("#lb-time .chip").forEach(b => b.onclick = () => { roomTime = +b.dataset.t; send({ t: "turnTime", n: roomTime }); o.querySelectorAll("#lb-time .chip").forEach(x => x.classList.toggle("on", x === b)); });
     o.querySelectorAll("[data-kick]").forEach(b => b.onclick = () => { const id = +b.dataset.kick; const pl = players.find(x => x.id === id); if (confirm((pl ? pl.name : "Spieler:in") + " entfernen?")) send({ t: "kick", id }); });
     const wa = o.querySelector("#lb-words");
     if (wa) { wa.oninput = () => { customText = wa.value; }; wa.onblur = () => { const list = wa.value.split(/[,\n]/).map(s => s.trim()).filter(Boolean); send({ t: "words", list }); }; }
@@ -447,7 +466,7 @@ function updateLobby() {
     if (wn) wn.textContent = roomCustom ? "✅ " + roomCustom + " eigene Wörter" + (custActive ? " aktiv" : " (mind. 3 nötig)") : "";
   } else {
     const sub = o.querySelector(".lobby-sub");
-    if (sub) sub.innerHTML = (custActive ? "✍️ Eigene Wörter (" + roomCustom + ")" : (roomCats.length ? roomCats.map(k => CAT_LABELS[k] || k).join(" · ") : "Alle Kategorien")) + " · " + roomRounds + " Runden";
+    if (sub) sub.innerHTML = (custActive ? "✍️ Eigene Wörter (" + roomCustom + ")" : (roomCats.length ? roomCats.map(k => CAT_LABELS[k] || k).join(" · ") : "Alle Kategorien")) + " · " + roomRounds + " Runden · " + roomTime + "s";
   }
 }
 

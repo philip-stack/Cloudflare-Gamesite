@@ -1,5 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
-import { D_CATS, D_CAT_KEYS, D_TURN, D_CHOOSE, D_REVEAL, dNorm, dLev, wordPool, pickWords, guessGain, drawerGain, wordLetters } from "./draw-logic.js";
+import { D_CATS, D_CAT_KEYS, D_TURN, D_CHOOSE, D_REVEAL, dNorm, dLev, wordPool, pickWords, guessGain, drawerGain, wordLetters, catOf, hintCount } from "./draw-logic.js";
 
 // Fehler aus dem Echtzeit-Worker in dieselbe D1-Tabelle error_log schreiben,
 // die auch die Pages-Seite nutzt — damit DO-/DrawRoom-Störungen im Betreiber-
@@ -237,7 +237,7 @@ export class DrawRoom extends DurableObject {
   constructor(ctx, env) {
     super(ctx, env);
     this.conns = new Map(); this.state = "lobby"; this.hostId = null; this.nextId = 1;
-    this.order = []; this.turnIdx = 0; this.rounds = 2; this.drawerId = null;
+    this.order = []; this.turnIdx = 0; this.rounds = 2; this.turnTime = D_TURN; this.drawerId = null;
     this.word = ""; this.revealed = []; this.timers = []; this.turnEndsAt = 0;
     this.cats = [];          // ausgewählte Kategorien (leer = alle)
     this.customWords = [];   // eigene Wortliste des Hosts (überschreibt Kategorien)
@@ -270,7 +270,7 @@ export class DrawRoom extends DurableObject {
   partKey(p) { return p.uid || ("id" + p.id); }
   syncPart(p) { if (!this.parts) this.parts = new Map(); this.parts.set(this.partKey(p), { name: p.name, score: p.score | 0, device: p.dev || null }); }
   scoreboard() { return [...this.conns.values()].map(p => ({ id: p.id, name: p.name, score: p.score, guessed: p.guessed, drawer: p.id === this.drawerId })).sort((a, b) => b.score - a.score); }
-  sendLobby() { this.bc({ t: "lobby", state: this.state, hostId: this.hostId, players: this.scoreboard(), cats: this.cats, rounds: this.rounds, customCount: this.customWords.length }); }
+  sendLobby() { this.bc({ t: "lobby", state: this.state, hostId: this.hostId, players: this.scoreboard(), cats: this.cats, rounds: this.rounds, turnTime: this.turnTime, customCount: this.customWords.length }); }
   clearTimers() { for (const t of this.timers) clearTimeout(t); this.timers = []; }
   // Fehler sichtbar machen (Konsole + persistent in error_log via waitUntil).
   logErr(msg, extra) { console.error("DrawRoom", msg, extra || ""); try { this.ctx.waitUntil(rtLogError(this.env, msg, "kritzeln", extra)); } catch (_) {} }
@@ -335,6 +335,7 @@ export class DrawRoom extends DurableObject {
       // Host stellt Kategorien / Rundenzahl im Warteraum ein.
       case "cat": if (p.id === this.hostId && (this.state === "lobby" || this.state === "over")) { this.cats = Array.isArray(m.cats) ? m.cats.filter(c => D_CAT_KEYS.includes(c)) : []; this.sendLobby(); } break;
       case "rounds": if (p.id === this.hostId && (this.state === "lobby" || this.state === "over")) { const n = m.n | 0; if (n >= 1 && n <= 5) { this.rounds = n; this.sendLobby(); } } break;
+      case "turnTime": if (p.id === this.hostId && (this.state === "lobby" || this.state === "over")) { const n = m.n | 0; if ([45, 60, 75, 90].includes(n)) { this.turnTime = n; this.sendLobby(); } } break;
       // Host: eigene Wortliste (überschreibt Kategorien). Getrimmt, dedupliziert, begrenzt.
       case "words": if (p.id === this.hostId && (this.state === "lobby" || this.state === "over")) {
         const seen = new Set(), out = [];
@@ -419,7 +420,7 @@ export class DrawRoom extends DurableObject {
         if (p.id === this.drawerId && this.choices) ws.send(JSON.stringify({ t: "choices", words: this.choices, time: ctime }));
       } else if (this.state === "drawing") {
         const time = Math.max(1, Math.round((this.turnEndsAt - Date.now()) / 1000));
-        ws.send(JSON.stringify({ t: "turn", phase: "draw", drawerId: this.drawerId, round, rounds: this.rounds, time, pattern: this.pattern() }));
+        ws.send(JSON.stringify({ t: "turn", phase: "draw", drawerId: this.drawerId, round, rounds: this.rounds, time, pattern: this.pattern(), cat: catOf(this.word) }));
         if (p.id === this.drawerId) ws.send(JSON.stringify({ t: "word", word: this.word }));
         // Bisher Gemaltes nachliefern, damit (Neu-)Beitretende kein leeres Blatt sehen.
         if (this.drawOps && this.drawOps.length) ws.send(JSON.stringify({ t: "snapshot", ops: this.drawOps }));
@@ -443,15 +444,19 @@ export class DrawRoom extends DurableObject {
     if (this.used) this.used.add(word);   // Wort für dieses Spiel als benutzt markieren
     this.word = word; this.revealed = [...word].map(() => false);
     this.turnGains = []; this.turnHits = 0; this.turnDrawerGain = 0; this.drawOps = [];
-    this.state = "drawing"; this.turnEndsAt = Date.now() + D_TURN * 1000;
+    const T = this.turnTime;
+    this.state = "drawing"; this.turnEndsAt = Date.now() + T * 1000;
     const ids = this.order.filter(id => this.pget(id));
     const round = Math.floor(this.turnIdx / Math.max(1, ids.length)) + 1;
-    this.bc({ t: "turn", phase: "draw", drawerId: this.drawerId, round, rounds: this.rounds, time: D_TURN, pattern: this.pattern(), wordLen: [...word].length });
+    this.bc({ t: "turn", phase: "draw", drawerId: this.drawerId, round, rounds: this.rounds, time: T, pattern: this.pattern(), wordLen: [...word].length, cat: catOf(word) });
     this.toId(this.drawerId, { t: "word", word });
-    // Hinweise: bei ~45% und ~70% je einen Buchstaben aufdecken
-    this.timers.push(setTimeout(() => this.reveal(), D_TURN * 0.45 * 1000));
-    this.timers.push(setTimeout(() => this.reveal(), D_TURN * 0.7 * 1000));
-    this.timers.push(setTimeout(() => this.endTurn(), D_TURN * 1000));
+    // Hinweise: je nach Wortlänge n Buchstaben, gleichmäßig über die Zugzeit verteilt.
+    const n = hintCount(wordLetters(word));
+    for (let i = 0; i < n; i++) {
+      const frac = 0.35 + 0.5 * ((i + 1) / (n + 1));
+      this.timers.push(setTimeout(() => this.reveal(), T * frac * 1000));
+    }
+    this.timers.push(setTimeout(() => this.endTurn(), T * 1000));
   }
 
   reveal() {
@@ -471,11 +476,11 @@ export class DrawRoom extends DurableObject {
       // Punkte: Zeit-Bonus (früher = mehr) + Platz-Bonus (1./2./3.) + Längen-Bonus.
       const remain = Math.max(0, this.turnEndsAt - Date.now()) / 1000;
       const place = this.turnHits++;                 // 0 = erste:r
-      const gain = guessGain({ remain, turnTotal: D_TURN, place, letters: wordLetters(this.word) });
+      const gain = guessGain({ remain, turnTotal: this.turnTime, place, letters: wordLetters(this.word) });
       p.score += gain;
       // Zeichner:in bekommt pro Errater:in Punkte (skaliert leicht mit Tempo).
       const drawer = this.pget(this.drawerId);
-      const dGain = drawerGain({ remain, turnTotal: D_TURN });
+      const dGain = drawerGain({ remain, turnTotal: this.turnTime });
       if (drawer) { drawer.score += dGain; this.turnDrawerGain += dGain; }
       this.syncPart(p); if (drawer) this.syncPart(drawer);
       this.turnGains.push({ id: p.id, name: p.name, gain, place: place + 1 });
