@@ -1,6 +1,7 @@
 import { json, logError } from "../_util.js";
 import { pushToEndpoint } from "../push.js";
 import { ecByAddress, FUELS } from "./_ec.js";
+import { alertTransition, groupKey } from "./_logic.js";
 
 // ====================================================================
 // Zeitgesteuerte Preis-Prüfung für den Sprit-Alarm.
@@ -52,7 +53,7 @@ export async function onRequestGet({ request, env }) {
   const groups = new Map();
   for (const a of alerts) {
     if (a.lat == null || a.lng == null) continue;
-    const k = a.fuel + "|" + a.lat.toFixed(2) + "," + a.lng.toFixed(2);
+    const k = groupKey(a.fuel, a.lat, a.lng);
     let g = groups.get(k);
     if (!g) { g = { fuel: a.fuel, lat: a.lat, lng: a.lng, items: [] }; groups.set(k, g); }
     g.items.push(a);
@@ -92,7 +93,8 @@ export async function onRequestGet({ request, env }) {
       if (!s || typeof s.price !== "number") continue;   // Station nicht in der Antwort → überspringen
       checked++;
       const price = s.price;
-      if (a.armed && price <= a.target) {
+      const move = alertTransition(a.armed, price, a.target);
+      if (move === "fire") {
         const pr = await pushToEndpoint(env, a.endpoint, {
           title: "⛽ Günstig tanken: " + (FUELS[a.fuel] || a.fuel) + " " + eur(price),
           body: (a.name || "Tankstelle") + " — jetzt ≤ deinem Ziel " + eur(a.target),
@@ -103,7 +105,7 @@ export async function onRequestGet({ request, env }) {
           try { await env.DB.prepare("UPDATE sprit_alert SET armed=0 WHERE endpoint=? AND station_id=? AND fuel=?").bind(a.endpoint, a.station_id, a.fuel).run(); } catch (_) {}
         }
         if (pr.gone) await dropEndpoint(a.endpoint);
-      } else if (!a.armed && price > a.target) {
+      } else if (move === "rearm") {
         // Preis wieder über dem Ziel → für die nächste Unterschreitung neu scharf.
         try { await env.DB.prepare("UPDATE sprit_alert SET armed=1 WHERE endpoint=? AND station_id=? AND fuel=?").bind(a.endpoint, a.station_id, a.fuel).run(); } catch (_) {}
       }

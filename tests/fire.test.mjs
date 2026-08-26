@@ -6,7 +6,7 @@ import path from "node:path";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const f = (...p) => "file://" + path.join(__dirname, "..", "functions", "api", ...p).replace(/\\/g, "/");
 
-const { kindOf, classify, parseWhen, haversineKm, stufeNum } = await import(f("fire", "_parse.js"));
+const { kindOf, classify, parseWhen, haversineKm, stufeNum, shouldEscalate, kindAllows, withinRadius } = await import(f("fire", "_parse.js"));
 const { BEZIRK, bezName } = await import(f("fire", "_bezirk.js"));
 const { normKey } = await import(f("fire", "geo.js"));
 const { normKinds, normHome } = await import(f("fire", "alert.js"));
@@ -27,6 +27,21 @@ assert("stufeNum ohne Zahl=0", stufeNum("B") === 0);
 assert("stufeNum leer=0", stufeNum("") === 0);
 assert("stufeNum mehrstellig", stufeNum("T10") === 10);
 assert("stufeNum Eskalation B2<B3", stufeNum("B2") < stufeNum("B3"));
+
+// ---- Alarm-Entscheidungslogik (Cron) ----
+assert("shouldEscalate B2→B3", shouldEscalate("B2", "B3") === true);
+assert("shouldEscalate B3→B3 nein", shouldEscalate("B3", "B3") === false);
+assert("shouldEscalate B3→B2 nein (Abstufung)", shouldEscalate("B3", "B2") === false);
+assert("shouldEscalate B→B2 (ohne Zahl)", shouldEscalate("B", "B2") === true);
+
+assert("kindAllows leer = alle", kindAllows(null, "B") === true && kindAllows("", "T") === true);
+assert("kindAllows Treffer", kindAllows("BS", "B") === true);
+assert("kindAllows kein Treffer", kindAllows("BS", "T") === false);
+assert("kindAllows X gefiltert", kindAllows("B", "X") === false);
+
+assert("withinRadius innerhalb", withinRadius([48.2082, 16.3738], [48.2100, 16.3800], 5) === true);
+assert("withinRadius außerhalb", withinRadius([48.2082, 16.3738], [48.2047, 15.6256], 10) === false);
+assert("withinRadius ohne Punkt = false", withinRadius([48, 16], null, 5) === false);
 
 const cB = classify("B3");
 assert("classify Art", cB.kind === "B" && cB.label === "Brand");

@@ -13,6 +13,20 @@ export const kindOf = a => {
 // Numerischer Teil der Alarmstufe („B3"→3, „B"→0) — für die Eskalations-Erkennung.
 export const stufeNum = a => { const m = String(a || "").match(/\d+/); return m ? parseInt(m[0], 10) : 0; };
 
+// ---- Reine Entscheidungslogik des Bezirks-/Umkreis-Alarms (im Cron genutzt,
+// hier gekapselt, damit sie ohne DB/Netz testbar ist). ----
+
+// Eskalation: true, wenn die neue Alarmstufe höher ist als die alte.
+export const shouldEscalate = (oldA, newA) => stufeNum(newA) > stufeNum(oldA);
+
+// Einsatzart-Filter eines Abos: leer/NULL = alle erlaubt; sonst muss die Art
+// (B/T/S/X) im gespeicherten String enthalten sein.
+export const kindAllows = (kinds, kind) => !kinds || String(kinds).includes(kind);
+
+// Liegt Punkt pt ([lat,lng]) im Radius (km) um home ([lat,lng])?
+export const withinRadius = (home, pt, km) =>
+  Array.isArray(home) && Array.isArray(pt) && typeof km === "number" && haversineKm(home, pt) <= km;
+
 // Alarmstufe („T2", „B0", …) → { kind, stufe, label }.
 export function classify(a) {
   const s = String(a || "").trim().toUpperCase();

@@ -1,7 +1,7 @@
 import { json, logError } from "../_util.js";
 import { pushToEndpoint, sendToName } from "../push.js";
 import { BEZIRK, bezName } from "./_bezirk.js";
-import { kindOf, haversineKm, stufeNum } from "./_parse.js";
+import { kindOf, shouldEscalate, kindAllows, withinRadius } from "./_parse.js";
 import { geocode } from "./geo.js";
 
 // ====================================================================
@@ -143,7 +143,7 @@ export async function onRequestGet({ request, env }) {
       if (ic) {
         for (const s of radiusSubs) {
           if (s.home_lat == null || s.radius_km == null) continue;
-          if (haversineKm([s.home_lat, s.home_lng], [ic.lat, ic.lng]) <= s.radius_km && !targets.has(s.endpoint)) {
+          if (withinRadius([s.home_lat, s.home_lng], [ic.lat, ic.lng], s.radius_km) && !targets.has(s.endpoint)) {
             targets.set(s.endpoint, s.kinds);
           }
         }
@@ -160,7 +160,7 @@ export async function onRequestGet({ request, env }) {
     for (const [endpoint, kinds] of targets) {
       // Art-Filter: leer/NULL = alle Arten; sonst nur gewählte (X = Sonstige
       // wird dann bewusst nicht gepusht, außer alle Arten aktiv).
-      if (kinds && !String(kinds).includes(kind)) continue;
+      if (!kindAllows(kinds, kind)) continue;
       const r = await pushToEndpoint(env, endpoint, msg);
       if (r.ok) {
         sent++;
@@ -230,7 +230,7 @@ export async function onRequestGet({ request, env }) {
       // einmal an alle melden, die den Start-Push bekamen (vor dem Überschreiben
       // von a). Sinkt/gleich bleibt → kein Push (kein Spam, jede Stufe 1×).
       const prev = existing.get(String(e.n));
-      if (prev && stufeNum(e.a) > stufeNum(prev.prev_a)) {
+      if (prev && shouldEscalate(prev.prev_a, e.a)) {
         try {
           const recips = (await env.DB.prepare("SELECT endpoint FROM fire_alert_sent WHERE n = ?").bind(String(e.n)).all()).results || [];
           const bz = bezName(String(e.b || ""));
