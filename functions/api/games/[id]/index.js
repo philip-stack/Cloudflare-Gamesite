@@ -14,7 +14,7 @@ export async function onRequestGet({ request, env, params }) {
 export async function onRequestPatch({ request, env, params }) {
   const auth = await authGame(env, params.id, request);
   if (!auth) return json({ error: "Spiel nicht gefunden oder Code falsch" }, 404);
-  const body = await request.json();
+  const body = await request.json().catch(() => ({}));
 
   const sets = [];
   const vals = [];

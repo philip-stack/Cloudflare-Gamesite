@@ -1,7 +1,11 @@
 // Service Worker der Sprit-Radar-PWA. Scope /tanken/. Netz zuerst, Cache als
 // Fallback. /api/… (Preise/Route) und /sprit/tiles/… (Kacheln) werden NICHT
 // vom SW gecacht — Preise sollen frisch sein, Kacheln cachen Edge/Browser selbst.
-const CACHE = "sprit-v11";
+const CACHE = "sprit-v12";
+// CacheStorage ist pro Origin, nicht pro Scope — Hub/Fire/Tanken teilen sich einen
+// Speicher. Beim Aufräumen nur eigene Caches (gleicher Präfix) löschen, sonst wischt
+// dieser SW die Shells der anderen Apps weg. Präfix = alles vor dem "-vNN"-Suffix.
+const PREFIX = CACHE.replace(/-v\d+$/, "-");
 const SHELL = [
   "./", "./index.html", "./app.js?v=8", "./style.css?v=4",
   "./vendor/leaflet.js", "./vendor/leaflet.css",
@@ -12,7 +16,7 @@ self.addEventListener("install", e => {
   e.waitUntil(caches.open(CACHE).then(c => Promise.allSettled(SHELL.map(u => c.add(u)))).then(() => self.skipWaiting()));
 });
 self.addEventListener("activate", e => {
-  e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim()));
+  e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k.startsWith(PREFIX) && k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim()));
 });
 
 // ---- Web-Push (Preis-Alarm) ----

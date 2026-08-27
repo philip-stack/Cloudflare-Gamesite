@@ -4,7 +4,11 @@
 // installierbar und offline-tauglich. Strategie: Netz zuerst,
 // Cache als Fallback. /api/… liegt außerhalb des Scopes → immer live.
 // ====================================================================
-const CACHE = "fire-noe-v34";
+const CACHE = "fire-noe-v35";
+// CacheStorage ist pro Origin, nicht pro Scope — Hub/Fire/Tanken teilen sich einen
+// Speicher. Beim Aufräumen nur eigene Caches (gleicher Präfix) löschen, sonst wischt
+// dieser SW die Shells der anderen Apps weg. Präfix = alles vor dem "-vNN"-Suffix.
+const PREFIX = CACHE.replace(/-v\d+$/, "-");
 // Nackte Pfade (ohne ?v=): der Offline-Fallback matcht per ignoreSearch, und die
 // aktuell gültige Version landet ohnehin beim ersten Online-Laden im Cache.
 const SHELL = [
@@ -23,7 +27,7 @@ self.addEventListener("install", e => {
 self.addEventListener("activate", e => {
   e.waitUntil(
     caches.keys()
-      .then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
+      .then(keys => Promise.all(keys.filter(k => k.startsWith(PREFIX) && k !== CACHE).map(k => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });

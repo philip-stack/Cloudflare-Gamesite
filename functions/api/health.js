@@ -8,7 +8,10 @@ export async function onRequestGet({ env }) {
     scoreSecret: !!(env && env.SCORE_SECRET),
     adminToken: !!(env && env.ADMIN_TOKEN),
     cronToken: !!(env && env.CRON_TOKEN),
-    vapid: !!(env && (env.VAPID_PRIVATE_JWK || env.VAPID_PRIVATE)),
+    // Nur VAPID_PRIVATE_JWK zählt — genau das liest push.js. (Ein bloßes
+    // VAPID_PRIVATE würde Push NICHT funktionsfähig machen, also hier nicht als
+    // „gesund" melden.)
+    vapid: !!(env && env.VAPID_PRIVATE_JWK),
     ai: !!(env && env.AI),
     partyRoom: !!(env && env.PARTY_ROOM),
     drawRoom: !!(env && env.DRAW_ROOM),

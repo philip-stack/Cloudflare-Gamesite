@@ -7,7 +7,7 @@ export async function onRequestPut({ request, env, params }) {
   const auth = await authGame(env, params.id, request);
   if (!auth) return json({ error: "Spiel nicht gefunden oder Code falsch" }, 404);
   const gameId = auth.id;
-  const b = await request.json();
+  const b = await request.json().catch(() => ({}));
 
   if (!CAT_KEYS.includes(b.cat_key)) return json({ error: "Unbekanntes Feld" }, 400);
   if (!["score", "strike"].includes(b.kind)) return json({ error: "Ungültige Art" }, 400);

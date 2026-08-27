@@ -6,7 +6,12 @@
 // der Hub auch beim allerersten Offline-Aufruf erscheint.
 // API-Anfragen (/api/…) werden nie gecacht.
 // ====================================================================
-const CACHE = "gamesite-v64";
+const CACHE = "gamesite-v65";
+// CacheStorage ist pro Origin (nicht pro Scope) — die drei PWAs (Hub, /fire/noe/,
+// /tanken/) teilen sich denselben Speicher. Beim Aufräumen NUR eigene Cache-Namen
+// (gleicher Präfix) löschen, sonst wischt der zuletzt aktivierte SW die Shells der
+// anderen Apps weg. Präfix = alles vor dem "-vNN"-Suffix.
+const PREFIX = CACHE.replace(/-v\d+$/, "-");
 
 // Kern-Dateien, die den Hub tragen (klein, lohnt sich vorzucachen).
 const SHELL = [
@@ -27,7 +32,7 @@ self.addEventListener("install", e => {
 self.addEventListener("activate", e => {
   e.waitUntil(
     caches.keys()
-      .then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
+      .then(keys => Promise.all(keys.filter(k => k.startsWith(PREFIX) && k !== CACHE).map(k => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });
