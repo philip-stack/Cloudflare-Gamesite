@@ -33,3 +33,9 @@ script_name = "philip-stack-rt"
 name = "DRAW_ROOM"
 class_name = "DrawRoom"
 script_name = "philip-stack-rt"
+
+# Quiz-Duell: Live-Trivia-DO (QuizRoom) im selben Worker.
+[[durable_objects.bindings]]
+name = "QUIZ_ROOM"
+class_name = "QuizRoom"
+script_name = "philip-stack-rt"

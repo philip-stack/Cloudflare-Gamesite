@@ -39,6 +39,7 @@ export async function onRequestGet({ request, env }) {
     ai: !!(env && env.AI),
     partyRoom: !!(env && env.PARTY_ROOM),
     drawRoom: !!(env && env.DRAW_ROOM),
+    quizRoom: !!(env && env.QUIZ_ROOM),
   };
 
   // Cron-Alter erheben (best-effort; fehlende Tabellen → null = „unbekannt").

@@ -1,5 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 import { D_CATS, D_CAT_KEYS, D_TURN, D_CHOOSE, D_REVEAL, dNorm, dLev, wordPool, pickWords, guessGain, drawerGain, wordLetters, catOf, hintCount } from "./draw-logic.js";
+import { Q_TURN, Q_REVEAL, Q_ROUNDS, Q_ROUND_CHOICES, Q_CAT_KEYS, questionPool, pickQuestions, shuffleOptions, answerGain } from "./quiz-logic.js";
 
 // Fehler aus dem Echtzeit-Worker in dieselbe D1-Tabelle error_log schreiben,
 // die auch die Pages-Seite nutzt — damit DO-/DrawRoom-Störungen im Betreiber-
@@ -544,6 +545,223 @@ export class DrawRoom extends DurableObject {
           "device = COALESCE(draw_score.device, excluded.device), updated_at = datetime('now')"
         ).bind(p.name, pts, win, pts, p.device || null).run();
       } catch (err) { await rtLogError(this.env, "recordScores row " + p.name, "kritzeln", err && err.stack || err); /* Bestenliste nie den Spielfluss stören */ }
+    }
+  }
+}
+
+// ====================================================================
+// QuizRoom — Echtzeit „Quiz-Duell" (Live-Trivia, 2–10 Spieler).
+// Event-getrieben (kein Dauer-Loop): alle beantworten dieselbe Multiple-
+// Choice-Frage gleichzeitig; Punkte = richtig + Tempo-Bonus. Das DO ist die
+// Wahrheit für Fragen, Lösung, Punkte, Runden & Timer.
+//
+// Client→DO: {t:join,name,uid,dev} {t:start} {t:answer,i} {t:again}
+//            {t:cat,cats} {t:rounds,n} {t:kick,id} {t:emote,e} {t:ping}
+// DO→Client: {t:welcome,id} {t:lobby,...} {t:question,idx,total,q,options,time}
+//            {t:answered,id} {t:reveal,correct,counts,gains,players}
+//            {t:over,players} {t:full} {t:pong} {t:kicked} {t:emote} {t:chat}
+//
+// BEWUSSTE TRADE-OFFS wie beim DrawRoom: State rein im RAM (Redeploy mitten im
+// Spiel → frische Lobby; bereits gewertete Spiele stehen in D1). Reine Logik +
+// Fragensatz liegen in quiz-logic.js und sind per tests/quiz.test.mjs geprüft.
+// ====================================================================
+const Q_RATE_N = 60, Q_RATE_MS = 2000;   // max. Nachrichten je Verbindung/Fenster
+
+export class QuizRoom extends DurableObject {
+  constructor(ctx, env) {
+    super(ctx, env);
+    this.conns = new Map(); this.state = "lobby"; this.hostId = null; this.nextId = 1;
+    this.cats = []; this.rounds = Q_ROUNDS;
+    this.questions = []; this.turnIdx = 0; this.current = null; this.turnEndsAt = 0;
+    this.turnGains = [];
+  }
+
+  async fetch(request) {
+    if (request.headers.get("Upgrade") !== "websocket") return new Response("expected websocket", { status: 426 });
+    const pair = new WebSocketPair(); const [client, server] = Object.values(pair);
+    server.accept();
+    if (this.conns.size >= 10) { try { server.send(JSON.stringify({ t: "full" })); server.close(); } catch (_) {} return new Response(null, { status: 101, webSocket: client }); }
+    const id = this.nextId++;
+    const p = { id, name: "Spieler", score: 0, answered: false, ansIdx: -1, ansRemain: 0 };
+    this.conns.set(server, p);
+    if (this.hostId == null) this.hostId = id;
+    server.addEventListener("message", e => { try { this.onMsg(server, e.data); } catch (err) { this.logErr("onMsg", err && err.stack || err); } });
+    server.addEventListener("close", () => this.onClose(server));
+    server.addEventListener("error", () => this.onClose(server));
+    try { server.send(JSON.stringify({ t: "welcome", id })); } catch (_) {}
+    this.sendLobby();
+    return new Response(null, { status: 101, webSocket: client });
+  }
+
+  bc(obj, exceptId) { const s = JSON.stringify(obj); for (const [ws, p] of this.conns) { if (exceptId && p.id === exceptId) continue; try { ws.send(s); } catch (_) {} } }
+  toId(id, obj) { for (const [ws, p] of this.conns) if (p.id === id) { try { ws.send(JSON.stringify(obj)); } catch (_) {} return; } }
+  pget(id) { for (const p of this.conns.values()) if (p.id === id) return p; return null; }
+  partKey(p) { return p.uid || ("id" + p.id); }
+  syncPart(p) { if (!this.parts) this.parts = new Map(); this.parts.set(this.partKey(p), { name: p.name, score: p.score | 0, device: p.dev || null }); }
+  scoreboard() { return [...this.conns.values()].map(p => ({ id: p.id, name: p.name, score: p.score, answered: p.answered })).sort((a, b) => b.score - a.score); }
+  sendLobby() { this.bc({ t: "lobby", state: this.state, hostId: this.hostId, players: this.scoreboard(), cats: this.cats, rounds: this.rounds }); }
+  clearTimers() { for (const t of (this.timers || [])) clearTimeout(t); this.timers = []; }
+  logErr(msg, extra) { console.error("QuizRoom", msg, extra || ""); try { this.ctx.waitUntil(rtLogError(this.env, msg, "quiz", extra)); } catch (_) {} }
+
+  kick(id) {
+    for (const [ws, q] of this.conns) {
+      if (q.id !== id) continue;
+      try { ws.send(JSON.stringify({ t: "kicked" })); } catch (_) {}
+      this.conns.delete(ws); try { ws.close(); } catch (_) {}
+      if (this.hostId === q.id) { const f = this.conns.values().next().value; this.hostId = f ? f.id : null; }
+      const playing = this.state === "question" || this.state === "reveal";
+      this.bc({ t: "chat", kind: "system", text: (q.name || "Jemand") + " wurde entfernt." });
+      if (playing && this.conns.size < 2) return this.endGame();
+      if (playing && this.state === "question" && this.allAnswered()) return this.revealQuestion();
+      this.sendLobby();
+      return;
+    }
+  }
+
+  allAnswered() { const ps = [...this.conns.values()]; return ps.length > 0 && ps.every(q => q.answered); }
+
+  onMsg(ws, data) {
+    const p = this.conns.get(ws); if (!p) return;
+    const now = Date.now();
+    if (!p.rl || now - p.rl.t > Q_RATE_MS) p.rl = { t: now, n: 0 };
+    if (++p.rl.n > Q_RATE_N) return;
+    if (typeof data !== "string" || data.length > 4000) return;
+    let m; try { m = JSON.parse(data); } catch (_) { return; }
+    switch (m.t) {
+      case "join": {
+        p.name = (String(m.name || "").trim().slice(0, 14)) || "Spieler";
+        if (m.dev) p.dev = String(m.dev).slice(0, 64);
+        if (m.uid) {
+          p.uid = String(m.uid).slice(0, 40);
+          // Reconnect-Dedup: bestehende Verbindung gleicher Geräte-ID übernehmen.
+          for (const [ws2, q] of this.conns) {
+            if (ws2 !== ws && q.uid === p.uid) {
+              p.id = q.id; p.score = q.score; p.answered = q.answered; p.ansIdx = q.ansIdx; p.ansRemain = q.ansRemain;
+              if (this.hostId === q.id) this.hostId = p.id;
+              this.conns.delete(ws2); try { ws2.close(); } catch (_) {}
+            }
+          }
+          try { ws.send(JSON.stringify({ t: "welcome", id: p.id })); } catch (_) {}
+        }
+        this.sendLobby();
+        this.sendCurrentTurn(ws, p);
+        break;
+      }
+      case "start": if (p.id === this.hostId && (this.state === "lobby" || this.state === "over") && this.conns.size >= 2) this.startGame(); break;
+      case "again": if (p.id === this.hostId && this.state === "over") { this.state = "lobby"; for (const q of this.conns.values()) q.score = 0; this.sendLobby(); } break;
+      case "cat": if (p.id === this.hostId && (this.state === "lobby" || this.state === "over")) { this.cats = Array.isArray(m.cats) ? m.cats.filter(c => Q_CAT_KEYS.includes(c)) : []; this.sendLobby(); } break;
+      case "rounds": if (p.id === this.hostId && (this.state === "lobby" || this.state === "over")) { const n = m.n | 0; if (Q_ROUND_CHOICES.includes(n)) { this.rounds = n; this.sendLobby(); } } break;
+      case "kick": if (p.id === this.hostId && m.id !== this.hostId) this.kick(m.id); break;
+      case "answer": if (this.state === "question" && !p.answered && typeof m.i === "number" && m.i >= 0 && m.i < 4) {
+        p.answered = true; p.ansIdx = m.i | 0; p.ansRemain = Math.max(0, (this.turnEndsAt - Date.now()) / 1000);
+        this.bc({ t: "answered", id: p.id });
+        this.sendLobby();
+        if (this.allAnswered()) this.revealQuestion();
+      } break;
+      case "emote": { const e = String(m.e || ""); if (["👍", "❤️", "😂", "😮", "🎉", "🔥"].includes(e)) this.bc({ t: "emote", e, name: p.name }, p.id); break; }
+      case "ping": try { ws.send('{"t":"pong"}'); } catch (_) {} break;
+    }
+  }
+
+  onClose(ws) {
+    const p = this.conns.get(ws); if (!p) return;
+    this.conns.delete(ws);
+    if (this.hostId === p.id) { const f = this.conns.values().next().value; this.hostId = f ? f.id : null; }
+    if (this.conns.size === 0) {
+      if (this.parts && (this.state === "question" || this.state === "reveal")) this.saveScores([...this.parts.values()]);
+      this.clearTimers(); this.state = "lobby"; this.nextId = 1; this.hostId = null; this.parts = null; return;
+    }
+    const playing = this.state === "question" || this.state === "reveal";
+    if (playing && this.conns.size < 2) { this.endGame(); return; }
+    if (playing && this.state === "question" && this.allAnswered()) { this.revealQuestion(); return; }
+    this.sendLobby();
+  }
+
+  startGame() {
+    this.parts = new Map();
+    for (const q of this.conns.values()) { q.score = 0; q.answered = false; q.ansIdx = -1; this.syncPart(q); }
+    const pool = questionPool(this.cats);
+    this.questions = pickQuestions(pool, this.rounds).map(item => {
+      const s = shuffleOptions(item);
+      return { q: item.q, options: s.options, correct: s.correct };
+    });
+    this.turnIdx = 0; this.state = "playing";
+    this.beginQuestion();
+  }
+
+  beginQuestion() {
+    this.clearTimers();
+    if (this.conns.size < 2) return this.endGame();
+    if (this.turnIdx >= this.questions.length) return this.endGame();
+    const cur = this.questions[this.turnIdx];
+    this.current = cur; this.turnGains = [];
+    for (const q of this.conns.values()) { q.answered = false; q.ansIdx = -1; q.ansRemain = 0; }
+    this.state = "question";
+    this.turnEndsAt = Date.now() + Q_TURN * 1000;
+    this.bc({ t: "question", idx: this.turnIdx + 1, total: this.questions.length, q: cur.q, options: cur.options, time: Q_TURN });
+    this.sendLobby();
+    this.timers.push(setTimeout(() => this.revealQuestion(), Q_TURN * 1000));
+  }
+
+  // (Re-)Beitretenden den laufenden Stand schicken.
+  sendCurrentTurn(ws, p) {
+    try {
+      if (this.state === "question" && this.current) {
+        const time = Math.max(1, Math.round((this.turnEndsAt - Date.now()) / 1000));
+        ws.send(JSON.stringify({ t: "question", idx: this.turnIdx + 1, total: this.questions.length, q: this.current.q, options: this.current.options, time, locked: !!p.answered, yourIdx: p.answered ? p.ansIdx : -1 }));
+      }
+    } catch (_) {}
+  }
+
+  revealQuestion() {
+    this.clearTimers();
+    if (this.state !== "question" || !this.current) return;
+    this.state = "reveal";
+    const correct = this.current.correct;
+    const counts = [0, 0, 0, 0];
+    for (const p of this.conns.values()) {
+      if (p.answered && p.ansIdx >= 0 && p.ansIdx < 4) counts[p.ansIdx]++;
+      const isC = p.answered && p.ansIdx === correct;
+      const gain = answerGain({ remain: p.ansRemain, total: Q_TURN, correct: isC });
+      if (gain > 0) { p.score += gain; this.turnGains.push({ id: p.id, name: p.name, gain }); }
+      this.syncPart(p);
+    }
+    this.bc({ t: "reveal", correct, counts, gains: this.turnGains, players: this.scoreboard() });
+    this.sendLobby();
+    this.timers.push(setTimeout(() => { this.turnIdx++; this.beginQuestion(); }, Q_REVEAL * 1000));
+  }
+
+  endGame() {
+    this.clearTimers(); this.state = "over"; this.current = null;
+    this.bc({ t: "over", players: this.scoreboard() }); this.sendLobby();
+    this.saveScores(this.parts ? [...this.parts.values()] : []);
+    this.parts = null;
+  }
+
+  saveScores(parts) {
+    const run = this.recordScores(parts).catch(err => rtLogError(this.env, "recordScores", "quiz", err && err.stack || err));
+    try { this.ctx.waitUntil(run); } catch (_) {}
+  }
+
+  // Am Spielende jede:n Teilnehmer:in in die dauerhafte D1-Bestenliste (quiz_score)
+  // rollen. Autoritativ (im DO). Namens-Aggregation wie beim DrawRoom, bewusst
+  // ohne Geräte-Eigentumssperre (ein gemeinsamer Name über alle Spiele/Geräte).
+  async recordScores(parts) {
+    if (!this.env || !this.env.DB || !parts || parts.length < 2) return;
+    let winName = null, top = 0;
+    for (const p of parts) { const s = p.score | 0; if (s > top) { top = s; winName = p.name; } }
+    if (top <= 0) return;
+    for (const p of parts) {
+      if (!p.name) continue;
+      const pts = p.score | 0, win = p.name === winName ? 1 : 0;
+      try {
+        await this.env.DB.prepare(
+          "INSERT INTO quiz_score (name, points, games, wins, best, device) VALUES (?, ?, 1, ?, ?, ?) " +
+          "ON CONFLICT(name) DO UPDATE SET points = points + excluded.points, games = games + 1, " +
+          "wins = wins + excluded.wins, best = MAX(best, excluded.best), " +
+          "device = COALESCE(quiz_score.device, excluded.device), updated_at = datetime('now')"
+        ).bind(p.name, pts, win, pts, p.device || null).run();
+      } catch (err) { await rtLogError(this.env, "recordScores row " + p.name, "quiz", err && err.stack || err); }
     }
   }
 }
