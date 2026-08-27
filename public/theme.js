@@ -24,6 +24,19 @@
       const icon = get() === "light" ? "☀️" : "🌙";
       if (b.textContent !== icon) b.textContent = icon;
       b.title = get() === "light" ? "Dunkelmodus" : "Hellmodus";
+      // Icon-only → Screenreader braucht einen Namen; synchron zum title halten.
+      b.setAttribute("aria-label", b.title);
+    });
+  }
+
+  // Barrierefreiheit: Icon-only-Buttons (nur Emoji/Symbol, kein Text) haben für
+  // Screenreader keinen Namen. Wo ein `title` gesetzt ist, spiegeln wir ihn nach
+  // `aria-label`. Buttons mit sichtbarem Text bleiben unberührt. Plattformweit,
+  // damit jedes Spiel (auch künftige) automatisch profitiert.
+  function labelIconButtons() {
+    document.querySelectorAll("button[title]:not([aria-label])").forEach(b => {
+      const hasText = /[\p{L}\p{N}]/u.test(b.textContent || "");
+      if (!hasText) b.setAttribute("aria-label", b.getAttribute("title"));
     });
   }
 
@@ -135,10 +148,11 @@
     if (btn) window.gsTheme.toggle();
   });
 
-  // Buttons können jederzeit (neu) gerendert werden → Icon nachziehen
+  // Buttons können jederzeit (neu) gerendert werden → Icon + aria-label nachziehen
+  function syncButtons() { refreshButtons(); labelIconButtons(); }
   function watch() {
-    refreshButtons();
-    new MutationObserver(refreshButtons).observe(document.body, { childList: true, subtree: true });
+    syncButtons();
+    new MutationObserver(syncButtons).observe(document.body, { childList: true, subtree: true });
   }
   if (document.body) watch();
   else document.addEventListener("DOMContentLoaded", watch);
