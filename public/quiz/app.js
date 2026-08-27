@@ -12,14 +12,30 @@ let view = "menu";                 // menu | lobby | playing | over
 let players = [];
 let phase = "";                    // question | reveal
 let roomCats = [], roomRounds = 10;
-let curOptions = [], answered = false, myPick = -1;
+let curOptions = [], answered = false, myPick = -1, myLastFast = false;
 let timeEnd = 0, timeTotal = 1;
 let pingT = null, intentional = false, reTries = 0, reTimer = null;
+// Lokale Statistik der laufenden Runde für Meilensteine (Server ist Wahrheit für
+// Punkte; das hier ist nur fürs Badge-System, das pro Gerät zählt).
+let gStats = { answered: 0, correct: 0, streakCur: 0, streakMax: 0, fast: 0, total: 0 };
+
+// Meilensteine (lokal, gs_badges_quiz — fließen in Profil-Level & XP ein).
+const QUIZ_BADGES = [
+  { id: "firstgame", icon: "🧠", name: "Mitgeraten", desc: "Ein Quiz mitgespielt", test: (s, t) => t.runs >= 1 },
+  { id: "win1", icon: "🏆", name: "Erster Sieg", desc: "Ein Quiz gewinnen", test: s => s.won >= 1 },
+  { id: "win10", icon: "👑", name: "Quizmeister", desc: "10 Quiz gewinnen", test: (s, t) => t.sum_won >= 10 },
+  { id: "correct50", icon: "✅", name: "Vielwisser", desc: "50 richtige Antworten insgesamt", test: (s, t) => t.sum_correct >= 50 },
+  { id: "correct250", icon: "📚", name: "Wandelndes Lexikon", desc: "250 richtige Antworten insgesamt", test: (s, t) => t.sum_correct >= 250 },
+  { id: "streak5", icon: "🔥", name: "Auf einer Welle", desc: "5 richtige Antworten in Folge", test: (s, t) => t.max_streak >= 5 },
+  { id: "perfect", icon: "💯", name: "Makellos", desc: "Eine ganze Runde fehlerfrei (ab 5 Fragen)", test: s => s.perfect >= 1 },
+  { id: "speed", icon: "⚡", name: "Schnelldenker", desc: "5 blitzschnelle Treffer in einer Runde", test: s => s.fast >= 5 },
+];
 
 const CAT_LABELS = {
   allgemein: "🧠 Allgemein", geografie: "🌍 Geografie", natur: "🐾 Natur & Tiere",
   wissenschaft: "🔬 Wissenschaft", geschichte: "🏛️ Geschichte", sport: "⚽ Sport",
-  kultur: "🎬 Kultur", oesterreich: "🇦🇹 Österreich",
+  kultur: "🎭 Kultur", oesterreich: "🇦🇹 Österreich", essen: "🍎 Essen & Trinken",
+  film: "🎬 Film & Serien",
 };
 const CAT_KEYS = Object.keys(CAT_LABELS);
 const ROUND_CHOICES = [5, 10, 15, 20];
@@ -82,7 +98,9 @@ function onMsg(m) {
 function onQuestion(m) {
   closeOverlay(); view = "playing"; phase = "question";
   $("#board").classList.remove("hidden"); showLeave(true); showEmotes(true);
-  answered = !!m.locked; myPick = m.locked ? (m.yourIdx != null ? m.yourIdx : -1) : -1;
+  if ((m.idx || 1) === 1) gStats = { answered: 0, correct: 0, streakCur: 0, streakMax: 0, fast: 0, total: m.total || 0 };
+  gStats.total = m.total || gStats.total;
+  answered = !!m.locked; myPick = m.locked ? (m.yourIdx != null ? m.yourIdx : -1) : -1; myLastFast = false;
   curOptions = m.options || [];
   $("#i-turn").textContent = "Frage " + (m.idx || 1) + (m.total ? "/" + m.total : "");
   $("#i-cat").textContent = "";
@@ -104,6 +122,12 @@ function onAnswered(m) {
 
 function onReveal(m) {
   phase = "reveal"; stopTimer(); players = m.players || players; renderPlayers();
+  // Meilenstein-Statistik der Runde fortschreiben.
+  if (answered) {
+    gStats.answered++;
+    if (myPick === m.correct) { gStats.correct++; gStats.streakCur++; gStats.streakMax = Math.max(gStats.streakMax, gStats.streakCur); if (myLastFast) gStats.fast++; }
+    else gStats.streakCur = 0;
+  } else gStats.streakCur = 0;
   const opts = $("#options").querySelectorAll(".opt");
   opts.forEach((b, idx) => { b.disabled = true; if (idx === m.correct) b.classList.add("correct"); else if (idx === myPick) b.classList.add("wrong"); });
   const myGain = (m.gains || []).find(g => g.id === myId);
@@ -121,6 +145,8 @@ function renderOptions(options) {
 function pickAnswer(i) {
   if (answered || phase !== "question") return;
   answered = true; myPick = i;
+  // „Schnell" = in der ersten Zughälfte geantwortet (für den Speed-Meilenstein).
+  myLastFast = (timeEnd - performance.now()) >= (timeTotal * 1000) / 2;
   send({ t: "answer", i });
   lockOptions(i);
   setNote("Antwort gespeichert — warte auf die anderen …");
@@ -228,13 +254,15 @@ function showMenu(msg, prefillCode) {
     <input type="text" id="mp-name" maxlength="14" placeholder="Dein Name" value="${GS.esc(GS.getName())}">
     ${invited ? `<button class="btn-primary" id="mp-joinbig">🧠 Raum ${GS.esc(prefillCode)} beitreten</button>` : `<button class="btn-primary" id="mp-create">➕ Raum erstellen</button>`}
     <div class="btn-row"><input type="text" id="mp-code" class="code" maxlength="6" placeholder="CODE" value="${GS.esc(prefillCode || "")}"><button class="btn-secondary" id="mp-join">Beitreten</button></div>
-    <button class="btn-secondary" id="mp-scores" style="margin-top:10px">🏆 Bestenliste</button>`);
+    <button class="btn-secondary" id="mp-scores" style="margin-top:10px">🏆 Bestenliste</button>
+    <button class="btn-secondary" id="mp-badges">🏅 Meilensteine</button>`);
   const save = () => { const v = o.querySelector("#mp-name").value.trim().slice(0, 14); if (v) GS.setName(v); };
   const join = () => { save(); const c = o.querySelector("#mp-code").value.trim().toUpperCase(); if (/^[A-Z0-9]{4,6}$/.test(c)) connect(c); else o.querySelector(".msg").textContent = "Bitte gültigen Code eingeben."; };
   const create = o.querySelector("#mp-create"); if (create) create.onclick = () => { save(); connect(randCode()); };
   const joinBig = o.querySelector("#mp-joinbig"); if (joinBig) joinBig.onclick = join;
   o.querySelector("#mp-join").onclick = join;
   o.querySelector("#mp-scores").onclick = showScores;
+  o.querySelector("#mp-badges").onclick = () => GS.badges.show("quiz", "Meilensteine");
   if (invited && !GS.getName()) { const n = o.querySelector("#mp-name"); if (n) n.focus(); }
 }
 
@@ -294,14 +322,27 @@ function showOver(list) {
   showLeave(true); showEmotes(false); stopTimer();
   const meHost = myId === hostId; const top = list[0];
   if (top && top.id === myId) { GS.sound.win(); confetti(); } else { GS.sound.good(); }
+  // Meilensteine verbuchen (lokal). Nur werten, wenn die Runde wirklich lief.
+  let chips = "";
+  if (gStats.answered > 0 || gStats.total > 0) {
+    const won = !!(top && top.id === myId);
+    const perfect = gStats.total >= 5 && gStats.correct === gStats.total && gStats.answered === gStats.total;
+    try {
+      const newly = GS.badges.record("quiz", { won: won ? 1 : 0, correct: gStats.correct, streak: gStats.streakMax, fast: gStats.fast, perfect: perfect ? 1 : 0 });
+      chips = GS.badges.chipsHtml(newly);
+    } catch {}
+  }
   const o = overlay(`
     <h2>🏆 Ergebnis</h2>
     <div class="win-name">${top ? GS.esc(top.name) + " gewinnt!" : ""}</div>
+    ${chips}
     <ul class="plist">${list.map((p, i) => `<li class="${i === 0 ? "win" : ""}"><span class="pname">${i === 0 ? "🥇 " : i === 1 ? "🥈 " : i === 2 ? "🥉 " : (i + 1) + ". "}${GS.esc(p.name)}</span><span class="psc">${p.score || 0}</span></li>`).join("")}</ul>
     ${meHost ? `<button class="btn-primary" id="ov-again">🔄 Nochmal</button>` : `<p class="msg">Warte auf den Host …</p>`}
+    <button class="btn-secondary" id="ov-badges">🏅 Meilensteine</button>
     <button class="btn-secondary" id="ov-scores">🏆 Bestenliste</button>
     <button class="btn-secondary" id="ov-leave">Verlassen</button>`);
   const ag = o.querySelector("#ov-again"); if (ag) ag.onclick = () => { send({ t: "start" }); };
+  o.querySelector("#ov-badges").onclick = () => GS.badges.show("quiz", "Meilensteine");
   o.querySelector("#ov-scores").onclick = showScores;
   o.querySelector("#ov-leave").onclick = () => { leave(); showMenu(); };
 }
@@ -317,6 +358,7 @@ window.addEventListener("beforeunload", leave);
 document.addEventListener("visibilitychange", () => { if (document.hidden || intentional || !code) return; if ((view === "lobby" || view === "over") && (!ws || ws.readyState > 1)) { reTries = 0; connect(code, true); } });
 
 buildEmotes();
+GS.badges.define("quiz", QUIZ_BADGES);
 GS.markPlayed("quiz");
 const pre = new URLSearchParams(location.search).get("code");
 const preCode = pre && /^[A-Z0-9]{4,6}$/i.test(pre) ? pre.toUpperCase() : "";

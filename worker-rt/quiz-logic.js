@@ -30,6 +30,10 @@ export const Q_CATS = {
     { q: "Wie viele Kontinente gibt es?", a: ["7", "5", "6", "8"], c: 0 },
     { q: "Wie viele Sekunden hat eine Minute?", a: ["60", "100", "30", "90"], c: 0 },
     { q: "Welches Symbol hat das Element Gold?", a: ["Au", "Go", "Ag", "Gd"], c: 0 },
+    { q: "Wie viele Seiten hat ein Dreieck?", a: ["3", "4", "5", "6"], c: 0 },
+    { q: "Wie viele Monate hat ein Jahr?", a: ["12", "10", "11", "13"], c: 0 },
+    { q: "Welche Farbe entsteht aus Rot + Weiß?", a: ["Rosa", "Grau", "Orange", "Violett"], c: 0 },
+    { q: "Wie viele Karten hat ein Poker-Kartenspiel (ohne Joker)?", a: ["52", "32", "36", "54"], c: 0 },
   ],
   geografie: [
     { q: "Hauptstadt von Frankreich?", a: ["Paris", "Lyon", "Marseille", "Nizza"], c: 0 },
@@ -44,6 +48,10 @@ export const Q_CATS = {
     { q: "Hauptstadt von Griechenland?", a: ["Athen", "Thessaloniki", "Sparta", "Patras"], c: 0 },
     { q: "Hauptstadt der Schweiz?", a: ["Bern", "Zürich", "Genf", "Basel"], c: 0 },
     { q: "Wie heißt der höchste Berg der Welt?", a: ["Mount Everest", "K2", "Mont Blanc", "Kilimandscharo"], c: 0 },
+    { q: "Hauptstadt von Großbritannien?", a: ["London", "Manchester", "Liverpool", "Oxford"], c: 0 },
+    { q: "Auf welchem Kontinent liegt Brasilien?", a: ["Südamerika", "Afrika", "Asien", "Europa"], c: 0 },
+    { q: "Welches Land hat die Form eines Stiefels?", a: ["Italien", "Spanien", "Griechenland", "Portugal"], c: 0 },
+    { q: "Hauptstadt der USA?", a: ["Washington, D.C.", "New York", "Los Angeles", "Chicago"], c: 0 },
   ],
   natur: [
     { q: "Welches Säugetier legt Eier?", a: ["Schnabeltier", "Delfin", "Fledermaus", "Wal"], c: 0 },
@@ -72,6 +80,10 @@ export const Q_CATS = {
     { q: "Was entsteht, wenn Wasser gefriert?", a: ["Eis", "Dampf", "Nebel", "Rauch"], c: 0 },
     { q: "Wie nennt man Tiere, die Fleisch fressen?", a: ["Fleischfresser", "Pflanzenfresser", "Allesfresser", "Aasfresser"], c: 0 },
     { q: "Wie schnell ist ungefähr das Licht?", a: ["300.000 km/s", "300 km/s", "3.000 km/s", "30 km/s"], c: 0 },
+    { q: "Wie viele Zähne hat ein erwachsener Mensch normalerweise?", a: ["32", "28", "30", "36"], c: 0 },
+    { q: "Welches dieser Tiere ist ein Wirbeltier?", a: ["Hund", "Qualle", "Regenwurm", "Krake"], c: 0 },
+    { q: "Was misst die Einheit „Volt\"?", a: ["Spannung", "Gewicht", "Temperatur", "Zeit"], c: 0 },
+    { q: "Welcher Teil der Pflanze nimmt Wasser aus dem Boden auf?", a: ["Wurzel", "Blüte", "Blatt", "Frucht"], c: 0 },
   ],
   geschichte: [
     { q: "Wer war der erste Mensch am Mond?", a: ["Neil Armstrong", "Buzz Aldrin", "Juri Gagarin", "Michael Collins"], c: 0 },
@@ -100,6 +112,10 @@ export const Q_CATS = {
     { q: "Wie sieht die Zielflagge im Motorsport aus?", a: ["Schwarz-weiß kariert", "Rot", "Grün", "Blau"], c: 0 },
     { q: "Wie oft finden die Olympischen Sommerspiele statt?", a: ["Alle 4 Jahre", "Jedes Jahr", "Alle 2 Jahre", "Alle 5 Jahre"], c: 0 },
     { q: "Was ruft man beim Golf zur Warnung?", a: ["Fore", "Out", "Fault", "Time"], c: 0 },
+    { q: "Wie viele Löcher hat eine Standard-Golfrunde?", a: ["18", "9", "12", "24"], c: 0 },
+    { q: "In welchem Land ist Sumo-Ringen zu Hause?", a: ["Japan", "China", "Korea", "Thailand"], c: 0 },
+    { q: "Wie viele Punkte bringt ein Touchdown im American Football?", a: ["6", "3", "7", "2"], c: 0 },
+    { q: "Welche Sportart spielt man mit Schläger und Federball?", a: ["Badminton", "Tennis", "Squash", "Tischtennis"], c: 0 },
   ],
   kultur: [
     { q: "Wer komponierte die „Kleine Nachtmusik\"?", a: ["Mozart", "Beethoven", "Bach", "Haydn"], c: 0 },
@@ -129,6 +145,34 @@ export const Q_CATS = {
     { q: "Welche Farben hat die österreichische Flagge?", a: ["Rot-Weiß-Rot", "Schwarz-Rot-Gold", "Blau-Weiß", "Rot-Weiß-Grün"], c: 0 },
     { q: "In welchem Bundesland liegt die Stadt Innsbruck?", a: ["Tirol", "Salzburg", "Kärnten", "Vorarlberg"], c: 0 },
   ],
+  essen: [
+    { q: "Woraus wird Wein gemacht?", a: ["Trauben", "Äpfel", "Gerste", "Hopfen"], c: 0 },
+    { q: "Woraus wird Brot hauptsächlich gemacht?", a: ["Mehl", "Reis", "Zucker", "Erdäpfel"], c: 0 },
+    { q: "Woraus macht man Pommes frites?", a: ["Erdäpfel", "Mais", "Reis", "Bohnen"], c: 0 },
+    { q: "Welches Gewürz macht Speisen scharf?", a: ["Chili", "Zimt", "Vanille", "Basilikum"], c: 0 },
+    { q: "Welches Heißgetränk wird aus Blättern gemacht?", a: ["Tee", "Kakao", "Cola", "Limonade"], c: 0 },
+    { q: "Welche Nuss steckt in Marzipan?", a: ["Mandel", "Walnuss", "Haselnuss", "Erdnuss"], c: 0 },
+    { q: "Was ist Mozzarella?", a: ["Käse", "Wurst", "Brot", "Gemüse"], c: 0 },
+    { q: "Welche Frucht hat eine harte Schale mit Flüssigkeit innen?", a: ["Kokosnuss", "Melone", "Ananas", "Mango"], c: 0 },
+    { q: "Was ist Sushi typischerweise?", a: ["Reis mit Fisch", "Nudeln mit Käse", "Brot mit Wurst", "Fleischspieß"], c: 0 },
+    { q: "Welches Getränk enthält Koffein?", a: ["Kaffee", "Wasser", "Milch", "Apfelsaft"], c: 0 },
+    { q: "Woraus wird Guacamole hauptsächlich gemacht?", a: ["Avocado", "Tomate", "Erbse", "Gurke"], c: 0 },
+    { q: "Aus welchem Getreide wird Bier hauptsächlich gebraut?", a: ["Gerste", "Reis", "Mais", "Hafer"], c: 0 },
+  ],
+  film: [
+    { q: "In welchem Film gibt es den Zauberer Gandalf?", a: ["Herr der Ringe", "Harry Potter", "Narnia", "Merlin"], c: 0 },
+    { q: "Welche Firma machte „Der König der Löwen\"?", a: ["Disney", "Pixar", "DreamWorks", "Netflix"], c: 0 },
+    { q: "Wie heißt der gesuchte Clownfisch?", a: ["Nemo", "Dory", "Marlin", "Bruce"], c: 0 },
+    { q: "Welches grüne Wesen lebt in einem Sumpf?", a: ["Shrek", "Hulk", "Yoda", "Grinch"], c: 0 },
+    { q: "Welcher Superheld hat Spinnenkräfte?", a: ["Spider-Man", "Batman", "Superman", "Iron Man"], c: 0 },
+    { q: "Wie heißt die Eiskönigin in „Frozen\"?", a: ["Elsa", "Anna", "Belle", "Arielle"], c: 0 },
+    { q: "Welches Studio steht für „Toy Story\"?", a: ["Pixar", "DreamWorks", "Illumination", "Ghibli"], c: 0 },
+    { q: "Wie heißt der grüne Jedi-Meister in Star Wars?", a: ["Yoda", "Obi-Wan", "Anakin", "Luke"], c: 0 },
+    { q: "In welchem Film fährt „Lightning McQueen\"?", a: ["Cars", "Turbo", "Speed", "Fast & Furious"], c: 0 },
+    { q: "Wie heißt das Zaubererinternat bei Harry Potter?", a: ["Hogwarts", "Narnia", "Camelot", "Winterfell"], c: 0 },
+    { q: "Welche Prinzessin verliert einen Schuh um Mitternacht?", a: ["Aschenputtel", "Schneewittchen", "Rapunzel", "Arielle"], c: 0 },
+    { q: "Welcher Held trägt einen roten Umhang und ein „S\"?", a: ["Superman", "Batman", "Flash", "Thor"], c: 0 },
+  ],
 };
 export const Q_CAT_KEYS = Object.keys(Q_CATS);
 
@@ -136,7 +180,8 @@ export const Q_CAT_KEYS = Object.keys(Q_CATS);
 export const Q_CAT_LABELS = {
   allgemein: "Allgemein", geografie: "Geografie", natur: "Natur & Tiere",
   wissenschaft: "Wissenschaft", geschichte: "Geschichte", sport: "Sport",
-  kultur: "Kultur", oesterreich: "Österreich",
+  kultur: "Kultur", oesterreich: "Österreich", essen: "Essen & Trinken",
+  film: "Film & Serien",
 };
 
 // Fragen-Pool aus gewählten Kategorien (leer = alle). Liefert die Frage-Objekte.

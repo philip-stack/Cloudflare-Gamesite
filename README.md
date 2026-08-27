@@ -21,6 +21,8 @@ statisches HTML/CSS/JS in `public/`, dazu Pages Functions als API und eine
 | 🐍 **Neon-Schlange** | `/schlange/` | Slither-**Arena** — große Welt mit Kamera & Minimap, **KI-Gegner** zum Abschneiden (laufen sie in dich, zerfallen sie in Orbs), **Power-ups** (Magnet/Schild/×2/Geist). Ziehen lenkt, ⚡/Halten boostet; Orbs fressen & wachsen, nicht selbst beißen. Skins & Meilensteine, weltweite Bestenliste |
 | 🎨 **Kritzeln & Raten** | `/kritzeln/` | **Echtzeit-Multiplayer** (2–10) — einer malt, die anderen raten live im Chat; Raum per Code teilen, **Kategorien & Rundenzahl** (Host), Wortwahl aus 3, Live-Striche mit **Fülleimer/Radierer/Undo**, Buchstaben-Hinweise, **Speed-/Platz-Punkte**, Runden-Zusammenfassung, Konfetti/Sound, Sieger:in & Revanche. Server = Durable Object (`DrawRoom`); dazu eine **dauerhafte, geräteübergreifende Bestenliste** (🏆), die das DO am Spielende autoritativ in D1 schreibt (Gesamtpunkte, Spiele, Siege, Bestleistung) |
 
+| 🧠 **Wer weiß's?** | `/quiz/` | **Echtzeit-Live-Trivia** (2–10) — alle beantworten dieselbe Multiple-Choice-Frage gleichzeitig; **richtig + schnell = mehr Punkte**, Kategorien wählbar (10 Kategorien, de-AT-Fragensatz), Fragenzahl (Host), Optionen pro Spiel gemischt, Reveal mit Auflösung, Sieger:in & Revanche, **Meilensteine**. Server = Durable Object (`QuizRoom`); dazu eine **dauerhafte D1-Bestenliste** (`quiz_score`), die das DO am Spielende autoritativ schreibt |
+
 *(`/tron/` — Neon-Tron, ein Echtzeit-Lichtrenner auf Basis desselben Durable-Object-Fundaments, existiert als Route weiter, ist aber bewusst nicht auf der Startseite verlinkt.)*
 
 Alle Spiele sind mobile-first (Touch-Gesten), haben aber auch
@@ -139,7 +141,7 @@ schaltet teure Dauer-Effekte ab und drosselt die Bildrate für schwächere Gerä
 
 ### Echtzeit-Architektur & bewusste Trade-offs
 
-Die Echtzeitspiele (Spieleabend-Raum, **Kritzeln & Raten**) laufen über Durable
+Die Echtzeitspiele (Spieleabend-Raum, **Kritzeln & Raten**, **Wer weiß's?**) laufen über Durable
 Objects im separaten Worker `philip-stack-rt`. Ein paar bewusst getroffene
 Entscheidungen, damit sie nachvollziehbar bleiben:
 
@@ -274,7 +276,7 @@ wuerfelpoker/
 ├── wrangler.toml              Pages-Config + D1-Binding (DB) + AI-Binding (Kochstudio)
 ├── migrations/                D1-Schema als versionierte, idempotente Migrationen
 │   ├── 0001_init.sql          Baseline (Würfelpoker, scores, used_token, banned_device, cloud_saves, party*, push_*, error_log, rate, draw_score, fire_*)
-│   └── 0002…0007_*.sql        additive Änderungen (u. a. draw_score-Gerät, fire_alert-Arten/Geo, sprit_price_log; apply: wrangler d1 migrations apply wuerfelpoker --remote)
+│   └── 0002…0008_*.sql        additive Änderungen (u. a. draw_score-Gerät, fire_alert-Arten/Geo, sprit_price_log, quiz_score; apply: wrangler d1 migrations apply wuerfelpoker --remote)
 ├── reset-dev.sql              ⚠️ nur lokal: setzt Würfelpoker-Tabellen zurück (enthält DROPs)
 ├── schema.sql                 nur noch Hinweis-Datei (zeigt auf migrations/)
 ├── public/                    statische Spiele (1 Ordner = 1 Spiel)
@@ -325,7 +327,7 @@ wuerfelpoker/
 ├── tests/                     Node-Tests (Syntax inkl. worker-rt, Qualität/A11y, QR, Scores/Cloud/Party/Saison/Push-API, Flow-E2E, WUMMS/MEERI/Kritzeln)
 ├── scripts/
 │   └── bump-assets.mjs        Cache-Busting: setzt ?v=<Inhaltshash> für lokale JS/CSS (npm run bump; CI prüft mit --check)
-├── worker-rt/                 separater Worker: Echtzeit-Durable-Objects (PartyRoom/TronRoom/DrawRoom) + draw-logic.js
+├── worker-rt/                 separater Worker: Echtzeit-Durable-Objects (PartyRoom/TronRoom/DrawRoom/QuizRoom) + draw-logic.js/quiz-logic.js
 │                              + Cron (*/2 min) → pingt /api/fire/cron und /api/sprit/cron (x-cron-key: CRON_TOKEN)
 ├── lighthouserc.json          Lighthouse-Budget (Performance/A11y/Best-Practices/SEO)
 └── .github/workflows/
