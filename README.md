@@ -70,14 +70,19 @@ schaltet teure Dauer-Effekte ab und drosselt die Bildrate für schwächere Gerä
   ohne verschlüsselte Payload** — der Service Worker holt die eigentlichen
   Nachrichten aus einer serverseitigen Warteschlange (nach Push-Endpoint) und
   zeigt sie an. Test-Knopf im Profil zum Prüfen am eigenen Gerät.
-- **Tages- & Wochen-Challenge** (Galopp): Alle laufen dieselbe, per Datum-
-  bzw. Wochen-Seed erzeugte Strecke — je mit eigener Bestenliste. Direkt im
-  **Galopp-Startmenü** wählbar (🗓️/📅). WUMMS! hat ebenfalls eine
-  **Tages-Challenge** (`?daily=1`, fester Seed für Teile- und Bösewicht-Abfolge),
-  im WUMMS!-Menü wählbar. Die Startseite zeigt eine **Heutige Challenge** mit
-  wechselndem Spiel des Tages.
-- **Meilensteine** (Galopp, Sternensturm, Komet, WUMMS!): Abzeichen für Lauf-
-  und Lebenszeit-Erfolge, lokal gespeichert, im Spielmenü einsehbar.
+- **Tages- & Wochen-Wertung** — zwei Spielarten:
+  - **Geseedete Challenge** (Galopp, WUMMS!): Alle laufen dieselbe, per Datum-
+    bzw. Wochen-Seed erzeugte Strecke — je mit **eigener** Bestenliste, im
+    Spielmenü wählbar (Galopp 🗓️/📅; WUMMS! `?daily=1`, fester Seed für Teile-
+    und Bösewicht-Abfolge). Die Startseite zeigt eine **Heutige Challenge** mit
+    wechselndem Spiel des Tages.
+  - **Zeit-gescopte Bestenliste** (Funkelfeld, Komet, Sternensturm, Neon-Schlange):
+    normale Läufe, nur nach Datum gefiltert — die Bestenliste hat einen
+    **Tab-Umschalter Weltweit / Heute / Diese Woche** (server-seitig über das
+    Config-Flag `scoped`, geteilter Bucket + Datumsfilter, kein eigener Bucket).
+- **Meilensteine** (Galopp, Sternensturm, Komet, WUMMS!, Neon-Schlange, Funkelfeld,
+  MEERI-MANIA): Abzeichen für Lauf- und Lebenszeit-Erfolge, lokal gespeichert, im
+  Spielmenü einsehbar; ihre Zahl fließt in Profil-Level & XP ein.
 - **Skins** (Galopp, Komet, Sternensturm): freispielbare Farbvarianten der
   Spielfigur, an die Zahl der Abzeichen gekoppelt, im Menü wählbar. Funkelfeld
   hat eigene Skins; WUMMS! schaltet über Abzeichen **Tier-Helden** frei.
@@ -192,6 +197,47 @@ Die Seite ist eine **PWA**: Am Handy über „Zum Startbildschirm hinzufügen"
 und Vollbild — bereits besuchte Spiele funktionieren auch offline
 (Bestenlisten und geteilte Spiele brauchen Internet).
 
+## 🚒 Feuerwehr-NÖ-Einsatzmonitor
+
+**Live:** https://philip-stack.pages.dev/fire/noe/
+
+Eine **eigenständige App** unter `/fire/noe/` (eigenes rotes Theme, eigener
+Service Worker mit Scope `/fire/noe/`, bewusst **nicht** auf der Landing Page
+verlinkt). Zeigt die **aktuellen Feuerwehr-Einsätze in Niederösterreich** aus
+der öffentlichen NÖ-Quelle (serverseitig geholt über `functions/api/fire/noe.js`,
+Geocoding + Bezirks-Zuordnung in `_bezirk.js`/`geo.js`), mit Liste, Karte und
+Heimat-Marker.
+
+- **Bezirks-Alarm** per Web-Push: Bezirke abonnieren und bei neuen Einsätzen
+  benachrichtigt werden — plus **Umkreis-Alarm** (Heimatort + Radius 5/10/20/50 km).
+- **Einsatz-Push** unterscheidet **neu**, **Alarmstufen-Eskalation** und
+  **„Einsatz beendet"**; ein neuer Einsatz macht optional Ton + Highlight.
+- **Einstellungen** für Einsatzarten-Filter (Brand/Technisch/Schadstoff), Ton,
+  Heimatort und eine **Wochentag-Statistik**.
+- Angetrieben von einem **Cron** (Worker `philip-stack-rt`, alle 2 min) auf
+  `/api/fire/cron` (geschützt per `CRON_TOKEN`-Header): erkennt frische Einsätze,
+  verschickt die Pushes und rollt Tages-Statistik + Wartung ab.
+
+## ⛽ Sprit-Radar (Tanken)
+
+**Live:** https://philip-stack.pages.dev/tanken/
+
+Eine **eigenständige App** unter `/tanken/` (grünes Theme, eigener Service Worker
+mit Scope `/tanken/`, bewusst **nicht** auf der Landing Page verlinkt). Findet die
+**günstigsten Tankstellen** in Österreich — im **Umkreis** und **entlang einer
+Route** — komplett gratis und ohne API-Schlüssel:
+
+- Preise vom **E-Control-Spritpreisrechner** (`_ec.js`), Routing über **OSRM**,
+  Karte/Geocoding über **OpenStreetMap** (Leaflet als selbst gehostetes Vendor-Skript).
+- **Favoriten**, **Preis-Alarm** per Web-Push (Ziel-Preis je Kraftstoff),
+  **Preisverlauf-Sparkline** und Filter **„nur offene"**.
+- Eigener **Cron** auf `/api/sprit/cron` (ebenfalls per `CRON_TOKEN` geschützt,
+  vom `philip-stack-rt`-Worker angepingt): prüft die abonnierten Alarme und
+  protokolliert den Preisverlauf (`sprit_price_log`).
+
+Beide Apps teilen den zentralen **Web-Push-Mechanismus** (`/api/push`, VAPID-
+„Tickle"), haben aber ihren eigenen Service Worker und ihr eigenes Manifest.
+
 ## Sicherheit
 
 - **Security-Header** via `public/_headers`: strenge **Content-Security-Policy**
@@ -228,7 +274,7 @@ wuerfelpoker/
 ├── wrangler.toml              Pages-Config + D1-Binding (DB) + AI-Binding (Kochstudio)
 ├── migrations/                D1-Schema als versionierte, idempotente Migrationen
 │   ├── 0001_init.sql          Baseline (Würfelpoker, scores, used_token, banned_device, cloud_saves, party*, push_*, error_log, rate, draw_score, fire_*)
-│   └── 0002_*.sql             additive Änderungen (apply: wrangler d1 migrations apply wuerfelpoker --remote)
+│   └── 0002…0007_*.sql        additive Änderungen (u. a. draw_score-Gerät, fire_alert-Arten/Geo, sprit_price_log; apply: wrangler d1 migrations apply wuerfelpoker --remote)
 ├── reset-dev.sql              ⚠️ nur lokal: setzt Würfelpoker-Tabellen zurück (enthält DROPs)
 ├── schema.sql                 nur noch Hinweis-Datei (zeigt auf migrations/)
 ├── public/                    statische Spiele (1 Ordner = 1 Spiel)
@@ -249,7 +295,7 @@ wuerfelpoker/
 │   ├── favicon.ico            Browser-Tab-Icon
 │   ├── 404.html               Fehlerseite
 │   ├── manifest.webmanifest   PWA-Manifest (installierbare App)
-│   ├── sw.js                  Service Worker (offline-fähig, network-first + App-Shell)
+│   ├── sw.js                  Hub-Service-Worker (Scope /, offline-fähig, network-first + App-Shell)
 │   ├── icons/                 App-Icons
 │   ├── _redirects
 │   ├── wuerfelpoker/          index.html + app.js + style.css
@@ -258,7 +304,9 @@ wuerfelpoker/
 │   ├── sternensturm/
 │   ├── galopp/
 │   ├── wumms/                 Comic-Block-Puzzle mit Tier-Helden
-│   └── meeri/                 Merge-Idle mit Meerschweinchen (MEERI-MANIA)
+│   ├── meeri/                 Merge-Idle mit Meerschweinchen (MEERI-MANIA)
+│   ├── fire/noe/              eigenständige App: Feuerwehr-NÖ-Einsatzmonitor (eigener sw.js, Scope /fire/noe/)
+│   └── tanken/                eigenständige App: Sprit-Radar AT (eigener sw.js, Scope /tanken/, Leaflet-Vendor)
 ├── functions/api/             Cloudflare Pages Functions
 │   ├── _util.js               gemeinsame Helfer (json, Codes, Spiel laden, Client-IP, Rate-Limit)
 │   ├── health.js
@@ -271,11 +319,14 @@ wuerfelpoker/
 │   ├── push.js                Web-Push (VAPID, Abo/Queue/Versand)
 │   ├── log.js                 anonymer Fehler-Melder (→ D1, selbst-beschränkt)
 │   ├── admin.js               Betreiber-Dashboard-Aggregat (geschützt per ADMIN_TOKEN)
-│   └── koch.js                KI-Kochstudio (Workers AI + DuckDuckGo-Websuche)
+│   ├── koch.js                KI-Kochstudio (Workers AI + DuckDuckGo-Websuche)
+│   ├── fire/                  Feuerwehr-NÖ: noe.js (Quelle), geo/_bezirk (Geocoding), alert.js (Abos), cron.js, stats.js
+│   └── sprit/                 Sprit-Radar: near/route/suggest (Preise+Routing), _ec.js (E-Control), alert.js, cron.js, _logic.js
 ├── tests/                     Node-Tests (Syntax inkl. worker-rt, Qualität/A11y, QR, Scores/Cloud/Party/Saison/Push-API, Flow-E2E, WUMMS/MEERI/Kritzeln)
 ├── scripts/
 │   └── bump-assets.mjs        Cache-Busting: setzt ?v=<Inhaltshash> für lokale JS/CSS (npm run bump; CI prüft mit --check)
 ├── worker-rt/                 separater Worker: Echtzeit-Durable-Objects (PartyRoom/TronRoom/DrawRoom) + draw-logic.js
+│                              + Cron (*/2 min) → pingt /api/fire/cron und /api/sprit/cron (x-cron-key: CRON_TOKEN)
 ├── lighthouserc.json          Lighthouse-Budget (Performance/A11y/Best-Practices/SEO)
 └── .github/workflows/
     ├── ci.yml                 CI: führt `npm test` bei jedem Push aus
