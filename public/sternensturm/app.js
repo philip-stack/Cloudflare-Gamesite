@@ -1264,7 +1264,7 @@ async function gameOver() {
 }
 
 function showLeaderboard() {
-  GS.showLeaderboard({ game: "sternensturm", sub: "Die 50 besten Piloten weltweit" });
+  GS.showLeaderboard({ game: "sternensturm", sub: "Die 50 besten Piloten weltweit", tabs: true });
 }
 // ---------- UI ----------
 $("#btn-top").onclick = () => showLeaderboard();

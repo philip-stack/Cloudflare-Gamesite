@@ -482,7 +482,7 @@ async function gameOver() {
   GS.scoreFlow(overlay.querySelector("#go-name-area"), overlay.querySelector("#go-rank"), { game: "schlange", score, meta: { orbs: score, time: tSec, len: 1 + score, kills } });
 }
 
-function showLeaderboard() { GS.showLeaderboard({ game: "schlange", sub: "Die 50 längsten Schlangen weltweit" }); }
+function showLeaderboard() { GS.showLeaderboard({ game: "schlange", sub: "Die 50 längsten Schlangen weltweit", tabs: true }); }
 
 // ---------- Start ----------
 function showStart() {

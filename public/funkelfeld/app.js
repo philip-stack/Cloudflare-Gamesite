@@ -786,7 +786,7 @@ function escHtml(s) {
 }
 
 function showLeaderboard() {
-  GS.showLeaderboard({ game: "funkelfeld", sub: "Die 50 besten Runden weltweit" });
+  GS.showLeaderboard({ game: "funkelfeld", sub: "Die 50 besten Runden weltweit", tabs: true });
 }
 // ---------- Name setzen / ändern ----------
 function updateNameLabel() {

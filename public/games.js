@@ -35,19 +35,19 @@
       key: "funkelfeld", name: "Funkelfeld", icon: "💎", accent: "#45cfd6", href: "/funkelfeld/",
       desc: "Match-3 mit Biss.",
       long: "8×8-Puzzle — Funkelsteine sammeln, Combos jagen, Skins freispielen, weltweite Bestenliste.",
-      bestKey: "bb_best", scored: true, gsBadges: true, daily: false, weekly: false,
+      bestKey: "bb_best", scored: true, gsBadges: true, daily: true, weekly: true,
     },
     {
       key: "komet", name: "Komet", icon: "☄️", accent: "#ffb454", href: "/komet/",
       desc: "Von Stern zu Stern schwingen.",
       long: "One-Touch-Arcade — am Lichtseil von Stern zu Stern schwingen, Funken sammeln, Distanzrekord jagen.",
-      bestKey: "km_best", scored: true, gsBadges: true, daily: false, weekly: false,
+      bestKey: "km_best", scored: true, gsBadges: true, daily: true, weekly: true,
     },
     {
       key: "sternensturm", name: "Sternensturm", icon: "🚀", accent: "#5b9cff", href: "/sternensturm/",
       desc: "Wellen überstehen. NOVA zünden.",
       long: "Roguelite-Space-Shooter — Wellen überstehen, Upgrades wählen, NOVA zünden, Bosse zerlegen.",
-      bestKey: "ss_best", scored: true, gsBadges: true, daily: false, weekly: false,
+      bestKey: "ss_best", scored: true, gsBadges: true, daily: true, weekly: true,
     },
     {
       key: "galopp", name: "Galopp", icon: "🦄", accent: "#ff6f91", href: "/galopp/",
@@ -65,13 +65,13 @@
       key: "meeri", name: "MEERI-MANIA", icon: "🐹", accent: "#57d98a", href: "/meeri/",
       desc: "Meeries mergen, Wiese ausbauen.",
       long: "Merge-Idle mit Meerschweinchen — gleiche Meeries zusammenziehen, immer absurdere Evolutionen entdecken, Münzen sammeln und die Wiese ausbauen.",
-      bestKey: "meeri_best", scored: true, gsBadges: false, daily: false, weekly: false,
+      bestKey: "meeri_best", scored: true, gsBadges: true, daily: false, weekly: false,
     },
     {
       key: "schlange", name: "Neon-Schlange", icon: "🐍", accent: "#a6e34d", href: "/schlange/",
       desc: "Fressen, wachsen, nicht selbst beißen.",
       long: "Slither-Arcade — als leuchtende Neon-Schlange Orbs fressen, wachsen, boosten und dich bloß nicht selbst beißen; weltweite Bestenliste.",
-      bestKey: "schlange_best", scored: true, gsBadges: true, daily: false, weekly: false,
+      bestKey: "schlange_best", scored: true, gsBadges: true, daily: true, weekly: true,
     },
     {
       key: "kritzeln", name: "Kritzeln & Raten", icon: "🎨", accent: "#ff8a5c", href: "/kritzeln/",

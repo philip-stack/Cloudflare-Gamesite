@@ -150,13 +150,22 @@
   }
 
   // ---------- Bestenlisten-Overlay ----------
-  async function showLeaderboard({ game, title = "Bestenliste", sub = "Die 50 Besten weltweit", daily = false, weekly = false }) {
+  // tabs:true blendet Umschalter Weltweit/Heute/Diese Woche ein (für zeit-
+  // gescopte Spiele, deren Server-Config `scoped` gesetzt hat). Ohne tabs
+  // bleibt es eine einzelne Liste (daily/weekly wählt dann die feste Sicht —
+  // so nutzen es galopp/wumms für ihre geseedeten Challenges).
+  async function showLeaderboard({ game, title = "Bestenliste", sub = "Die 50 Besten weltweit", daily = false, weekly = false, tabs = false }) {
     const overlay = document.createElement("div");
     overlay.className = "overlay";
     overlay.innerHTML = `
       <div class="panel">
         <h2><span class="foil">${esc(title)}</span></h2>
-        <p class="sub">${esc(sub)}</p>
+        <p class="sub gs-lb-sub">${esc(sub)}</p>
+        ${tabs ? `<div class="gs-lb-tabs">
+          <button class="gs-lb-tab active" data-scope="all">Weltweit</button>
+          <button class="gs-lb-tab" data-scope="daily">Heute</button>
+          <button class="gs-lb-tab" data-scope="weekly">Diese Woche</button>
+        </div>` : ""}
         <div class="gs-lb"><p class="lb-empty">Lade …</p></div>
         <button class="btn-secondary gs-close">Schließen</button>
       </div>`;
@@ -165,24 +174,45 @@
     overlay.onclick = e => { if (e.target === overlay) close(); };
     overlay.querySelector(".gs-close").onclick = close;
 
-    try {
-      const res = await fetch(`/api/scores/${game}${weekly ? "?weekly=1" : daily ? "?daily=1" : ""}`);
-      const data = await res.json();
-      const me = getName().toLowerCase();
-      const medals = ["🥇", "🥈", "🥉"];
-      const box = overlay.querySelector(".gs-lb");
-      if (!data.top?.length) {
-        box.innerHTML = `<p class="lb-empty">Noch keine Einträge — sei die/der Erste!</p>`;
-        return;
+    const box = overlay.querySelector(".gs-lb");
+    const load = async scope => {
+      box.innerHTML = `<p class="lb-empty">Lade …</p>`;
+      const q = scope === "weekly" ? "?weekly=1" : scope === "daily" ? "?daily=1" : "";
+      try {
+        const res = await fetch(`/api/scores/${game}${q}`);
+        const data = await res.json();
+        const me = getName().toLowerCase();
+        const medals = ["🥇", "🥈", "🥉"];
+        if (!data.top?.length) {
+          box.innerHTML = `<p class="lb-empty">${scope === "all"
+            ? "Noch keine Einträge — sei die/der Erste!"
+            : "Heute noch nichts los — leg vor!"}</p>`;
+          return;
+        }
+        box.innerHTML = `<ol class="lb-list">${data.top.map((row, i) => `
+          <li class="${row.name.toLowerCase() === me ? "me" : ""}">
+            <span class="lb-rank">${medals[i] || i + 1}</span>
+            <span class="lb-name">${esc(row.name)}</span>
+            <span class="lb-score">${row.score}</span>
+          </li>`).join("")}</ol>`;
+      } catch {
+        box.innerHTML = `<p class="lb-empty">Bestenliste nicht erreichbar</p>`;
       }
-      box.innerHTML = `<ol class="lb-list">${data.top.map((row, i) => `
-        <li class="${row.name.toLowerCase() === me ? "me" : ""}">
-          <span class="lb-rank">${medals[i] || i + 1}</span>
-          <span class="lb-name">${esc(row.name)}</span>
-          <span class="lb-score">${row.score}</span>
-        </li>`).join("")}</ol>`;
-    } catch {
-      overlay.querySelector(".gs-lb").innerHTML = `<p class="lb-empty">Bestenliste nicht erreichbar</p>`;
+    };
+
+    if (tabs) {
+      const subEl = overlay.querySelector(".gs-lb-sub");
+      const subs = { all: "Die 50 Besten weltweit", daily: "Die Besten von heute", weekly: "Die Besten dieser Woche" };
+      overlay.querySelectorAll(".gs-lb-tab").forEach(btn => {
+        btn.onclick = () => {
+          overlay.querySelectorAll(".gs-lb-tab").forEach(b => b.classList.toggle("active", b === btn));
+          if (subEl) subEl.textContent = subs[btn.dataset.scope] || "";
+          load(btn.dataset.scope);
+        };
+      });
+      load("all");
+    } else {
+      load(weekly ? "weekly" : daily ? "daily" : "all");
     }
   }
 
@@ -764,6 +794,20 @@
       color: var(--ink, inherit); margin-bottom: 14px;
     }
     .panel input.gs-name:focus { outline: none; border-color: var(--gold, #e8c15a); }
+    .gs-lb-tabs { display: flex; gap: 6px; justify-content: center; margin: 4px 0 12px; }
+    .gs-lb-tab {
+      flex: 1; max-width: 130px; font-family: inherit; font-size: 0.85rem; font-weight: 700;
+      padding: 8px 6px; border-radius: 999px; cursor: pointer;
+      background: var(--card, rgba(255,255,255,0.05)); color: var(--muted, #999);
+      border: 0; box-shadow: 0 0 0 1px var(--edge-soft, rgba(255,255,255,0.1)) inset;
+      transition: transform 0.1s;
+    }
+    .gs-lb-tab:active { transform: scale(0.96); }
+    .gs-lb-tab.active {
+      background: color-mix(in srgb, var(--accent, var(--gold, #e8c15a)) 18%, transparent);
+      color: var(--accent, var(--gold, #e8c15a));
+      box-shadow: 0 0 0 1.5px var(--accent, var(--gold, #e8c15a)) inset;
+    }
     .gs-badges-new { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin: 4px 0 10px; }
     .gs-badge-chip {
       font-size: 0.8rem; font-weight: 700; padding: 5px 12px; border-radius: 999px;

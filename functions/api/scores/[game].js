@@ -34,6 +34,7 @@ const GAME_LABEL = {
 const GAMES = {
   funkelfeld: {
     max: 500_000,
+    scoped: true,
     // Punkte entstehen aus geräumten Linien (× Combo) + Funkelsteinen.
     // Die Obergrenze pro Linie/Stein ist bewusst großzügig — echte Läufe
     // bleiben stets darunter, blind hochgesetzte Fake-Scores nicht.
@@ -45,6 +46,7 @@ const GAMES = {
   },
   komet: {
     max: 100_000,
+    scoped: true,
     // score = Meter + Funken × 5
     check: (score, m) =>
       Number.isFinite(m.meters) && Number.isFinite(m.sparks) &&
@@ -53,6 +55,7 @@ const GAMES = {
   },
   sternensturm: {
     max: 2_000_000,
+    scoped: true,
     check: (score, m) =>
       Number.isInteger(m.wave) && m.wave >= 1 && m.wave <= 300 &&
       score <= m.wave * 4_000 + 3_000,
@@ -85,6 +88,7 @@ const GAMES = {
   },
   schlange: {
     max: 100_000,
+    scoped: true,
     // score = gefressene Orbs. Grob gegen die Spielzeit gedeckelt. Großzügig,
     // weil abgeschnittene Gegner in viele Orbs zerfallen und ×2 verdoppelt —
     // echte Bursts bleiben unter der Grenze, blind gesetzte Fakes nicht.
@@ -96,12 +100,21 @@ const GAMES = {
 };
 
 // Modus aus Query/Body ableiten und gegen die Spiel-Config prüfen.
+// Zwei Arten von Tages-/Wochen-Wertung:
+//  - SEEDED (cfg.daily/weekly, z. B. galopp/wumms): jeder spielt dieselbe
+//    generierte Strecke → eigener Bucket `game:daily`/`game:weekly`.
+//  - SCOPED (cfg.scoped, nicht-deterministische Arcade-Spiele): normale Läufe,
+//    nur zeitlich gefiltert → sie teilen sich den Gesamt-Bucket `game`, die
+//    Sicht „Heute"/„Diese Woche" entsteht allein über den Datumsfilter.
 function modeOf(cfg, src) {
-  if (src.weekly && cfg.weekly) return "weekly";
-  if (src.daily && cfg.daily) return "daily";
+  if (src.weekly && (cfg.weekly || cfg.scoped)) return "weekly";
+  if (src.daily && (cfg.daily || cfg.scoped)) return "daily";
   return "none";
 }
-function keyFor(game, mode) {
+function keyFor(game, mode, cfg) {
+  // Scoped-Spiele bleiben immer im Gesamt-Bucket (Datumsfilter macht die Sicht);
+  // seeded-Challenges bekommen eigene Buckets.
+  if (cfg && cfg.scoped) return game;
   return mode === "weekly" ? `${game}:weekly` : mode === "daily" ? `${game}:daily` : game;
 }
 function modeCond(mode) {
@@ -208,17 +221,17 @@ export async function onRequestGet({ request, env, params }) {
     const cond = modeCond(mode);
     const best = (await env.DB.prepare(
       `SELECT MAX(score) AS m FROM scores WHERE game = ? AND LOWER(name) = LOWER(?)${cond}`
-    ).bind(keyFor(game, mode), nm).first()).m;
+    ).bind(keyFor(game, mode, cfg), nm).first()).m;
     let rank = null;
     if (best != null) {
       rank = (await env.DB.prepare(
         `SELECT COUNT(*) + 1 AS r FROM (SELECT MAX(score) AS m FROM scores WHERE game = ?${cond} GROUP BY LOWER(name)) WHERE m > ?`
-      ).bind(keyFor(game, mode), best).first()).r;
+      ).bind(keyFor(game, mode, cfg), best).first()).r;
     }
     return json({ player: nm, best: best || 0, rank });
   }
 
-  const rows = (await env.DB.prepare(topQuery(mode)).bind(keyFor(game, mode)).all()).results;
+  const rows = (await env.DB.prepare(topQuery(mode)).bind(keyFor(game, mode, cfg)).all()).results;
   return json({ top: rows });
 }
 
@@ -232,7 +245,7 @@ export async function onRequestPost(context) {
 
   const b = await request.json().catch(() => ({}));
   const mode = modeOf(cfg, b);
-  const key = keyFor(game, mode);
+  const key = keyFor(game, mode, cfg);
 
   const score = Number(b.score);
   if (!Number.isInteger(score) || score < 0 || score > cfg.max) {

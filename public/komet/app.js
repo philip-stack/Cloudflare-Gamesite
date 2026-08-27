@@ -509,7 +509,7 @@ async function gameOver() {
 }
 
 function showLeaderboard() {
-  GS.showLeaderboard({ game: "komet", sub: "Die 50 weitesten Flüge weltweit" });
+  GS.showLeaderboard({ game: "komet", sub: "Die 50 weitesten Flüge weltweit", tabs: true });
 }
 // ---------- Start-Overlay ----------
 function showStart() {

@@ -80,5 +80,13 @@ assert("Wumms Post mit Meta (201)", r.status === 201);
 r = await post({ name: "Tester", score: 2000000, device, token: await getToken("wumms"), meta: { lines: 2, combo: 1, shoves: 0 } }, "wumms");
 assert("Wumms unplausibler Score abgelehnt (400)", r.status === 400);
 
+// Scoped-Spiele (funkelfeld u. a.): Tages-/Wochen-Sicht ist erlaubt, teilt sich
+// aber den Gesamt-Bucket (kein eigener :daily-Key — der Datumsfilter macht die Sicht).
+const fd = await mod.onRequestGet({ request: new Request("https://x/api/scores/funkelfeld?daily=1"), env, params: { game: "funkelfeld" } });
+assert("Funkelfeld Daily GET ok", fd.status === 200);
+r = await post({ name: "Tester", score: 6000, device, token: await getToken("funkelfeld"), daily: true, meta: { lines: 22, combo: 5, gems: 4 } }, "funkelfeld");
+assert("Funkelfeld Daily Post (201)", r.status === 201);
+assert("Funkelfeld scoped: kein eigener :daily-Bucket", !env.DB._rows.some(x => x.game === "funkelfeld:daily") && env.DB._rows.some(x => x.game === "funkelfeld"));
+
 console.log("\n" + (ok ? "API-TESTS OK" : "API-TESTS FEHLGESCHLAGEN"));
 process.exit(ok ? 0 : 1);
