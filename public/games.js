@@ -80,7 +80,7 @@
       bestKey: null, scored: false, gsBadges: false, daily: false, weekly: false,
     },
     {
-      key: "quiz", name: "Quiz-Duell", icon: "🧠", accent: "#a97bff", href: "/quiz/",
+      key: "quiz", name: "Wer weiß's?", icon: "🧠", accent: "#a97bff", href: "/quiz/",
       desc: "Alle raten, Tempo zählt.",
       long: "Echtzeit-Live-Trivia (2–10) — alle beantworten dieselbe Multiple-Choice-Frage gleichzeitig; richtig + schnell = mehr Punkte, Kategorien wählbar, Sieger:in des Abends und dauerhafte Bestenliste.",
       bestKey: null, scored: false, gsBadges: false, daily: false, weekly: false,

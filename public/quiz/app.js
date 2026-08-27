@@ -202,7 +202,7 @@ function closeOverlay2() { const o = $("#ov2"); if (o) o.remove(); }
 function overlay2(html) { closeOverlay2(); const o = document.createElement("div"); o.id = "ov2"; o.className = "overlay"; o.style.zIndex = "60"; o.innerHTML = `<div class="panel">${html}</div>`; document.body.appendChild(o); o.onclick = e => { if (e.target === o) closeOverlay2(); }; return o; }
 
 async function showScores() {
-  const o = overlay2(`<h2>🏆 Bestenliste</h2><p class="sub">Gesamtpunkte über alle Quiz-Duelle</p><div id="sc-list"><p class="msg">Lade …</p></div><button class="btn-secondary" id="sc-close">Schließen</button>`);
+  const o = overlay2(`<h2>🏆 Bestenliste</h2><p class="sub">Gesamtpunkte über alle Runden</p><div id="sc-list"><p class="msg">Lade …</p></div><button class="btn-secondary" id="sc-close">Schließen</button>`);
   o.querySelector("#sc-close").onclick = closeOverlay2;
   try {
     const r = await fetch("/api/quiz-scores?me=" + encodeURIComponent(GS.getName() || ""));
@@ -220,7 +220,7 @@ function showMenu(msg, prefillCode) {
   view = "menu"; $("#board").classList.add("hidden"); players = []; showLeave(false); showEmotes(false); stopTimer();
   const invited = !!prefillCode;
   const o = overlay(`
-    <h2><span class="foil">Quiz-Duell</span></h2>
+    <h2><span class="foil">Wer weiß's?</span></h2>
     <p class="sub">${invited
       ? `Du wurdest in Raum <b>${GS.esc(prefillCode)}</b> eingeladen 🧠 — gib deinen Namen ein und tritt bei.`
       : `Alle beantworten dieselbe Frage — live, für <b>2–10 Spieler</b>. Schnell &amp; richtig = mehr Punkte. Erstelle einen Raum und teile den Code.`}</p>
@@ -259,7 +259,7 @@ function showLobby() {
     <p class="msg" id="lb-msg">${players.length < 2 ? "Warte auf mindestens eine:n weitere:n …" : (meHost ? "Bereit zum Start!" : "Warte auf den Host …")}</p>
     ${meHost ? `<button class="btn-primary" id="lb-start" ${players.length >= 2 ? "" : "disabled style=\"opacity:.5\""}>🧠 Starten</button>` : ""}
     <button class="btn-secondary" id="lb-leave">Verlassen</button>`);
-  o.querySelector("#lb-share").onclick = async () => { const r = await GS.share({ title: "Quiz-Duell", text: `Rate mit mir 🧠 — tipp auf den Link, dann bist du direkt im Raum ${code}:`, url: location.origin + "/quiz/?code=" + encodeURIComponent(code) }); if (r === "copied") o.querySelector("#lb-share").textContent = "✔ kopiert"; };
+  o.querySelector("#lb-share").onclick = async () => { const r = await GS.share({ title: "Wer weiß's?", text: `Rate mit mir 🧠 — tipp auf den Link, dann bist du direkt im Raum ${code}:`, url: location.origin + "/quiz/?code=" + encodeURIComponent(code) }); if (r === "copied") o.querySelector("#lb-share").textContent = "✔ kopiert"; };
   if (meHost) {
     o.querySelectorAll("#lb-cats .chip").forEach(b => b.onclick = () => {
       const k = b.dataset.cat; roomCats = roomCats.includes(k) ? roomCats.filter(x => x !== k) : [...roomCats, k];
