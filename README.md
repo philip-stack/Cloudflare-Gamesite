@@ -83,8 +83,8 @@ schaltet teure Dauer-Effekte ab und drosselt die Bildrate für schwächere Gerä
     **Tab-Umschalter Weltweit / Heute / Diese Woche** (server-seitig über das
     Config-Flag `scoped`, geteilter Bucket + Datumsfilter, kein eigener Bucket).
 - **Meilensteine** (Galopp, Sternensturm, Komet, WUMMS!, Neon-Schlange, Funkelfeld,
-  MEERI-MANIA): Abzeichen für Lauf- und Lebenszeit-Erfolge, lokal gespeichert, im
-  Spielmenü einsehbar; ihre Zahl fließt in Profil-Level & XP ein.
+  MEERI-MANIA, Wer weiß's?): Abzeichen für Lauf- und Lebenszeit-Erfolge, lokal
+  gespeichert, im Spielmenü einsehbar; ihre Zahl fließt in Profil-Level & XP ein.
 - **Skins** (Galopp, Komet, Sternensturm): freispielbare Farbvarianten der
   Spielfigur, an die Zahl der Abzeichen gekoppelt, im Menü wählbar. Funkelfeld
   hat eigene Skins; WUMMS! schaltet über Abzeichen **Tier-Helden** frei.
@@ -134,9 +134,12 @@ schaltet teure Dauer-Effekte ab und drosselt die Bildrate für schwächere Gerä
   externen Ressourcen, alt-Texte, lang/viewport), Tests für QR-Encoder, Scores-,
   Cloud- und Party-API (mit gemocktem D1), ein **Flow-/E2E-Test** des geteilten
   Würfelpoker-Pfades (anlegen → laden → eintragen → volle Runde), WUMMS!- und
-  MEERI-Logik sowie die **Kritzeln-Logik** (`worker-rt/draw-logic.js`: Wort-
-  Normalisierung, Levenshtein, Kategorien/eigene Wörter, Punkte-Berechnung).
-  Zusätzlich ein **Lighthouse-Budget** (`lighthouserc.json`) als eigener,
+  MEERI-Logik, die **Kritzeln-Logik** (`worker-rt/draw-logic.js`: Wort-
+  Normalisierung, Levenshtein, Kategorien/eigene Wörter, Punkte-Berechnung),
+  die **Quiz-Logik** (`worker-rt/quiz-logic.js`: Fragensatz-Integrität, Options-
+  Mischen, Punkte) sowie die **Fire-Cron-Orchestrierung** und der
+  **Cron-Dead-Man's-Switch** (`/api/health`). Zusätzlich ein **Lighthouse-Budget**
+  (`lighthouserc.json`) als eigener,
   nicht-blockierender Workflow für Performance, Barrierefreiheit, Best Practices & SEO.
 
 ### Echtzeit-Architektur & bewusste Trade-offs
@@ -324,7 +327,7 @@ wuerfelpoker/
 │   ├── koch.js                KI-Kochstudio (Workers AI + DuckDuckGo-Websuche)
 │   ├── fire/                  Feuerwehr-NÖ: noe.js (Quelle), geo/_bezirk (Geocoding), alert.js (Abos), cron.js, stats.js
 │   └── sprit/                 Sprit-Radar: near/route/suggest (Preise+Routing), _ec.js (E-Control), alert.js, cron.js, _logic.js
-├── tests/                     Node-Tests (Syntax inkl. worker-rt, Qualität/A11y, QR, Scores/Cloud/Party/Saison/Push-API, Flow-E2E, WUMMS/MEERI/Kritzeln)
+├── tests/                     Node-Tests (Syntax inkl. worker-rt, Qualität/A11y, QR, Scores/Cloud/Party/Saison/Push-API, Flow-E2E, WUMMS/MEERI/Kritzeln/Quiz, Fire-Cron, Health)
 ├── scripts/
 │   └── bump-assets.mjs        Cache-Busting: setzt ?v=<Inhaltshash> für lokale JS/CSS (npm run bump; CI prüft mit --check)
 ├── worker-rt/                 separater Worker: Echtzeit-Durable-Objects (PartyRoom/TronRoom/DrawRoom/QuizRoom) + draw-logic.js/quiz-logic.js
