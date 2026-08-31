@@ -11,7 +11,7 @@
 // ====================================================================
 
 export const Q_TURN = 20;    // Sekunden pro Frage
-export const Q_REVEAL = 5;   // Auflösung anzeigen
+export const Q_REVEAL = 6;   // Auflösung anzeigen (kurze Ergebnis-Übersicht)
 export const Q_ROUNDS = 10;  // Standard-Fragenzahl
 export const Q_ROUND_CHOICES = [5, 10, 15, 20];
 

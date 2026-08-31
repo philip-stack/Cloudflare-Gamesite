@@ -115,7 +115,7 @@ function onQuestion(m) {
   $("#q-text").textContent = m.q || "";
   setNote("");
   renderOptions(curOptions);
-  if (answered) { lockOptions(myPick); setNote("Antwort gespeichert — warte auf die anderen …"); }
+  if (answered && myPick >= 0) { markPick(myPick); setNote("Deine Wahl: " + "ABCD"[myPick] + " — du kannst noch wechseln, bis alle dran sind"); }
   startTimer(m.time || 20);
   renderPlayers();
 }
@@ -130,18 +130,45 @@ function onAnswered(m) {
 
 function onReveal(m) {
   phase = "reveal"; stopTimer(); players = m.players || players; renderPlayers();
+  const results = m.results || [];
+  const mine = results.find(r => r.id === myId);
   // Meilenstein-Statistik der Runde fortschreiben.
   if (answered) {
     gStats.answered++;
     if (myPick === m.correct) { gStats.correct++; gStats.streakCur++; gStats.streakMax = Math.max(gStats.streakMax, gStats.streakCur); if (myLastFast) gStats.fast++; }
     else gStats.streakCur = 0;
   } else gStats.streakCur = 0;
-  const opts = $("#options").querySelectorAll(".opt");
-  opts.forEach((b, idx) => { b.disabled = true; if (idx === m.correct) b.classList.add("correct"); else if (idx === myPick) b.classList.add("wrong"); });
-  const myGain = (m.gains || []).find(g => g.id === myId);
-  if (answered && myPick === m.correct) { setNote("✅ Richtig! +" + (myGain ? myGain.gain : 0), "good"); floatPoints("+" + (myGain ? myGain.gain : 0), true); GS.sound.great(); GS.haptic(20); confetti(); }
-  else if (answered) { setNote("❌ Leider falsch", "bad"); GS.sound.tone(180, 0.18, { type: "sawtooth", gain: 0.06 }); GS.haptic(10); }
-  else { setNote("⏱️ Zu langsam!", "muted"); }
+  // Optionen einfärben (richtig grün, eigene falsche rot).
+  $("#options").querySelectorAll(".opt").forEach((b, idx) => { b.disabled = true; if (idx === m.correct) b.classList.add("correct"); else if (idx === myPick) b.classList.add("wrong"); });
+  // Ton/Haptik + Punkte-Popup fürs eigene Ergebnis.
+  const myGain = mine ? mine.gain : 0;
+  if (answered && myPick === m.correct) { floatPoints("+" + myGain, true); GS.sound.great(); GS.haptic(20); }
+  else if (answered) { GS.sound.tone(180, 0.18, { type: "sawtooth", gain: 0.06 }); GS.haptic(10); }
+  showReveal(m, mine);
+}
+
+// Kurze Ergebnis-Übersicht zwischen den Fragen: richtige Antwort, wer richtig/
+// falsch lag, wer am schnellsten war (⚡) und die Punkte. Schließt automatisch,
+// sobald die nächste Frage kommt (onQuestion ruft closeOverlay()).
+function showReveal(m, mine) {
+  const correctText = curOptions[m.correct] != null ? curOptions[m.correct] : "";
+  const results = (m.results || []).slice();
+  // richtige zuerst (schnellste oben), dann falsch beantwortet, dann keine Antwort.
+  const rank = r => r.correct ? 0 : (r.answered ? 1 : 2);
+  results.sort((a, b) => rank(a) - rank(b) || (b.remain - a.remain));
+  let fastestId = null;
+  for (const r of results) { if (r.correct) { fastestId = r.id; break; } }
+  const rows = results.map(r => {
+    const you = r.id === myId ? " (du)" : "";
+    const cls = r.correct ? "win" : (r.answered ? "miss" : "none");
+    const badge = !r.answered ? "–" : (r.correct ? (r.id === fastestId ? "⚡ +" + r.gain : "+" + r.gain) : "✗");
+    return `<li class="${cls}"><span class="pname">${GS.esc(r.name)}${you}</span><span class="psc">${badge}</span></li>`;
+  }).join("");
+  const verdict = mine
+    ? (mine.correct ? `<div class="reveal-verdict good">✅ Richtig! +${mine.gain}${mine.id === fastestId ? " · am schnellsten ⚡" : ""}</div>`
+      : (mine.answered ? `<div class="reveal-verdict bad">❌ Daneben</div>` : `<div class="reveal-verdict muted">⏱️ Nicht geantwortet</div>`))
+    : "";
+  overlay(`<h2>Auflösung</h2><div class="reveal-correct">✓ ${GS.esc(correctText)}</div>${verdict}<ul class="plist tight">${rows}</ul><p class="msg">Nächste Frage gleich …</p>`);
 }
 
 // ---------- Optionen ----------
@@ -151,18 +178,22 @@ function renderOptions(options) {
   el.querySelectorAll(".opt").forEach(b => b.onclick = () => pickAnswer(+b.dataset.i));
 }
 function pickAnswer(i) {
-  if (answered || phase !== "question") return;
-  answered = true; myPick = i;
+  if (phase !== "question") return;
+  const changed = myPick !== i;
+  answered = true;
   // „Schnell" = in der ersten Zughälfte geantwortet (für den Speed-Meilenstein).
+  // Bei Änderung zählt der neue Zeitpunkt (wie beim Server).
   myLastFast = (timeEnd - performance.now()) >= (timeTotal * 1000) / 2;
   send({ t: "answer", i });
-  lockOptions(i);
-  setNote("Antwort gespeichert — warte auf die anderen …");
-  GS.sound.click(); GS.haptic(8);
+  markPick(i);
+  setNote("Deine Wahl: " + "ABCD"[i] + " — du kannst noch wechseln, bis alle dran sind");
+  if (changed) { GS.sound.click(); GS.haptic(8); }
 }
-function lockOptions(i) {
+// Auswahl markieren — Buttons bleiben AKTIV, damit man bis zur Auflösung wechseln
+// kann (der Server erlaubt Änderungen, solange nicht alle geantwortet haben).
+function markPick(i) {
   myPick = i;
-  $("#options").querySelectorAll(".opt").forEach((b, idx) => { b.disabled = true; b.classList.toggle("mine", idx === i); });
+  $("#options").querySelectorAll(".opt").forEach((b, idx) => b.classList.toggle("mine", idx === i));
 }
 function setNote(txt, kind) {
   const n = $("#q-note"); if (!n) return;
@@ -226,7 +257,9 @@ function confetti() {
 // ---------- Spieler ----------
 function renderPlayers() {
   const el = $("#players"); if (!el) return;
-  el.innerHTML = players.map(p => `<span class="pl ${p.answered ? "answered" : ""}">${GS.esc(p.name)}${p.id === myId ? " (du)" : ""} <b>${p.score || 0}</b></span>`).join("");
+  // „answered" = hat gesperrt (neutral, Akzentfarbe + ✓) — sagt NICHTS über
+  // richtig/falsch aus; das zeigt erst die Auflösung.
+  el.innerHTML = players.map(p => `<span class="pl ${p.answered ? "answered" : ""}">${p.answered ? "✓ " : ""}${GS.esc(p.name)}${p.id === myId ? " (du)" : ""} <b>${p.score || 0}</b></span>`).join("");
 }
 
 // ---------- Overlays ----------

@@ -620,13 +620,13 @@ export class QuizRoom extends DurableObject {
 
   // „Alle haben geantwortet?" — Verbindungen, die länger nichts mehr gesendet
   // haben (Tab im Hintergrund / halb-tote Verbindung, deren close der Browser
-  // noch nicht gemeldet hat), zählen NICHT mehr als blockierend. Sonst hängt die
-  // Runde bis der Timer abläuft, nur weil ein „Geist" nie antwortet. Der Client
-  // pingt alle ~15 s; 30 s Toleranz = ein verpasster Ping. So blockiert ein
-  // Geist höchstens die Frage, auf der jemand weggeht, nicht die folgenden.
+  // noch nicht gemeldet hat), zählen NICHT ewig als blockierend. Die Toleranz ist
+  // bewusst ~2 Fragen-Zyklen lang: wer nur kurz weg ist (Link teilen) und
+  // zurückkommt, bleibt Teil der Runde; erst danach gilt die Verbindung als tot
+  // und die anderen müssen nicht mehr auf sie warten. Client pingt alle ~15 s.
   allAnswered() {
-    const now = Date.now();
-    const active = [...this.conns.values()].filter(q => now - (q.lastSeen || 0) < 30000);
+    const now = Date.now(), ghostMs = 2 * (Q_TURN + Q_REVEAL) * 1000;
+    const active = [...this.conns.values()].filter(q => now - (q.lastSeen || 0) < ghostMs);
     return active.length > 0 && active.every(q => q.answered);
   }
 
@@ -663,9 +663,13 @@ export class QuizRoom extends DurableObject {
       case "cat": if (p.id === this.hostId && (this.state === "lobby" || this.state === "over")) { this.cats = Array.isArray(m.cats) ? m.cats.filter(c => Q_CAT_KEYS.includes(c)) : []; this.sendLobby(); } break;
       case "rounds": if (p.id === this.hostId && (this.state === "lobby" || this.state === "over")) { const n = m.n | 0; if (Q_ROUND_CHOICES.includes(n)) { this.rounds = n; this.sendLobby(); } } break;
       case "kick": if (p.id === this.hostId && m.id !== this.hostId) this.kick(m.id); break;
-      case "answer": if (this.state === "question" && !p.answered && typeof m.i === "number" && m.i >= 0 && m.i < 4) {
+      // Antwort abgeben ODER ändern — erlaubt, solange die Frage läuft und noch
+      // nicht alle geantwortet haben (danach löst die Runde sofort auf). Die
+      // Tempo-Wertung nutzt den Zeitpunkt der LETZTEN Änderung (fair).
+      case "answer": if (this.state === "question" && typeof m.i === "number" && m.i >= 0 && m.i < 4) {
+        const first = !p.answered;
         p.answered = true; p.ansIdx = m.i | 0; p.ansRemain = Math.max(0, (this.turnEndsAt - Date.now()) / 1000);
-        this.bc({ t: "answered", id: p.id });
+        if (first) this.bc({ t: "answered", id: p.id });   // Fortschritt nur beim ersten Antworten melden
         this.sendLobby();
         if (this.allAnswered()) this.revealQuestion();
       } break;
@@ -740,14 +744,19 @@ export class QuizRoom extends DurableObject {
     this.state = "reveal";
     const correct = this.current.correct;
     const counts = [0, 0, 0, 0];
+    // Pro Spieler:in ein Ergebnis für die Auflösungs-Anzeige (richtig/falsch,
+    // Punkte, verbleibende Zeit beim Antworten → daraus leitet der Client die
+    // Reihenfolge „schnellste zuerst" ab).
+    const results = [];
     for (const p of this.conns.values()) {
       if (p.answered && p.ansIdx >= 0 && p.ansIdx < 4) counts[p.ansIdx]++;
       const isC = p.answered && p.ansIdx === correct;
       const gain = answerGain({ remain: p.ansRemain, total: Q_TURN, correct: isC });
-      if (gain > 0) { p.score += gain; this.turnGains.push({ id: p.id, name: p.name, gain }); }
+      if (gain > 0) p.score += gain;
+      results.push({ id: p.id, name: p.name, answered: !!p.answered, correct: isC, gain, remain: p.answered ? Math.round(p.ansRemain * 10) / 10 : -1 });
       this.syncPart(p);
     }
-    this.bc({ t: "reveal", correct, counts, gains: this.turnGains, players: this.scoreboard() });
+    this.bc({ t: "reveal", correct, counts, results, players: this.scoreboard() });
     this.sendLobby();
     this.timers.push(setTimeout(() => { this.turnIdx++; this.beginQuestion(); }, Q_REVEAL * 1000));
   }

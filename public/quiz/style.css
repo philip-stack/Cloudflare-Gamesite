@@ -32,7 +32,7 @@ button:active { transform: scale(0.95); }
 #timebar i { display: block; height: 100%; width: 100%; background: linear-gradient(90deg, var(--good), var(--gold), var(--bad)); transition: width 0.25s linear; }
 .players { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
 .players .pl { display: flex; align-items: center; gap: 6px; background: var(--card); border-radius: 999px; padding: 4px 10px; font-size: 0.76rem; white-space: nowrap; box-shadow: 0 0 0 1px var(--edge-soft) inset; }
-.players .pl.answered { box-shadow: 0 0 0 1px var(--good) inset; color: var(--good); }
+.players .pl.answered { box-shadow: 0 0 0 1px var(--accent) inset; color: var(--accent); }
 .players .pl b { font-variant-numeric: tabular-nums; }
 
 /* Frage-Karte */
@@ -87,6 +87,15 @@ button:active { transform: scale(0.95); }
 .plist .phost { font-size: 0.72rem; color: var(--gold); }
 .plist li.win { box-shadow: 0 0 0 1px var(--gold) inset; } .plist li.win .psc { color: var(--gold); }
 .plist .kick { width: 28px; height: 28px; border-radius: 8px; background: rgba(255,106,90,0.14); color: var(--bad); font-weight: 800; font-size: 0.85rem; box-shadow: 0 0 0 1px rgba(255,106,90,0.3) inset; }
+/* Auflösungs-Übersicht zwischen den Fragen */
+.plist.tight { gap: 5px; margin: 6px 0 10px; }
+.plist.tight li { padding: 8px 12px; }
+.reveal-correct { font-family: var(--font-display); font-weight: 800; font-size: 1.4rem; color: var(--good); margin: 2px 0 10px; letter-spacing: 0.01em; }
+.reveal-verdict { font-weight: 800; font-size: 1.05rem; margin: 0 0 12px; }
+.reveal-verdict.good { color: var(--good); } .reveal-verdict.bad { color: var(--bad); } .reveal-verdict.muted { color: var(--muted); }
+.plist li.miss { box-shadow: 0 0 0 1px rgba(255,106,90,0.28) inset; } .plist li.miss .psc { color: var(--bad); }
+.plist.tight li.win .pname::before { content: "✓ "; color: var(--good); }
+.plist li.none { opacity: 0.55; } .plist li.none .psc { color: var(--muted); }
 .msg { color: var(--muted); font-size: 0.86rem; min-height: 1.2em; margin-bottom: 8px; } .msg.err { color: var(--bad); }
 .win-name { color: var(--gold); font-family: var(--font-display); font-weight: 800; font-size: 1.6rem; margin: 2px 0 12px; }
 
