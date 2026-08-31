@@ -582,7 +582,7 @@ export class QuizRoom extends DurableObject {
     server.accept();
     if (this.conns.size >= 10) { try { server.send(JSON.stringify({ t: "full" })); server.close(); } catch (_) {} return new Response(null, { status: 101, webSocket: client }); }
     const id = this.nextId++;
-    const p = { id, name: "Spieler", score: 0, answered: false, ansIdx: -1, ansRemain: 0 };
+    const p = { id, name: "Spieler", score: 0, answered: false, ansIdx: -1, ansRemain: 0, lastSeen: Date.now() };
     this.conns.set(server, p);
     if (this.hostId == null) this.hostId = id;
     server.addEventListener("message", e => { try { this.onMsg(server, e.data); } catch (err) { this.logErr("onMsg", err && err.stack || err); } });
@@ -618,11 +618,22 @@ export class QuizRoom extends DurableObject {
     }
   }
 
-  allAnswered() { const ps = [...this.conns.values()]; return ps.length > 0 && ps.every(q => q.answered); }
+  // „Alle haben geantwortet?" — Verbindungen, die länger nichts mehr gesendet
+  // haben (Tab im Hintergrund / halb-tote Verbindung, deren close der Browser
+  // noch nicht gemeldet hat), zählen NICHT mehr als blockierend. Sonst hängt die
+  // Runde bis der Timer abläuft, nur weil ein „Geist" nie antwortet. Der Client
+  // pingt alle ~15 s; 30 s Toleranz = ein verpasster Ping. So blockiert ein
+  // Geist höchstens die Frage, auf der jemand weggeht, nicht die folgenden.
+  allAnswered() {
+    const now = Date.now();
+    const active = [...this.conns.values()].filter(q => now - (q.lastSeen || 0) < 30000);
+    return active.length > 0 && active.every(q => q.answered);
+  }
 
   onMsg(ws, data) {
     const p = this.conns.get(ws); if (!p) return;
     const now = Date.now();
+    p.lastSeen = now;
     if (!p.rl || now - p.rl.t > Q_RATE_MS) p.rl = { t: now, n: 0 };
     if (++p.rl.n > Q_RATE_N) return;
     if (typeof data !== "string" || data.length > 4000) return;

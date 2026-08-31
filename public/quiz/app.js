@@ -52,23 +52,31 @@ const randCode = () => { const a = new Uint8Array(4); crypto.getRandomValues(a);
 
 function connect(c, isRe) {
   code = c.toUpperCase();
+  try { sessionStorage.setItem("quiz_code", code); } catch {}
   if (!isRe) { intentional = false; reTries = 0; }
   if (reTimer) { clearTimeout(reTimer); reTimer = null; }
+  // Alte Verbindung sauber schließen (Handler abhängen, damit ihr close KEINEN
+  // weiteren Reconnect auslöst) — verhindert mehrere überlappende Verbindungen.
+  if (ws) { try { ws.onopen = ws.onmessage = ws.onclose = ws.onerror = null; ws.close(); } catch {} ws = null; }
   try { ws = new WebSocket(wsUrl(code)); } catch { return tryReconnect(); }
-  ws.onopen = () => { reTries = 0; send({ t: "join", name: GS.getName() || "Spieler", uid: TAB_UID, dev: (GS.deviceId && GS.deviceId()) || "" }); if (pingT) clearInterval(pingT); pingT = setInterval(() => send({ t: "ping" }), 20000); };
+  ws.onopen = () => { reTries = 0; send({ t: "join", name: GS.getName() || "Spieler", uid: TAB_UID, dev: (GS.deviceId && GS.deviceId()) || "" }); if (pingT) clearInterval(pingT); pingT = setInterval(() => send({ t: "ping" }), 15000); };
   ws.onmessage = e => { let m; try { m = JSON.parse(e.data); } catch { return; } onMsg(m); };
   ws.onclose = () => { if (pingT) { clearInterval(pingT); pingT = null; } if (intentional) return; tryReconnect(); };
   ws.onerror = () => {};
 }
 function tryReconnect() {
   if (intentional) return;
-  if (reTries >= 6) { showMenu("Verbindung getrennt"); return; }
+  // Im Hintergrund (z. B. Link in WhatsApp teilen) NICHT die Versuche verbrauchen
+  // und nicht ins Menü werfen — der Browser friert die Verbindung ohnehin ein.
+  // Sobald der Tab wieder sichtbar wird, verbindet visibilitychange frisch neu.
+  if (document.hidden) return;
+  if (reTries >= 8) { showMenu("Verbindung getrennt"); return; }
   reTries++;
   const mEl = document.querySelector("#ov .msg"); if (mEl) mEl.textContent = "Verbindung unterbrochen — verbinde neu …";
-  reTimer = setTimeout(() => connect(code, true), 500 * reTries);
+  reTimer = setTimeout(() => connect(code, true), Math.min(4000, 500 * reTries));
 }
 function send(o) { try { if (ws && ws.readyState === 1) ws.send(JSON.stringify(o)); } catch {} }
-function leave() { intentional = true; if (reTimer) clearTimeout(reTimer); try { ws && ws.close(); } catch {} ws = null; }
+function leave() { intentional = true; if (reTimer) clearTimeout(reTimer); try { sessionStorage.removeItem("quiz_code"); } catch {} try { ws && ws.close(); } catch {} ws = null; }
 
 // ---------- Nachrichten ----------
 function onMsg(m) {
@@ -355,13 +363,24 @@ $("#btn-top").onclick = showScores;
 $("#btn-leave").onclick = () => { if (confirm("Raum verlassen?")) { leave(); showMenu(); } };
 function showLeave(on) { const b = $("#btn-leave"); if (b) b.classList.toggle("hidden", !on); }
 window.addEventListener("beforeunload", leave);
-document.addEventListener("visibilitychange", () => { if (document.hidden || intentional || !code) return; if ((view === "lobby" || view === "over") && (!ws || ws.readyState > 1)) { reTries = 0; connect(code, true); } });
+// Zurück aus dem Hintergrund (App-Wechsel/Teilen): wenn die Verbindung weg ist,
+// in JEDER Spielansicht (Lobby, laufendes Spiel, Ergebnis) frisch neu verbinden.
+// Nur im Menü nicht — dort ist man bewusst draußen.
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden || intentional || !code || view === "menu") return;
+  if (!ws || ws.readyState > 1) { reTries = 0; connect(code, true); }
+});
 
 buildEmotes();
 GS.badges.define("quiz", QUIZ_BADGES);
 GS.markPlayed("quiz");
 const pre = new URLSearchParams(location.search).get("code");
 const preCode = pre && /^[A-Z0-9]{4,6}$/i.test(pre) ? pre.toUpperCase() : "";
+// Nach einem Reload (z. B. weil iOS den Tab beim App-Wechsel neu lädt) den zuletzt
+// aktiven Raum automatisch wieder betreten — gleiche Tab-UID ⇒ der Server erkennt
+// den Reconnect und man taucht NICHT als zweiter „Spieler" auf.
+let storedCode = ""; try { storedCode = sessionStorage.getItem("quiz_code") || ""; } catch {}
 if (preCode && GS.getName()) connect(preCode);
 else if (preCode) showMenu("", preCode);
+else if (storedCode && /^[A-Z0-9]{4,6}$/.test(storedCode) && GS.getName()) connect(storedCode, true);
 else showMenu();
