@@ -15,6 +15,23 @@ export const Q_REVEAL = 6;   // Auflösung anzeigen (kurze Ergebnis-Übersicht)
 export const Q_ROUNDS = 10;  // Standard-Fragenzahl
 export const Q_ROUND_CHOICES = [5, 10, 15, 20];
 
+// Schwierigkeits-Stufen (0 = alle). Die Stufe leitet sich aus der Kategorie ab
+// (Q_CAT_DIFF); optional kann eine einzelne Frage per `d`-Feld überschreiben.
+// So ist der Filter sofort nutzbar, ohne alle Fragen einzeln zu markieren.
+export const Q_DIFF_CHOICES = [0, 1, 2, 3];
+export const Q_DIFF_LABELS = { 0: "Alle", 1: "Leicht", 2: "Mittel", 3: "Schwer" };
+export const Q_CAT_DIFF = {
+  allgemein: 1, natur: 1, essen: 1, film: 1,
+  geografie: 2, sport: 2, kultur: 2, oesterreich: 2,
+  wissenschaft: 3, geschichte: 3, schwer: 3,
+};
+
+// Bonus für aufeinanderfolgende richtige Antworten (Streak). Ab 2 in Folge, in
+// 10er-Schritten, gedeckelt bei +50 — belohnt Konstanz, ohne Tempo zu entwerten.
+export function streakBonus(streak) {
+  return streak >= 2 ? Math.min(50, (streak - 1) * 10) : 0;
+}
+
 // q = Frage, a = [richtig, falsch, falsch, falsch], c = Index der Lösung (immer 0).
 export const Q_CATS = {
   allgemein: [
@@ -354,7 +371,7 @@ export const Q_CATS = {
     { q: "Wie viele Saiten hat eine klassische Gitarre?", a: ["6", "4", "5", "7"], c: 0 },
     { q: "In welchem Film heißt es „Möge die Macht mit dir sein\"?", a: ["Star Wars", "Star Trek", "Herr der Ringe", "Avatar"], c: 0 },
     { q: "Welche Band sang „Hey Jude\"?", a: ["The Beatles", "Rolling Stones", "Queen", "ABBA"], c: 0 },
-    { q: "Wer schrieb „Faust\"?", a: ["Goethe", "Schiller", "Kafka", "Mann"], c: 0 },
+    { q: "Wer schrieb das Theaterstück „Die Räuber\"?", a: ["Schiller", "Goethe", "Lessing", "Brecht"], c: 0 },
     { q: "Wie heißt Micky Maus' Hund?", a: ["Pluto", "Goofy", "Rex", "Bello"], c: 0 },
     { q: "Welches ist ein Blechblasinstrument?", a: ["Trompete", "Geige", "Klavier", "Flöte"], c: 0 },
     { q: "Aus welchem Land kommt die Band ABBA?", a: ["Schweden", "Norwegen", "England", "USA"], c: 0 },
@@ -443,7 +460,7 @@ export const Q_CATS = {
     { q: "Wie heißt der berühmteste Ball in der Wiener Staatsoper?", a: ["Opernball", "Kaiserball", "Sommerball", "Blumenball"], c: 0 },
     { q: "Welche Süßspeise ist ein dünner, gefüllter Teig, oft mit Äpfeln?", a: ["Strudel", "Sachertorte", "Palatschinke", "Kaiserschmarrn"], c: 0 },
     { q: "Wie heißt der ehemalige kaiserliche Palast im Zentrum von Wien?", a: ["Hofburg", "Schönbrunn", "Belvedere", "Albertina"], c: 0 },
-    { q: "In welcher Stadt steht die Festung Hohensalzburg?", a: ["Salzburg", "Innsbruck", "Graz", "Linz"], c: 0 },
+    { q: "Welche zerrissene Süßspeise mit Rosinen ist eine Wiener Spezialität?", a: ["Kaiserschmarrn", "Sachertorte", "Apfelstrudel", "Buchtel"], c: 0 },
     { q: "Wie heißt der berühmte Wiener Zoo (ältester der Welt)?", a: ["Schönbrunn", "Hellabrunn", "Hagenbeck", "Tiergarten"], c: 0 },
     { q: "Welcher See liegt teils in Österreich und ist für Schilf bekannt?", a: ["Neusiedler See", "Wörthersee", "Attersee", "Traunsee"], c: 0 },
     { q: "Wie heißt das österreichische Parlament-Unterhaus?", a: ["Nationalrat", "Bundestag", "Landtag", "Reichstag"], c: 0 },
@@ -611,12 +628,24 @@ export const Q_CAT_LABELS = {
   film: "Film & Serien", schwer: "Kopfnüsse",
 };
 
-// Fragen-Pool aus gewählten Kategorien (leer = alle). Liefert die Frage-Objekte.
-export function questionPool(cats) {
+// Schwierigkeit einer Frage: eigenes `d`-Feld > Kategorie-Grundwert > Mittel.
+export function questionDifficulty(item, catKey) {
+  if (item && (item.d === 1 || item.d === 2 || item.d === 3)) return item.d;
+  return Q_CAT_DIFF[catKey] || 2;
+}
+
+// Fragen-Pool aus gewählten Kategorien (leer = alle) und optionaler Schwierigkeit
+// (0/undefined = alle). Jede Frage bekommt `cat` (Kategorie-Key) und `diff` (Stufe)
+// angehängt, damit Client/Server sie ohne erneutes Nachschlagen anzeigen können.
+export function questionPool(cats, diff = 0) {
   const keys = (Array.isArray(cats) && cats.length) ? cats.filter(k => Q_CATS[k]) : Q_CAT_KEYS;
   const use = keys.length ? keys : Q_CAT_KEYS;
   const out = [];
-  for (const k of use) for (const q of Q_CATS[k]) out.push(q);
+  for (const k of use) for (const q of Q_CATS[k]) {
+    const d = questionDifficulty(q, k);
+    if (diff && d !== diff) continue;
+    out.push({ q: q.q, a: q.a, c: q.c, cat: k, diff: d });
+  }
   return out;
 }
 

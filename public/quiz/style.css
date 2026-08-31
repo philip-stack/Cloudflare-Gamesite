@@ -107,6 +107,26 @@ button:active { transform: scale(0.95); }
 .chip { background: var(--card); color: var(--ink); font-size: 0.82rem; font-weight: 600; padding: 7px 11px; border-radius: 999px; box-shadow: 0 0 0 1px var(--edge-soft) inset; }
 .chip.on { background: rgba(169,123,255,0.18); box-shadow: 0 0 0 1.5px var(--accent) inset; color: var(--accent); }
 
+/* Bereit-Status */
+.plist .pready { font-size: 0.72rem; font-weight: 700; color: var(--good); }
+.ready-btn.on { box-shadow: 0 0 0 1.5px var(--good) inset; color: var(--good); }
+
+/* Streak-Flamme in der Auflösung */
+.plist .streak { font-size: 0.78rem; font-weight: 800; color: var(--gold); }
+
+/* Countdown-Spannung: Balken pulsiert die letzten Sekunden */
+#timebar.hurry { animation: tb-hurry 1s ease-in-out infinite; }
+#timebar.hurry i { background: var(--bad); }
+#timebar.panic { animation: tb-hurry 0.45s ease-in-out infinite; }
+@keyframes tb-hurry { 0%,100% { box-shadow: 0 0 0 0 rgba(255,106,90,0); } 50% { box-shadow: 0 0 0 3px rgba(255,106,90,0.35); } }
+
+/* Ergebnis-Verlauf */
+.plist.hist { max-height: 52vh; overflow-y: auto; gap: 6px; }
+.plist.hist li { flex-direction: column; align-items: stretch; gap: 3px; }
+.plist.hist .hist-q { font-weight: 600; font-size: 0.9rem; }
+.plist.hist .hist-a { font-weight: 800; color: var(--good); font-size: 0.9rem; }
+.plist.hist .hist-who { font-size: 0.76rem; color: var(--muted); }
+
 /* Konfetti */
 .confetti { position: fixed; inset: 0; pointer-events: none; z-index: 70; overflow: hidden; }
 .confetti i { position: absolute; top: -12px; width: 9px; height: 14px; border-radius: 2px; opacity: 0.95; animation: confetti-fall 1.5s cubic-bezier(0.3,0.6,0.5,1) forwards; }

@@ -1,6 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 import { D_CATS, D_CAT_KEYS, D_TURN, D_CHOOSE, D_REVEAL, dNorm, dLev, wordPool, pickWords, guessGain, drawerGain, wordLetters, catOf, hintCount } from "./draw-logic.js";
-import { Q_TURN, Q_REVEAL, Q_ROUNDS, Q_ROUND_CHOICES, Q_CAT_KEYS, questionPool, pickQuestions, shuffleOptions, answerGain } from "./quiz-logic.js";
+import { Q_TURN, Q_REVEAL, Q_ROUNDS, Q_ROUND_CHOICES, Q_DIFF_CHOICES, Q_CAT_KEYS, questionPool, pickQuestions, shuffleOptions, answerGain, streakBonus } from "./quiz-logic.js";
 
 // Fehler aus dem Echtzeit-Worker in dieselbe D1-Tabelle error_log schreiben,
 // die auch die Pages-Seite nutzt — damit DO-/DrawRoom-Störungen im Betreiber-
@@ -571,9 +571,9 @@ export class QuizRoom extends DurableObject {
   constructor(ctx, env) {
     super(ctx, env);
     this.conns = new Map(); this.state = "lobby"; this.hostId = null; this.nextId = 1;
-    this.cats = []; this.rounds = Q_ROUNDS;
+    this.cats = []; this.rounds = Q_ROUNDS; this.diff = 0;
     this.questions = []; this.turnIdx = 0; this.current = null; this.turnEndsAt = 0;
-    this.turnGains = [];
+    this.turnGains = []; this.history = []; this.lastReveal = null;
   }
 
   async fetch(request) {
@@ -582,7 +582,7 @@ export class QuizRoom extends DurableObject {
     server.accept();
     if (this.conns.size >= 10) { try { server.send(JSON.stringify({ t: "full" })); server.close(); } catch (_) {} return new Response(null, { status: 101, webSocket: client }); }
     const id = this.nextId++;
-    const p = { id, name: "Spieler", score: 0, answered: false, ansIdx: -1, ansRemain: 0, lastSeen: Date.now() };
+    const p = { id, name: "Spieler", score: 0, answered: false, ansIdx: -1, ansRemain: 0, streak: 0, ready: false, lastSeen: Date.now() };
     this.conns.set(server, p);
     if (this.hostId == null) this.hostId = id;
     server.addEventListener("message", e => { try { this.onMsg(server, e.data); } catch (err) { this.logErr("onMsg", err && err.stack || err); } });
@@ -598,8 +598,8 @@ export class QuizRoom extends DurableObject {
   pget(id) { for (const p of this.conns.values()) if (p.id === id) return p; return null; }
   partKey(p) { return p.uid || ("id" + p.id); }
   syncPart(p) { if (!this.parts) this.parts = new Map(); this.parts.set(this.partKey(p), { name: p.name, score: p.score | 0, device: p.dev || null }); }
-  scoreboard() { return [...this.conns.values()].map(p => ({ id: p.id, name: p.name, score: p.score, answered: p.answered })).sort((a, b) => b.score - a.score); }
-  sendLobby() { this.bc({ t: "lobby", state: this.state, hostId: this.hostId, players: this.scoreboard(), cats: this.cats, rounds: this.rounds }); }
+  scoreboard() { return [...this.conns.values()].map(p => ({ id: p.id, name: p.name, score: p.score, answered: p.answered, ready: !!p.ready, streak: p.streak | 0 })).sort((a, b) => b.score - a.score); }
+  sendLobby() { this.bc({ t: "lobby", state: this.state, hostId: this.hostId, players: this.scoreboard(), cats: this.cats, rounds: this.rounds, diff: this.diff }); }
   clearTimers() { for (const t of (this.timers || [])) clearTimeout(t); this.timers = []; }
   logErr(msg, extra) { console.error("QuizRoom", msg, extra || ""); try { this.ctx.waitUntil(rtLogError(this.env, msg, "quiz", extra)); } catch (_) {} }
 
@@ -647,7 +647,7 @@ export class QuizRoom extends DurableObject {
           // Reconnect-Dedup: bestehende Verbindung gleicher Geräte-ID übernehmen.
           for (const [ws2, q] of this.conns) {
             if (ws2 !== ws && q.uid === p.uid) {
-              p.id = q.id; p.score = q.score; p.answered = q.answered; p.ansIdx = q.ansIdx; p.ansRemain = q.ansRemain;
+              p.id = q.id; p.score = q.score; p.answered = q.answered; p.ansIdx = q.ansIdx; p.ansRemain = q.ansRemain; p.streak = q.streak | 0; p.ready = !!q.ready;
               if (this.hostId === q.id) this.hostId = p.id;
               this.conns.delete(ws2); try { ws2.close(); } catch (_) {}
             }
@@ -659,9 +659,13 @@ export class QuizRoom extends DurableObject {
         break;
       }
       case "start": if (p.id === this.hostId && (this.state === "lobby" || this.state === "over") && this.conns.size >= 2) this.startGame(); break;
-      case "again": if (p.id === this.hostId && this.state === "over") { this.state = "lobby"; for (const q of this.conns.values()) q.score = 0; this.sendLobby(); } break;
+      case "again": if (p.id === this.hostId && this.state === "over") { this.state = "lobby"; for (const q of this.conns.values()) { q.score = 0; q.ready = false; } this.sendLobby(); } break;
       case "cat": if (p.id === this.hostId && (this.state === "lobby" || this.state === "over")) { this.cats = Array.isArray(m.cats) ? m.cats.filter(c => Q_CAT_KEYS.includes(c)) : []; this.sendLobby(); } break;
       case "rounds": if (p.id === this.hostId && (this.state === "lobby" || this.state === "over")) { const n = m.n | 0; if (Q_ROUND_CHOICES.includes(n)) { this.rounds = n; this.sendLobby(); } } break;
+      case "diff": if (p.id === this.hostId && (this.state === "lobby" || this.state === "over")) { const d = m.d | 0; if (Q_DIFF_CHOICES.includes(d)) { this.diff = d; this.sendLobby(); } } break;
+      // „Bereit"-Status (nur Warteraum): der Host sieht, wer startklar ist. Der
+      // Host selbst braucht kein Bereit — er startet. Kein Auto-Start, nur Anzeige.
+      case "ready": if (this.state === "lobby" || this.state === "over") { p.ready = !!m.v; this.sendLobby(); } break;
       case "kick": if (p.id === this.hostId && m.id !== this.hostId) this.kick(m.id); break;
       // Antwort abgeben ODER ändern — erlaubt, solange die Frage läuft und noch
       // nicht alle geantwortet haben (danach löst die Runde sofort auf). Die
@@ -693,22 +697,29 @@ export class QuizRoom extends DurableObject {
   }
 
   startGame() {
-    this.parts = new Map();
-    for (const q of this.conns.values()) { q.score = 0; q.answered = false; q.ansIdx = -1; this.syncPart(q); }
+    this.parts = new Map(); this.history = [];
+    for (const q of this.conns.values()) { q.score = 0; q.answered = false; q.ansIdx = -1; q.streak = 0; q.ready = false; this.syncPart(q); }
+    // Schwierigkeitsfilter (0 = alle). Wird der Pool dadurch zu klein für die
+    // gewünschte Rundenzahl (z. B. enge Kategorie + Stufe), fällt er auf den
+    // vollen Kategorie-Pool zurück, damit das Spiel nie an zu wenig Fragen scheitert.
+    let pool = questionPool(this.cats, this.diff);
+    if (pool.length < this.rounds) pool = questionPool(this.cats);
     // Anti-Wiederholung ÜBER MEHRERE SPIELE hinweg: schon gestellte Fragen (nach
     // Fragetext) merken und meiden. Erst wenn zu wenige ungespielte übrig sind
     // (Pool erschöpft), den Speicher zurücksetzen. So kommen bei 2–4 Runden
     // hintereinander praktisch keine Doppler. Wechselt der Host die Kategorien,
     // greift der Filter automatisch auf den neuen (ggf. kleineren) Pool.
-    const pool = questionPool(this.cats);
     if (!this.usedQ) this.usedQ = new Set();
     let avail = pool.filter(item => !this.usedQ.has(item.q));
     if (avail.length < this.rounds) { this.usedQ = new Set(); avail = pool; }
     const chosen = pickQuestions(avail, this.rounds);
     for (const item of chosen) this.usedQ.add(item.q);
-    this.questions = chosen.map(item => {
+    // pickQuestions zieht per Index dedupliziert — dieselbe Frage kommt innerhalb
+    // eines Spiels nie zweimal. Zur Sicherheit dennoch nach Fragetext eindeutig halten.
+    const seen = new Set();
+    this.questions = chosen.filter(item => { if (seen.has(item.q)) return false; seen.add(item.q); return true; }).map(item => {
       const s = shuffleOptions(item);
-      return { q: item.q, options: s.options, correct: s.correct };
+      return { q: item.q, options: s.options, correct: s.correct, cat: item.cat, diff: item.diff };
     });
     this.turnIdx = 0; this.state = "playing";
     this.beginQuestion();
@@ -721,19 +732,25 @@ export class QuizRoom extends DurableObject {
     const cur = this.questions[this.turnIdx];
     this.current = cur; this.turnGains = [];
     for (const q of this.conns.values()) { q.answered = false; q.ansIdx = -1; q.ansRemain = 0; }
-    this.state = "question";
+    this.state = "question"; this.lastReveal = null;
     this.turnEndsAt = Date.now() + Q_TURN * 1000;
-    this.bc({ t: "question", idx: this.turnIdx + 1, total: this.questions.length, q: cur.q, options: cur.options, time: Q_TURN });
+    this.bc({ t: "question", idx: this.turnIdx + 1, total: this.questions.length, q: cur.q, options: cur.options, time: Q_TURN, cat: cur.cat, diff: cur.diff });
     this.sendLobby();
     this.timers.push(setTimeout(() => this.revealQuestion(), Q_TURN * 1000));
   }
 
-  // (Re-)Beitretenden den laufenden Stand schicken.
+  // (Re-)Beitretenden den laufenden Stand schicken. Bei einer laufenden Frage die
+  // ECHTE Restzeit (aus turnEndsAt) — nicht neu bei 20 s starten. Läuft gerade die
+  // Auflösung, den zuletzt gesendeten reveal-Schnappschuss nachreichen, damit man
+  // nicht im leeren Warteraum hängt, bis die nächste Frage kommt.
   sendCurrentTurn(ws, p) {
     try {
       if (this.state === "question" && this.current) {
         const time = Math.max(1, Math.round((this.turnEndsAt - Date.now()) / 1000));
-        ws.send(JSON.stringify({ t: "question", idx: this.turnIdx + 1, total: this.questions.length, q: this.current.q, options: this.current.options, time, locked: !!p.answered, yourIdx: p.answered ? p.ansIdx : -1 }));
+        ws.send(JSON.stringify({ t: "question", idx: this.turnIdx + 1, total: this.questions.length, q: this.current.q, options: this.current.options, time, cat: this.current.cat, diff: this.current.diff, locked: !!p.answered, yourIdx: p.answered ? p.ansIdx : -1 }));
+      } else if (this.state === "reveal" && this.current && this.lastReveal) {
+        ws.send(JSON.stringify({ t: "question", idx: this.turnIdx + 1, total: this.questions.length, q: this.current.q, options: this.current.options, time: 1, cat: this.current.cat, diff: this.current.diff, locked: !!p.answered, yourIdx: p.answered ? p.ansIdx : -1 }));
+        ws.send(JSON.stringify(this.lastReveal));
       }
     } catch (_) {}
   }
@@ -751,19 +768,27 @@ export class QuizRoom extends DurableObject {
     for (const p of this.conns.values()) {
       if (p.answered && p.ansIdx >= 0 && p.ansIdx < 4) counts[p.ansIdx]++;
       const isC = p.answered && p.ansIdx === correct;
-      const gain = answerGain({ remain: p.ansRemain, total: Q_TURN, correct: isC });
+      const base = answerGain({ remain: p.ansRemain, total: Q_TURN, correct: isC });
+      // Streak: bei richtig hochzählen und Bonus obendrauf, bei falsch/keiner Antwort zurücksetzen.
+      if (isC) p.streak = (p.streak | 0) + 1; else p.streak = 0;
+      const bonus = isC ? streakBonus(p.streak) : 0;
+      const gain = base + bonus;
       if (gain > 0) p.score += gain;
-      results.push({ id: p.id, name: p.name, answered: !!p.answered, correct: isC, gain, remain: p.answered ? Math.round(p.ansRemain * 10) / 10 : -1 });
+      results.push({ id: p.id, name: p.name, answered: !!p.answered, correct: isC, gain, base, bonus, streak: p.streak, remain: p.answered ? Math.round(p.ansRemain * 10) / 10 : -1 });
       this.syncPart(p);
     }
-    this.bc({ t: "reveal", correct, counts, results, players: this.scoreboard() });
+    // Verlauf für die Ergebnis-Übersicht am Spielende (kompakt: Frage, richtige
+    // Antwort, wer sie hatte).
+    this.history.push({ n: this.turnIdx + 1, q: this.current.q, answer: this.current.options[correct], ok: results.filter(r => r.correct).map(r => r.id) });
+    this.lastReveal = { t: "reveal", correct, counts, results, players: this.scoreboard() };
+    this.bc(this.lastReveal);
     this.sendLobby();
     this.timers.push(setTimeout(() => { this.turnIdx++; this.beginQuestion(); }, Q_REVEAL * 1000));
   }
 
   endGame() {
-    this.clearTimers(); this.state = "over"; this.current = null;
-    this.bc({ t: "over", players: this.scoreboard() }); this.sendLobby();
+    this.clearTimers(); this.state = "over"; this.current = null; this.lastReveal = null;
+    this.bc({ t: "over", players: this.scoreboard(), history: this.history || [] }); this.sendLobby();
     this.saveScores(this.parts ? [...this.parts.values()] : []);
     this.parts = null;
   }

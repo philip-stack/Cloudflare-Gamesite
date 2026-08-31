@@ -11,7 +11,9 @@ let ws = null, myId = null, hostId = null, code = "";
 let view = "menu";                 // menu | lobby | playing | over
 let players = [];
 let phase = "";                    // question | reveal
-let roomCats = [], roomRounds = 10;
+let roomCats = [], roomRounds = 10, roomDiff = 0;
+let iAmReady = false;
+let lastHistory = [];              // Verlauf des letzten Spiels (für Ergebnis-Übersicht)
 let curOptions = [], answered = false, myPick = -1, myLastFast = false;
 let timeEnd = 0, timeTotal = 1;
 let pingT = null, intentional = false, reTries = 0, reTimer = null;
@@ -39,6 +41,8 @@ const CAT_LABELS = {
 };
 const CAT_KEYS = Object.keys(CAT_LABELS);
 const ROUND_CHOICES = [5, 10, 15, 20];
+const DIFF_CHOICES = [0, 1, 2, 3];
+const DIFF_LABELS = { 0: "🎲 Alle", 1: "🟢 Leicht", 2: "🟡 Mittel", 3: "🔴 Schwer" };
 
 // Pro-Tab stabile Spieler-ID (Reconnect behält Identität; zwei Tabs = zwei Spieler).
 const TAB_UID = (() => {
@@ -87,6 +91,9 @@ function onMsg(m) {
     case "lobby":
       hostId = m.hostId; players = m.players || [];
       if (Array.isArray(m.cats)) roomCats = m.cats; if (m.rounds) roomRounds = m.rounds;
+      if (typeof m.diff === "number") roomDiff = m.diff;
+      // Eigenen Bereit-Status aus dem Server-Stand spiegeln (nach Reconnect korrekt).
+      { const me = players.find(p => p.id === myId); if (me) iAmReady = !!me.ready; }
       renderPlayers();
       if (view === "playing" || view === "over") break;
       view = "lobby";
@@ -96,7 +103,7 @@ function onMsg(m) {
     case "question": onQuestion(m); break;
     case "answered": onAnswered(m); break;
     case "reveal": onReveal(m); break;
-    case "over": view = "over"; showOver(m.players || []); break;
+    case "over": view = "over"; lastHistory = m.history || []; showOver(m.players || [], lastHistory); break;
     case "emote": floatEmote(m.e); break;
     case "chat": /* Systemmeldungen (z. B. Kick) — dezent ignorieren im Quiz */ break;
     case "pong": break;
@@ -111,7 +118,8 @@ function onQuestion(m) {
   answered = !!m.locked; myPick = m.locked ? (m.yourIdx != null ? m.yourIdx : -1) : -1; myLastFast = false;
   curOptions = m.options || [];
   $("#i-turn").textContent = "Frage " + (m.idx || 1) + (m.total ? "/" + m.total : "");
-  $("#i-cat").textContent = "";
+  // Kategorie-Badge (woher die Frage kommt) — kleiner Kontext, worauf man sich einstellt.
+  $("#i-cat").textContent = m.cat && CAT_LABELS[m.cat] ? CAT_LABELS[m.cat] : "";
   $("#q-text").textContent = m.q || "";
   setNote("");
   renderOptions(curOptions);
@@ -161,11 +169,13 @@ function showReveal(m, mine) {
   const rows = results.map(r => {
     const you = r.id === myId ? " (du)" : "";
     const cls = r.correct ? "win" : (r.answered ? "miss" : "none");
+    const fire = (r.correct && r.streak >= 2) ? ` <span class="streak">🔥${r.streak}</span>` : "";
     const badge = !r.answered ? "–" : (r.correct ? (r.id === fastestId ? "⚡ +" + r.gain : "+" + r.gain) : "✗");
-    return `<li class="${cls}"><span class="pname">${GS.esc(r.name)}${you}</span><span class="psc">${badge}</span></li>`;
+    return `<li class="${cls}"><span class="pname">${GS.esc(r.name)}${you}${fire}</span><span class="psc">${badge}</span></li>`;
   }).join("");
+  const mineStreak = (mine && mine.correct && mine.streak >= 2) ? ` · 🔥 ${mine.streak}er-Serie${mine.bonus ? " (+" + mine.bonus + ")" : ""}` : "";
   const verdict = mine
-    ? (mine.correct ? `<div class="reveal-verdict good">✅ Richtig! +${mine.gain}${mine.id === fastestId ? " · am schnellsten ⚡" : ""}</div>`
+    ? (mine.correct ? `<div class="reveal-verdict good">✅ Richtig! +${mine.gain}${mine.id === fastestId ? " · am schnellsten ⚡" : ""}${mineStreak}</div>`
       : (mine.answered ? `<div class="reveal-verdict bad">❌ Daneben</div>` : `<div class="reveal-verdict muted">⏱️ Nicht geantwortet</div>`))
     : "";
   overlay(`<h2>Auflösung</h2><div class="reveal-correct">✓ ${GS.esc(correctText)}</div>${verdict}<ul class="plist tight">${rows}</ul><p class="msg">Nächste Frage gleich …</p>`);
@@ -203,17 +213,25 @@ function setNote(txt, kind) {
 
 // ---------- Timer ----------
 let timerRAF = null, lastTickSec = -1;
-function startTimer(sec) { timeTotal = sec; timeEnd = performance.now() + sec * 1000; lastTickSec = -1; if (!timerRAF) tickTimer(); }
-function stopTimer() { if (timerRAF) cancelAnimationFrame(timerRAF); timerRAF = null; }
+function startTimer(sec) { timeTotal = sec; timeEnd = performance.now() + sec * 1000; lastTickSec = -1; clearHurry(); if (!timerRAF) tickTimer(); }
+function stopTimer() { if (timerRAF) cancelAnimationFrame(timerRAF); timerRAF = null; clearHurry(); }
+function clearHurry() { const b = $("#timebar"); if (b) b.classList.remove("hurry", "panic"); }
 function tickTimer() {
   const left = Math.max(0, timeEnd - performance.now());
   const secs = Math.ceil(left / 1000);
   $("#timefill").style.width = (left / (timeTotal * 1000) * 100) + "%";
   $("#i-time").textContent = secs + "s";
-  if (phase === "question" && !answered && secs <= 5 && secs >= 1 && secs !== lastTickSec) {
-    lastTickSec = secs; GS.sound.tone(secs <= 2 ? 880 : 640, 0.07, { type: "triangle", gain: 0.08 }); if (secs <= 2) GS.haptic(10);
+  // Countdown-Spannung: Balken pulsiert die letzten 5 s (rot), die letzten 2 s
+  // hektischer (panic). Visuell unabhängig davon, ob man schon geantwortet hat;
+  // die Tick-Töne nur für alle, die noch grübeln (nicht nerven nach der Wahl).
+  if (phase === "question") {
+    const bar = $("#timebar");
+    if (bar) { bar.classList.toggle("hurry", secs <= 5 && secs >= 1); bar.classList.toggle("panic", secs <= 2 && secs >= 1); }
+    if (!answered && secs <= 5 && secs >= 1 && secs !== lastTickSec) {
+      lastTickSec = secs; GS.sound.tone(secs <= 2 ? 880 : 640, 0.07, { type: "triangle", gain: 0.08 }); if (secs <= 2) GS.haptic(10);
+    }
   }
-  if (left <= 0) { timerRAF = null; return; }
+  if (left <= 0) { timerRAF = null; clearHurry(); return; }
   timerRAF = requestAnimationFrame(tickTimer);
 }
 
@@ -307,6 +325,30 @@ function showMenu(msg, prefillCode) {
   if (invited && !GS.getName()) { const n = o.querySelector("#mp-name"); if (n) n.focus(); }
 }
 
+// Nicht-Host-Spieler:innen, die auf „Bereit" getippt haben (Host zählt nicht mit).
+function readyCount() { return players.filter(p => p.id !== hostId && p.ready).length; }
+function guestCount() { return players.filter(p => p.id !== hostId).length; }
+function lobbySubText() {
+  const cats = roomCats.length ? roomCats.map(k => CAT_LABELS[k] || k).join(" · ") : "Alle Kategorien";
+  return `${cats} · ${DIFF_LABELS[roomDiff] || "Alle"} · ${roomRounds} Fragen`;
+}
+function lobbyMsgText(meHost) {
+  if (players.length < 2) return "Warte auf mindestens eine:n weitere:n …";
+  if (meHost) { const g = guestCount(), r = readyCount(); return g > 0 ? `${r}/${g} bereit — du kannst jederzeit starten.` : "Bereit zum Start!"; }
+  return "Warte auf den Host …";
+}
+function playerListHtml(meHost) {
+  return players.map(p => {
+    const you = p.id === myId ? " (du)" : "";
+    const readyMark = (p.id !== hostId && p.ready) ? '<span class="pready">✓ bereit</span>' : "";
+    let tail;
+    if (p.id === hostId) tail = '<span class="phost">Host</span>';
+    else if (meHost) tail = readyMark + `<button class="kick" data-kick="${p.id}" title="Entfernen">✕</button>`;
+    else tail = readyMark;
+    return `<li><span class="pname">${GS.esc(p.name)}${you}</span>${tail}</li>`;
+  }).join("");
+}
+
 function showLobby() {
   showLeave(true); showEmotes(false); stopTimer();
   const meHost = myId === hostId;
@@ -314,19 +356,22 @@ function showLobby() {
     ? `<div class="lobby-set">
         <div class="set-lbl">Kategorien <span class="hint">(keine = alle)</span></div>
         <div class="chips" id="lb-cats">${CAT_KEYS.map(k => `<button class="chip ${roomCats.includes(k) ? "on" : ""}" data-cat="${k}">${CAT_LABELS[k]}</button>`).join("")}</div>
+        <div class="set-lbl">Schwierigkeit</div>
+        <div class="chips" id="lb-diff">${DIFF_CHOICES.map(d => `<button class="chip ${roomDiff === d ? "on" : ""}" data-d="${d}">${DIFF_LABELS[d]}</button>`).join("")}</div>
         <div class="set-lbl">Fragen</div>
         <div class="chips" id="lb-rounds">${ROUND_CHOICES.map(n => `<button class="chip ${roomRounds === n ? "on" : ""}" data-r="${n}">${n}</button>`).join("")}</div>
       </div>`
-    : `<p class="sub lobby-sub">${roomCats.length ? roomCats.map(k => CAT_LABELS[k] || k).join(" · ") : "Alle Kategorien"} · ${roomRounds} Fragen</p>`;
+    : `<p class="sub lobby-sub">${lobbySubText()}</p>`;
   const o = overlay(`
     <h2>Warteraum</h2>
     <p class="sub">Teile den Code — Freunde tippen ihn im Menü ein. Ab <b>2 Spielern</b> kann der Host starten (bis 10).</p>
     <div class="code-big">${GS.esc(code)}</div>
     <button class="btn-secondary" id="lb-share">📤 Code teilen</button>
     ${settings}
-    <ul class="plist">${players.map(p => `<li><span class="pname">${GS.esc(p.name)}${p.id === myId ? " (du)" : ""}</span>${p.id === hostId ? '<span class="phost">Host</span>' : (meHost ? `<button class="kick" data-kick="${p.id}" title="Entfernen">✕</button>` : "")}</li>`).join("")}</ul>
-    <p class="msg" id="lb-msg">${players.length < 2 ? "Warte auf mindestens eine:n weitere:n …" : (meHost ? "Bereit zum Start!" : "Warte auf den Host …")}</p>
-    ${meHost ? `<button class="btn-primary" id="lb-start" ${players.length >= 2 ? "" : "disabled style=\"opacity:.5\""}>🧠 Starten</button>` : ""}
+    <ul class="plist">${playerListHtml(meHost)}</ul>
+    <p class="msg" id="lb-msg">${lobbyMsgText(meHost)}</p>
+    ${meHost ? `<button class="btn-primary" id="lb-start" ${players.length >= 2 ? "" : "disabled style=\"opacity:.5\""}>🧠 Starten</button>`
+      : `<button class="btn-secondary ready-btn ${iAmReady ? "on" : ""}" id="lb-ready">${iAmReady ? "✓ Bereit" : "Bereit?"}</button>`}
     <button class="btn-secondary" id="lb-leave">Verlassen</button>`);
   o.querySelector("#lb-share").onclick = async () => { const r = await GS.share({ title: "Wer weiß's?", text: `Rate mit mir 🧠 — tipp auf den Link, dann bist du direkt im Raum ${code}:`, url: location.origin + "/quiz/?code=" + encodeURIComponent(code) }); if (r === "copied") o.querySelector("#lb-share").textContent = "✔ kopiert"; };
   if (meHost) {
@@ -335,8 +380,10 @@ function showLobby() {
       b.classList.toggle("on"); send({ t: "cat", cats: roomCats });
     });
     o.querySelectorAll("#lb-rounds .chip").forEach(b => b.onclick = () => { roomRounds = +b.dataset.r; send({ t: "rounds", n: roomRounds }); o.querySelectorAll("#lb-rounds .chip").forEach(x => x.classList.toggle("on", x === b)); });
+    o.querySelectorAll("#lb-diff .chip").forEach(b => b.onclick = () => { roomDiff = +b.dataset.d; send({ t: "diff", d: roomDiff }); o.querySelectorAll("#lb-diff .chip").forEach(x => x.classList.toggle("on", x === b)); });
     o.querySelectorAll("[data-kick]").forEach(b => b.onclick = () => { const id = +b.dataset.kick; const pl = players.find(x => x.id === id); if (confirm((pl ? pl.name : "Spieler:in") + " entfernen?")) send({ t: "kick", id }); });
   }
+  const rb = o.querySelector("#lb-ready"); if (rb) rb.onclick = () => { iAmReady = !iAmReady; send({ t: "ready", v: iAmReady }); rb.classList.toggle("on", iAmReady); rb.textContent = iAmReady ? "✓ Bereit" : "Bereit?"; GS.haptic(8); };
   const st = o.querySelector("#lb-start"); if (st) st.onclick = () => send({ t: "start" });
   o.querySelector("#lb-leave").onclick = () => { leave(); showMenu(); };
 }
@@ -349,18 +396,21 @@ function updateLobby() {
   if (meHost !== hostControls) return showLobby();
   const list = o.querySelector(".plist");
   if (list) {
-    list.innerHTML = players.map(p => `<li><span class="pname">${GS.esc(p.name)}${p.id === myId ? " (du)" : ""}</span>${p.id === hostId ? '<span class="phost">Host</span>' : (meHost ? `<button class="kick" data-kick="${p.id}" title="Entfernen">✕</button>` : "")}</li>`).join("");
+    list.innerHTML = playerListHtml(meHost);
     if (meHost) list.querySelectorAll("[data-kick]").forEach(b => b.onclick = () => { const id = +b.dataset.kick; const pl = players.find(x => x.id === id); if (confirm((pl ? pl.name : "Spieler:in") + " entfernen?")) send({ t: "kick", id }); });
   }
   const msg = o.querySelector("#lb-msg");
-  if (msg) msg.textContent = players.length < 2 ? "Warte auf mindestens eine:n weitere:n …" : (meHost ? "Bereit zum Start!" : "Warte auf den Host …");
+  if (msg) msg.textContent = lobbyMsgText(meHost);
   const st = o.querySelector("#lb-start");
   if (st) { const ok = players.length >= 2; st.disabled = !ok; st.style.opacity = ok ? "" : ".5"; }
-  if (!meHost) { const sub = o.querySelector(".lobby-sub"); if (sub) sub.textContent = (roomCats.length ? roomCats.map(k => CAT_LABELS[k] || k).join(" · ") : "Alle Kategorien") + " · " + roomRounds + " Fragen"; }
+  const rb = o.querySelector("#lb-ready");
+  if (rb) { rb.classList.toggle("on", iAmReady); rb.textContent = iAmReady ? "✓ Bereit" : "Bereit?"; }
+  if (!meHost) { const sub = o.querySelector(".lobby-sub"); if (sub) sub.textContent = lobbySubText(); }
 }
 
-function showOver(list) {
+function showOver(list, history) {
   showLeave(true); showEmotes(false); stopTimer();
+  if (Array.isArray(history)) lastHistory = history;
   const meHost = myId === hostId; const top = list[0];
   if (top && top.id === myId) { GS.sound.win(); confetti(); } else { GS.sound.good(); }
   // Meilensteine verbuchen (lokal). Nur werten, wenn die Runde wirklich lief.
@@ -379,13 +429,52 @@ function showOver(list) {
     ${chips}
     <ul class="plist">${list.map((p, i) => `<li class="${i === 0 ? "win" : ""}"><span class="pname">${i === 0 ? "🥇 " : i === 1 ? "🥈 " : i === 2 ? "🥉 " : (i + 1) + ". "}${GS.esc(p.name)}</span><span class="psc">${p.score || 0}</span></li>`).join("")}</ul>
     ${meHost ? `<button class="btn-primary" id="ov-again">🔄 Nochmal</button>` : `<p class="msg">Warte auf den Host …</p>`}
+    <div class="btn-row">
+      ${lastHistory.length ? `<button class="btn-secondary" id="ov-history">📜 Verlauf</button>` : ""}
+      <button class="btn-secondary" id="ov-share">📤 Teilen</button>
+    </div>
     <button class="btn-secondary" id="ov-badges">🏅 Meilensteine</button>
     <button class="btn-secondary" id="ov-scores">🏆 Bestenliste</button>
     <button class="btn-secondary" id="ov-leave">Verlassen</button>`);
   const ag = o.querySelector("#ov-again"); if (ag) ag.onclick = () => { send({ t: "start" }); };
+  const hb = o.querySelector("#ov-history"); if (hb) hb.onclick = () => showHistory(lastHistory, list);
+  o.querySelector("#ov-share").onclick = () => shareResult(list);
   o.querySelector("#ov-badges").onclick = () => GS.badges.show("quiz", "Meilensteine");
   o.querySelector("#ov-scores").onclick = showScores;
   o.querySelector("#ov-leave").onclick = () => { leave(); showMenu(); };
+}
+
+// Ergebnis-Verlauf: pro Frage die richtige Antwort und wer sie hatte. Kompakt,
+// scrollbar. players = Endstand (für die Namenszuordnung der ok-IDs).
+function showHistory(history, players) {
+  const nameOf = id => { const p = (players || []).find(x => x.id === id); return p ? p.name : "?"; };
+  const rows = (history || []).map(h => {
+    const who = (h.ok || []).map(id => GS.esc(nameOf(id)) + (id === myId ? " (du)" : "")).join(", ");
+    const mine = (h.ok || []).includes(myId);
+    return `<li class="${mine ? "win" : "miss"}">
+      <div class="hist-q"><b>${h.n}.</b> ${GS.esc(h.q)}</div>
+      <div class="hist-a">✓ ${GS.esc(h.answer)}</div>
+      <div class="hist-who">${who ? "Richtig: " + who : "Niemand richtig"}</div>
+    </li>`;
+  }).join("");
+  const o = overlay2(`<h2>📜 Verlauf</h2><p class="sub">Alle ${(history || []).length} Fragen dieser Runde</p><ul class="plist hist">${rows || '<li class="miss">Kein Verlauf.</li>'}</ul><button class="btn-secondary" id="hist-close">Schließen</button>`);
+  o.querySelector("#hist-close").onclick = closeOverlay2;
+}
+
+// Ergebnis als Bild/Text teilen (violette Quiz-Karte).
+async function shareResult(list) {
+  const idx = (list || []).findIndex(p => p.id === myId);
+  const me = idx >= 0 ? list[idx] : null;
+  const won = list && list[0] && list[0].id === myId;
+  const sub = won ? "🏆 Gewonnen!" : (me ? `Platz ${idx + 1} von ${list.length}` : "Mitgeraten");
+  try {
+    await GS.shareCard({
+      title: "Wer weiß's?", emoji: "🧠", accent: "#a97bff",
+      big: me ? String(me.score || 0) : "", subtitle: sub,
+      url: location.origin + "/quiz/",
+      text: won ? "Ich hab bei „Wer weiß's?“ gewonnen 🧠🏆 — trau dich, spiel mit:" : "Ich hab bei „Wer weiß's?“ mitgeraten 🧠 — spiel mit:",
+    });
+  } catch {}
 }
 
 // ---------- Start / UI ----------
