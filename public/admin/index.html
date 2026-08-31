@@ -222,7 +222,7 @@
         (d.warns && d.warns.length ? `<span class="warns">· ${d.warns.map(esc).join(" · ")}</span>` : "");
       $("#stamp").textContent = "Stand: " + new Date(d.generatedAt).toLocaleString("de-AT");
 
-      const s = d.scores, e = d.errors, p = d.push, f = d.fire, db = d.db, k = d.kritzeln || {}, sp = d.sprit || {};
+      const s = d.scores, e = d.errors, p = d.push, f = d.fire, db = d.db, k = d.kritzeln || {}, q = d.quiz || {}, sp = d.sprit || {};
 
       const gameRows = (s.games || []).map(g =>
         `<div class="kv"><span>${esc(g.game)} <span class="muted">· ${nf(g.players)} Sp.</span></span><b class="mono">${nf(g.subs)}</b></div>`).join("") || '<p class="muted">keine</p>';
@@ -250,6 +250,10 @@
         `<tr><td class="dev">${esc(x.device)}</td><td class="t">${esc((x.at || "").slice(0, 16))}</td><td class="num"><button class="btn sm" data-unban="${esc(x.device)}">entsperren</button></td></tr>`).join("") || '<tr><td colspan="3" class="muted">keine gesperrten Geräte</td></tr>';
       const drawRows = (k.entries || []).map((x, i) =>
         `<tr><td class="num">${i + 1}</td><td>${esc(x.name)}</td><td class="num mono">${nf(x.points)}</td><td class="num mono">${nf(x.games)}</td><td class="num mono">${nf(x.wins)}</td><td class="num"><button class="btn sm bad" data-drawdel="${esc(x.name)}">🗑</button></td></tr>`).join("") || '<tr><td colspan="6" class="muted">keine Einträge</td></tr>';
+      const quizRows = (q.entries || []).map((x, i) =>
+        `<tr><td class="num">${i + 1}</td><td>${esc(x.name)}</td><td class="num mono">${nf(x.points)}</td><td class="num mono">${nf(x.games)}</td><td class="num mono">${nf(x.wins)}</td><td class="num"><button class="btn sm bad" data-quizdel="${esc(x.name)}">🗑</button></td></tr>`).join("") || '<tr><td colspan="6" class="muted">keine Einträge</td></tr>';
+      const quizReportRows = (q.reports || []).map(x =>
+        `<tr><td class="t">${esc((x.created_at || "").slice(5, 16))}</td><td class="m"><b>${esc((x.msg || "").replace(/^FRAGE GEMELDET: /, ""))}</b><br><span class="muted">${esc(x.extra || "")}</span></td></tr>`).join("") || '<tr><td colspan="2" class="muted">keine Meldungen 🎉</td></tr>';
 
       $("#content").innerHTML = `
         <div class="grid">
@@ -289,6 +293,12 @@
             <div class="kv"><span class="muted">Spiele gesamt</span><b class="mono">${nf(k.games)}</b></div>
             <div class="kv"><span class="muted">Spieler:innen</span><b class="mono">${nf(k.players)}</b></div>
             <div class="kv"><span class="muted">Top</span><b class="mono">${k.topName ? esc(k.topName) + " · " + nf(k.topPoints) : "–"}</b></div>
+          </div>
+          <div class="card"><h2>🧠 Wer weiß's?</h2>
+            <div class="kv"><span class="muted">Spiele gesamt</span><b class="mono">${nf(q.games)}</b></div>
+            <div class="kv"><span class="muted">Spieler:innen</span><b class="mono">${nf(q.players)}</b></div>
+            <div class="kv"><span class="muted">Top</span><b class="mono">${q.topName ? esc(q.topName) + " · " + nf(q.topPoints) : "–"}</b></div>
+            <div class="kv"><span class="muted">gemeldete Fragen</span><b class="mono">${nf(q.reportCount)}</b></div>
           </div>
         </div>
 
@@ -337,6 +347,22 @@
           <tbody>${drawRows}</tbody></table>
         </div>
 
+        <div class="section-title">🧠 Wer-weiß's-Bestenliste bereinigen
+          <button class="btn sm bad" id="quiz-clear">Alle löschen</button>
+        </div>
+        <div class="card full">
+          <table><thead><tr><th class="num">#</th><th>Name</th><th class="num">Punkte</th><th class="num">Spiele</th><th class="num">Siege</th><th class="num">Aktion</th></tr></thead>
+          <tbody>${quizRows}</tbody></table>
+        </div>
+
+        <div class="section-title">🚩 Gemeldete Fragen (Wer weiß's?)
+          <button class="btn sm bad" id="quiz-reports-clear">Meldungen leeren</button>
+        </div>
+        <div class="card full">
+          <table><thead><tr><th>Zeit</th><th>Frage &amp; Kontext</th></tr></thead>
+          <tbody>${quizReportRows}</tbody></table>
+        </div>
+
         <div class="section-title">⚙️ Aktionen & Alarm</div>
         <div class="card">
           <div class="toolbar" style="margin-bottom:10px">
@@ -372,6 +398,10 @@
       // Kritzeln-Bestenliste bereinigen
       const dc = $("#draw-clear"); if (dc) dc.onclick = () => act({ action: "clearDraw" }, "Die GESAMTE Kritzeln-Bestenliste löschen?");
       document.querySelectorAll("[data-drawdel]").forEach(b => b.onclick = () => act({ action: "deleteDraw", name: b.dataset.drawdel }, "Eintrag „" + b.dataset.drawdel + "“ aus der Kritzeln-Bestenliste löschen?"));
+      // Wer-weiß's-Bestenliste + gemeldete Fragen bereinigen
+      const qc = $("#quiz-clear"); if (qc) qc.onclick = () => act({ action: "clearQuiz" }, "Die GESAMTE Wer-weiß's-Bestenliste löschen?");
+      document.querySelectorAll("[data-quizdel]").forEach(b => b.onclick = () => act({ action: "deleteQuiz", name: b.dataset.quizdel }, "Eintrag „" + b.dataset.quizdel + "“ aus der Wer-weiß's-Bestenliste löschen?"));
+      const qrc = $("#quiz-reports-clear"); if (qrc) qrc.onclick = () => act({ action: "clearQuizReports" }, "Alle gemeldeten Fragen aus dem Log löschen?");
 
       // Trend-Zeitraum
       document.querySelectorAll("[data-days]").forEach(b => b.onclick = () => { trendDays = Number(b.dataset.days); load(); });

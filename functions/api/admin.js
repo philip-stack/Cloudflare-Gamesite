@@ -84,14 +84,17 @@ export async function onRequestGet({ request, env }) {
   }
 
   // ---- Fehler-Log: Gesamt, gruppiert (24h), letzte roh (inkl. UA), 522 separat ----
-  const eTotal = (await one(env, "SELECT COUNT(*) n FROM error_log"))?.n ?? 0;
-  const e24 = (await one(env, "SELECT COUNT(*) n FROM error_log WHERE created_at > datetime('now','-1 day')"))?.n ?? 0;
+  // Quiz-Meldungen (page='quiz-report') sind KEINE Fehler → aus allen Fehler-Zahlen
+  // und -Listen ausschließen (eigener Block weiter unten), damit die Ampel sauber bleibt.
+  const NOREP = "page IS NOT 'quiz-report'";
+  const eTotal = (await one(env, `SELECT COUNT(*) n FROM error_log WHERE ${NOREP}`))?.n ?? 0;
+  const e24 = (await one(env, `SELECT COUNT(*) n FROM error_log WHERE created_at > datetime('now','-1 day') AND ${NOREP}`))?.n ?? 0;
   const e522 = (await one(env, "SELECT COUNT(*) n FROM error_log WHERE created_at > datetime('now','-1 day') AND msg LIKE '%HTTP 522%'"))?.n ?? 0;
   const eTop = await many(env,
-    "SELECT msg, COUNT(*) n, MAX(created_at) last, MAX(page) page FROM error_log " +
-    "WHERE created_at > datetime('now','-1 day') GROUP BY msg ORDER BY n DESC LIMIT 20");
+    `SELECT msg, COUNT(*) n, MAX(created_at) last, MAX(page) page FROM error_log ` +
+    `WHERE created_at > datetime('now','-1 day') AND ${NOREP} GROUP BY msg ORDER BY n DESC LIMIT 20`);
   const eLatest = await many(env,
-    "SELECT created_at, page, msg, ua FROM error_log ORDER BY id DESC LIMIT 25");
+    `SELECT created_at, page, msg, ua FROM error_log WHERE ${NOREP} ORDER BY id DESC LIMIT 25`);
 
   // ---- Push ----
   const pSubs = (await one(env, "SELECT COUNT(*) n FROM push_sub"))?.n ?? 0;
@@ -119,6 +122,14 @@ export async function onRequestGet({ request, env }) {
   const kGames = (await one(env, "SELECT COALESCE(SUM(wins),0) n FROM draw_score"))?.n ?? 0;   // je Spiel genau 1 Sieg
   const kTop = await one(env, "SELECT name, points FROM draw_score ORDER BY points DESC LIMIT 1");
   const kEntries = await many(env, "SELECT name, points, games, wins, best FROM draw_score ORDER BY points DESC LIMIT 50");
+
+  // ---- Wer weiß's? (Quiz, dauerhafte Bestenliste + gemeldete Fragen) ----
+  const qPlayers = (await one(env, "SELECT COUNT(*) n FROM quiz_score"))?.n ?? 0;
+  const qGames = (await one(env, "SELECT COALESCE(SUM(wins),0) n FROM quiz_score"))?.n ?? 0;   // je Spiel genau 1 Sieg
+  const qTop = await one(env, "SELECT name, points FROM quiz_score ORDER BY points DESC LIMIT 1");
+  const qEntries = await many(env, "SELECT name, points, games, wins, best FROM quiz_score ORDER BY points DESC LIMIT 50");
+  const qReportCount = (await one(env, "SELECT COUNT(*) n FROM error_log WHERE page = 'quiz-report'"))?.n ?? 0;
+  const qReports = await many(env, "SELECT created_at, msg, extra FROM error_log WHERE page = 'quiz-report' ORDER BY id DESC LIMIT 40");
 
   // ---- Trends (Zeitraum wählbar 7/30/90 Tage, roh je Tag; Client füllt Lücken) ----
   const tScores = await many(env, `SELECT date(created_at) d, COUNT(*) n FROM scores WHERE created_at > datetime('now','-${days} days') GROUP BY d`);
@@ -155,6 +166,7 @@ export async function onRequestGet({ request, env }) {
     sprit: { lastRun: sh, ageSec: sAge, alerts: sAlerts, subscribers: sSubs, priceLog: sLog },
     db: { rateRows: rate, usedTokens: usedTok, bannedDevices: banned.length },
     kritzeln: { players: kPlayers, games: kGames, topName: kTop?.name || null, topPoints: kTop?.points ?? 0, entries: kEntries },
+    quiz: { players: qPlayers, games: qGames, topName: qTop?.name || null, topPoints: qTop?.points ?? 0, entries: qEntries, reportCount: qReportCount, reports: qReports },
     trends: { days, scores: tScores, errors: tErrors, devices: tDevices },
     alert: { name: alertName },
     recent, banned,
@@ -211,6 +223,20 @@ export async function onRequestPost({ request, env }) {
       }
       case "clearDraw": {
         const r = await run("DELETE FROM draw_score");
+        return json({ ok: true, deleted: r?.meta?.changes ?? null });
+      }
+      case "deleteQuiz": {
+        const name = String(b.name || "").trim();
+        if (!name) return json({ error: "kein Name" }, 400);
+        const r = await run("DELETE FROM quiz_score WHERE name = ?", name);
+        return json({ ok: true, deleted: r?.meta?.changes ?? null });
+      }
+      case "clearQuiz": {
+        const r = await run("DELETE FROM quiz_score");
+        return json({ ok: true, deleted: r?.meta?.changes ?? null });
+      }
+      case "clearQuizReports": {
+        const r = await run("DELETE FROM error_log WHERE page = 'quiz-report'");
         return json({ ok: true, deleted: r?.meta?.changes ?? null });
       }
       case "setAlert": {
