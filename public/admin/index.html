@@ -87,6 +87,22 @@
     function fmtAge(s) { if (s == null) return "–"; if (s < 90) return s + " s"; if (s < 5400) return Math.round(s / 60) + " min"; if (s < 172800) return Math.round(s / 3600) + " h"; return Math.round(s / 86400) + " d"; }
     const key = () => localStorage.getItem(LS);
 
+    // Token aus ?key= übernehmen und die URL sofort säubern — nicht im Browser-
+    // Verlauf, in Lesezeichen oder im Referrer hinterlassen.
+    (() => { try { const u = new URL(location.href); const k = u.searchParams.get("key"); if (k) { localStorage.setItem(LS, k); u.searchParams.delete("key"); history.replaceState(null, "", u.pathname + u.search + u.hash); } } catch {} })();
+
+    // „Gefährliche" Aktionen: Wort eintippen statt nur OK klicken (Schutz vor Fehlklick).
+    function confirmType(word, msg) { const v = prompt(msg + "\n\nZum Bestätigen „" + word + "“ eintippen:"); return v != null && v.trim().toUpperCase() === word; }
+    // CSV aus Objektzeilen bauen und als Download anbieten.
+    function downloadCsv(filename, rows, cols) {
+      const head = cols.map(c => c.label).join(";");
+      const esc2 = v => { const s = String(v == null ? "" : v); return /[";\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+      const body = (rows || []).map(r => cols.map(c => esc2(r[c.k])).join(";")).join("\n");
+      const blob = new Blob([head + "\n" + body], { type: "text/csv;charset=utf-8" });
+      const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = filename;
+      document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    }
+
     let timer = null, lastData = null, errView = "top", pageFilter = "";
     let trendDays = 30, boardGame = "", boardRows = null, searchQ = "", searchRows = null;
 
@@ -253,7 +269,19 @@
       const quizRows = (q.entries || []).map((x, i) =>
         `<tr><td class="num">${i + 1}</td><td>${esc(x.name)}</td><td class="num mono">${nf(x.points)}</td><td class="num mono">${nf(x.games)}</td><td class="num mono">${nf(x.wins)}</td><td class="num"><button class="btn sm bad" data-quizdel="${esc(x.name)}">🗑</button></td></tr>`).join("") || '<tr><td colspan="6" class="muted">keine Einträge</td></tr>';
       const quizReportRows = (q.reports || []).map(x =>
-        `<tr><td class="t">${esc((x.created_at || "").slice(5, 16))}</td><td class="m"><b>${esc((x.msg || "").replace(/^FRAGE GEMELDET: /, ""))}</b><br><span class="muted">${esc(x.extra || "")}</span></td></tr>`).join("") || '<tr><td colspan="2" class="muted">keine Meldungen 🎉</td></tr>';
+        `<tr><td class="t">${esc((x.created_at || "").slice(5, 16))}</td><td class="m"><b>${esc((x.msg || "").replace(/^FRAGE GEMELDET: /, ""))}</b><br><span class="muted">${esc(x.extra || "")}</span></td><td class="num"><button class="btn sm" data-reportdel="${x.id}" title="Erledigt / entfernen">✓</button></td></tr>`).join("") || '<tr><td colspan="3" class="muted">keine Meldungen 🎉</td></tr>';
+
+      // Live-Räume (aktive Echtzeit-Spiele)
+      const GAME_ICON = { quiz: "🧠", kritzeln: "🎨", tron: "🟦", party: "🎉" };
+      const liveRooms = (d.live && d.live.rooms) || [];
+      const liveRows = liveRooms.map(x =>
+        `<tr><td>${GAME_ICON[x.game] || "🎮"} ${esc(x.game)}</td><td class="mono">${esc(x.code)}</td><td class="num mono">${nf(x.players)}</td><td>${esc(x.state)}</td><td class="t">${esc((x.updated_at || "").slice(11, 16))}</td></tr>`).join("")
+        || '<tr><td colspan="5" class="muted">gerade keine aktiven Räume</td></tr>';
+
+      // Admin-Audit-Log
+      const logRows = (d.adminLog || []).map(x =>
+        `<tr><td class="t">${esc((x.created_at || "").slice(5, 16))}</td><td><b>${esc(x.action)}</b> <span class="muted">${esc(x.detail || "")}</span></td></tr>`).join("")
+        || '<tr><td colspan="2" class="muted">keine Aktionen protokolliert</td></tr>';
 
       $("#content").innerHTML = `
         <div class="grid">
@@ -302,6 +330,12 @@
           </div>
         </div>
 
+        <div class="section-title">🟢 Aktive Räume <span class="muted" style="font-weight:400;font-size:.8rem">(Live-Spiele gerade)</span></div>
+        <div class="card full">
+          <table><thead><tr><th>Spiel</th><th>Code</th><th class="num">Spieler</th><th>Phase</th><th>seit</th></tr></thead>
+          <tbody>${liveRows}</tbody></table>
+        </div>
+
         <div class="section-title">🐞 Fehler-Log
           <span class="toolbar">
             <select class="filter" id="err-page">${pageOpts}</select>
@@ -340,7 +374,7 @@
         </div>
 
         <div class="section-title">🎨 Kritzeln-Bestenliste bereinigen
-          <button class="btn sm bad" id="draw-clear">Alle löschen</button>
+          <span class="toolbar"><button class="btn sm" id="draw-csv">⬇ CSV</button><button class="btn sm bad" id="draw-clear">Alle löschen</button></span>
         </div>
         <div class="card full">
           <table><thead><tr><th class="num">#</th><th>Name</th><th class="num">Punkte</th><th class="num">Spiele</th><th class="num">Siege</th><th class="num">Aktion</th></tr></thead>
@@ -348,7 +382,7 @@
         </div>
 
         <div class="section-title">🧠 Wer-weiß's-Bestenliste bereinigen
-          <button class="btn sm bad" id="quiz-clear">Alle löschen</button>
+          <span class="toolbar"><button class="btn sm" id="quiz-csv">⬇ CSV</button><button class="btn sm bad" id="quiz-clear">Alle löschen</button></span>
         </div>
         <div class="card full">
           <table><thead><tr><th class="num">#</th><th>Name</th><th class="num">Punkte</th><th class="num">Spiele</th><th class="num">Siege</th><th class="num">Aktion</th></tr></thead>
@@ -359,8 +393,14 @@
           <button class="btn sm bad" id="quiz-reports-clear">Meldungen leeren</button>
         </div>
         <div class="card full">
-          <table><thead><tr><th>Zeit</th><th>Frage &amp; Kontext</th></tr></thead>
+          <table><thead><tr><th>Zeit</th><th>Frage &amp; Kontext</th><th class="num">Aktion</th></tr></thead>
           <tbody>${quizReportRows}</tbody></table>
+        </div>
+
+        <div class="section-title">🧾 Admin-Protokoll <span class="muted" style="font-weight:400;font-size:.8rem">(letzte Aktionen)</span></div>
+        <div class="card full">
+          <table><thead><tr><th>Zeit</th><th>Aktion</th></tr></thead>
+          <tbody>${logRows}</tbody></table>
         </div>
 
         <div class="section-title">⚙️ Aktionen & Alarm</div>
@@ -388,20 +428,23 @@
       $("#err-toggle").onclick = () => { errView = errView === "top" ? "latest" : "top"; render(lastData); };
       $("#err-page").onchange = ev => { pageFilter = ev.target.value; render(lastData); };
       $("#err-522").onclick = () => act({ action: "clear522" }, "Alle 522-Meldungen (externe Quelle) löschen?");
-      $("#err-clear").onclick = () => act({ action: "clearErrors" }, "Das GESAMTE Fehler-Log löschen?");
-      $("#flush-queue").onclick = () => act({ action: "flushQueue" }, "Push-Warteschlange komplett leeren?");
+      $("#err-clear").onclick = () => { if (confirmType("LÖSCHEN", "Das GESAMTE Fehler-Log löschen?")) act({ action: "clearErrors" }); };
+      $("#flush-queue").onclick = () => { if (confirmType("LÖSCHEN", "Push-Warteschlange komplett leeren?")) act({ action: "flushQueue" }); };
       $("#trigger-cron").onclick = async () => { const d = await act({ action: "triggerCron" }); if (d) alert("Fire-Cron-Status: " + d.cronStatus); };
       const ts = $("#trigger-sprit"); if (ts) ts.onclick = async () => { const d = await act({ action: "triggerCron", which: "sprit" }); if (d) alert("Sprit-Cron: " + d.cronStatus + " · geprüft " + ((d.result && d.result.checked) ?? "–") + ", gesendet " + ((d.result && d.result.sent) ?? "–")); };
       document.querySelectorAll("[data-del]").forEach(b => b.onclick = () => act({ action: "deleteScore", id: Number(b.dataset.del) }, "Diesen Score löschen?"));
       document.querySelectorAll("[data-ban]").forEach(b => b.onclick = () => { const dev = b.dataset.ban; if (dev) act({ action: "banDevice", device: dev }, "Dieses Gerät sperren und alle seine Scores löschen?"); });
       document.querySelectorAll("[data-unban]").forEach(b => b.onclick = () => act({ action: "unbanDevice", device: b.dataset.unban }, "Gerät wieder entsperren?"));
       // Kritzeln-Bestenliste bereinigen
-      const dc = $("#draw-clear"); if (dc) dc.onclick = () => act({ action: "clearDraw" }, "Die GESAMTE Kritzeln-Bestenliste löschen?");
+      const dc = $("#draw-clear"); if (dc) dc.onclick = () => { if (confirmType("LÖSCHEN", "Die GESAMTE Kritzeln-Bestenliste löschen?")) act({ action: "clearDraw" }); };
       document.querySelectorAll("[data-drawdel]").forEach(b => b.onclick = () => act({ action: "deleteDraw", name: b.dataset.drawdel }, "Eintrag „" + b.dataset.drawdel + "“ aus der Kritzeln-Bestenliste löschen?"));
+      const dcsv = $("#draw-csv"); if (dcsv) dcsv.onclick = () => downloadCsv("kritzeln-bestenliste.csv", (lastData.kritzeln || {}).entries || [], [{ k: "name", label: "Name" }, { k: "points", label: "Punkte" }, { k: "games", label: "Spiele" }, { k: "wins", label: "Siege" }, { k: "best", label: "Best" }]);
       // Wer-weiß's-Bestenliste + gemeldete Fragen bereinigen
-      const qc = $("#quiz-clear"); if (qc) qc.onclick = () => act({ action: "clearQuiz" }, "Die GESAMTE Wer-weiß's-Bestenliste löschen?");
+      const qc = $("#quiz-clear"); if (qc) qc.onclick = () => { if (confirmType("LÖSCHEN", "Die GESAMTE Wer-weiß's-Bestenliste löschen?")) act({ action: "clearQuiz" }); };
       document.querySelectorAll("[data-quizdel]").forEach(b => b.onclick = () => act({ action: "deleteQuiz", name: b.dataset.quizdel }, "Eintrag „" + b.dataset.quizdel + "“ aus der Wer-weiß's-Bestenliste löschen?"));
+      const qcsv = $("#quiz-csv"); if (qcsv) qcsv.onclick = () => downloadCsv("wer-weiss-bestenliste.csv", (lastData.quiz || {}).entries || [], [{ k: "name", label: "Name" }, { k: "points", label: "Punkte" }, { k: "games", label: "Spiele" }, { k: "wins", label: "Siege" }, { k: "best", label: "Best" }]);
       const qrc = $("#quiz-reports-clear"); if (qrc) qrc.onclick = () => act({ action: "clearQuizReports" }, "Alle gemeldeten Fragen aus dem Log löschen?");
+      document.querySelectorAll("[data-reportdel]").forEach(b => b.onclick = () => act({ action: "deleteQuizReport", id: Number(b.dataset.reportdel) }, "Diese Meldung als erledigt entfernen?"));
 
       // Trend-Zeitraum
       document.querySelectorAll("[data-days]").forEach(b => b.onclick = () => { trendDays = Number(b.dataset.days); load(); });

@@ -129,7 +129,23 @@ export async function onRequestGet({ request, env }) {
   const qTop = await one(env, "SELECT name, points FROM quiz_score ORDER BY points DESC LIMIT 1");
   const qEntries = await many(env, "SELECT name, points, games, wins, best FROM quiz_score ORDER BY points DESC LIMIT 50");
   const qReportCount = (await one(env, "SELECT COUNT(*) n FROM error_log WHERE page = 'quiz-report'"))?.n ?? 0;
-  const qReports = await many(env, "SELECT created_at, msg, extra FROM error_log WHERE page = 'quiz-report' ORDER BY id DESC LIMIT 40");
+  const qReports = await many(env, "SELECT id, created_at, msg, extra FROM error_log WHERE page = 'quiz-report' ORDER BY id DESC LIMIT 40");
+
+  // ---- Live-Räume (Heartbeat der Echtzeit-DOs) ----
+  // Tote Zeilen wegräumen (falls ein DO abstürzte, ohne zu löschen), dann nur frische zeigen.
+  try { await env.DB.prepare("DELETE FROM live_room WHERE updated_at < datetime('now','-10 minutes')").run(); } catch (_) {}
+  const liveRooms = await many(env,
+    "SELECT code, game, players, state, updated_at FROM live_room WHERE updated_at > datetime('now','-2 minutes') AND players > 0 ORDER BY updated_at DESC LIMIT 50");
+
+  // ---- Admin-Audit-Log ----
+  const adminLog = await many(env, "SELECT action, detail, created_at FROM admin_log ORDER BY id DESC LIMIT 40");
+
+  // ---- Health (Cron-Totmann + VAPID) direkt einbinden ----
+  let health = null;
+  try {
+    const hr = await fetch(new URL("/api/health", request.url).toString(), { headers: { "User-Agent": "admin/health" } });
+    health = await hr.json();
+  } catch (_) { /* Health optional */ }
 
   // ---- Trends (Zeitraum wählbar 7/30/90 Tage, roh je Tag; Client füllt Lücken) ----
   const tScores = await many(env, `SELECT date(created_at) d, COUNT(*) n FROM scores WHERE created_at > datetime('now','-${days} days') GROUP BY d`);
@@ -151,6 +167,8 @@ export async function onRequestGet({ request, env }) {
   if (e24 - e522 > 20) { status = "warn"; warns.push(`${e24 - e522} interne Fehler/24 h`); }
   if (pQueue > 200) { status = "warn"; warns.push(`Push-Queue: ${pQueue}`); }
   if (sAge != null && sAge > 1800) { status = "warn"; warns.push("Sprit-Cron verzögert"); }
+  if (health && health.cron && health.cron.ok === false) { status = "warn"; warns.push("Health: Cron-Totmann rot"); }
+  if (health && health.vapid === false) { status = "warn"; warns.push("Health: VAPID nicht konfiguriert"); }
 
   return json({
     generatedAt: new Date().toISOString(),
@@ -167,6 +185,9 @@ export async function onRequestGet({ request, env }) {
     db: { rateRows: rate, usedTokens: usedTok, bannedDevices: banned.length },
     kritzeln: { players: kPlayers, games: kGames, topName: kTop?.name || null, topPoints: kTop?.points ?? 0, entries: kEntries },
     quiz: { players: qPlayers, games: qGames, topName: qTop?.name || null, topPoints: qTop?.points ?? 0, entries: qEntries, reportCount: qReportCount, reports: qReports },
+    live: { rooms: liveRooms },
+    health,
+    adminLog,
     trends: { days, scores: tScores, errors: tErrors, devices: tDevices },
     alert: { name: alertName },
     recent, banned,
@@ -182,6 +203,12 @@ export async function onRequestPost({ request, env }) {
   const b = await request.json().catch(() => ({}));
   const action = String(b.action || "");
   const run = (sql, ...bind) => env.DB.prepare(sql).bind(...bind).run();
+
+  // Audit: jede geschützte Aktion (auch fehlgeschlagene Versuche) protokollieren.
+  if (action) {
+    const detail = [b.name, b.device, b.id, b.which].filter(v => v != null && v !== "").join(" ").slice(0, 120);
+    try { await env.DB.prepare("INSERT INTO admin_log (action, detail, ip) VALUES (?, ?, ?)").bind(action, detail || null, clientIp(request)).run(); } catch (_) {}
+  }
 
   try {
     switch (action) {
@@ -237,6 +264,12 @@ export async function onRequestPost({ request, env }) {
       }
       case "clearQuizReports": {
         const r = await run("DELETE FROM error_log WHERE page = 'quiz-report'");
+        return json({ ok: true, deleted: r?.meta?.changes ?? null });
+      }
+      case "deleteQuizReport": {
+        const id = Number(b.id);
+        if (!Number.isInteger(id)) return json({ error: "Ungültige id" }, 400);
+        const r = await run("DELETE FROM error_log WHERE id = ? AND page = 'quiz-report'", id);
         return json({ ok: true, deleted: r?.meta?.changes ?? null });
       }
       case "setAlert": {

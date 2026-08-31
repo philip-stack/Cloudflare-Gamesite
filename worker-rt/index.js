@@ -14,6 +14,22 @@ async function rtLogError(env, msg, page, extra) {
   } catch (_) { /* Logging darf nie zum Problem werden */ }
 }
 
+// Live-Raum-Heartbeat: aktive Spielräume melden sich in D1 (live_room), damit das
+// Admin-Dashboard laufende Spiele + Spielerzahl sieht. Beim Leeren löscht der Raum
+// seine Zeile. Fehler dürfen den Spielbetrieb nie stören.
+async function rtTouchRoom(env, code, game, players, state) {
+  try {
+    if (!env || !env.DB || !code) return;
+    await env.DB.prepare(
+      "INSERT INTO live_room (code, game, players, state, updated_at) VALUES (?, ?, ?, ?, datetime('now')) " +
+      "ON CONFLICT(code) DO UPDATE SET game = excluded.game, players = excluded.players, state = excluded.state, updated_at = datetime('now')"
+    ).bind(code, game, players | 0, String(state || "").slice(0, 16)).run();
+  } catch (_) { /* egal */ }
+}
+async function rtDropRoom(env, code) {
+  try { if (env && env.DB && code) await env.DB.prepare("DELETE FROM live_room WHERE code = ?").bind(code).run(); } catch (_) { /* egal */ }
+}
+
 // ====================================================================
 // Echtzeit-Worker der Gamesite: hostet das Durable Object PartyRoom
 // (ein DO pro Spieleabend-Raum). Cloudflare Pages kann keine Durable
@@ -93,6 +109,7 @@ export class TronRoom extends DurableObject {
 
   async fetch(request) {
     if (request.headers.get("Upgrade") !== "websocket") return new Response("expected websocket", { status: 426 });
+    this.code = (new URL(request.url).searchParams.get("code") || this.code || "").toUpperCase();
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
     server.accept();
@@ -115,7 +132,13 @@ export class TronRoom extends DurableObject {
 
   broadcast(obj) { const s = JSON.stringify(obj); for (const ws of this.conns.keys()) { try { ws.send(s); } catch (_) {} } }
   playersList() { return [...this.conns.values()].map(p => ({ id: p.id, name: p.name, color: p.color, ready: p.ready, alive: p.alive })); }
-  sendLobby() { this.broadcast({ t: "lobby", state: this.state, hostId: this.hostId, players: this.playersList() }); }
+  touchLive() {
+    const now = Date.now();
+    if (this._lt && now - this._lt < 8000 && this._ls === this.state) return;
+    this._lt = now; this._ls = this.state;
+    try { this.ctx.waitUntil(rtTouchRoom(this.env, this.code, "tron", this.conns.size, this.state)); } catch (_) {}
+  }
+  sendLobby() { this.touchLive(); this.broadcast({ t: "lobby", state: this.state, hostId: this.hostId, players: this.playersList() }); }
   aliveCount() { let n = 0; for (const p of this.conns.values()) if (p.alive) n++; return n; }
 
   onMsg(ws, data) {
@@ -135,7 +158,7 @@ export class TronRoom extends DurableObject {
     const p = this.conns.get(ws); if (!p) return;
     this.conns.delete(ws);
     if (this.hostId === p.id) { const first = this.conns.values().next().value; this.hostId = first ? first.id : null; }
-    if (this.conns.size === 0) { this.stopLoop(); this.state = "lobby"; this.tick = 0; this.nextId = 1; return; }
+    if (this.conns.size === 0) { try { this.ctx.waitUntil(rtDropRoom(this.env, this.code)); } catch (_) {} this.stopLoop(); this.state = "lobby"; this.tick = 0; this.nextId = 1; return; }
     if (this.state === "playing" && this.aliveCount() <= 1) this.endMatch();
     else this.sendLobby();
   }
@@ -249,6 +272,7 @@ export class DrawRoom extends DurableObject {
 
   async fetch(request) {
     if (request.headers.get("Upgrade") !== "websocket") return new Response("expected websocket", { status: 426 });
+    this.code = (new URL(request.url).searchParams.get("code") || this.code || "").toUpperCase();
     const pair = new WebSocketPair(); const [client, server] = Object.values(pair);
     server.accept();
     if (this.conns.size >= 10) { try { server.send(JSON.stringify({ t: "full" })); server.close(); } catch (_) {} return new Response(null, { status: 101, webSocket: client }); }
@@ -271,7 +295,13 @@ export class DrawRoom extends DurableObject {
   partKey(p) { return p.uid || ("id" + p.id); }
   syncPart(p) { if (!this.parts) this.parts = new Map(); this.parts.set(this.partKey(p), { name: p.name, score: p.score | 0, device: p.dev || null }); }
   scoreboard() { return [...this.conns.values()].map(p => ({ id: p.id, name: p.name, score: p.score, guessed: p.guessed, drawer: p.id === this.drawerId })).sort((a, b) => b.score - a.score); }
-  sendLobby() { this.bc({ t: "lobby", state: this.state, hostId: this.hostId, players: this.scoreboard(), cats: this.cats, rounds: this.rounds, turnTime: this.turnTime, customCount: this.customWords.length }); }
+  touchLive() {
+    const now = Date.now();
+    if (this._lt && now - this._lt < 8000 && this._ls === this.state) return;
+    this._lt = now; this._ls = this.state;
+    try { this.ctx.waitUntil(rtTouchRoom(this.env, this.code, "kritzeln", this.conns.size, this.state)); } catch (_) {}
+  }
+  sendLobby() { this.touchLive(); this.bc({ t: "lobby", state: this.state, hostId: this.hostId, players: this.scoreboard(), cats: this.cats, rounds: this.rounds, turnTime: this.turnTime, customCount: this.customWords.length }); }
   clearTimers() { for (const t of this.timers) clearTimeout(t); this.timers = []; }
   // Fehler sichtbar machen (Konsole + persistent in error_log via waitUntil).
   logErr(msg, extra) { console.error("DrawRoom", msg, extra || ""); try { this.ctx.waitUntil(rtLogError(this.env, msg, "kritzeln", extra)); } catch (_) {} }
@@ -371,6 +401,7 @@ export class DrawRoom extends DurableObject {
     if (this.conns.size === 0) {
       // Alle weg (Tabs geschlossen o. Ä.) mitten im Spiel → trotzdem werten.
       if (this.parts && (this.state === "choosing" || this.state === "drawing" || this.state === "reveal")) this.saveScores([...this.parts.values()]);
+      try { this.ctx.waitUntil(rtDropRoom(this.env, this.code)); } catch (_) {}
       this.clearTimers(); this.state = "lobby"; this.nextId = 1; this.hostId = null; this.parts = null; return;
     }
     const playing = this.state === "choosing" || this.state === "drawing" || this.state === "reveal";
@@ -579,6 +610,7 @@ export class QuizRoom extends DurableObject {
 
   async fetch(request) {
     if (request.headers.get("Upgrade") !== "websocket") return new Response("expected websocket", { status: 426 });
+    this.code = (new URL(request.url).searchParams.get("code") || this.code || "").toUpperCase();
     const pair = new WebSocketPair(); const [client, server] = Object.values(pair);
     server.accept();
     if (this.conns.size >= 10) { try { server.send(JSON.stringify({ t: "full" })); server.close(); } catch (_) {} return new Response(null, { status: 101, webSocket: client }); }
@@ -615,7 +647,14 @@ export class QuizRoom extends DurableObject {
     this.cats = Object.keys(t).filter(c => Q_CAT_KEYS.includes(c));
   }
   myVote(id) { return this.votes.get(id) || []; }
-  sendLobby() { this.bc({ t: "lobby", state: this.state, hostId: this.hostId, players: this.scoreboard(), cats: this.cats, rounds: this.rounds, diff: this.diff, catVotes: this.voteTally() }); }
+  // Heartbeat fürs Admin-Dashboard, gedrosselt (≤ alle 8 s; Zustandswechsel sofort).
+  touchLive() {
+    const now = Date.now();
+    if (this._lt && now - this._lt < 8000 && this._ls === this.state) return;
+    this._lt = now; this._ls = this.state;
+    try { this.ctx.waitUntil(rtTouchRoom(this.env, this.code, "quiz", this.conns.size, this.state)); } catch (_) {}
+  }
+  sendLobby() { this.touchLive(); this.bc({ t: "lobby", state: this.state, hostId: this.hostId, players: this.scoreboard(), cats: this.cats, rounds: this.rounds, diff: this.diff, catVotes: this.voteTally() }); }
   clearTimers() { for (const t of (this.timers || [])) clearTimeout(t); this.timers = []; }
   logErr(msg, extra) { console.error("QuizRoom", msg, extra || ""); try { this.ctx.waitUntil(rtLogError(this.env, msg, "quiz", extra)); } catch (_) {} }
 
@@ -717,6 +756,7 @@ export class QuizRoom extends DurableObject {
     if (this.hostId === p.id) { const f = this.conns.values().next().value; this.hostId = f ? f.id : null; }
     if (this.conns.size === 0) {
       if (this.parts && (this.state === "question" || this.state === "reveal" || this.state === "tiebreak")) this.saveScores([...this.parts.values()]);
+      try { this.ctx.waitUntil(rtDropRoom(this.env, this.code)); } catch (_) {}
       this.clearTimers(); this.state = "lobby"; this.nextId = 1; this.hostId = null; this.parts = null; this.votes = new Map(); this.tbRound = 0; this.tbIds = null; return;
     }
     // Stichfrage: verbleibende Gleichstand-Menge neu bestimmen; bleibt nur eine:r,
