@@ -1,6 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 import { D_CATS, D_CAT_KEYS, D_TURN, D_CHOOSE, D_REVEAL, dNorm, dLev, wordPool, pickWords, guessGain, drawerGain, wordLetters, catOf, hintCount } from "./draw-logic.js";
-import { Q_TURN, Q_REVEAL, Q_ROUNDS, Q_ROUND_CHOICES, Q_DIFF_CHOICES, Q_CAT_KEYS, questionPool, pickQuestions, shuffleOptions, answerGain, streakBonus } from "./quiz-logic.js";
+import { Q_TURN, Q_TURN_MAX, Q_REVEAL, Q_ROUNDS, Q_ROUND_CHOICES, Q_DIFF_CHOICES, Q_CAT_KEYS, questionPool, pickQuestions, shuffleOptions, answerGain, streakBonus, turnTime, Q_TB_TURN, Q_TB_REVEAL, Q_TB_MAX } from "./quiz-logic.js";
 
 // Fehler aus dem Echtzeit-Worker in dieselbe D1-Tabelle error_log schreiben,
 // die auch die Pages-Seite nutzt — damit DO-/DrawRoom-Störungen im Betreiber-
@@ -571,9 +571,10 @@ export class QuizRoom extends DurableObject {
   constructor(ctx, env) {
     super(ctx, env);
     this.conns = new Map(); this.state = "lobby"; this.hostId = null; this.nextId = 1;
-    this.cats = []; this.rounds = Q_ROUNDS; this.diff = 0;
-    this.questions = []; this.turnIdx = 0; this.current = null; this.turnEndsAt = 0;
+    this.cats = []; this.rounds = Q_ROUNDS; this.diff = 0; this.votes = new Map();
+    this.questions = []; this.turnIdx = 0; this.current = null; this.turnEndsAt = 0; this.turnTotal = Q_TURN;
     this.turnGains = []; this.history = []; this.lastReveal = null;
+    this.tbRound = 0; this.tbIds = null; this.tbWinner = null;   // Stichfrage-Status
   }
 
   async fetch(request) {
@@ -582,7 +583,7 @@ export class QuizRoom extends DurableObject {
     server.accept();
     if (this.conns.size >= 10) { try { server.send(JSON.stringify({ t: "full" })); server.close(); } catch (_) {} return new Response(null, { status: 101, webSocket: client }); }
     const id = this.nextId++;
-    const p = { id, name: "Spieler", score: 0, answered: false, ansIdx: -1, ansRemain: 0, streak: 0, ready: false, lastSeen: Date.now() };
+    const p = { id, name: "Spieler", score: 0, answered: false, ansIdx: -1, ansRemain: 0, streak: 0, ready: false, jokerUsed: false, tbOut: false, lastSeen: Date.now() };
     this.conns.set(server, p);
     if (this.hostId == null) this.hostId = id;
     server.addEventListener("message", e => { try { this.onMsg(server, e.data); } catch (err) { this.logErr("onMsg", err && err.stack || err); } });
@@ -599,7 +600,22 @@ export class QuizRoom extends DurableObject {
   partKey(p) { return p.uid || ("id" + p.id); }
   syncPart(p) { if (!this.parts) this.parts = new Map(); this.parts.set(this.partKey(p), { name: p.name, score: p.score | 0, device: p.dev || null }); }
   scoreboard() { return [...this.conns.values()].map(p => ({ id: p.id, name: p.name, score: p.score, answered: p.answered, ready: !!p.ready, streak: p.streak | 0 })).sort((a, b) => b.score - a.score); }
-  sendLobby() { this.bc({ t: "lobby", state: this.state, hostId: this.hostId, players: this.scoreboard(), cats: this.cats, rounds: this.rounds, diff: this.diff }); }
+
+  // Kategorie-Abstimmung: jede:r wählt beliebige Kategorien; gezählt wird, wie oft
+  // jede Kategorie gewählt wurde. Nur Stimmen aktiver Verbindungen zählen.
+  voteTally() {
+    const live = new Set([...this.conns.values()].map(p => p.id));
+    const t = {};
+    for (const [pid, cats] of this.votes) { if (!live.has(pid)) continue; for (const c of cats) t[c] = (t[c] || 0) + 1; }
+    return t;
+  }
+  // Effektive Kategorien = alle mit mindestens einer Stimme (leer = alle Kategorien).
+  applyVotes() {
+    const t = this.voteTally();
+    this.cats = Object.keys(t).filter(c => Q_CAT_KEYS.includes(c));
+  }
+  myVote(id) { return this.votes.get(id) || []; }
+  sendLobby() { this.bc({ t: "lobby", state: this.state, hostId: this.hostId, players: this.scoreboard(), cats: this.cats, rounds: this.rounds, diff: this.diff, catVotes: this.voteTally() }); }
   clearTimers() { for (const t of (this.timers || [])) clearTimeout(t); this.timers = []; }
   logErr(msg, extra) { console.error("QuizRoom", msg, extra || ""); try { this.ctx.waitUntil(rtLogError(this.env, msg, "quiz", extra)); } catch (_) {} }
 
@@ -607,7 +623,7 @@ export class QuizRoom extends DurableObject {
     for (const [ws, q] of this.conns) {
       if (q.id !== id) continue;
       try { ws.send(JSON.stringify({ t: "kicked" })); } catch (_) {}
-      this.conns.delete(ws); try { ws.close(); } catch (_) {}
+      this.conns.delete(ws); this.votes.delete(q.id); this.applyVotes(); try { ws.close(); } catch (_) {}
       if (this.hostId === q.id) { const f = this.conns.values().next().value; this.hostId = f ? f.id : null; }
       const playing = this.state === "question" || this.state === "reveal";
       this.bc({ t: "chat", kind: "system", text: (q.name || "Jemand") + " wurde entfernt." });
@@ -625,7 +641,7 @@ export class QuizRoom extends DurableObject {
   // zurückkommt, bleibt Teil der Runde; erst danach gilt die Verbindung als tot
   // und die anderen müssen nicht mehr auf sie warten. Client pingt alle ~15 s.
   allAnswered() {
-    const now = Date.now(), ghostMs = 2 * (Q_TURN + Q_REVEAL) * 1000;
+    const now = Date.now(), ghostMs = 2 * (Q_TURN_MAX + Q_REVEAL) * 1000;
     const active = [...this.conns.values()].filter(q => now - (q.lastSeen || 0) < ghostMs);
     return active.length > 0 && active.every(q => q.answered);
   }
@@ -647,7 +663,7 @@ export class QuizRoom extends DurableObject {
           // Reconnect-Dedup: bestehende Verbindung gleicher Geräte-ID übernehmen.
           for (const [ws2, q] of this.conns) {
             if (ws2 !== ws && q.uid === p.uid) {
-              p.id = q.id; p.score = q.score; p.answered = q.answered; p.ansIdx = q.ansIdx; p.ansRemain = q.ansRemain; p.streak = q.streak | 0; p.ready = !!q.ready;
+              p.id = q.id; p.score = q.score; p.answered = q.answered; p.ansIdx = q.ansIdx; p.ansRemain = q.ansRemain; p.streak = q.streak | 0; p.ready = !!q.ready; p.jokerUsed = !!q.jokerUsed; p.tbOut = !!q.tbOut;
               if (this.hostId === q.id) this.hostId = p.id;
               this.conns.delete(ws2); try { ws2.close(); } catch (_) {}
             }
@@ -660,7 +676,9 @@ export class QuizRoom extends DurableObject {
       }
       case "start": if (p.id === this.hostId && (this.state === "lobby" || this.state === "over") && this.conns.size >= 2) this.startGame(); break;
       case "again": if (p.id === this.hostId && this.state === "over") { this.state = "lobby"; for (const q of this.conns.values()) { q.score = 0; q.ready = false; } this.sendLobby(); } break;
-      case "cat": if (p.id === this.hostId && (this.state === "lobby" || this.state === "over")) { this.cats = Array.isArray(m.cats) ? m.cats.filter(c => Q_CAT_KEYS.includes(c)) : []; this.sendLobby(); } break;
+      // Kategorie-Abstimmung: JEDE:R darf wählen (nicht nur der Host). Effektive
+      // Kategorien = alle mit mindestens einer Stimme (Vereinigung).
+      case "vote": if (this.state === "lobby" || this.state === "over") { const cats = Array.isArray(m.cats) ? [...new Set(m.cats.filter(c => Q_CAT_KEYS.includes(c)))] : []; this.votes.set(p.id, cats); this.applyVotes(); this.sendLobby(); } break;
       case "rounds": if (p.id === this.hostId && (this.state === "lobby" || this.state === "over")) { const n = m.n | 0; if (Q_ROUND_CHOICES.includes(n)) { this.rounds = n; this.sendLobby(); } } break;
       case "diff": if (p.id === this.hostId && (this.state === "lobby" || this.state === "over")) { const d = m.d | 0; if (Q_DIFF_CHOICES.includes(d)) { this.diff = d; this.sendLobby(); } } break;
       // „Bereit"-Status (nur Warteraum): der Host sieht, wer startklar ist. Der
@@ -670,13 +688,24 @@ export class QuizRoom extends DurableObject {
       // Antwort abgeben ODER ändern — erlaubt, solange die Frage läuft und noch
       // nicht alle geantwortet haben (danach löst die Runde sofort auf). Die
       // Tempo-Wertung nutzt den Zeitpunkt der LETZTEN Änderung (fair).
-      case "answer": if (this.state === "question" && typeof m.i === "number" && m.i >= 0 && m.i < 4) {
-        const first = !p.answered;
-        p.answered = true; p.ansIdx = m.i | 0; p.ansRemain = Math.max(0, (this.turnEndsAt - Date.now()) / 1000);
-        if (first) this.bc({ t: "answered", id: p.id });   // Fortschritt nur beim ersten Antworten melden
-        this.sendLobby();
-        if (this.allAnswered()) this.revealQuestion();
-      } break;
+      case "answer": {
+        if (typeof m.i !== "number" || m.i < 0 || m.i >= 4) break;
+        if (this.state === "question") {
+          const first = !p.answered;
+          p.answered = true; p.ansIdx = m.i | 0; p.ansRemain = Math.max(0, (this.turnEndsAt - Date.now()) / 1000);
+          if (first) this.bc({ t: "answered", id: p.id });   // Fortschritt nur beim ersten Antworten melden
+          this.sendLobby();
+          if (this.allAnswered()) this.revealQuestion();
+        } else if (this.state === "tiebreak") {
+          this.tbAnswer(p, m.i | 0);
+        }
+        break;
+      }
+      // 50:50-Joker: einmal pro Spiel, blendet zwei falsche Optionen aus (nur für
+      // diese:n Spieler:in). Server kennt die Lösung, der Client nicht — daher hier.
+      case "fifty": this.useFifty(ws, p); break;
+      // Frage melden: landet im error_log (page "quiz-report") zur späteren Sichtung.
+      case "report": this.reportQuestion(p, m); break;
       case "emote": { const e = String(m.e || ""); if (["👍", "❤️", "😂", "😮", "🎉", "🔥"].includes(e)) this.bc({ t: "emote", e, name: p.name }, p.id); break; }
       case "ping": try { ws.send('{"t":"pong"}'); } catch (_) {} break;
     }
@@ -684,12 +713,25 @@ export class QuizRoom extends DurableObject {
 
   onClose(ws) {
     const p = this.conns.get(ws); if (!p) return;
-    this.conns.delete(ws);
+    this.conns.delete(ws); this.votes.delete(p.id);
     if (this.hostId === p.id) { const f = this.conns.values().next().value; this.hostId = f ? f.id : null; }
     if (this.conns.size === 0) {
-      if (this.parts && (this.state === "question" || this.state === "reveal")) this.saveScores([...this.parts.values()]);
-      this.clearTimers(); this.state = "lobby"; this.nextId = 1; this.hostId = null; this.parts = null; return;
+      if (this.parts && (this.state === "question" || this.state === "reveal" || this.state === "tiebreak")) this.saveScores([...this.parts.values()]);
+      this.clearTimers(); this.state = "lobby"; this.nextId = 1; this.hostId = null; this.parts = null; this.votes = new Map(); this.tbRound = 0; this.tbIds = null; return;
     }
+    // Stichfrage: verbleibende Gleichstand-Menge neu bestimmen; bleibt nur eine:r,
+    // gewinnt sie/er; sind alle Verbliebenen bereits raus, nächste Frage.
+    if (this.state === "tiebreak") {
+      if (this.tbIds) this.tbIds = this.tbIds.filter(id => this.pget(id));
+      if (this.conns.size < 2 || !this.tbIds || this.tbIds.length < 2) {
+        if (this.tbIds && this.tbIds.length === 1) { this.tbWinner = this.tbIds[0]; return this.tbResolve(); }
+        return this.finishGame();
+      }
+      const stillIn = this.tbIds.filter(id => { const q = this.pget(id); return q && !q.tbOut; });
+      if (!stillIn.length) { this.tbNext(); return; }
+      this.applyVotes(); this.sendLobby(); return;
+    }
+    this.applyVotes();
     const playing = this.state === "question" || this.state === "reveal";
     if (playing && this.conns.size < 2) { this.endGame(); return; }
     if (playing && this.state === "question" && this.allAnswered()) { this.revealQuestion(); return; }
@@ -698,7 +740,8 @@ export class QuizRoom extends DurableObject {
 
   startGame() {
     this.parts = new Map(); this.history = [];
-    for (const q of this.conns.values()) { q.score = 0; q.answered = false; q.ansIdx = -1; q.streak = 0; q.ready = false; this.syncPart(q); }
+    this.tbRound = 0; this.tbIds = null; this.tbWinner = null;
+    for (const q of this.conns.values()) { q.score = 0; q.answered = false; q.ansIdx = -1; q.streak = 0; q.ready = false; q.jokerUsed = false; q.tbOut = false; this.syncPart(q); }
     // Schwierigkeitsfilter (0 = alle). Wird der Pool dadurch zu klein für die
     // gewünschte Rundenzahl (z. B. enge Kategorie + Stufe), fällt er auf den
     // vollen Kategorie-Pool zurück, damit das Spiel nie an zu wenig Fragen scheitert.
@@ -733,10 +776,12 @@ export class QuizRoom extends DurableObject {
     this.current = cur; this.turnGains = [];
     for (const q of this.conns.values()) { q.answered = false; q.ansIdx = -1; q.ansRemain = 0; }
     this.state = "question"; this.lastReveal = null;
-    this.turnEndsAt = Date.now() + Q_TURN * 1000;
-    this.bc({ t: "question", idx: this.turnIdx + 1, total: this.questions.length, q: cur.q, options: cur.options, time: Q_TURN, cat: cur.cat, diff: cur.diff });
+    // Zeit richtet sich nach der Schwierigkeit der Frage (schwer = mehr Zeit).
+    this.turnTotal = turnTime(cur.diff);
+    this.turnEndsAt = Date.now() + this.turnTotal * 1000;
+    this.bc({ t: "question", idx: this.turnIdx + 1, total: this.questions.length, q: cur.q, options: cur.options, time: this.turnTotal, cat: cur.cat, diff: cur.diff });
     this.sendLobby();
-    this.timers.push(setTimeout(() => this.revealQuestion(), Q_TURN * 1000));
+    this.timers.push(setTimeout(() => this.revealQuestion(), this.turnTotal * 1000));
   }
 
   // (Re-)Beitretenden den laufenden Stand schicken. Bei einer laufenden Frage die
@@ -751,6 +796,9 @@ export class QuizRoom extends DurableObject {
       } else if (this.state === "reveal" && this.current && this.lastReveal) {
         ws.send(JSON.stringify({ t: "question", idx: this.turnIdx + 1, total: this.questions.length, q: this.current.q, options: this.current.options, time: 1, cat: this.current.cat, diff: this.current.diff, locked: !!p.answered, yourIdx: p.answered ? p.ansIdx : -1 }));
         ws.send(JSON.stringify(this.lastReveal));
+      } else if (this.state === "tiebreak" && this.current && this.tbIds) {
+        const time = Math.max(1, Math.round((this.turnEndsAt - Date.now()) / 1000));
+        ws.send(JSON.stringify({ t: "tiebreak", round: this.tbRound, tied: this.tbIds.map(id => { const q = this.pget(id); return { id, name: q ? q.name : "?" }; }), q: this.current.q, options: this.current.options, time, cat: this.current.cat }));
       }
     } catch (_) {}
   }
@@ -768,7 +816,7 @@ export class QuizRoom extends DurableObject {
     for (const p of this.conns.values()) {
       if (p.answered && p.ansIdx >= 0 && p.ansIdx < 4) counts[p.ansIdx]++;
       const isC = p.answered && p.ansIdx === correct;
-      const base = answerGain({ remain: p.ansRemain, total: Q_TURN, correct: isC });
+      const base = answerGain({ remain: p.ansRemain, total: this.turnTotal, correct: isC });
       // Streak: bei richtig hochzählen und Bonus obendrauf, bei falsch/keiner Antwort zurücksetzen.
       if (isC) p.streak = (p.streak | 0) + 1; else p.streak = 0;
       const bonus = isC ? streakBonus(p.streak) : 0;
@@ -787,10 +835,101 @@ export class QuizRoom extends DurableObject {
   }
 
   endGame() {
-    this.clearTimers(); this.state = "over"; this.current = null; this.lastReveal = null;
+    this.clearTimers();
+    // Gleichstand an der Spitze? → Stichfrage (Sudden Death), sofern genug Spieler
+    // da sind und das Sicherheitslimit noch nicht erreicht ist.
+    const board = this.scoreboard();
+    const top = board.length ? board[0].score : 0;
+    const tied = top > 0 ? board.filter(b => b.score === top).map(b => b.id) : [];
+    if (tied.length >= 2 && this.conns.size >= 2 && (this.tbRound | 0) < Q_TB_MAX && this.questions.length) return this.beginTiebreak(tied);
+    this.finishGame();
+  }
+
+  finishGame() {
+    this.clearTimers(); this.state = "over"; this.current = null; this.lastReveal = null; this.tbIds = null; this.tbWinner = null;
     this.bc({ t: "over", players: this.scoreboard(), history: this.history || [] }); this.sendLobby();
     this.saveScores(this.parts ? [...this.parts.values()] : []);
     this.parts = null;
+  }
+
+  // ---- Stichfrage (Sudden Death) bei Gleichstand ----
+  beginTiebreak(tiedIds) {
+    this.clearTimers();
+    this.tbRound = (this.tbRound | 0) + 1;
+    this.tbIds = tiedIds.filter(id => this.pget(id));
+    if (this.tbIds.length < 2) return this.finishGame();
+    let pool = questionPool(this.cats, this.diff);
+    if (!pool.length) pool = questionPool(this.cats);
+    if (!this.usedQ) this.usedQ = new Set();
+    let avail = pool.filter(item => !this.usedQ.has(item.q));
+    if (!avail.length) avail = pool;
+    const item = pickQuestions(avail, 1)[0];
+    if (!item) return this.finishGame();
+    this.usedQ.add(item.q);
+    const s = shuffleOptions(item);
+    this.current = { q: item.q, options: s.options, correct: s.correct, cat: item.cat, diff: item.diff };
+    this.state = "tiebreak"; this.tbWinner = null;
+    for (const q of this.conns.values()) { q.answered = false; q.ansIdx = -1; q.tbOut = false; }
+    this.turnTotal = Q_TB_TURN; this.turnEndsAt = Date.now() + Q_TB_TURN * 1000;
+    this.bc({ t: "tiebreak", round: this.tbRound, tied: this.tbIds.map(id => { const q = this.pget(id); return { id, name: q ? q.name : "?" }; }), q: this.current.q, options: this.current.options, time: Q_TB_TURN, cat: this.current.cat });
+    this.sendLobby();
+    this.timers.push(setTimeout(() => this.tbNext(), Q_TB_TURN * 1000));
+  }
+
+  tbAnswer(p, i) {
+    if (!this.tbIds || !this.tbIds.includes(p.id) || p.tbOut || p.answered || !this.current) return;
+    p.answered = true; p.ansIdx = i;
+    if (i === this.current.correct) { this.tbWinner = p.id; return this.tbResolve(); }
+    p.tbOut = true; this.bc({ t: "tbout", id: p.id });
+    const stillIn = this.tbIds.filter(id => { const q = this.pget(id); return q && !q.tbOut; });
+    if (!stillIn.length) this.tbNext();
+  }
+
+  // Niemand richtig (Zeit aus oder alle daneben) → Lösung zeigen, dann neue Stichfrage.
+  tbNext() {
+    this.clearTimers();
+    if (this.state !== "tiebreak") return;
+    this.bc({ t: "tbreveal", correct: this.current ? this.current.correct : -1 });
+    this.timers.push(setTimeout(() => {
+      if (this.conns.size < 2) return this.finishGame();
+      const board = this.scoreboard();
+      const top = board.length ? board[0].score : 0;
+      const tied = top > 0 ? board.filter(b => b.score === top).map(b => b.id) : [];
+      if (tied.length >= 2 && (this.tbRound | 0) < Q_TB_MAX) this.beginTiebreak(tied);
+      else this.finishGame();
+    }, Q_TB_REVEAL * 1000));
+  }
+
+  tbResolve() {
+    this.clearTimers();
+    const w = this.pget(this.tbWinner);
+    if (w) { w.score += 1; this.syncPart(w); }   // knapper Vorsprung → eindeutiger Sieg
+    this.bc({ t: "tbresult", winnerId: this.tbWinner, winnerName: w ? w.name : "", correct: this.current ? this.current.correct : -1, players: this.scoreboard() });
+    this.timers.push(setTimeout(() => this.finishGame(), (Q_TB_REVEAL + 1) * 1000));
+  }
+
+  // ---- 50:50-Joker ----
+  useFifty(ws, p) {
+    if (this.state !== "question" || !this.current || p.jokerUsed || p.answered) return;
+    const correct = this.current.correct;
+    const wrong = [0, 1, 2, 3].filter(i => i !== correct);
+    const keep = wrong[Math.floor(Math.random() * wrong.length)];   // eine falsche bleibt
+    const hide = wrong.filter(i => i !== keep);
+    p.jokerUsed = true;
+    try { ws.send(JSON.stringify({ t: "fifty", hide })); } catch (_) {}
+  }
+
+  // ---- Frage melden ----
+  reportQuestion(p, m) {
+    if (!this.current || !(this.state === "question" || this.state === "reveal" || this.state === "tiebreak")) return;
+    if (!p.reported) p.reported = new Set();
+    const key = this.current.q;
+    if (p.reported.has(key)) return;   // pro Frage nur einmal je Spieler:in
+    p.reported.add(key);
+    const correctText = this.current.options ? this.current.options[this.current.correct] : "";
+    const extra = "richtig: " + correctText + " | von: " + (p.name || "?") + " | grund: " + String(m && m.reason || "").slice(0, 80);
+    try { this.ctx.waitUntil(rtLogError(this.env, "FRAGE GEMELDET: " + key, "quiz-report", extra)); } catch (_) {}
+    try { this.toId(p.id, { t: "reported" }); } catch (_) {}
   }
 
   saveScores(parts) {

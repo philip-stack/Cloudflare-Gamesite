@@ -10,10 +10,21 @@
 // de-AT-Vokabular, bewusst eindeutige Fragen (keine strittigen Fakten).
 // ====================================================================
 
-export const Q_TURN = 20;    // Sekunden pro Frage
+export const Q_TURN = 20;    // Sekunden pro Frage (Standard/Fallback)
 export const Q_REVEAL = 6;   // Auflösung anzeigen (kurze Ergebnis-Übersicht)
 export const Q_ROUNDS = 10;  // Standard-Fragenzahl
 export const Q_ROUND_CHOICES = [5, 10, 15, 20];
+
+// Antwortzeit nach Schwierigkeit: schwere Fragen brauchen mehr Zeit (fairer),
+// leichte weniger (mehr Tempo). turnTime() liefert die Sekunden je Frage-Stufe.
+export const Q_TURN_MAX = 25;
+export const Q_TURN_BY_DIFF = { 1: 18, 2: 20, 3: 25 };
+export function turnTime(diff) { return Q_TURN_BY_DIFF[diff] || Q_TURN; }
+
+// Stichfrage (Sudden Death) bei Gleichstand: kürzere Zeit, eigener Reveal.
+export const Q_TB_TURN = 15;
+export const Q_TB_REVEAL = 4;
+export const Q_TB_MAX = 5;   // Sicherheitslimit: nach so vielen Stichfragen geteilter Sieg
 
 // Schwierigkeits-Stufen (0 = alle). Die Stufe leitet sich aus der Kategorie ab
 // (Q_CAT_DIFF); optional kann eine einzelne Frage per `d`-Feld überschreiben.

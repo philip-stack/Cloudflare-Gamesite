@@ -111,6 +111,16 @@ button:active { transform: scale(0.95); }
 .plist .pready { font-size: 0.72rem; font-weight: 700; color: var(--good); }
 .ready-btn.on { box-shadow: 0 0 0 1.5px var(--good) inset; color: var(--good); }
 
+/* Werkzeuge: 50:50-Joker & Frage melden */
+.tools { display: flex; gap: 8px; justify-content: center; margin: 8px 0 2px; }
+.tool-btn { background: var(--card); color: var(--ink); font-size: 0.86rem; font-weight: 700; padding: 8px 14px; border-radius: 999px; box-shadow: 0 0 0 1px var(--edge-soft) inset; }
+.tool-btn:disabled { opacity: 0.45; }
+.tool-btn.spent { color: var(--muted); }
+.opt.eliminated { opacity: 0.28; text-decoration: line-through; pointer-events: none; }
+
+/* Kategorie-Abstimmung: Stimmenzahl je Chip */
+.chip .votec { display: inline-grid; place-items: center; min-width: 16px; height: 16px; padding: 0 4px; margin-left: 3px; border-radius: 999px; background: var(--accent); color: #0c0718; font-size: 0.68rem; font-weight: 800; vertical-align: middle; }
+
 /* Streak-Flamme in der Auflösung */
 .plist .streak { font-size: 0.78rem; font-weight: 800; color: var(--gold); }
 

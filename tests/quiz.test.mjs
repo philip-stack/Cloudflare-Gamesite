@@ -70,6 +70,12 @@ assert("streakBonus: 2 in Folge = +10", L.streakBonus(2) === 10);
 assert("streakBonus: steigt mit der Serie", L.streakBonus(5) > L.streakBonus(3));
 assert("streakBonus: gedeckelt bei +50", L.streakBonus(20) === 50);
 
+// ---------- Zeit nach Schwierigkeit ----------
+assert("turnTime: schwer gibt mehr Zeit als leicht", L.turnTime(3) > L.turnTime(1));
+assert("turnTime: Stufe 2 = Standardzeit", L.turnTime(2) === L.Q_TURN);
+assert("turnTime: unbekannt = Fallback Q_TURN", L.turnTime(0) === L.Q_TURN);
+assert("turnTime: schwer ≤ Q_TURN_MAX", L.turnTime(3) <= L.Q_TURN_MAX);
+
 // ---------- shuffleOptions ----------
 const q = { q: "Test?", a: ["RICHTIG", "A", "B", "C"], c: 0 };
 for (let t = 0; t < 50; t++) {

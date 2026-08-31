@@ -11,9 +11,15 @@ let ws = null, myId = null, hostId = null, code = "";
 let view = "menu";                 // menu | lobby | playing | over
 let players = [];
 let phase = "";                    // question | reveal
-let roomCats = [], roomRounds = 10, roomDiff = 0;
+let roomCats = [], roomRounds = 10, roomDiff = 0, roomCatVotes = {};
+let myVoteCats = [];               // eigene Kategorie-Stimmen (Abstimmung)
 let iAmReady = false;
 let lastHistory = [];              // Verlauf des letzten Spiels (für Ergebnis-Übersicht)
+let curQuestion = "";              // aktueller Fragetext (für „Melden")
+let fiftyUsed = false;             // 50:50-Joker in diesem Spiel verbraucht?
+let tbAmTied = false;              // spiele ich bei der laufenden Stichfrage mit?
+try { myVoteCats = JSON.parse(sessionStorage.getItem("quiz_votes") || "[]") || []; } catch { myVoteCats = []; }
+function saveVotes() { try { sessionStorage.setItem("quiz_votes", JSON.stringify(myVoteCats)); } catch {} }
 let curOptions = [], answered = false, myPick = -1, myLastFast = false;
 let timeEnd = 0, timeTotal = 1;
 let pingT = null, intentional = false, reTries = 0, reTimer = null;
@@ -63,7 +69,7 @@ function connect(c, isRe) {
   // weiteren Reconnect auslöst) — verhindert mehrere überlappende Verbindungen.
   if (ws) { try { ws.onopen = ws.onmessage = ws.onclose = ws.onerror = null; ws.close(); } catch {} ws = null; }
   try { ws = new WebSocket(wsUrl(code)); } catch { return tryReconnect(); }
-  ws.onopen = () => { reTries = 0; send({ t: "join", name: GS.getName() || "Spieler", uid: TAB_UID, dev: (GS.deviceId && GS.deviceId()) || "" }); if (pingT) clearInterval(pingT); pingT = setInterval(() => send({ t: "ping" }), 15000); };
+  ws.onopen = () => { reTries = 0; send({ t: "join", name: GS.getName() || "Spieler", uid: TAB_UID, dev: (GS.deviceId && GS.deviceId()) || "" }); if (myVoteCats.length) send({ t: "vote", cats: myVoteCats }); if (pingT) clearInterval(pingT); pingT = setInterval(() => send({ t: "ping" }), 15000); };
   ws.onmessage = e => { let m; try { m = JSON.parse(e.data); } catch { return; } onMsg(m); };
   ws.onclose = () => { if (pingT) { clearInterval(pingT); pingT = null; } if (intentional) return; tryReconnect(); };
   ws.onerror = () => {};
@@ -92,6 +98,7 @@ function onMsg(m) {
       hostId = m.hostId; players = m.players || [];
       if (Array.isArray(m.cats)) roomCats = m.cats; if (m.rounds) roomRounds = m.rounds;
       if (typeof m.diff === "number") roomDiff = m.diff;
+      if (m.catVotes) roomCatVotes = m.catVotes;
       // Eigenen Bereit-Status aus dem Server-Stand spiegeln (nach Reconnect korrekt).
       { const me = players.find(p => p.id === myId); if (me) iAmReady = !!me.ready; }
       renderPlayers();
@@ -103,6 +110,12 @@ function onMsg(m) {
     case "question": onQuestion(m); break;
     case "answered": onAnswered(m); break;
     case "reveal": onReveal(m); break;
+    case "fifty": onFifty(m); break;
+    case "reported": onReported(); break;
+    case "tiebreak": onTiebreak(m); break;
+    case "tbout": onTbOut(m); break;
+    case "tbreveal": onTbReveal(m); break;
+    case "tbresult": onTbResult(m); break;
     case "over": view = "over"; lastHistory = m.history || []; showOver(m.players || [], lastHistory); break;
     case "emote": floatEmote(m.e); break;
     case "chat": /* Systemmeldungen (z. B. Kick) — dezent ignorieren im Quiz */ break;
@@ -111,12 +124,12 @@ function onMsg(m) {
 }
 
 function onQuestion(m) {
-  closeOverlay(); view = "playing"; phase = "question";
+  closeOverlay(); closeOverlay2(); view = "playing"; phase = "question"; tbAmTied = false;
   $("#board").classList.remove("hidden"); showLeave(true); showEmotes(true);
-  if ((m.idx || 1) === 1) gStats = { answered: 0, correct: 0, streakCur: 0, streakMax: 0, fast: 0, total: m.total || 0 };
+  if ((m.idx || 1) === 1) { gStats = { answered: 0, correct: 0, streakCur: 0, streakMax: 0, fast: 0, total: m.total || 0 }; fiftyUsed = false; }
   gStats.total = m.total || gStats.total;
   answered = !!m.locked; myPick = m.locked ? (m.yourIdx != null ? m.yourIdx : -1) : -1; myLastFast = false;
-  curOptions = m.options || [];
+  curOptions = m.options || []; curQuestion = m.q || "";
   $("#i-turn").textContent = "Frage " + (m.idx || 1) + (m.total ? "/" + m.total : "");
   // Kategorie-Badge (woher die Frage kommt) — kleiner Kontext, worauf man sich einstellt.
   $("#i-cat").textContent = m.cat && CAT_LABELS[m.cat] ? CAT_LABELS[m.cat] : "";
@@ -124,6 +137,8 @@ function onQuestion(m) {
   setNote("");
   renderOptions(curOptions);
   if (answered && myPick >= 0) { markPick(myPick); setNote("Deine Wahl: " + "ABCD"[myPick] + " — du kannst noch wechseln, bis alle dran sind"); }
+  showTools(true); updateTools();
+  { const r = $("#btn-report"); if (r) { r.disabled = false; r.textContent = "🚩 Melden"; } }
   startTimer(m.time || 20);
   renderPlayers();
 }
@@ -137,7 +152,7 @@ function onAnswered(m) {
 }
 
 function onReveal(m) {
-  phase = "reveal"; stopTimer(); players = m.players || players; renderPlayers();
+  phase = "reveal"; stopTimer(); showTools(false); players = m.players || players; renderPlayers();
   const results = m.results || [];
   const mine = results.find(r => r.id === myId);
   // Meilenstein-Statistik der Runde fortschreiben.
@@ -188,6 +203,16 @@ function renderOptions(options) {
   el.querySelectorAll(".opt").forEach(b => b.onclick = () => pickAnswer(+b.dataset.i));
 }
 function pickAnswer(i) {
+  // Stichfrage: nur Gleichstand-Spieler, Antwort ist endgültig (erste zählt).
+  if (phase === "tiebreak") {
+    if (!tbAmTied || answered) return;
+    answered = true; myPick = i; markPick(i);
+    send({ t: "answer", i });
+    $("#options").querySelectorAll(".opt").forEach(b => b.disabled = true);
+    setNote("Antwort abgegeben — Daumen drücken!");
+    GS.sound.click(); GS.haptic(10);
+    return;
+  }
   if (phase !== "question") return;
   const changed = myPick !== i;
   answered = true;
@@ -197,6 +222,7 @@ function pickAnswer(i) {
   send({ t: "answer", i });
   markPick(i);
   setNote("Deine Wahl: " + "ABCD"[i] + " — du kannst noch wechseln, bis alle dran sind");
+  updateTools();   // Joker nach dem Antworten sperren (Server nimmt ihn dann nicht mehr an)
   if (changed) { GS.sound.click(); GS.haptic(8); }
 }
 // Auswahl markieren — Buttons bleiben AKTIV, damit man bis zur Auflösung wechseln
@@ -349,19 +375,35 @@ function playerListHtml(meHost) {
   }).join("");
 }
 
+// Kategorie-Chips für die Abstimmung: eigene Stimmen hervorgehoben, Stimmenzahl je Kategorie.
+function catChipsHtml() {
+  return CAT_KEYS.map(k => {
+    const n = roomCatVotes[k] || 0, mine = myVoteCats.includes(k);
+    return `<button class="chip ${mine ? "on" : ""}" data-cat="${k}">${CAT_LABELS[k]}${n ? ` <span class="votec">${n}</span>` : ""}</button>`;
+  }).join("");
+}
+function bindCatVote(o) {
+  o.querySelectorAll("#lb-cats .chip").forEach(b => b.onclick = () => {
+    const k = b.dataset.cat;
+    myVoteCats = myVoteCats.includes(k) ? myVoteCats.filter(x => x !== k) : [...myVoteCats, k];
+    saveVotes(); b.classList.toggle("on", myVoteCats.includes(k)); send({ t: "vote", cats: myVoteCats });
+  });
+}
+
 function showLobby() {
   showLeave(true); showEmotes(false); stopTimer();
   const meHost = myId === hostId;
-  const settings = meHost
-    ? `<div class="lobby-set">
-        <div class="set-lbl">Kategorien <span class="hint">(keine = alle)</span></div>
-        <div class="chips" id="lb-cats">${CAT_KEYS.map(k => `<button class="chip ${roomCats.includes(k) ? "on" : ""}" data-cat="${k}">${CAT_LABELS[k]}</button>`).join("")}</div>
-        <div class="set-lbl">Schwierigkeit</div>
+  const hostExtra = meHost
+    ? `<div class="set-lbl">Schwierigkeit</div>
         <div class="chips" id="lb-diff">${DIFF_CHOICES.map(d => `<button class="chip ${roomDiff === d ? "on" : ""}" data-d="${d}">${DIFF_LABELS[d]}</button>`).join("")}</div>
         <div class="set-lbl">Fragen</div>
-        <div class="chips" id="lb-rounds">${ROUND_CHOICES.map(n => `<button class="chip ${roomRounds === n ? "on" : ""}" data-r="${n}">${n}</button>`).join("")}</div>
-      </div>`
+        <div class="chips" id="lb-rounds">${ROUND_CHOICES.map(n => `<button class="chip ${roomRounds === n ? "on" : ""}" data-r="${n}">${n}</button>`).join("")}</div>`
     : `<p class="sub lobby-sub">${lobbySubText()}</p>`;
+  const settings = `<div class="lobby-set">
+      <div class="set-lbl">Kategorien <span class="hint">(abstimmen — keine = alle)</span></div>
+      <div class="chips" id="lb-cats">${catChipsHtml()}</div>
+      ${hostExtra}
+    </div>`;
   const o = overlay(`
     <h2>Warteraum</h2>
     <p class="sub">Teile den Code — Freunde tippen ihn im Menü ein. Ab <b>2 Spielern</b> kann der Host starten (bis 10).</p>
@@ -374,11 +416,9 @@ function showLobby() {
       : `<button class="btn-secondary ready-btn ${iAmReady ? "on" : ""}" id="lb-ready">${iAmReady ? "✓ Bereit" : "Bereit?"}</button>`}
     <button class="btn-secondary" id="lb-leave">Verlassen</button>`);
   o.querySelector("#lb-share").onclick = async () => { const r = await GS.share({ title: "Wer weiß's?", text: `Rate mit mir 🧠 — tipp auf den Link, dann bist du direkt im Raum ${code}:`, url: location.origin + "/quiz/?code=" + encodeURIComponent(code) }); if (r === "copied") o.querySelector("#lb-share").textContent = "✔ kopiert"; };
+  // Kategorie-Abstimmung: für ALLE (nicht nur Host).
+  bindCatVote(o);
   if (meHost) {
-    o.querySelectorAll("#lb-cats .chip").forEach(b => b.onclick = () => {
-      const k = b.dataset.cat; roomCats = roomCats.includes(k) ? roomCats.filter(x => x !== k) : [...roomCats, k];
-      b.classList.toggle("on"); send({ t: "cat", cats: roomCats });
-    });
     o.querySelectorAll("#lb-rounds .chip").forEach(b => b.onclick = () => { roomRounds = +b.dataset.r; send({ t: "rounds", n: roomRounds }); o.querySelectorAll("#lb-rounds .chip").forEach(x => x.classList.toggle("on", x === b)); });
     o.querySelectorAll("#lb-diff .chip").forEach(b => b.onclick = () => { roomDiff = +b.dataset.d; send({ t: "diff", d: roomDiff }); o.querySelectorAll("#lb-diff .chip").forEach(x => x.classList.toggle("on", x === b)); });
     o.querySelectorAll("[data-kick]").forEach(b => b.onclick = () => { const id = +b.dataset.kick; const pl = players.find(x => x.id === id); if (confirm((pl ? pl.name : "Spieler:in") + " entfernen?")) send({ t: "kick", id }); });
@@ -392,8 +432,11 @@ function showLobby() {
 function updateLobby() {
   const o = document.getElementById("ov"); if (!o) return showLobby();
   const meHost = myId === hostId;
-  const hostControls = !!o.querySelector("#lb-cats");
+  const hostControls = !!o.querySelector("#lb-diff");   // host-only Steuerung (Kategorie-Chips hat jede:r)
   if (meHost !== hostControls) return showLobby();
+  // Kategorie-Abstimmung live nachziehen (Stimmenzahlen), Fokus/Struktur bleibt.
+  const catBox = o.querySelector("#lb-cats");
+  if (catBox) { catBox.innerHTML = catChipsHtml(); bindCatVote(o); }
   const list = o.querySelector(".plist");
   if (list) {
     list.innerHTML = playerListHtml(meHost);
@@ -477,12 +520,60 @@ async function shareResult(list) {
   } catch {}
 }
 
+// ---------- Werkzeuge: 50:50-Joker & Frage melden ----------
+function showTools(on) { const t = $("#tools"); if (t) t.classList.toggle("hidden", !on); }
+function updateTools() {
+  const f = $("#btn-fifty");
+  if (f) { const avail = !fiftyUsed && !answered && phase === "question"; f.disabled = !avail; f.classList.toggle("spent", fiftyUsed); f.textContent = fiftyUsed ? "🎲 50:50 ✓" : "🎲 50:50"; }
+}
+function onFifty(m) {
+  fiftyUsed = true; const hide = m.hide || [];
+  $("#options").querySelectorAll(".opt").forEach((b, idx) => { if (hide.includes(idx)) { b.classList.add("eliminated"); b.disabled = true; } });
+  updateTools(); GS.haptic(8); setNote("50:50 – zwei falsche Antworten raus.");
+}
+function doReport() {
+  if (!curQuestion) return;
+  send({ t: "report" });
+  const r = $("#btn-report"); if (r) { r.disabled = true; r.textContent = "🚩 gemeldet ✓"; }
+}
+function onReported() { const r = $("#btn-report"); if (r) { r.disabled = true; r.textContent = "🚩 gemeldet ✓"; } }
+
+// ---------- Stichfrage (Sudden Death) ----------
+function onTiebreak(m) {
+  closeOverlay(); closeOverlay2(); view = "playing"; phase = "tiebreak";
+  $("#board").classList.remove("hidden"); showLeave(true); showEmotes(true); showTools(false);
+  const tied = m.tied || []; tbAmTied = tied.some(t => t.id === myId);
+  answered = false; myPick = -1; curOptions = m.options || []; curQuestion = m.q || "";
+  $("#i-turn").textContent = "🥇 Stichfrage" + (m.round > 1 ? " " + m.round : "");
+  $("#i-cat").textContent = m.cat && CAT_LABELS[m.cat] ? CAT_LABELS[m.cat] : "";
+  $("#q-text").textContent = m.q || "";
+  renderOptions(curOptions);
+  if (!tbAmTied) { $("#options").querySelectorAll(".opt").forEach(b => b.disabled = true); setNote("Gleichstand! " + tied.map(t => GS.esc(t.name)).join(" & ") + " spielen um den Sieg …"); }
+  else setNote("Gleichstand — erste richtige Antwort gewinnt! Kein Wechseln.");
+  startTimer(m.time || 15); renderPlayers(); GS.sound.good();
+}
+function onTbOut(m) { if (m.id === myId) setNote("❌ Daneben – in dieser Stichfrage raus."); }
+function onTbReveal(m) {
+  phase = "reveal-tb"; stopTimer();
+  $("#options").querySelectorAll(".opt").forEach((b, idx) => { b.disabled = true; if (idx === m.correct) b.classList.add("correct"); });
+  setNote("Niemand richtig — es geht weiter …");
+}
+function onTbResult(m) {
+  phase = "reveal-tb"; stopTimer(); if (Array.isArray(m.players)) players = m.players;
+  $("#options").querySelectorAll(".opt").forEach((b, idx) => { b.disabled = true; if (idx === m.correct) b.classList.add("correct"); });
+  renderPlayers();
+  if (m.winnerId === myId) { GS.sound.win(); confetti(); } else GS.sound.good();
+  overlay(`<h2>🥇 Stichfrage entschieden</h2><div class="win-name">${GS.esc(m.winnerName || "")} gewinnt!</div><p class="msg">Ergebnis kommt gleich …</p>`);
+}
+
 // ---------- Start / UI ----------
 const soundBtn = $("#btn-sound");
 soundBtn.textContent = GS.sound.on() ? "🔊" : "🔇";
 soundBtn.onclick = () => { soundBtn.textContent = GS.sound.toggle() ? "🔊" : "🔇"; };
 $("#btn-top").onclick = showScores;
 $("#btn-leave").onclick = () => { if (confirm("Raum verlassen?")) { leave(); showMenu(); } };
+{ const f = $("#btn-fifty"); if (f) f.onclick = () => { if (fiftyUsed || answered || phase !== "question") return; send({ t: "fifty" }); f.disabled = true; GS.haptic(8); }; }
+{ const r = $("#btn-report"); if (r) r.onclick = doReport; }
 function showLeave(on) { const b = $("#btn-leave"); if (b) b.classList.toggle("hidden", !on); }
 window.addEventListener("beforeunload", leave);
 // Zurück aus dem Hintergrund (App-Wechsel/Teilen): wenn die Verbindung weg ist,
