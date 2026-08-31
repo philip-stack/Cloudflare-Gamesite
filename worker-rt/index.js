@@ -835,7 +835,8 @@ export class QuizRoom extends DurableObject {
         ws.send(JSON.stringify({ t: "question", idx: this.turnIdx + 1, total: this.questions.length, q: this.current.q, options: this.current.options, time, cat: this.current.cat, diff: this.current.diff, locked: !!p.answered, yourIdx: p.answered ? p.ansIdx : -1 }));
       } else if (this.state === "reveal" && this.current && this.lastReveal) {
         ws.send(JSON.stringify({ t: "question", idx: this.turnIdx + 1, total: this.questions.length, q: this.current.q, options: this.current.options, time: 1, cat: this.current.cat, diff: this.current.diff, locked: !!p.answered, yourIdx: p.answered ? p.ansIdx : -1 }));
-        ws.send(JSON.stringify(this.lastReveal));
+        const rleft = Math.max(1, Math.round(((this.revealEndsAt || Date.now()) - Date.now()) / 1000));
+        ws.send(JSON.stringify({ ...this.lastReveal, next: rleft }));
       } else if (this.state === "tiebreak" && this.current && this.tbIds) {
         const time = Math.max(1, Math.round((this.turnEndsAt - Date.now()) / 1000));
         ws.send(JSON.stringify({ t: "tiebreak", round: this.tbRound, tied: this.tbIds.map(id => { const q = this.pget(id); return { id, name: q ? q.name : "?" }; }), q: this.current.q, options: this.current.options, time, cat: this.current.cat }));
@@ -868,7 +869,9 @@ export class QuizRoom extends DurableObject {
     // Verlauf für die Ergebnis-Übersicht am Spielende (kompakt: Frage, richtige
     // Antwort, wer sie hatte).
     this.history.push({ n: this.turnIdx + 1, q: this.current.q, answer: this.current.options[correct], ok: results.filter(r => r.correct).map(r => r.id) });
-    this.lastReveal = { t: "reveal", correct, counts, results, players: this.scoreboard() };
+    // revealEndsAt: damit (Re-)Beitretende die ECHTE Restzeit der Auflösung sehen.
+    this.revealEndsAt = Date.now() + Q_REVEAL * 1000;
+    this.lastReveal = { t: "reveal", correct, counts, results, players: this.scoreboard(), next: Q_REVEAL };
     this.bc(this.lastReveal);
     this.sendLobby();
     this.timers.push(setTimeout(() => { this.turnIdx++; this.beginQuestion(); }, Q_REVEAL * 1000));

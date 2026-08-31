@@ -193,7 +193,28 @@ function showReveal(m, mine) {
     ? (mine.correct ? `<div class="reveal-verdict good">✅ Richtig! +${mine.gain}${mine.id === fastestId ? " · am schnellsten ⚡" : ""}${mineStreak}</div>`
       : (mine.answered ? `<div class="reveal-verdict bad">❌ Daneben</div>` : `<div class="reveal-verdict muted">⏱️ Nicht geantwortet</div>`))
     : "";
-  overlay(`<h2>Auflösung</h2><div class="reveal-correct">✓ ${GS.esc(correctText)}</div>${verdict}<ul class="plist tight">${rows}</ul><p class="msg">Nächste Frage gleich …</p>`);
+  overlay(`<h2>Auflösung</h2><div class="reveal-correct">✓ ${GS.esc(correctText)}</div>${verdict}<ul class="plist tight">${rows}</ul>
+    <div class="reveal-cd"><div class="reveal-cd-bar"><i id="rcd-bar"></i></div><p class="msg" id="rcd-txt">Nächste Frage …</p></div>`);
+  startRevealCd(m.next || 6);
+}
+
+// Countdown in der Auflösung: schrumpfender Balken + Sekunden, damit die nächste
+// Frage nie „plötzlich" da ist. Läuft rein lokal ab der empfangenen Restzeit.
+let revealRAF = null;
+function stopRevealCd() { if (revealRAF) { cancelAnimationFrame(revealRAF); revealRAF = null; } }
+function startRevealCd(secs) {
+  stopRevealCd();
+  const total = Math.max(1, secs) * 1000, end = performance.now() + total;
+  const bar = document.getElementById("rcd-bar"), txt = document.getElementById("rcd-txt");
+  const step = () => {
+    const left = Math.max(0, end - performance.now());
+    if (bar) bar.style.width = (left / total * 100) + "%";
+    const s = Math.ceil(left / 1000);
+    if (txt) txt.textContent = left > 0 ? ("Nächste Frage in " + s + " s") : "Nächste Frage …";
+    if (left <= 0) { revealRAF = null; return; }
+    revealRAF = requestAnimationFrame(step);
+  };
+  step();
 }
 
 // ---------- Optionen ----------
@@ -307,7 +328,7 @@ function renderPlayers() {
 }
 
 // ---------- Overlays ----------
-function closeOverlay() { const o = $("#ov"); if (o) o.remove(); }
+function closeOverlay() { stopRevealCd(); const o = $("#ov"); if (o) o.remove(); }
 function overlay(html) { closeOverlay(); const o = document.createElement("div"); o.id = "ov"; o.className = "overlay"; o.innerHTML = `<div class="panel">${html}</div>`; document.body.appendChild(o); return o; }
 function closeOverlay2() { const o = $("#ov2"); if (o) o.remove(); }
 function overlay2(html) { closeOverlay2(); const o = document.createElement("div"); o.id = "ov2"; o.className = "overlay"; o.style.zIndex = "60"; o.innerHTML = `<div class="panel">${html}</div>`; document.body.appendChild(o); o.onclick = e => { if (e.target === o) closeOverlay2(); }; return o; }

@@ -93,6 +93,10 @@ button:active { transform: scale(0.95); }
 .reveal-correct { font-family: var(--font-display); font-weight: 800; font-size: 1.4rem; color: var(--good); margin: 2px 0 10px; letter-spacing: 0.01em; }
 .reveal-verdict { font-weight: 800; font-size: 1.05rem; margin: 0 0 12px; }
 .reveal-verdict.good { color: var(--good); } .reveal-verdict.bad { color: var(--bad); } .reveal-verdict.muted { color: var(--muted); }
+.reveal-cd { margin-top: 10px; }
+.reveal-cd-bar { height: 5px; border-radius: 5px; background: var(--card); overflow: hidden; box-shadow: 0 0 0 1px var(--edge-soft) inset; }
+.reveal-cd-bar i { display: block; height: 100%; width: 100%; background: linear-gradient(90deg, var(--accent), var(--good)); }
+.reveal-cd .msg { margin: 6px 0 0; }
 .plist li.miss { box-shadow: 0 0 0 1px rgba(255,106,90,0.28) inset; } .plist li.miss .psc { color: var(--bad); }
 .plist.tight li.win .pname::before { content: "✓ "; color: var(--good); }
 .plist li.none { opacity: 0.55; } .plist li.none .psc { color: var(--muted); }
