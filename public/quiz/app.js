@@ -35,7 +35,7 @@ const CAT_LABELS = {
   allgemein: "🧠 Allgemein", geografie: "🌍 Geografie", natur: "🐾 Natur & Tiere",
   wissenschaft: "🔬 Wissenschaft", geschichte: "🏛️ Geschichte", sport: "⚽ Sport",
   kultur: "🎭 Kultur", oesterreich: "🇦🇹 Österreich", essen: "🍎 Essen & Trinken",
-  film: "🎬 Film & Serien",
+  film: "🎬 Film & Serien", schwer: "🧩 Kopfnüsse",
 };
 const CAT_KEYS = Object.keys(CAT_LABELS);
 const ROUND_CHOICES = [5, 10, 15, 20];

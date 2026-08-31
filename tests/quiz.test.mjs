@@ -21,11 +21,11 @@ for (const k of L.Q_CAT_KEYS) {
     if (new Set(item.a.map(x => String(x).toLowerCase())).size !== item.a.length) dupeOpts++;
   }
 }
-assert("Fragensatz: genug Fragen (>= 80)", total >= 80);
+assert("Fragensatz: großer Pool (>= 200 für wenig Wiederholung)", total >= 200);
 assert("Fragensatz: jede Frage 4 Optionen + gültiger c-Index", bad === 0);
 assert("Fragensatz: keine doppelten Optionen innerhalb einer Frage", dupeOpts === 0);
 assert("Fragensatz: jede Kategorie hat ein Label", L.Q_CAT_KEYS.every(k => typeof L.Q_CAT_LABELS[k] === "string"));
-assert("Fragensatz: neue Kategorien essen & film vorhanden", ["essen", "film"].every(k => Array.isArray(L.Q_CATS[k]) && L.Q_CATS[k].length >= 10));
+assert("Fragensatz: Kategorien essen, film & schwer vorhanden", ["essen", "film", "schwer"].every(k => Array.isArray(L.Q_CATS[k]) && L.Q_CATS[k].length >= 10));
 
 // ---------- questionPool ----------
 const poolAll = L.questionPool([]);

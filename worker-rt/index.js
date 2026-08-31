@@ -680,8 +680,18 @@ export class QuizRoom extends DurableObject {
   startGame() {
     this.parts = new Map();
     for (const q of this.conns.values()) { q.score = 0; q.answered = false; q.ansIdx = -1; this.syncPart(q); }
+    // Anti-Wiederholung ÜBER MEHRERE SPIELE hinweg: schon gestellte Fragen (nach
+    // Fragetext) merken und meiden. Erst wenn zu wenige ungespielte übrig sind
+    // (Pool erschöpft), den Speicher zurücksetzen. So kommen bei 2–4 Runden
+    // hintereinander praktisch keine Doppler. Wechselt der Host die Kategorien,
+    // greift der Filter automatisch auf den neuen (ggf. kleineren) Pool.
     const pool = questionPool(this.cats);
-    this.questions = pickQuestions(pool, this.rounds).map(item => {
+    if (!this.usedQ) this.usedQ = new Set();
+    let avail = pool.filter(item => !this.usedQ.has(item.q));
+    if (avail.length < this.rounds) { this.usedQ = new Set(); avail = pool; }
+    const chosen = pickQuestions(avail, this.rounds);
+    for (const item of chosen) this.usedQ.add(item.q);
+    this.questions = chosen.map(item => {
       const s = shuffleOptions(item);
       return { q: item.q, options: s.options, correct: s.correct };
     });
