@@ -1,7 +1,7 @@
 {
   "name": "Spieleabend",
   "short_name": "Spieleabend",
-  "description": "Würfelpoker, Funkelfeld, Komet, Sternensturm und Galopp — Spiele für den Spieleabend.",
+  "description": "Mini-Spiele für den Spieleabend — Solo-Arcade (Funkelfeld, Komet, Galopp, WUMMS!, MEERI-MANIA, Neon-Schlange …) und Echtzeit-Multiplayer (Wer weiß's?, Kritzeln & Raten).",
   "id": "/?app=spieleabend",
   "start_url": "/",
   "scope": "/",

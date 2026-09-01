@@ -46,9 +46,10 @@ self.addEventListener("push", e => {
     try {
       const sub = await self.registration.pushManager.getSubscription();
       if (sub) {
+        const auth = (sub.toJSON().keys || {}).auth || "";   // Abo-Geheimnis → Ownership-Nachweis
         const res = await fetch("/api/push", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "pending", endpoint: sub.endpoint }),
+          body: JSON.stringify({ action: "pending", endpoint: sub.endpoint, auth }),
         });
         if (res.ok) messages = (await res.json()).messages || [];
       }

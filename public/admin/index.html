@@ -278,6 +278,12 @@
         `<tr><td>${GAME_ICON[x.game] || "🎮"} ${esc(x.game)}</td><td class="mono">${esc(x.code)}</td><td class="num mono">${nf(x.players)}</td><td>${esc(x.state)}</td><td class="t">${esc((x.updated_at || "").slice(11, 16))}</td></tr>`).join("")
         || '<tr><td colspan="5" class="muted">gerade keine aktiven Räume</td></tr>';
 
+      // Client-Fehler (Geräte)
+      const ce = d.clientErrors || {};
+      const clRows = (ce.latest || []).map(x =>
+        `<tr><td class="t">${esc((x.created_at || "").slice(5, 16))}</td><td class="m"><b>${esc(x.msg)}</b><br><span class="muted">${esc(x.page || "")} · ${esc((x.ua || "").slice(0, 60))}</span></td></tr>`).join("")
+        || '<tr><td colspan="2" class="muted">keine Client-Fehler 🎉</td></tr>';
+
       // Admin-Audit-Log
       const logRows = (d.adminLog || []).map(x =>
         `<tr><td class="t">${esc((x.created_at || "").slice(5, 16))}</td><td><b>${esc(x.action)}</b> <span class="muted">${esc(x.detail || "")}</span></td></tr>`).join("")
@@ -345,6 +351,12 @@
           </span>
         </div>
         <div class="card full">${errBody}</div>
+
+        <div class="section-title">📱 Client-Fehler <span class="muted" style="font-weight:400;font-size:.8rem">(Geräte · ${nf(ce.last24h)} in 24 h / ${nf(ce.total)} gesamt)</span></div>
+        <div class="card full">
+          <table><thead><tr><th>Zeit</th><th>Fehler (Gerät)</th></tr></thead>
+          <tbody>${clRows}</tbody></table>
+        </div>
 
         <div class="section-title">🛡️ Moderation
           <button class="btn sm bad" id="flush-queue">Push-Queue leeren</button>

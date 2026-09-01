@@ -64,7 +64,15 @@ export async function onRequestPost({ request, env }) {
     }
   }
 
-  if (!code) code = newCode();
+  // Neuen Code anlegen legt eine DAUERHAFTE Zeile an → strenger drosseln als
+  // Updates (die nur eine bestehende Zeile überschreiben). Bremst das massenhafte
+  // Erzeugen von Backup-Zeilen (Speicher-/Kostenmissbrauch).
+  if (!code) {
+    if (!(await rateLimit(env, "cloudnew:" + clientIp(request), 6, 60))) {
+      return json({ error: "Zu viele neue Backup-Codes — kurz warten" }, 429);
+    }
+    code = newCode();
+  }
 
   // Beim Überschreiben wird die bisherige Version als prev_* aufbewahrt —
   // so lässt sich ein versehentliches/böswilliges Überschreiben rückgängig machen.

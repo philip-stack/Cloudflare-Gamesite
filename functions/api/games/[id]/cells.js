@@ -1,9 +1,13 @@
-import { json, CAT_KEYS, CAT_COUNT, cellCount, authGame } from "../../_util.js";
+import { json, clientIp, rateLimit, CAT_KEYS, CAT_COUNT, cellCount, authGame } from "../../_util.js";
+
+const MAX_CELL_VALUE = 1000;   // weit über jedem echten Würfelpoker-Feld
 
 // PUT /api/games/:id/cells?code=XXXXXX – ein Feld eintragen und Zug weiterschalten
 // body: { player_id, col, cat_key, kind, value, serviert?, turn_index }
 // Die Runde ist immer die aktuelle Runde des Spiels.
 export async function onRequestPut({ request, env, params }) {
+  // Schreib-Drossel je IP (ein Zug = ein PUT; 60/min ist reichlich).
+  if (!(await rateLimit(env, "cells:" + clientIp(request), 60, 60))) return json({ error: "Zu viele Anfragen" }, 429);
   const auth = await authGame(env, params.id, request);
   if (!auth) return json({ error: "Spiel nicht gefunden oder Code falsch" }, 404);
   const gameId = auth.id;
@@ -12,7 +16,7 @@ export async function onRequestPut({ request, env, params }) {
   if (!CAT_KEYS.includes(b.cat_key)) return json({ error: "Unbekanntes Feld" }, 400);
   if (!["score", "strike"].includes(b.kind)) return json({ error: "Ungültige Art" }, 400);
   const value = Number(b.value);
-  if (!Number.isInteger(value) || value < 0) return json({ error: "Ungültiger Wert" }, 400);
+  if (!Number.isInteger(value) || value < 0 || value > MAX_CELL_VALUE) return json({ error: "Ungültiger Wert" }, 400);
   const col = Number.isInteger(b.col) ? b.col : 0;
   if (col < 0 || col >= auth.cols) return json({ error: "Ungültige Spalte" }, 400);
   const round = auth.round;
@@ -48,6 +52,7 @@ export async function onRequestPut({ request, env, params }) {
 // DELETE /api/games/:id/cells?code=XXXXXX – letzten Eintrag rückgängig machen
 // (nur innerhalb der aktuellen Runde)
 export async function onRequestDelete({ request, env, params }) {
+  if (!(await rateLimit(env, "cells:" + clientIp(request), 60, 60))) return json({ error: "Zu viele Anfragen" }, 429);
   const auth = await authGame(env, params.id, request);
   if (!auth) return json({ error: "Spiel nicht gefunden oder Code falsch" }, 404);
   const gameId = auth.id;

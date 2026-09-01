@@ -96,6 +96,11 @@ export async function onRequestGet({ request, env }) {
   const eLatest = await many(env,
     `SELECT created_at, page, msg, ua FROM error_log WHERE ${NOREP} ORDER BY id DESC LIMIT 25`);
 
+  // ---- Client-Fehler (Geräte, /api/log → eigene Tabelle) ----
+  const clTotal = (await one(env, "SELECT COUNT(*) n FROM client_log"))?.n ?? 0;
+  const cl24 = (await one(env, "SELECT COUNT(*) n FROM client_log WHERE created_at > datetime('now','-1 day')"))?.n ?? 0;
+  const clLatest = await many(env, "SELECT created_at, page, msg, ua FROM client_log ORDER BY id DESC LIMIT 25");
+
   // ---- Push ----
   const pSubs = (await one(env, "SELECT COUNT(*) n FROM push_sub"))?.n ?? 0;
   const pQueue = (await one(env, "SELECT COUNT(*) n FROM push_queue"))?.n ?? 0;
@@ -186,6 +191,7 @@ export async function onRequestGet({ request, env }) {
     kritzeln: { players: kPlayers, games: kGames, topName: kTop?.name || null, topPoints: kTop?.points ?? 0, entries: kEntries },
     quiz: { players: qPlayers, games: qGames, topName: qTop?.name || null, topPoints: qTop?.points ?? 0, entries: qEntries, reportCount: qReportCount, reports: qReports },
     live: { rooms: liveRooms },
+    clientErrors: { total: clTotal, last24h: cl24, latest: clLatest },
     health,
     adminLog,
     trends: { days, scores: tScores, errors: tErrors, devices: tDevices },

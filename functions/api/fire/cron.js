@@ -341,6 +341,17 @@ async function maintenance(env) {
   await del("party",          "DELETE FROM party WHERE created_at < datetime('now','-14 days')");
   // Cloud-Backups: alte 1-Schritt-Historie (prev_data) nach 30 Tagen freigeben.
   await del("cloud_prev", "UPDATE cloud_saves SET prev_data = NULL, prev_at = NULL WHERE prev_at IS NOT NULL AND prev_at < datetime('now','-30 days')");
+  // Aufgegebene Backups nach 180 Tagen ohne Aktualisierung löschen (bremst
+  // unbegrenztes Wachstum/Missbrauch; ein aktiv genutztes Backup wird beim
+  // Sichern/Wiederherstellen längst berührt und bleibt erhalten).
+  await del("cloud_stale", "DELETE FROM cloud_saves WHERE updated_at < datetime('now','-180 days')");
+  // Live-Räume: Karteileichen (DO abgestürzt, ohne zu löschen) nach 1 Tag entfernen.
+  await del("live_room_ttl", "DELETE FROM live_room WHERE updated_at < datetime('now','-1 day')");
+  // Admin-Protokoll gedeckelt halten (letzte 2000 Aktionen).
+  await del("admin_log_trim", "DELETE FROM admin_log WHERE id <= (SELECT MAX(id) FROM admin_log) - 2000");
+  // Fehler-Log deckeln (Client-Meldungen liegen jetzt in client_log). Gemeldete
+  // Quiz-Fragen sind ausgenommen — die werden im Admin manuell abgearbeitet.
+  await del("error_log_trim", "DELETE FROM error_log WHERE page IS NOT 'quiz-report' AND id <= (SELECT MAX(id) FROM error_log) - 3000");
   // Waisen in der Push-Queue (Sub existiert nicht mehr).
   await del("push_queue_orphan", "DELETE FROM push_queue WHERE endpoint NOT IN (SELECT endpoint FROM push_sub)");
   // Abschluss-Tracking: Einträge zu Einsätzen, die längst beendet/gelöscht sind

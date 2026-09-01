@@ -93,6 +93,7 @@ export class PartyRoom extends DurableObject {
 // ====================================================================
 const T_TICK = 30, T_DT = 1 / 30, T_ARENA = 1000;
 const T_SPEED = 200, T_TURN = 3.0, T_SKIP = 16, T_HITR = 7;
+const T_RATE_N = 200, T_RATE_MS = 2000;   // max. Nachrichten je Verbindung/Fenster (aim darf häufig kommen)
 const T_COLORS = ["#28e07a", "#3ad8ff", "#ff5bd0", "#ffd23a"];
 const T_SPAWN = [
   { x: 200, y: 200, a: Math.PI / 4 }, { x: 800, y: 800, a: Math.PI / 4 + Math.PI },
@@ -143,6 +144,11 @@ export class TronRoom extends DurableObject {
 
   onMsg(ws, data) {
     const p = this.conns.get(ws); if (!p) return;
+    // Frame-Größe deckeln + je Verbindung drosseln (schützt den 30-Hz-DO vor Flut).
+    if (typeof data !== "string" || data.length > 2000) return;
+    const now = Date.now();
+    if (!p.rl || now - p.rl.t > T_RATE_MS) p.rl = { t: now, n: 0 };
+    if (++p.rl.n > T_RATE_N) return;
     let m; try { m = JSON.parse(data); } catch (_) { return; }
     switch (m.t) {
       case "join": p.name = (String(m.name || "").trim().slice(0, 12)) || "Spieler"; this.sendLobby(); break;

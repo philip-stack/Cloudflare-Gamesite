@@ -40,6 +40,7 @@ function mockDB() {
         async first() {
           if (/COUNT\(\*\) AS n FROM rate/.test(this.sql)) return { n: 0 };
           if (/SELECT 1 FROM push_sub WHERE endpoint/.test(this.sql)) return subs.some(s => s.endpoint === this.args[0]) ? { 1: 1 } : null;
+          if (/SELECT auth FROM push_sub WHERE endpoint/.test(this.sql)) { const s = subs.find(x => x.endpoint === this.args[0]); return s ? { auth: s.auth } : null; }
           return null;
         },
         async all() {
@@ -76,7 +77,12 @@ assert("Ungültiger Endpoint abgelehnt (400)", r.status === 400);
 
 // Warteschlange: eine Nachricht einreihen (direkt im Mock) und via "pending" holen
 db._queue.push({ id: 999, endpoint: EP, title: "Hallo", body: "Welt", url: "/" });
-r = await post({ action: "pending", endpoint: EP });
+// Ownership: falsches/fehlendes auth-Geheimnis wird abgewiesen (403), Queue bleibt.
+r = await post({ action: "pending", endpoint: EP, auth: "FALSCH" });
+assert("pending mit falschem auth → 403", r.status === 403);
+assert("pending 403 leert die Warteschlange NICHT", db._queue.filter(q => q.endpoint === EP).length === 1);
+// Mit korrektem auth-Geheimnis
+r = await post({ action: "pending", endpoint: EP, auth: "AU" });
 assert("pending liefert Nachricht", r.status === 200 && r.data.messages.length === 1 && r.data.messages[0].title === "Hallo");
 assert("pending leert die Warteschlange", db._queue.filter(q => q.endpoint === EP).length === 0);
 
@@ -84,8 +90,8 @@ assert("pending leert die Warteschlange", db._queue.filter(q => q.endpoint === E
 await mod.sendToName(env, "Alice", { title: "x", body: "y", url: "/" });
 assert("sendToName ohne VAPID-Key wirft nicht", true);
 
-// Abmelden entfernt das Abo
-r = await post({ action: "unsubscribe", endpoint: EP });
+// Abmelden entfernt das Abo (mit Ownership-Nachweis)
+r = await post({ action: "unsubscribe", endpoint: EP, auth: "AU" });
 assert("Abmelden entfernt Abo", r.status === 200 && db._subs.length === 0);
 
 // Unbekannte Aktion

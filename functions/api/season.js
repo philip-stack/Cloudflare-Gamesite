@@ -1,4 +1,5 @@
 import { json, clientIp, rateLimit, weekMatch } from "./_util.js";
+import { SCORED_GAMES, SCORED_KEYS } from "./_gamemeta.js";
 
 // ====================================================================
 // Saison / Liga: eine plattformweite Wochenwertung über ALLE gewerteten
@@ -18,9 +19,10 @@ import { json, clientIp, rateLimit, weekMatch } from "./_util.js";
 //                        prevChampion }
 // ====================================================================
 
-const GAME_KEYS = ["funkelfeld", "komet", "sternensturm", "galopp", "wumms", "meeri"];
-const NAMES = { funkelfeld: "Funkelfeld", komet: "Komet", sternensturm: "Sternensturm", galopp: "Galopp", wumms: "WUMMS!", meeri: "MEERI-MANIA" };
-const ICONS = { funkelfeld: "💎", komet: "☄️", sternensturm: "🚀", galopp: "🦄", wumms: "🦝", meeri: "🐹" };
+// Spiele + Namen/Icons aus der zentralen Server-Meta (inkl. Neon-Schlange).
+const GAME_KEYS = SCORED_KEYS;
+const NAMES = Object.fromEntries(SCORED_KEYS.map(k => [k, SCORED_GAMES[k].name]));
+const ICONS = Object.fromEntries(SCORED_KEYS.map(k => [k, SCORED_GAMES[k].icon]));
 const PTS = [25, 18, 15, 12, 10, 8, 6, 5, 4, 3, 2, 1];
 const ptsFor = i => PTS[i] ?? 1;
 

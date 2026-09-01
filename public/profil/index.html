@@ -814,7 +814,7 @@
         try { localStorage.setItem("gs_push_on", "0"); } catch {}
         try {
           const r = await reg(); const sub = await r.pushManager.getSubscription();
-          if (sub) { await fetch("/api/push", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "unsubscribe", endpoint: sub.endpoint }) }); await sub.unsubscribe(); }
+          if (sub) { const auth = (sub.toJSON().keys || {}).auth || ""; await fetch("/api/push", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "unsubscribe", endpoint: sub.endpoint, auth }) }); await sub.unsubscribe(); }
           testBtn.hidden = true; setPS("Benachrichtigungen aus.");
         } catch { setPS("Konnte nicht deaktivieren.", "err"); }
       }

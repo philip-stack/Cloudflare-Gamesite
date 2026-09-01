@@ -7,10 +7,12 @@ import { json, clientIp, rateLimit } from "./_util.js";
 //
 //   POST /api/log   { msg, page?, ua?, extra? }
 //
-// Ansehen (nur du, lokal):
+// Ansehen (nur du, lokal, oder im Admin-Panel unter „Client-Fehler"):
 //   npx wrangler d1 execute wuerfelpoker --remote \
-//     --command "SELECT created_at,page,msg,extra FROM error_log ORDER BY id DESC LIMIT 50;"
+//     --command "SELECT created_at,page,msg,extra FROM client_log ORDER BY id DESC LIMIT 50;"
 //
+// Eigene Tabelle client_log (NICHT error_log): so kann eine Flut an Client-
+// Meldungen weder echte Server-Fehler noch gemeldete Quiz-Fragen verdrängen.
 // Selbstbegrenzend: es werden nur die letzten ~1000 Einträge behalten.
 // ====================================================================
 
@@ -31,11 +33,11 @@ export async function onRequestPost({ request, env }) {
 
   try {
     await env.DB.prepare(
-      "INSERT INTO error_log (msg, page, ua, extra) VALUES (?, ?, ?, ?)"
+      "INSERT INTO client_log (msg, page, ua, extra) VALUES (?, ?, ?, ?)"
     ).bind(msg, page, ua, extra).run();
-    // Alte Einträge kappen (billiger indizierter Delete)
+    // Alte Einträge kappen (billiger indizierter Delete) — nur die eigene Tabelle.
     await env.DB.prepare(
-      "DELETE FROM error_log WHERE id <= (SELECT MAX(id) FROM error_log) - ?"
+      "DELETE FROM client_log WHERE id <= (SELECT MAX(id) FROM client_log) - ?"
     ).bind(KEEP).run();
   } catch (_) { /* Logging darf nie den Client stören */ }
 

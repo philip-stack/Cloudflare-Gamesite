@@ -23,6 +23,10 @@ const cleanName = n => String(n || "").trim().slice(0, 16);
 // Ein Name im Raum gehört dem Gerät, das ihn zuerst benutzt. Verhindert,
 // dass jemand mit dem Raum-Code unter fremdem Namen einreicht.
 // → true = Name gehört dir (oder ist frei), false = gehört anderem Gerät.
+const PARTY_MAX_MEMBERS = 30;   // Obergrenze je Raum (verhindert unbegrenztes Wachstum)
+
+// Ergebnis: "ok" (Name gehört mir / neu angelegt), "taken" (anderes Gerät),
+// "full" (Raum voll — kein neuer Name mehr).
 async function ownName(env, code, name, device) {
   // Namensvergleich case-insensitiv (wie überall sonst auf der Plattform):
   // "Tom" und "tom" gelten im Raum als dieselbe Person. Der case-insensitive
@@ -30,12 +34,14 @@ async function ownName(env, code, name, device) {
   // Zeile eingefügt wird (der INSERT unten wird dann nicht erreicht).
   const row = await env.DB.prepare("SELECT device FROM party_member WHERE code = ? AND LOWER(name) = LOWER(?)").bind(code, name).first();
   if (row) {
-    if (row.device && device && row.device !== device) return false;
+    if (row.device && device && row.device !== device) return "taken";
     if (!row.device && device) await env.DB.prepare("UPDATE party_member SET device = ? WHERE code = ? AND LOWER(name) = LOWER(?)").bind(device, code, name).run();
-    return true;
+    return "ok";
   }
+  const cnt = (await env.DB.prepare("SELECT COUNT(*) n FROM party_member WHERE code = ?").bind(code).first())?.n ?? 0;
+  if (cnt >= PARTY_MAX_MEMBERS) return "full";
   await env.DB.prepare("INSERT OR IGNORE INTO party_member (code, name, device) VALUES (?, ?, ?)").bind(code, name, device || null).run();
-  return true;
+  return "ok";
 }
 
 export async function onRequestPost(context) {
@@ -81,7 +87,9 @@ export async function onRequestPost(context) {
   if (action === "join") {
     const name = cleanName(b.name);
     if (!name) return json({ error: "Name fehlt" }, 400);
-    if (!(await ownName(env, code, name, dev))) return json({ error: "Dieser Name ist im Raum schon vergeben — wähle einen anderen" }, 409);
+    const own = await ownName(env, code, name, dev);
+    if (own === "full") return json({ error: "Der Raum ist voll (max. " + PARTY_MAX_MEMBERS + ")" }, 409);
+    if (own !== "ok") return json({ error: "Dieser Name ist im Raum schon vergeben — wähle einen anderen" }, 409);
     signal(code);
     return json({ ok: true, games });
   }
@@ -93,7 +101,9 @@ export async function onRequestPost(context) {
     if (!name) return json({ error: "Name fehlt" }, 400);
     if (!games.includes(game)) return json({ error: "Spiel gehört nicht zum Raum" }, 400);
     if (!Number.isInteger(score) || score < 0 || score > MAX_SCORE) return json({ error: "Ungültiger Score" }, 400);
-    if (!(await ownName(env, code, name, dev))) return json({ error: "Dieser Name gehört einem anderen Gerät" }, 409);
+    const ownS = await ownName(env, code, name, dev);
+    if (ownS === "full") return json({ error: "Der Raum ist voll (max. " + PARTY_MAX_MEMBERS + ")" }, 409);
+    if (ownS !== "ok") return json({ error: "Dieser Name gehört einem anderen Gerät" }, 409);
     await env.DB.prepare(
       `INSERT INTO party_score (code, name, game, score) VALUES (?, ?, ?, ?)
        ON CONFLICT(code, name, game) DO UPDATE SET score = MAX(score, excluded.score), updated_at = datetime('now')`
@@ -107,7 +117,9 @@ export async function onRequestPost(context) {
     const emoji = String(b.emoji || "");
     if (!name) return json({ error: "Name fehlt" }, 400);
     if (!REACTIONS.includes(emoji)) return json({ error: "Unbekannte Reaktion" }, 400);
-    if (!(await ownName(env, code, name, dev))) return json({ error: "Dieser Name gehört einem anderen Gerät" }, 409);
+    const ownR = await ownName(env, code, name, dev);
+    if (ownR === "full") return json({ error: "Der Raum ist voll (max. " + PARTY_MAX_MEMBERS + ")" }, 409);
+    if (ownR !== "ok") return json({ error: "Dieser Name gehört einem anderen Gerät" }, 409);
     await env.DB.prepare("INSERT INTO party_reaction (code, name, emoji) VALUES (?, ?, ?)").bind(code, name, emoji).run();
     // Tabelle klein halten: pro Raum nur die letzten 40 Reaktionen behalten
     await env.DB.prepare(

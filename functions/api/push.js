@@ -37,13 +37,19 @@ async function vapidJWT(env, audience) {
   return unsigned + "." + b64urlBytes(new Uint8Array(sig));
 }
 
-// „Tickle"-Push: nur VAPID-Auth, kein Body → weckt den SW.
+// „Tickle"-Push: nur VAPID-Auth, kein Body → weckt den SW. Mit Timeout, damit ein
+// hängender/bösartiger Push-Endpoint nicht den ganzen (Cron-)Lauf blockiert.
 async function tickle(env, endpoint) {
   const jwt = await vapidJWT(env, new URL(endpoint).origin);
-  return fetch(endpoint, {
-    method: "POST",
-    headers: { "Authorization": `vapid t=${jwt}, k=${VAPID_PUBLIC}`, "TTL": "86400" },
-  });
+  const ctl = new AbortController();
+  const to = setTimeout(() => ctl.abort(), 5000);
+  try {
+    return await fetch(endpoint, {
+      method: "POST",
+      headers: { "Authorization": `vapid t=${jwt}, k=${VAPID_PUBLIC}`, "TTL": "86400" },
+      signal: ctl.signal,
+    });
+  } finally { clearTimeout(to); }
 }
 
 // Abgelaufene Abos (404/410) aufräumen.
@@ -58,14 +64,16 @@ export async function sendToName(env, name, msg) {
   try {
     if (!name || !env.VAPID_PRIVATE_JWK) return;
     const subs = (await env.DB.prepare("SELECT endpoint FROM push_sub WHERE LOWER(name) = LOWER(?)").bind(name).all()).results;
-    for (const s of subs) {
+    // Parallel zustellen (mit Timeout je Tickle) — ein langsames Abo bremst die
+    // übrigen nicht mehr.
+    await Promise.allSettled(subs.map(async s => {
       try {
         await env.DB.prepare("INSERT INTO push_queue (endpoint, title, body, url) VALUES (?, ?, ?, ?)")
           .bind(s.endpoint, msg.title, msg.body || "", msg.url || "/").run();
         const res = await tickle(env, s.endpoint);
         if (res.status === 404 || res.status === 410) await dropSub(env, s.endpoint);
       } catch { /* einzelnes Abo darf den Rest nicht stoppen */ }
-    }
+    }));
   } catch { /* nie werfen */ }
 }
 
@@ -118,7 +126,11 @@ export async function onRequestPost({ request, env }) {
   }
 
   if (action === "unsubscribe") {
-    await dropSub(env, String(b.endpoint || ""));
+    const endpoint = String(b.endpoint || "");
+    // Ownership: nur wer das Abo-Geheimnis (auth) kennt, darf es abmelden.
+    const row = await env.DB.prepare("SELECT auth FROM push_sub WHERE endpoint = ?").bind(endpoint).first();
+    if (row && row.auth && row.auth !== String(b.auth || "")) return json({ error: "Nicht berechtigt" }, 403);
+    await dropSub(env, endpoint);
     return json({ ok: true });
   }
 
@@ -138,6 +150,11 @@ export async function onRequestPost({ request, env }) {
     // Vom Service Worker aufgerufen: Nachrichten dieses Abos holen & löschen.
     const endpoint = String(b.endpoint || "");
     if (!endpoint) return json({ messages: [] });
+    // Ownership: das Abo-Geheimnis (auth) muss stimmen — sonst könnte ein Fremder,
+    // der nur den Endpoint kennt, die Queue eines anderen leeren.
+    const owner = await env.DB.prepare("SELECT auth FROM push_sub WHERE endpoint = ?").bind(endpoint).first();
+    if (!owner) return json({ messages: [] });
+    if (owner.auth && owner.auth !== String(b.auth || "")) return json({ error: "Nicht berechtigt" }, 403);
     const msgs = (await env.DB.prepare("SELECT id, title, body, url FROM push_queue WHERE endpoint = ? ORDER BY id ASC LIMIT 10").bind(endpoint).all()).results;
     if (msgs.length) {
       const ids = msgs.map(m => m.id);

@@ -1,11 +1,9 @@
 import { json, rateLimit, clientIp, logError, weekMatch, dayMatch, DEVICE_RE } from "../_util.js";
 import { sendToName } from "../push.js";
+import { SCORED_GAMES } from "../_gamemeta.js";
 
-// Anzeigenamen für Push-Texte
-const GAME_LABEL = {
-  funkelfeld: "Funkelfeld", komet: "Komet", sternensturm: "Sternensturm",
-  galopp: "Galopp", wumms: "WUMMS!", meeri: "MEERI-MANIA", schlange: "Neon-Schlange",
-};
+// Anzeigenamen für Push-Texte (zentrale Server-Meta).
+const GAME_LABEL = Object.fromEntries(Object.entries(SCORED_GAMES).map(([k, v]) => [k, v.name]));
 
 // ====================================================================
 // Gemeinsame Bestenlisten-API für alle Spiele.
