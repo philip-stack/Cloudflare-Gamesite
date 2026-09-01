@@ -1,34 +1,13 @@
 import { DurableObject } from "cloudflare:workers";
+import { RoomMixin } from "./base-room.js";
+import { rtLogError, rtTouchRoom, rtDropRoom } from "./rt-db.js";
+import { T_TICK, T_ARENA, advance as tronAdvance, collides as tronCollides } from "./tron-logic.js";
 import { D_CATS, D_CAT_KEYS, D_TURN, D_CHOOSE, D_REVEAL, dNorm, dLev, wordPool, pickWords, guessGain, drawerGain, wordLetters, catOf, hintCount } from "./draw-logic.js";
 import { Q_TURN, Q_TURN_MAX, Q_REVEAL, Q_ROUNDS, Q_ROUND_CHOICES, Q_DIFF_CHOICES, Q_CAT_KEYS, questionPool, pickQuestions, shuffleOptions, answerGain, streakBonus, turnTime, Q_TB_TURN, Q_TB_REVEAL, Q_TB_MAX } from "./quiz-logic.js";
 
-// Fehler aus dem Echtzeit-Worker in dieselbe D1-Tabelle error_log schreiben,
-// die auch die Pages-Seite nutzt — damit DO-/DrawRoom-Störungen im Betreiber-
-// Dashboard sichtbar werden statt nur in `wrangler tail`. Best-effort.
-async function rtLogError(env, msg, page, extra) {
-  try {
-    if (!env || !env.DB) return;
-    await env.DB.prepare("INSERT INTO error_log (msg, page, extra) VALUES (?, ?, ?)")
-      .bind(String(msg == null ? "" : msg).slice(0, 500), page || "worker-rt",
-            extra == null ? null : String(extra).slice(0, 1000)).run();
-  } catch (_) { /* Logging darf nie zum Problem werden */ }
-}
-
-// Live-Raum-Heartbeat: aktive Spielräume melden sich in D1 (live_room), damit das
-// Admin-Dashboard laufende Spiele + Spielerzahl sieht. Beim Leeren löscht der Raum
-// seine Zeile. Fehler dürfen den Spielbetrieb nie stören.
-async function rtTouchRoom(env, code, game, players, state) {
-  try {
-    if (!env || !env.DB || !code) return;
-    await env.DB.prepare(
-      "INSERT INTO live_room (code, game, players, state, updated_at) VALUES (?, ?, ?, ?, datetime('now')) " +
-      "ON CONFLICT(code) DO UPDATE SET game = excluded.game, players = excluded.players, state = excluded.state, updated_at = datetime('now')"
-    ).bind(code, game, players | 0, String(state || "").slice(0, 16)).run();
-  } catch (_) { /* egal */ }
-}
-async function rtDropRoom(env, code) {
-  try { if (env && env.DB && code) await env.DB.prepare("DELETE FROM live_room WHERE code = ?").bind(code).run(); } catch (_) { /* egal */ }
-}
+// D1-Helfer (rtLogError/rtTouchRoom/rtDropRoom) und die geteilten Raum-Primitive
+// (bc/toId/pget/partKey/syncPart/touchLive/hostAfterLeave/recordScores) liegen jetzt
+// in rt-db.js bzw. base-room.js — die drei Spielräume erben sie über RoomMixin.
 
 // ====================================================================
 // Echtzeit-Worker der Gamesite: hostet das Durable Object PartyRoom
@@ -91,8 +70,7 @@ export class PartyRoom extends DurableObject {
 //              {t:go} {t:state,tick,players:[{id,x,y,a,alive}]} {t:dead,id}
 //              {t:over,winner} {t:full} {t:pong}
 // ====================================================================
-const T_TICK = 30, T_DT = 1 / 30, T_ARENA = 1000;
-const T_SPEED = 200, T_TURN = 3.0, T_SKIP = 16, T_HITR = 7;
+// Physik-Konstanten + reine Bewegung/Kollision aus tron-logic.js (unit-getestet).
 const T_RATE_N = 200, T_RATE_MS = 2000;   // max. Nachrichten je Verbindung/Fenster (aim darf häufig kommen)
 const T_COLORS = ["#28e07a", "#3ad8ff", "#ff5bd0", "#ffd23a"];
 const T_SPAWN = [
@@ -100,9 +78,10 @@ const T_SPAWN = [
   { x: 800, y: 200, a: Math.PI * 3 / 4 }, { x: 200, y: 800, a: -Math.PI / 4 },
 ];
 
-export class TronRoom extends DurableObject {
+export class TronRoom extends RoomMixin(DurableObject) {
   constructor(ctx, env) {
     super(ctx, env);
+    this.GAME = "tron";
     this.conns = new Map();   // ws -> player
     this.state = "lobby";     // lobby | countdown | playing | over
     this.hostId = null; this.tick = 0; this.count = 0; this.nextId = 1; this.loop = null;
@@ -133,12 +112,6 @@ export class TronRoom extends DurableObject {
 
   broadcast(obj) { const s = JSON.stringify(obj); for (const ws of this.conns.keys()) { try { ws.send(s); } catch (_) {} } }
   playersList() { return [...this.conns.values()].map(p => ({ id: p.id, name: p.name, color: p.color, ready: p.ready, alive: p.alive })); }
-  touchLive() {
-    const now = Date.now();
-    if (this._lt && now - this._lt < 8000 && this._ls === this.state) return;
-    this._lt = now; this._ls = this.state;
-    try { this.ctx.waitUntil(rtTouchRoom(this.env, this.code, "tron", this.conns.size, this.state)); } catch (_) {}
-  }
   sendLobby() { this.touchLive(); this.broadcast({ t: "lobby", state: this.state, hostId: this.hostId, players: this.playersList() }); }
   aliveCount() { let n = 0; for (const p of this.conns.values()) if (p.alive) n++; return n; }
 
@@ -195,28 +168,11 @@ export class TronRoom extends DurableObject {
     if (this.state !== "playing") { this.stopLoop(); return; }
     this.tick++;
 
-    // Integrieren
-    for (const p of this.conns.values()) {
-      if (!p.alive) continue;
-      let d = p.aim - p.a; while (d > Math.PI) d -= 6.283185; while (d < -Math.PI) d += 6.283185;
-      p.a += Math.max(-T_TURN * T_DT, Math.min(T_TURN * T_DT, d));
-      p.x += Math.cos(p.a) * T_SPEED * T_DT; p.y += Math.sin(p.a) * T_SPEED * T_DT;
-      p.trail.push({ x: p.x, y: p.y });
-    }
-    // Kollisionen (gleichzeitig auswerten)
-    const r2 = T_HITR * T_HITR, dead = [];
-    for (const p of this.conns.values()) {
-      if (!p.alive) continue;
-      let hit = p.x < T_HITR || p.x > T_ARENA - T_HITR || p.y < T_HITR || p.y > T_ARENA - T_HITR;
-      if (!hit) {
-        for (const q of this.conns.values()) {
-          const tr = q.trail, lim = tr.length - (q === p ? T_SKIP : 0);
-          for (let i = 0; i < lim; i++) { const dx = p.x - tr[i].x, dy = p.y - tr[i].y; if (dx * dx + dy * dy < r2) { hit = true; break; } }
-          if (hit) break;
-        }
-      }
-      if (hit) dead.push(p);
-    }
+    // Integrieren (reine Physik aus tron-logic.js)
+    for (const p of this.conns.values()) { if (p.alive) tronAdvance(p); }
+    // Kollisionen gleichzeitig auswerten (erst alle bewegen, dann alle prüfen)
+    const players = [...this.conns.values()], dead = [];
+    for (const p of players) { if (p.alive && tronCollides(p, players)) dead.push(p); }
     for (const p of dead) { p.alive = false; this.broadcast({ t: "dead", id: p.id }); }
 
     // Zustand senden
@@ -263,9 +219,10 @@ const D_MAX_PTS = 300;        // Punkte pro stroke-Nachricht
 const D_MAX_OPS = 1500;       // gepufferte Ops pro Zug (begrenzt Snapshot-Größe)
 const D_RATE_N = 120, D_RATE_MS = 2000;   // max. Nachrichten je Verbindung pro Fenster
 
-export class DrawRoom extends DurableObject {
+export class DrawRoom extends RoomMixin(DurableObject) {
   constructor(ctx, env) {
     super(ctx, env);
+    this.GAME = "kritzeln"; this.SCORE_TABLE = "draw_score"; this.SCORE_PAGE = "kritzeln";
     this.conns = new Map(); this.state = "lobby"; this.hostId = null; this.nextId = 1;
     this.order = []; this.turnIdx = 0; this.rounds = 2; this.turnTime = D_TURN; this.drawerId = null;
     this.word = ""; this.revealed = []; this.timers = []; this.turnEndsAt = 0;
@@ -294,23 +251,10 @@ export class DrawRoom extends DurableObject {
     return new Response(null, { status: 101, webSocket: client });
   }
 
-  bc(obj, exceptId) { const s = JSON.stringify(obj); for (const [ws, p] of this.conns) { if (exceptId && p.id === exceptId) continue; try { ws.send(s); } catch (_) {} } }
-  toId(id, obj) { for (const [ws, p] of this.conns) if (p.id === id) { try { ws.send(JSON.stringify(obj)); } catch (_) {} return; } }
-  pget(id) { for (const p of this.conns.values()) if (p.id === id) return p; return null; }
-  // Teilnehmer:innen eines Spiels (überlebt Disconnects) für die Wertung.
-  partKey(p) { return p.uid || ("id" + p.id); }
-  syncPart(p) { if (!this.parts) this.parts = new Map(); this.parts.set(this.partKey(p), { name: p.name, score: p.score | 0, device: p.dev || null }); }
+  // bc/toId/pget/partKey/syncPart/touchLive/logErr → aus RoomMixin (base-room.js).
   scoreboard() { return [...this.conns.values()].map(p => ({ id: p.id, name: p.name, score: p.score, guessed: p.guessed, drawer: p.id === this.drawerId })).sort((a, b) => b.score - a.score); }
-  touchLive() {
-    const now = Date.now();
-    if (this._lt && now - this._lt < 8000 && this._ls === this.state) return;
-    this._lt = now; this._ls = this.state;
-    try { this.ctx.waitUntil(rtTouchRoom(this.env, this.code, "kritzeln", this.conns.size, this.state)); } catch (_) {}
-  }
   sendLobby() { this.touchLive(); this.bc({ t: "lobby", state: this.state, hostId: this.hostId, players: this.scoreboard(), cats: this.cats, rounds: this.rounds, turnTime: this.turnTime, customCount: this.customWords.length }); }
   clearTimers() { for (const t of this.timers) clearTimeout(t); this.timers = []; }
-  // Fehler sichtbar machen (Konsole + persistent in error_log via waitUntil).
-  logErr(msg, extra) { console.error("DrawRoom", msg, extra || ""); try { this.ctx.waitUntil(rtLogError(this.env, msg, "kritzeln", extra)); } catch (_) {} }
 
   // Strich-Op in den Zug-Puffer rollen (identisch zur Client-Logik, damit der
   // Snapshot beim Reconnect exakt dieselbe Zeichnung ergibt).
@@ -550,40 +494,7 @@ export class DrawRoom extends DurableObject {
     this.parts = null;
   }
 
-  // Wertung robust schreiben — via waitUntil, damit der D1-Schreibvorgang auch
-  // dann durchläuft, wenn das Spiel abrupt endet (alle weg). parts = [{name,score}].
-  saveScores(parts) {
-    const run = this.recordScores(parts).catch(err => rtLogError(this.env, "recordScores", "kritzeln", err && err.stack || err));
-    try { this.ctx.waitUntil(run); } catch (_) {}
-  }
-
-  // Am Spielende jede:n Teilnehmer:in in die dauerhafte D1-Bestenliste rollen.
-  // Autoritativ (im DO), damit Clients keine Fake-Werte einschleusen können.
-  async recordScores(parts) {
-    if (!this.env || !this.env.DB || !parts || parts.length < 2) return;
-    let winName = null, top = 0;
-    for (const p of parts) { const s = p.score | 0; if (s > top) { top = s; winName = p.name; } }
-    if (top <= 0) return;   // niemand hat geraten → nicht werten
-    for (const p of parts) {
-      if (!p.name) continue;
-      const pts = p.score | 0, win = p.name === winName ? 1 : 0;
-      try {
-        // Punkte je Name aggregieren. BEWUSST keine Geräte-Eigentumssperre:
-        // die Plattform nutzt EINEN gemeinsamen Namen über alle Spiele und Geräte
-        // (GS.getName). Eine Sperre würde legitimes Weiterspielen auf einem zweiten
-        // Gerät / nach Beitritt über den Einladungslink blockieren („nimm einen
-        // anderen Namen") und harmlose Normalfälle als Fehler ins Log schreiben
-        // (Admin-Dashboard). Der Raum ist autoritativ — Punkte entstehen nur durch
-        // echtes Mitspielen, Impersonation zum Cheaten lohnt also nicht.
-        await this.env.DB.prepare(
-          "INSERT INTO draw_score (name, points, games, wins, best, device) VALUES (?, ?, 1, ?, ?, ?) " +
-          "ON CONFLICT(name) DO UPDATE SET points = points + excluded.points, games = games + 1, " +
-          "wins = wins + excluded.wins, best = MAX(best, excluded.best), " +
-          "device = COALESCE(draw_score.device, excluded.device), updated_at = datetime('now')"
-        ).bind(p.name, pts, win, pts, p.device || null).run();
-      } catch (err) { await rtLogError(this.env, "recordScores row " + p.name, "kritzeln", err && err.stack || err); /* Bestenliste nie den Spielfluss stören */ }
-    }
-  }
+  // saveScores/recordScores → aus RoomMixin (schreibt in this.SCORE_TABLE = draw_score).
 }
 
 // ====================================================================
@@ -604,9 +515,10 @@ export class DrawRoom extends DurableObject {
 // ====================================================================
 const Q_RATE_N = 60, Q_RATE_MS = 2000;   // max. Nachrichten je Verbindung/Fenster
 
-export class QuizRoom extends DurableObject {
+export class QuizRoom extends RoomMixin(DurableObject) {
   constructor(ctx, env) {
     super(ctx, env);
+    this.GAME = "quiz"; this.SCORE_TABLE = "quiz_score"; this.SCORE_PAGE = "quiz";
     this.conns = new Map(); this.state = "lobby"; this.hostId = null; this.nextId = 1;
     this.cats = []; this.rounds = Q_ROUNDS; this.diff = 0; this.votes = new Map();
     this.questions = []; this.turnIdx = 0; this.current = null; this.turnEndsAt = 0; this.turnTotal = Q_TURN;
@@ -632,11 +544,7 @@ export class QuizRoom extends DurableObject {
     return new Response(null, { status: 101, webSocket: client });
   }
 
-  bc(obj, exceptId) { const s = JSON.stringify(obj); for (const [ws, p] of this.conns) { if (exceptId && p.id === exceptId) continue; try { ws.send(s); } catch (_) {} } }
-  toId(id, obj) { for (const [ws, p] of this.conns) if (p.id === id) { try { ws.send(JSON.stringify(obj)); } catch (_) {} return; } }
-  pget(id) { for (const p of this.conns.values()) if (p.id === id) return p; return null; }
-  partKey(p) { return p.uid || ("id" + p.id); }
-  syncPart(p) { if (!this.parts) this.parts = new Map(); this.parts.set(this.partKey(p), { name: p.name, score: p.score | 0, device: p.dev || null }); }
+  // bc/toId/pget/partKey/syncPart/touchLive/logErr → aus RoomMixin (base-room.js).
   scoreboard() { return [...this.conns.values()].map(p => ({ id: p.id, name: p.name, score: p.score, answered: p.answered, ready: !!p.ready, streak: p.streak | 0 })).sort((a, b) => b.score - a.score); }
 
   // Kategorie-Abstimmung: jede:r wählt beliebige Kategorien; gezählt wird, wie oft
@@ -653,16 +561,8 @@ export class QuizRoom extends DurableObject {
     this.cats = Object.keys(t).filter(c => Q_CAT_KEYS.includes(c));
   }
   myVote(id) { return this.votes.get(id) || []; }
-  // Heartbeat fürs Admin-Dashboard, gedrosselt (≤ alle 8 s; Zustandswechsel sofort).
-  touchLive() {
-    const now = Date.now();
-    if (this._lt && now - this._lt < 8000 && this._ls === this.state) return;
-    this._lt = now; this._ls = this.state;
-    try { this.ctx.waitUntil(rtTouchRoom(this.env, this.code, "quiz", this.conns.size, this.state)); } catch (_) {}
-  }
   sendLobby() { this.touchLive(); this.bc({ t: "lobby", state: this.state, hostId: this.hostId, players: this.scoreboard(), cats: this.cats, rounds: this.rounds, diff: this.diff, catVotes: this.voteTally() }); }
   clearTimers() { for (const t of (this.timers || [])) clearTimeout(t); this.timers = []; }
-  logErr(msg, extra) { console.error("QuizRoom", msg, extra || ""); try { this.ctx.waitUntil(rtLogError(this.env, msg, "quiz", extra)); } catch (_) {} }
 
   kick(id) {
     for (const [ws, q] of this.conns) {
@@ -981,32 +881,7 @@ export class QuizRoom extends DurableObject {
     try { this.toId(p.id, { t: "reported" }); } catch (_) {}
   }
 
-  saveScores(parts) {
-    const run = this.recordScores(parts).catch(err => rtLogError(this.env, "recordScores", "quiz", err && err.stack || err));
-    try { this.ctx.waitUntil(run); } catch (_) {}
-  }
-
-  // Am Spielende jede:n Teilnehmer:in in die dauerhafte D1-Bestenliste (quiz_score)
-  // rollen. Autoritativ (im DO). Namens-Aggregation wie beim DrawRoom, bewusst
-  // ohne Geräte-Eigentumssperre (ein gemeinsamer Name über alle Spiele/Geräte).
-  async recordScores(parts) {
-    if (!this.env || !this.env.DB || !parts || parts.length < 2) return;
-    let winName = null, top = 0;
-    for (const p of parts) { const s = p.score | 0; if (s > top) { top = s; winName = p.name; } }
-    if (top <= 0) return;
-    for (const p of parts) {
-      if (!p.name) continue;
-      const pts = p.score | 0, win = p.name === winName ? 1 : 0;
-      try {
-        await this.env.DB.prepare(
-          "INSERT INTO quiz_score (name, points, games, wins, best, device) VALUES (?, ?, 1, ?, ?, ?) " +
-          "ON CONFLICT(name) DO UPDATE SET points = points + excluded.points, games = games + 1, " +
-          "wins = wins + excluded.wins, best = MAX(best, excluded.best), " +
-          "device = COALESCE(quiz_score.device, excluded.device), updated_at = datetime('now')"
-        ).bind(p.name, pts, win, pts, p.device || null).run();
-      } catch (err) { await rtLogError(this.env, "recordScores row " + p.name, "quiz", err && err.stack || err); }
-    }
-  }
+  // saveScores/recordScores → aus RoomMixin (schreibt in this.SCORE_TABLE = quiz_score).
 }
 
 // Der Worker hostet das DO und trägt zusätzlich den Cron-Trigger für den

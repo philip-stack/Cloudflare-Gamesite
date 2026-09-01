@@ -4,7 +4,7 @@
   "description": "Cloudflare-Pages-Gamesite: ~10 Mini-Spiele (Solo & Echtzeit-Multiplayer) plus Tools (Sprit-Radar, Feuerwehr-Alarm), de-AT.",
   "private": true,
   "scripts": {
-    "test": "node tests/check.mjs && node tests/quality.test.mjs && node tests/qr.test.js && node tests/api.test.mjs && node tests/cloud.test.mjs && node tests/party.test.mjs && node tests/season.test.mjs && node tests/push.test.mjs && node tests/flow.test.mjs && node tests/wumms.test.mjs && node tests/meeri.test.mjs && node tests/fire.test.mjs && node tests/fire-cron.test.mjs && node tests/sprit.test.mjs && node tests/kritzeln.test.mjs && node tests/quiz.test.mjs && node tests/admin.test.mjs && node tests/koch.test.mjs && node tests/health.test.mjs && node scripts/bump-assets.mjs --check",
+    "test": "node tests/check.mjs && node tests/quality.test.mjs && node tests/qr.test.js && node tests/api.test.mjs && node tests/cloud.test.mjs && node tests/party.test.mjs && node tests/season.test.mjs && node tests/push.test.mjs && node tests/flow.test.mjs && node tests/wumms.test.mjs && node tests/meeri.test.mjs && node tests/fire.test.mjs && node tests/fire-cron.test.mjs && node tests/sprit.test.mjs && node tests/kritzeln.test.mjs && node tests/quiz.test.mjs && node tests/room.test.mjs && node tests/tron.test.mjs && node tests/admin.test.mjs && node tests/koch.test.mjs && node tests/health.test.mjs && node scripts/bump-assets.mjs --check",
     "check": "node tests/check.mjs",
     "bump": "node scripts/bump-assets.mjs"
   }
