@@ -22,8 +22,6 @@ statisches HTML/CSS/JS in `public/`, dazu Pages Functions als API und eine
 | 🎨 **Kritzeln & Raten** | `/kritzeln/` | **Echtzeit-Multiplayer** (2–10) — einer malt, die anderen raten live im Chat; Raum per Code teilen, **Kategorien & Rundenzahl** (Host), Wortwahl aus 3, Live-Striche mit **Fülleimer/Radierer/Undo**, Buchstaben-Hinweise, **Speed-/Platz-Punkte**, Runden-Zusammenfassung, Konfetti/Sound, Sieger:in & Revanche. Server = Durable Object (`DrawRoom`); dazu eine **dauerhafte, geräteübergreifende Bestenliste** (🏆), die das DO am Spielende autoritativ in D1 schreibt (Gesamtpunkte, Spiele, Siege, Bestleistung) |
 | 🧠 **Wer weiß's?** | `/quiz/` | **Echtzeit-Live-Trivia** (2–10) — alle beantworten dieselbe Multiple-Choice-Frage gleichzeitig; **richtig + schnell = mehr Punkte**, Kategorien wählbar (11 Kategorien inkl. „Kopfnüsse", ~240-Fragen-Satz de-AT), Fragenzahl (Host), Optionen pro Spiel gemischt, **keine schnelle Wiederholung** (Raum merkt gestellte Fragen über mehrere Spiele), Reveal mit Auflösung, Sieger:in & Revanche, **Meilensteine**. Server = Durable Object (`QuizRoom`); dazu eine **dauerhafte D1-Bestenliste** (`quiz_score`), die das DO am Spielende autoritativ schreibt |
 
-*(`/tron/` — Neon-Tron, ein Echtzeit-Lichtrenner auf Basis desselben Durable-Object-Fundaments, existiert als Route weiter, ist aber bewusst nicht auf der Startseite verlinkt.)*
-
 Alle Spiele sind mobile-first (Touch-Gesten), haben aber auch
 Tastatur-Steuerung. Funkelfeld, Komet, Sternensturm, Galopp, WUMMS! und Neon-Schlange teilen
 sich eine globale Bestenliste pro Spiel (Top 50, pro Name zählt der Highscore).
@@ -329,7 +327,7 @@ wuerfelpoker/
 ├── tests/                     Node-Tests (Syntax inkl. worker-rt, Qualität/A11y, QR, Scores/Cloud/Party/Saison/Push-API, Flow-E2E, WUMMS/MEERI/Kritzeln/Quiz, Fire-Cron, Health)
 ├── scripts/
 │   └── bump-assets.mjs        Cache-Busting: setzt ?v=<Inhaltshash> für lokale JS/CSS (npm run bump; CI prüft mit --check)
-├── worker-rt/                 separater Worker: Echtzeit-Durable-Objects (PartyRoom/TronRoom/DrawRoom/QuizRoom) + draw-logic.js/quiz-logic.js
+├── worker-rt/                 separater Worker: Echtzeit-Durable-Objects (PartyRoom/DrawRoom/QuizRoom) + draw-logic.js/quiz-logic.js
 │                              + Cron (*/2 min) → pingt /api/fire/cron und /api/sprit/cron (x-cron-key: CRON_TOKEN)
 ├── lighthouserc.json          Lighthouse-Budget (Performance/A11y/Best-Practices/SEO)
 └── .github/workflows/

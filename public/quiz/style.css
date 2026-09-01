@@ -53,6 +53,14 @@ button:active { transform: scale(0.95); }
 .opt.correct .opt-key { background: var(--good); color: #05130c; }
 .opt.wrong { background: rgba(255,106,90,0.14); box-shadow: 0 0 0 2px var(--bad) inset; }
 .opt.wrong .opt-key { background: var(--bad); color: #1a0605; }
+/* Nicht nur über Farbe: ✓/✗ als Symbol am Zeilenende (hilft bei Farbfehlsicht). */
+.opt.correct::after { content: "✓"; margin-left: auto; font-weight: 900; color: var(--good); }
+.opt.wrong::after { content: "✗"; margin-left: auto; font-weight: 900; color: var(--bad); }
+/* Sichtbarer Tastatur-Fokus (core.css wird hier nicht geladen). */
+.opt:focus-visible, .btn-icon:focus-visible, .btn-back:focus-visible,
+button:focus-visible, .tool-btn:focus-visible, .chip:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px;
+}
 
 /* Emotes / Punkte-Popup (über der Frage-Karte) */
 .emotes { display: flex; gap: 6px; justify-content: center; }

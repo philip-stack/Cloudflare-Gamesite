@@ -16,10 +16,6 @@ name = "PARTY_ROOM"
 class_name = "PartyRoom"
 
 [[durable_objects.bindings]]
-name = "TRON_ROOM"
-class_name = "TronRoom"
-
-[[durable_objects.bindings]]
 name = "DRAW_ROOM"
 class_name = "DrawRoom"
 
@@ -42,6 +38,11 @@ new_sqlite_classes = ["DrawRoom"]
 [[migrations]]
 tag = "v4"
 new_sqlite_classes = ["QuizRoom"]
+
+# Neon-Tron entfernt (dormant, nirgends verlinkt) — TronRoom-DO wird gelöscht.
+[[migrations]]
+tag = "v5"
+deleted_classes = ["TronRoom"]
 
 # Cron: alle 2 Minuten den Feuerwehr-Bezirksalarm prüfen (pingt die
 # geschützte Pages-Route /api/fire/cron). Secret CRON_TOKEN nötig:

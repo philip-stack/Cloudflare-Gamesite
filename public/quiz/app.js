@@ -162,7 +162,12 @@ function onReveal(m) {
     else gStats.streakCur = 0;
   } else gStats.streakCur = 0;
   // Optionen einfärben (richtig grün, eigene falsche rot).
-  $("#options").querySelectorAll(".opt").forEach((b, idx) => { b.disabled = true; if (idx === m.correct) b.classList.add("correct"); else if (idx === myPick) b.classList.add("wrong"); });
+  $("#options").querySelectorAll(".opt").forEach((b, idx) => {
+    b.disabled = true;
+    const t = (b.querySelector(".opt-txt") || {}).textContent || "";
+    if (idx === m.correct) { b.classList.add("correct"); b.setAttribute("aria-label", t + " – richtige Antwort"); }
+    else if (idx === myPick) { b.classList.add("wrong"); b.setAttribute("aria-label", t + " – deine Antwort, falsch"); }
+  });
   // Ton/Haptik + Punkte-Popup fürs eigene Ergebnis.
   const myGain = mine ? mine.gain : 0;
   if (answered && myPick === m.correct) { floatPoints("+" + myGain, true); GS.sound.great(); GS.haptic(20); }
@@ -576,12 +581,12 @@ function onTiebreak(m) {
 function onTbOut(m) { if (m.id === myId) setNote("❌ Daneben – in dieser Stichfrage raus."); }
 function onTbReveal(m) {
   phase = "reveal-tb"; stopTimer();
-  $("#options").querySelectorAll(".opt").forEach((b, idx) => { b.disabled = true; if (idx === m.correct) b.classList.add("correct"); });
+  $("#options").querySelectorAll(".opt").forEach((b, idx) => { b.disabled = true; if (idx === m.correct) { b.classList.add("correct"); const t = (b.querySelector(".opt-txt") || {}).textContent || ""; b.setAttribute("aria-label", t + " – richtige Antwort"); } });
   setNote("Niemand richtig — es geht weiter …");
 }
 function onTbResult(m) {
   phase = "reveal-tb"; stopTimer(); if (Array.isArray(m.players)) players = m.players;
-  $("#options").querySelectorAll(".opt").forEach((b, idx) => { b.disabled = true; if (idx === m.correct) b.classList.add("correct"); });
+  $("#options").querySelectorAll(".opt").forEach((b, idx) => { b.disabled = true; if (idx === m.correct) { b.classList.add("correct"); const t = (b.querySelector(".opt-txt") || {}).textContent || ""; b.setAttribute("aria-label", t + " – richtige Antwort"); } });
   renderPlayers();
   if (m.winnerId === myId) { GS.sound.win(); confetti(); } else GS.sound.good();
   overlay(`<h2>🥇 Stichfrage entschieden</h2><div class="win-name">${GS.esc(m.winnerName || "")} gewinnt!</div><p class="msg">Ergebnis kommt gleich …</p>`);

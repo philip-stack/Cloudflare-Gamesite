@@ -52,6 +52,14 @@
     .toolbar { display:flex; gap:8px; flex-wrap:wrap; }
     input.filter { background:var(--bg); border:1px solid var(--line); color:var(--ink); border-radius:8px; padding:6px 10px; font:inherit; font-size:.82rem; }
     .dev { font-family:ui-monospace,monospace; font-size:.74rem; color:var(--muted); }
+    /* Touch: Zeilen-Aktionen (🗑/🚫/✓/…) größer & auseinander, damit sie am Handy treffbar sind. */
+    @media (pointer:coarse) {
+      .btn.sm { min-height:40px; padding:8px 12px; font-size:.8rem; }
+      td .btn + .btn, .toolbar .btn + .btn { margin-left:6px; }
+      td .btn { margin-bottom:4px; }
+    }
+    /* Schmale Screens: Zeit-Spalte darf umbrechen → Tabellen werden schmaler statt weit zu scrollen. */
+    @media (max-width:480px) { td.t { white-space:normal; } }
   </style>
 </head>
 <body>
@@ -272,7 +280,7 @@
         `<tr><td class="t">${esc((x.created_at || "").slice(5, 16))}</td><td class="m"><b>${esc((x.msg || "").replace(/^FRAGE GEMELDET: /, ""))}</b><br><span class="muted">${esc(x.extra || "")}</span></td><td class="num"><button class="btn sm" data-reportdel="${x.id}" title="Erledigt / entfernen">✓</button></td></tr>`).join("") || '<tr><td colspan="3" class="muted">keine Meldungen 🎉</td></tr>';
 
       // Live-Räume (aktive Echtzeit-Spiele)
-      const GAME_ICON = { quiz: "🧠", kritzeln: "🎨", tron: "🟦", party: "🎉" };
+      const GAME_ICON = { quiz: "🧠", kritzeln: "🎨", party: "🎉" };
       const liveRooms = (d.live && d.live.rooms) || [];
       const liveRows = liveRooms.map(x =>
         `<tr><td>${GAME_ICON[x.game] || "🎮"} ${esc(x.game)}</td><td class="mono">${esc(x.code)}</td><td class="num mono">${nf(x.players)}</td><td>${esc(x.state)}</td><td class="t">${esc((x.updated_at || "").slice(11, 16))}</td></tr>`).join("")

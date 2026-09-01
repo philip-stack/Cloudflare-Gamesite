@@ -1,6 +1,6 @@
 // ====================================================================
-// Gemeinsame Raum-Basis für die Echtzeit-Spiele (TronRoom / DrawRoom /
-// QuizRoom). Früher war jede dieser Primitive in jeder Raum-Klasse Wort für
+// Gemeinsame Raum-Basis für die Echtzeit-Spiele (DrawRoom / QuizRoom).
+// Früher war jede dieser Primitive in jeder Raum-Klasse Wort für
 // Wort dupliziert (bc/toId/pget/partKey/syncPart/touchLive/recordScores).
 //
 // Als Mixin `RoomMixin(Base)` statt fester Basisklasse, damit die Räume weiter
@@ -11,7 +11,7 @@
 //   this.conns  Map<ws, player>      — verbundene Spieler:innen
 //   this.state  string               — Spielphase (für den Heartbeat)
 //   this.code   string               — Raum-Code (aus der URL)
-//   this.GAME   string               — "tron" | "kritzeln" | "quiz"
+//   this.GAME   string               — "kritzeln" | "quiz"
 //   this.hostId number|null
 //   this.parts  Map                  — Teilnehmer:innen fürs Werten (optional)
 //   this.SCORE_TABLE / this.SCORE_PAGE — für recordScores (nur wertende Räume)

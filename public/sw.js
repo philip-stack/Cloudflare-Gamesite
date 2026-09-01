@@ -6,18 +6,37 @@
 // der Hub auch beim allerersten Offline-Aufruf erscheint.
 // API-Anfragen (/api/…) werden nie gecacht.
 // ====================================================================
-const CACHE = "gamesite-v65";
+const CACHE = "gamesite-v66";
 // CacheStorage ist pro Origin (nicht pro Scope) — die drei PWAs (Hub, /fire/noe/,
 // /tanken/) teilen sich denselben Speicher. Beim Aufräumen NUR eigene Cache-Namen
 // (gleicher Präfix) löschen, sonst wischt der zuletzt aktivierte SW die Shells der
 // anderen Apps weg. Präfix = alles vor dem "-vNN"-Suffix.
 const PREFIX = CACHE.replace(/-v\d+$/, "-");
 
-// Kern-Dateien, die den Hub tragen (klein, lohnt sich vorzucachen).
+// Kern-Dateien, die den Hub tragen + alle Spiele/Tools samt ihren Assets, damit
+// jedes Spiel auch beim ALLERERSTEN Offline-Aufruf startet (nicht erst nach einem
+// Online-Besuch). Einzeln per allSettled gecacht — fehlt eine Datei, bricht die
+// Installation nicht. Beim Ändern der Liste die CACHE-Version oben hochzählen.
 const SHELL = [
+  // Hub-Shell
   "/", "/games.js", "/shared.js", "/theme.js", "/qr.js", "/manifest.webmanifest",
   "/styles/core.css", "/profil/", "/party/", "/saison/", "/fonts/fonts.css",
   "/icons/icon-192.png", "/icons/icon-512.png",
+  // Spiele (Seite + Stil + Skript)
+  "/wuerfelpoker/", "/wuerfelpoker/style.css", "/wuerfelpoker/app.js", "/wuerfelpoker/die3d.js",
+  "/funkelfeld/", "/funkelfeld/style.css", "/funkelfeld/app.js",
+  "/komet/", "/komet/style.css", "/komet/app.js",
+  "/sternensturm/", "/sternensturm/style.css", "/sternensturm/app.js",
+  "/galopp/", "/galopp/style.css", "/galopp/app.js",
+  "/wumms/", "/wumms/style.css", "/wumms/app.js",
+  "/meeri/", "/meeri/style.css", "/meeri/app.js",
+  "/schlange/", "/schlange/style.css", "/schlange/app.js",
+  "/kritzeln/", "/kritzeln/style.css", "/kritzeln/app.js",
+  "/quiz/", "/quiz/style.css", "/quiz/app.js",
+  // Werkzeug (Kochstudio; /tanken/ & /fire/noe/ haben eigene Service-Worker)
+  "/kochstudio/", "/kochstudio/style.css", "/kochstudio/app.js",
+  // Schriftdateien (latein — deckt de-AT inkl. äöüß ab)
+  "/fonts/fraunce-3.woff2", "/fonts/fraunce-4.woff2", "/fonts/outfit-7.woff2",
 ];
 
 self.addEventListener("install", e => {

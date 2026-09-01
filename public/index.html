@@ -380,6 +380,24 @@
                   0 0 0 1px var(--edge-soft) inset;
     }
     [data-theme="light"] .badge { background: rgba(35, 45, 35, 0.06); }
+
+    /* Saison-Teaser (aktueller Wochen-Führender) */
+    .season-teaser {
+      display: flex; align-items: center; gap: 10px; margin: 0 auto 14px; max-width: 640px;
+      padding: 11px 15px; border-radius: 14px; text-decoration: none; color: var(--ink);
+      background: linear-gradient(100deg, rgba(232,193,90,0.16), rgba(232,193,90,0.04));
+      box-shadow: 0 0 0 1px rgba(232,193,90,0.28) inset; font-size: 0.92rem;
+      animation: teaser-in 0.5s ease both;
+    }
+    @keyframes teaser-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+    .season-teaser:hover { box-shadow: 0 0 0 1px rgba(232,193,90,0.5) inset; }
+    .season-teaser .st-crown { font-size: 1.3rem; flex: none; }
+    .season-teaser .st-main { flex: 1; min-width: 0; }
+    .season-teaser .st-main b { color: var(--gold); }
+    .season-teaser .st-lead { font-weight: 700; }
+    .season-teaser .st-sub { display: block; font-size: 0.76rem; color: var(--muted); margin-top: 1px; }
+    .season-teaser .st-go { flex: none; color: var(--muted); font-size: 1.1rem; }
+    @media (prefers-reduced-motion: reduce) { .season-teaser { animation: none; } }
   </style>
 </head>
 <body>
@@ -419,8 +437,11 @@
         <h1>Spieleabend</h1>
       </div>
       <p class="tagline">Neun Spiele, ein Zuhause.</p>
-      <div class="mascot" id="mascot" title="Hallo!">🐹</div>
+      <div class="mascot" id="mascot" title="Hallo!" aria-hidden="true">🐹</div>
     </header>
+
+    <!-- Saison-Teaser: aktueller Wochen-Führender (aus /api/season), lockt zur Liga -->
+    <a class="season-teaser" id="season-teaser" href="/saison/" hidden></a>
 
     <input type="search" id="game-search" class="game-search" placeholder="🔍 Spiel suchen …" autocomplete="off" aria-label="Spiel suchen">
 
@@ -446,7 +467,7 @@
   </main>
 
   <script src="/shared.js?v=fd94d0b4"></script>
-  <script src="/games.js?v=00b0c5d2"></script>
+  <script src="/games.js?v=b9013cf4"></script>
   <script>
   // ================= Landing-Dynamik =================
   (function () {
@@ -488,6 +509,34 @@
       document.querySelector("#tools-h").hidden = false;
       TOOLS.forEach((t, i) => toolsNav.insertAdjacentHTML("beforeend", window.gameCardHTML(t, i)));
     }
+
+    // --- Saison-Teaser: aktueller Wochen-Führender (dezent, best-effort) ---
+    (async function seasonTeaser() {
+      const el = $("#season-teaser");
+      if (!el) return;
+      try {
+        const r = await fetch("/api/season");
+        if (!r.ok) return;
+        const d = await r.json();
+        const lead = d.standings && d.standings[0];
+        const ms = Math.max(0, d.resetInMs || 0);
+        const days = Math.ceil(ms / 86400000);
+        const left = ms < 86400000 ? "endet heute" : `noch ${days} Tag${days === 1 ? "" : "e"}`;
+        if (lead) {
+          el.innerHTML = `<span class="st-crown" aria-hidden="true">👑</span>
+            <span class="st-main"><span class="st-lead">Diese Woche führt <b>${esc(lead.name)}</b> · ${lead.points} Pkt</span>
+            <span class="st-sub">Saison ${left} — misch mit!</span></span>
+            <span class="st-go" aria-hidden="true">→</span>`;
+        } else {
+          el.innerHTML = `<span class="st-crown" aria-hidden="true">👑</span>
+            <span class="st-main"><span class="st-lead">Neue Saison — noch alles offen</span>
+            <span class="st-sub">Sei die/der Erste in der Wochen-Liga!</span></span>
+            <span class="st-go" aria-hidden="true">→</span>`;
+        }
+        el.setAttribute("aria-label", "Zur Saison-Liga");
+        el.hidden = false;
+      } catch (_) { /* offline / kein Netz → Teaser bleibt aus */ }
+    })();
 
     // --- Profil-Karte ganz oben (Gesamtüberblick) ---
     try {

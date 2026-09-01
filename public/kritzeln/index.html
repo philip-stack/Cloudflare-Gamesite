@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#0c1016">
   <title>Kritzeln &amp; Raten</title>
   <link rel="stylesheet" href="/fonts/fonts.css?v=8ff75776">
@@ -15,18 +15,18 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <script src="/theme.js?v=417502eb"></script>
   <script src="/shared.js?v=fd94d0b4"></script>
-  <link rel="stylesheet" href="style.css?v=3678b79e">
+  <link rel="stylesheet" href="style.css?v=1203cb11">
 </head>
 <body>
   <main id="app">
     <div class="topbar">
       <a class="btn-back" href="/" aria-label="Zurück zur Übersicht">←</a>
       <h1><span class="foil">Kritzeln</span></h1>
-      <button class="btn-icon" data-theme-toggle></button>
-      <button class="btn-icon" id="btn-sound" title="Ton an/aus">🔊</button>
-      <button class="btn-icon" id="btn-top" title="Bestenliste">🏆</button>
-      <button class="btn-icon hidden" id="btn-skip" title="Zug überspringen (Host)">⏭️</button>
-      <button class="btn-icon hidden" id="btn-leave" title="Raum verlassen">🚪</button>
+      <button class="btn-icon" data-theme-toggle aria-label="Hell/Dunkel umschalten"></button>
+      <button class="btn-icon" id="btn-sound" title="Ton an/aus" aria-label="Ton an/aus">🔊</button>
+      <button class="btn-icon" id="btn-top" title="Bestenliste" aria-label="Bestenliste">🏆</button>
+      <button class="btn-icon hidden" id="btn-skip" title="Zug überspringen (Host)" aria-label="Zug überspringen">⏭️</button>
+      <button class="btn-icon hidden" id="btn-leave" title="Raum verlassen" aria-label="Raum verlassen">🚪</button>
     </div>
 
     <div id="board" class="hidden">
@@ -56,11 +56,11 @@
 
       <div id="emotes" class="emotes hidden"></div>
 
-      <div id="chat" class="chat"></div>
+      <div id="chat" class="chat" role="log" aria-live="polite"></div>
     </div>
 
     <div id="inputbar" class="inputbar hidden">
-      <input id="guess" type="text" maxlength="60" placeholder="Tippe deinen Tipp …" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="send">
+      <input id="guess" type="text" maxlength="60" placeholder="Tippe deinen Tipp …" aria-label="Deinen Tipp eingeben" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="send">
       <button id="guess-send" class="btn-send">➤</button>
     </div>
   </main>

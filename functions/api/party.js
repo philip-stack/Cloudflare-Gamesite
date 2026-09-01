@@ -1,4 +1,5 @@
 import { json, makeCode, clientIp, rateLimit, broadcastParty, DEVICE_RE } from "./_util.js";
+import { SCORED_KEYS } from "./_gamemeta.js";
 
 // ====================================================================
 // Spieleabend-Raum ("Party"): mehrere Freunde spielen dieselben Spiele
@@ -12,7 +13,10 @@ import { json, makeCode, clientIp, rateLimit, broadcastParty, DEVICE_RE } from "
 //   GET  /api/party?code=XXXXXX  → { games, standings:[...], count }
 // ====================================================================
 
-const ALLOWED = ["funkelfeld", "komet", "sternensturm", "galopp", "wumms", "meeri"];
+// Wählbare Party-Spiele = die gewerteten Spiele (eine Quelle in _gamemeta.js) —
+// so kann kein Spiel mehr aus dem Spieleabend fallen (z. B. "schlange"), wenn es
+// zur Saison hinzukommt.
+const ALLOWED = SCORED_KEYS;
 const CODE_RE = /^[A-Z0-9]{6}$/;
 const DEV_RE = DEVICE_RE;   // gemeinsame Definition aus _util.js
 const MAX_SCORE = 2_000_000_000;
