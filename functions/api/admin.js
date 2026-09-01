@@ -158,6 +158,9 @@ export async function onRequestGet({ request, env }) {
   const tDevices = await many(env, `SELECT date(created_at) d, COUNT(DISTINCT device) n FROM scores WHERE created_at > datetime('now','-${days} days') AND device IS NOT NULL GROUP BY d`);
   const alertName = (await one(env, "SELECT v FROM app_config WHERE k='alert_name'"))?.v || "";
 
+  // ---- Nutzungszähler (anonym, aggregiert): play/duel/share je Spiel ----
+  const usage = await many(env, `SELECT k, SUM(n) n FROM stat_daily WHERE day > date('now','-${days} days') GROUP BY k ORDER BY n DESC`);
+
   // ---- Moderation: letzte Einsendungen + gesperrte Geräte ----
   const recent = await many(env,
     "SELECT id, game, name, device, score, substr(meta,1,140) meta, created_at FROM scores ORDER BY id DESC LIMIT 40");
@@ -195,6 +198,7 @@ export async function onRequestGet({ request, env }) {
     health,
     adminLog,
     trends: { days, scores: tScores, errors: tErrors, devices: tDevices },
+    usage,
     alert: { name: alertName },
     recent, banned,
   });

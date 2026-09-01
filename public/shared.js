@@ -483,6 +483,10 @@
   // sonst heruntergeladen + Text in die Zwischenablage.
   async function shareCard(opt = {}) {
     const { title = "Spieleabend", subtitle = "", big = "", accent = "#e8c15a", emoji = "🎲", url = location.origin, text = "" } = opt;
+    // Anonym zählen, dass geteilt wurde. Spiel-Key steckt bereits im Duell-Link
+    // (?duel=<game>) — daraus ableiten, sonst opt.game, damit kein Spiel angefasst
+    // werden muss.
+    try { let g = opt.game; if (!g) { const m = /[?&]duel=([a-z0-9_-]+)/i.exec(String(url)); if (m) g = m[1]; } stat("share", g); } catch {}
     let blob = null;
     try {
       const S = 1080, c = document.createElement("canvas"); c.width = S; c.height = S;
@@ -540,6 +544,7 @@
         const by = String(p.get("by") || "").slice(0, 16);
         const sc = Math.max(0, parseInt(p.get("sc") || "0", 10) || 0);
         sessionStorage.setItem(this._key, JSON.stringify({ game: g, by, score: sc }));
+        stat("duel", g);   // greift der virale Loop? (anonym gezählt)
       } catch {}
     },
     target(game) {
@@ -553,9 +558,25 @@
     clear() { try { sessionStorage.removeItem(this._key); } catch {} },
   };
 
+  // ---------- Anonyme Nutzungszähler ----------
+  // Meldet ein Ereignis (play/duel/share) als reinen Tageszähler an /api/stat.
+  // Fire-and-forget per sendBeacon: blockiert nie, überlebt Seitenwechsel, und
+  // scheitert es (offline, CSP, kein Beacon), passiert einfach nichts. Es wird
+  // KEINE Kennung mitgeschickt — nur was passiert ist, nicht wer.
+  function stat(ev, game) {
+    try {
+      const g = String(game || "").toLowerCase();
+      if (!g) return;
+      const body = JSON.stringify({ ev, game: g });
+      if (navigator.sendBeacon) { navigator.sendBeacon("/api/stat", new Blob([body], { type: "application/json" })); return; }
+      fetch("/api/stat", { method: "POST", headers: { "Content-Type": "application/json" }, body, keepalive: true }).catch(() => {});
+    } catch {}
+  }
+
   // ---------- Zuletzt gespieltes Spiel (für die Landing Page) ----------
   function markPlayed(game) {
     try { localStorage.setItem("gs_last_game", game); } catch {}
+    stat("play", game);   // anonymer Popularitäts-Zähler (siehe stat())
     // Tages-Streak pflegen: einmal pro Kalendertag hochzählen (egal welches
     // Spiel). Gestern gespielt → +1, sonst zurück auf 1. Bester Streak wird
     // separat gemerkt. Rein lokal, wandert über den Cloud-Sync mit.
@@ -877,7 +898,7 @@
 
   window.GS = {
     esc, deviceId, getName, setName, submitScore, scoreFlow, showLeaderboard,
-    badges, skins, sound, haptic, fx, onboard, share, shareCard, duelLink, duel, markPlayed, streak, cloud,
+    badges, skins, sound, haptic, fx, onboard, share, shareCard, duelLink, duel, markPlayed, streak, stat, cloud,
     level, quests,
   };
 

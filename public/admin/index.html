@@ -280,7 +280,7 @@
         `<tr><td class="t">${esc((x.created_at || "").slice(5, 16))}</td><td class="m"><b>${esc((x.msg || "").replace(/^FRAGE GEMELDET: /, ""))}</b><br><span class="muted">${esc(x.extra || "")}</span></td><td class="num"><button class="btn sm" data-reportdel="${x.id}" title="Erledigt / entfernen">✓</button></td></tr>`).join("") || '<tr><td colspan="3" class="muted">keine Meldungen 🎉</td></tr>';
 
       // Live-Räume (aktive Echtzeit-Spiele)
-      const GAME_ICON = { quiz: "🧠", kritzeln: "🎨", party: "🎉" };
+      const GAME_ICON = { quiz: "🧠", kritzeln: "🎨", party: "🎉", funkelfeld: "💎", komet: "☄️", sternensturm: "🚀", galopp: "🦄", wumms: "🦝", meeri: "🐹", schlange: "🐍", wuerfelpoker: "🎲", kochstudio: "🍳" };
       const liveRooms = (d.live && d.live.rooms) || [];
       const liveRows = liveRooms.map(x =>
         `<tr><td>${GAME_ICON[x.game] || "🎮"} ${esc(x.game)}</td><td class="mono">${esc(x.code)}</td><td class="num mono">${nf(x.players)}</td><td>${esc(x.state)}</td><td class="t">${esc((x.updated_at || "").slice(11, 16))}</td></tr>`).join("")
@@ -291,6 +291,17 @@
       const clRows = (ce.latest || []).map(x =>
         `<tr><td class="t">${esc((x.created_at || "").slice(5, 16))}</td><td class="m"><b>${esc(x.msg)}</b><br><span class="muted">${esc(x.page || "")} · ${esc((x.ua || "").slice(0, 60))}</span></td></tr>`).join("")
         || '<tr><td colspan="2" class="muted">keine Client-Fehler 🎉</td></tr>';
+
+      // Nutzungszähler (anonym): play/duel/share je Spiel zusammenführen
+      const usageMap = {};
+      (d.usage || []).forEach(r => {
+        const [ev, g] = String(r.k || "").split(":");
+        if (!g || !ev) return;
+        (usageMap[g] = usageMap[g] || { play: 0, duel: 0, share: 0 })[ev] = r.n;
+      });
+      const usageRows = Object.entries(usageMap).sort((a, b) => (b[1].play - a[1].play) || (b[1].duel - a[1].duel)).map(([g, u]) =>
+        `<tr><td>${GAME_ICON[g] || "🎮"} ${esc(g)}</td><td class="num mono">${nf(u.play)}</td><td class="num mono">${u.duel ? nf(u.duel) : "·"}</td><td class="num mono">${u.share ? nf(u.share) : "·"}</td></tr>`).join("")
+        || '<tr><td colspan="4" class="muted">noch keine Nutzungsdaten</td></tr>';
 
       // Admin-Audit-Log
       const logRows = (d.adminLog || []).map(x =>
@@ -321,6 +332,14 @@
           ${sparkCard("Scores / Tag", d.trends.scores)}
           ${sparkCard("Aktive Geräte / Tag", d.trends.devices)}
           ${sparkCard("Fehler / Tag", d.trends.errors)}
+        </div>
+
+        <div class="section-title">🎮 Nutzung <span class="muted" style="font-weight:600;font-size:.8rem">anonym · letzte ${d.trends.days} Tage</span></div>
+        <div class="grid">
+          <div class="card full"><h2>Was wird gespielt — Starts · Duelle · Teilen</h2>
+            <table><thead><tr><th>Spiel</th><th class="num">▶️ Starts</th><th class="num">⚔️ Duelle</th><th class="num">📤 Teilen</th></tr></thead><tbody>${usageRows}</tbody></table>
+            <p class="muted" style="font-size:.76rem;margin:8px 2px 0">„Starts" = gespielte Runden (anonym). „Duelle" = über einen Herausforderungs-Link gestartet. „Teilen" = Teilen-Karte erzeugt. Ganz ohne Personenbezug.</p>
+          </div>
         </div>
 
         <div class="grid" style="margin-top:12px">
