@@ -12,10 +12,14 @@
 
   function apply(t) {
     document.documentElement.dataset.theme = t;
-    // Dem Browser das aktive Schema melden: sonst malt Android-15-Edge-to-Edge
-    // den Statusleisten-/Rand-Bereich als schwarzen Scrim, auch wenn die Seite
-    // hell ist. Mit color-scheme färbt der Browser System-Leisten & Canvas passend.
-    document.documentElement.style.colorScheme = t;
+    // Android-15-Edge-to-Edge: die Statusleiste ist transparent, dahinter liegt
+    // der obere Seiten-Inset. Den färbt weder theme-color noch color-scheme
+    // zuverlässig — also malen wir das Wurzelelement (html) selbst in der Modus-
+    // Grundfarbe. Das füllt exakt den Rand-/Inset-Bereich (der Seiteninhalt liegt
+    // im body darüber). color-scheme zusätzlich für Scrollbars/Formfelder/Canvas.
+    const root = document.documentElement;
+    root.style.colorScheme = t;
+    root.style.backgroundColor = t === "light" ? "#dbe6d6" : "#0a0e0b";
     const meta = document.querySelector('meta[name="theme-color"]');
     if (meta) {
       if (!meta.dataset.dark) meta.dataset.dark = meta.content;
