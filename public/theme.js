@@ -12,6 +12,10 @@
 
   function apply(t) {
     document.documentElement.dataset.theme = t;
+    // Dem Browser das aktive Schema melden: sonst malt Android-15-Edge-to-Edge
+    // den Statusleisten-/Rand-Bereich als schwarzen Scrim, auch wenn die Seite
+    // hell ist. Mit color-scheme färbt der Browser System-Leisten & Canvas passend.
+    document.documentElement.style.colorScheme = t;
     const meta = document.querySelector('meta[name="theme-color"]');
     if (meta) {
       if (!meta.dataset.dark) meta.dataset.dark = meta.content;
