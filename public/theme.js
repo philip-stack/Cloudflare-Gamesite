@@ -15,7 +15,10 @@
     const meta = document.querySelector('meta[name="theme-color"]');
     if (meta) {
       if (!meta.dataset.dark) meta.dataset.dark = meta.content;
-      meta.content = t === "light" ? (meta.dataset.light || "#efece1") : meta.dataset.dark;
+      // Hell: an den oberen Rand des core.css-Hell-Hintergrunds angeglichen
+      // (#dbe6d6), damit die System-/Adressleiste nahtlos mit der Seite
+      // verschmilzt statt als abgesetzter Balken zu wirken.
+      meta.content = t === "light" ? (meta.dataset.light || "#dbe6d6") : meta.dataset.dark;
     }
   }
 
