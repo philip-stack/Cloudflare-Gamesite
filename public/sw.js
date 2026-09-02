@@ -6,7 +6,7 @@
 // der Hub auch beim allerersten Offline-Aufruf erscheint.
 // API-Anfragen (/api/…) werden nie gecacht.
 // ====================================================================
-const CACHE = "gamesite-v66";
+const CACHE = "gamesite-v67";
 // CacheStorage ist pro Origin (nicht pro Scope) — die drei PWAs (Hub, /fire/noe/,
 // /tanken/) teilen sich denselben Speicher. Beim Aufräumen NUR eigene Cache-Namen
 // (gleicher Präfix) löschen, sonst wischt der zuletzt aktivierte SW die Shells der
@@ -26,6 +26,7 @@ const SHELL = [
   "/wuerfelpoker/", "/wuerfelpoker/style.css", "/wuerfelpoker/app.js", "/wuerfelpoker/die3d.js",
   "/funkelfeld/", "/funkelfeld/style.css", "/funkelfeld/app.js",
   "/komet/", "/komet/style.css", "/komet/app.js",
+  "/flatterfink/", "/flatterfink/style.css", "/flatterfink/app.js",
   "/sternensturm/", "/sternensturm/style.css", "/sternensturm/app.js",
   "/galopp/", "/galopp/style.css", "/galopp/app.js",
   "/wumms/", "/wumms/style.css", "/wumms/app.js",

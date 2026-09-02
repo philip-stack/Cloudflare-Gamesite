@@ -280,7 +280,7 @@
         `<tr><td class="t">${esc((x.created_at || "").slice(5, 16))}</td><td class="m"><b>${esc((x.msg || "").replace(/^FRAGE GEMELDET: /, ""))}</b><br><span class="muted">${esc(x.extra || "")}</span></td><td class="num"><button class="btn sm" data-reportdel="${x.id}" title="Erledigt / entfernen">✓</button></td></tr>`).join("") || '<tr><td colspan="3" class="muted">keine Meldungen 🎉</td></tr>';
 
       // Live-Räume (aktive Echtzeit-Spiele)
-      const GAME_ICON = { quiz: "🧠", kritzeln: "🎨", party: "🎉", funkelfeld: "💎", komet: "☄️", sternensturm: "🚀", galopp: "🦄", wumms: "🦝", meeri: "🐹", schlange: "🐍", wuerfelpoker: "🎲", kochstudio: "🍳" };
+      const GAME_ICON = { quiz: "🧠", kritzeln: "🎨", party: "🎉", funkelfeld: "💎", komet: "☄️", flatterfink: "🐦", sternensturm: "🚀", galopp: "🦄", wumms: "🦝", meeri: "🐹", schlange: "🐍", wuerfelpoker: "🎲", kochstudio: "🍳" };
       const liveRooms = (d.live && d.live.rooms) || [];
       const liveRows = liveRooms.map(x =>
         `<tr><td>${GAME_ICON[x.game] || "🎮"} ${esc(x.game)}</td><td class="mono">${esc(x.code)}</td><td class="num mono">${nf(x.players)}</td><td>${esc(x.state)}</td><td class="t">${esc((x.updated_at || "").slice(11, 16))}</td></tr>`).join("")

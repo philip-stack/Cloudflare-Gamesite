@@ -95,6 +95,16 @@ const GAMES = {
       m.orbs >= 0 && m.time >= 0 && m.time <= 36_000 &&
       score === Math.round(m.orbs) && m.orbs <= m.time * 30 + 60,
   },
+  flatterfink: {
+    max: 100_000,
+    scoped: true,
+    // score = Tore × 10 + Körndl × 5. Körndl sind je Tor gedeckelt (max. eins
+    // pro Lücke plus Reserve) — echte Läufe bleiben darunter, Fakes nicht.
+    check: (score, m) =>
+      Number.isFinite(m.tore) && Number.isFinite(m.koerndl) &&
+      m.tore >= 0 && m.tore <= 3_000 && m.koerndl >= 0 && m.koerndl <= m.tore + 5 &&
+      score === m.tore * 10 + m.koerndl * 5,
+  },
 };
 
 // Modus aus Query/Body ableiten und gegen die Spiel-Config prüfen.

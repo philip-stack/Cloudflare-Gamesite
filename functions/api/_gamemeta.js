@@ -9,6 +9,7 @@
 export const SCORED_GAMES = {
   funkelfeld:   { name: "Funkelfeld",    icon: "💎" },
   komet:        { name: "Komet",         icon: "☄️" },
+  flatterfink:  { name: "Flatterfink",   icon: "🐦" },
   sternensturm: { name: "Sternensturm",  icon: "🚀" },
   galopp:       { name: "Galopp",        icon: "🦄" },
   wumms:        { name: "WUMMS!",        icon: "🦝" },

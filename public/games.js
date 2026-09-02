@@ -44,6 +44,12 @@
       bestKey: "km_best", scored: true, gsBadges: true, daily: true, weekly: true,
     },
     {
+      key: "flatterfink", name: "Flatterfink", icon: "🐦", accent: "#ffd23f", href: "/flatterfink/",
+      desc: "Tippen, flattern, durch die Hecken.",
+      long: "One-Touch-Arcade (flappy-artig) — als Stieglitz durch die Heckenlücken flattern, Körndl sammeln, nirgends anstoßen, Torrekord jagen.",
+      bestKey: "ff_best", scored: true, gsBadges: true, daily: true, weekly: true,
+    },
+    {
       key: "sternensturm", name: "Sternensturm", icon: "🚀", accent: "#5b9cff", href: "/sternensturm/",
       desc: "Wellen überstehen. NOVA zünden.",
       long: "Roguelite-Space-Shooter — Wellen überstehen, Upgrades wählen, NOVA zünden, Bosse zerlegen.",
