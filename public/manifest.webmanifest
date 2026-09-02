@@ -10,7 +10,6 @@
   "launch_handler": { "client_mode": ["navigate-existing", "auto"] },
   "handle_links": "preferred",
   "background_color": "#0a0e0b",
-  "theme_color": "#0a0e0b",
   "lang": "de",
   "categories": ["games", "entertainment"],
   "icons": [
