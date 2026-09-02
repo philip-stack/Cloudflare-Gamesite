@@ -70,7 +70,7 @@ function spawnObstacle(x) {
   const hi = H - groundH - g / 2 - margin;
   const gapY = lo + Math.random() * Math.max(10, hi - lo);
   // ~45 % der Lücken tragen ein Körndl in der Mitte
-  const korndl = Math.random() < 0.45 ? { x: x + OBST_W / 2, y: gapY, got: false } : null;
+  const korndl = Math.random() < 0.45 ? { x: x + OBST_W / 2, y: gapY, got: false, ph: Math.random() * Math.PI * 2 } : null;
   obst.push({ x, gapY, passed: false, korndl });
 }
 
@@ -254,7 +254,7 @@ function draw(now) {
     // Körndl (gezeichnet statt Emoji → auf allen Geräten klar sichtbar)
     if (o.korndl && !o.korndl.got) {
       const s = o.korndl;
-      drawKorndl(s.x, s.y + Math.sin(now / 300 + s.x) * 3);
+      drawKorndl(s.x, s.y + Math.sin(now / 300 + s.ph) * 3);
     }
   }
 
