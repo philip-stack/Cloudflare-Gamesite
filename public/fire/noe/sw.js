@@ -4,7 +4,7 @@
 // installierbar und offline-tauglich. Strategie: Netz zuerst,
 // Cache als Fallback. /api/… liegt außerhalb des Scopes → immer live.
 // ====================================================================
-const CACHE = "fire-noe-v35";
+const CACHE = "fire-noe-v36";
 // CacheStorage ist pro Origin, nicht pro Scope — Hub/Fire/Tanken teilen sich einen
 // Speicher. Beim Aufräumen nur eigene Caches (gleicher Präfix) löschen, sonst wischt
 // dieser SW die Shells der anderen Apps weg. Präfix = alles vor dem "-vNN"-Suffix.
