@@ -64,6 +64,26 @@
 
   apply(get());
 
+  // Android-PWA: die OS-Statusleiste einer INSTALLIERTEN App folgt nicht der
+  // dynamischen theme-color (die greift nur im Browser-Tab), sondern schema-
+  // abhängigen Metas nach der SYSTEM-Einstellung (prefers-color-scheme). Ohne
+  // sie nimmt Android die feste Manifest-Farbe (#0a0e0b) → schwarzer Balken im
+  // Hellmodus. Diese zwei Metas geben dem System pro Schema die passende Farbe.
+  (function injectSchemeThemeColor() {
+    try {
+      const head = document.head || document.documentElement;
+      const add = (media, content) => {
+        const m = document.createElement("meta");
+        m.setAttribute("name", "theme-color");
+        m.setAttribute("media", media);
+        m.setAttribute("content", content);
+        head.appendChild(m);
+      };
+      add("(prefers-color-scheme: light)", "#dbe6d6");
+      add("(prefers-color-scheme: dark)", "#0a0e0b");
+    } catch (_) {}
+  })();
+
   // ------------------------------------------------------------------
   // Barrierefreiheit (plattformweit, einmal injiziert):
   //  - prefers-reduced-motion: Wer im Betriebssystem „Bewegung reduzieren"
