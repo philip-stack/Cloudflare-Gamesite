@@ -251,15 +251,10 @@ function draw(now) {
     if (o.x > W + 4 || o.x < -OBST_W - 4) continue;
     drawHedge(o.x, 0, OBST_W, o.gapY - g / 2, true);
     drawHedge(o.x, o.gapY + g / 2, OBST_W, H - (o.gapY + g / 2), false);
-    // Körndl
+    // Körndl (gezeichnet statt Emoji → auf allen Geräten klar sichtbar)
     if (o.korndl && !o.korndl.got) {
       const s = o.korndl;
-      ctx.save();
-      ctx.translate(s.x, s.y + Math.sin(now / 300 + s.x) * 3);
-      ctx.font = "20px 'Apple Color Emoji','Segoe UI Emoji', serif";
-      ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      ctx.fillText("🌾", 0, 0);
-      ctx.restore();
+      drawKorndl(s.x, s.y + Math.sin(now / 300 + s.x) * 3);
     }
   }
 
@@ -284,6 +279,36 @@ function draw(now) {
     ctx.fillRect(p.x - 2, p.y - 2, 4, 4);
   }
   ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawKorndl(x, y) {
+  ctx.save();
+  ctx.translate(x, y);
+  // Warmes Glühen — hebt das Korn deutlich vom Himmel ab
+  const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, 22);
+  glow.addColorStop(0, "rgba(255,190,40,0.6)");
+  glow.addColorStop(1, "rgba(255,190,40,0)");
+  ctx.fillStyle = glow;
+  ctx.beginPath(); ctx.arc(0, 0, 22, 0, Math.PI * 2); ctx.fill();
+  // Korn: goldener Samen mit dunkler Kontur (leicht gekippt)
+  ctx.rotate(-0.5);
+  const g = ctx.createLinearGradient(-8, -10, 8, 10);
+  g.addColorStop(0, "#fff0b0");
+  g.addColorStop(0.5, "#ffc233");
+  g.addColorStop(1, "#e0870f");
+  ctx.fillStyle = g;
+  ctx.strokeStyle = "#6b3d10";
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.ellipse(0, 0, 7.5, 11.5, 0, 0, Math.PI * 2);
+  ctx.fill(); ctx.stroke();
+  // Mittelrille (Samen-Detail)
+  ctx.strokeStyle = "rgba(107,61,16,0.65)";
+  ctx.lineWidth = 1.4;
+  ctx.beginPath(); ctx.moveTo(0, -8.5); ctx.lineTo(0, 8.5); ctx.stroke();
+  // Glanzpunkt
+  ctx.fillStyle = "rgba(255,255,255,0.85)";
+  ctx.beginPath(); ctx.ellipse(-2.6, -4.5, 1.7, 2.8, 0, 0, Math.PI * 2); ctx.fill();
   ctx.restore();
 }
 
