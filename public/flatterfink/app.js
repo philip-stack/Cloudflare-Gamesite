@@ -41,6 +41,8 @@ let tore = 0, korn = 0;
 let groundH = 0;
 let shakeT = 0, deathAt = 0;
 let deadSpin = 0, deadSpinV = 0;   // Eigendrehung beim Abtaumeln
+let deadLanded = false;            // am Boden zerplatzt → keine Physik/Zeichnung mehr
+let overTimer = null, overShown = false;
 let paused = false;                // Pause bei App-Wechsel (visibilitychange)
 let hintTimer = null;
 let best = Number(localStorage.getItem("ff_best") || 0);
@@ -95,7 +97,8 @@ function reset() {
   birdY = H * 0.42;
   birdVY = 0;
   wingT = 0; tilt = 0;
-  deadSpin = 0; deadSpinV = 0; paused = false;
+  deadSpin = 0; deadSpinV = 0; deadLanded = false; paused = false;
+  clearTimeout(overTimer); overShown = false;
   obst = []; parts = [];
   tore = 0; korn = 0;
   scrollT = 0;
@@ -224,8 +227,8 @@ function die() {
   mode = "dead";
   deathAt = performance.now();
   hideHint();
-  // Abtaumeln: kurzer Aufwärts-Hüpfer, dann Sturz mit Eigendrehung — liest
-  // sich deutlich besser als ein reines Zerplatzen.
+  // Abtaumeln: kurzer Aufwärts-Hüpfer, dann Sturz mit Eigendrehung —
+  // am Boden zerplatzt er dann in Federn (siehe splat()).
   birdVY = -250;
   deadSpin = tilt;
   deadSpinV = (6.5 + Math.random() * 3) * (Math.random() < 0.5 ? -1 : 1);
@@ -233,20 +236,46 @@ function die() {
   shakeT = 0.5;
   sound.dead();
   if (navigator.vibrate) navigator.vibrate([60, 40, 80]);
-  setTimeout(gameOver, 1150);
+  deadLanded = false;
+  clearTimeout(overTimer);
+  overTimer = setTimeout(gameOver, 1400);   // Notbremse, falls der Sturz lang dauert
 }
 
 // Todes-Physik: der Fink fällt weiter und dreht sich, die Welt steht still.
 function stepDead(dt) {
+  if (deadLanded) return;                  // schon zerplatzt → nichts mehr rechnen
   birdVY = Math.min(MAX_FALL, birdVY + GRAV * dt);
   birdY += birdVY * dt;
   deadSpin += deadSpinV * dt;
   const floor = H - groundH - BIRD_R;
-  if (birdY >= floor) {
+  if (birdY >= floor) {                    // Boden erreicht → zerplatzen, NICHT hüpfen
     birdY = floor;
-    if (birdVY > 180) { birdVY *= -0.28; deadSpinV *= 0.4; }   // kleiner Aufprall-Hüpfer
-    else { birdVY = 0; deadSpinV = 0; }                        // liegen bleiben
+    splat();
+    clearTimeout(overTimer);
+    overTimer = setTimeout(gameOver, 430); // kurz die Federn sehen lassen
   }
+}
+
+// Aufprall am Boden: der Fink zerplatzt in Federn seines Federkleids plus
+// eine flache Staubwolke. Bewusst KEIN Abprallen — das wirkte wie ein Gummiball.
+function splat() {
+  deadLanded = true;
+  const gy = H - groundH;
+  const cols = [SKIN.body, SKIN.belly, SKIN.wing];
+  for (let i = 0; i < 26; i++) {                       // Federn nach oben/außen
+    const a = -Math.PI / 2 + (Math.random() - 0.5) * 2.3;
+    const v = 90 + Math.random() * 260;
+    parts.push({ x: birdX, y: gy - 6, vx: Math.cos(a) * v, vy: Math.sin(a) * v,
+      life: 0.6 + Math.random() * 0.6, t: 0, color: cols[i % cols.length] });
+  }
+  for (let i = 0; i < 14; i++) {                       // Staub flach am Boden
+    const dir = Math.random() < 0.5 ? -1 : 1;
+    parts.push({ x: birdX, y: gy - 3, vx: dir * (60 + Math.random() * 190), vy: -20 - Math.random() * 50,
+      life: 0.4 + Math.random() * 0.4, t: 0, color: "rgba(214,204,172,0.9)" });
+  }
+  shakeT = 0.55;
+  sound.splat();
+  if (navigator.vibrate) navigator.vibrate([40, 30, 90]);
 }
 
 function updateHud() {
@@ -325,7 +354,7 @@ function draw(now) {
   for (let x = -go; x < W; x += 26) ctx.fillRect(x, H - groundH + 6, 12, 3);
 
   // Fink
-  if (mode !== "ready") drawBird(now);   // beim Tod weiter sichtbar (Abtaumeln)
+  if (mode !== "ready" && !deadLanded) drawBird(now);   // beim Taumeln sichtbar, nach dem Zerplatzen weg
 
   // Partikel
   for (const p of parts) {
@@ -513,6 +542,7 @@ const sound = (() => {
     gate(i) { tone(440 + i * 40, 0.09, "sine", 0.08); },
     korn(i) { tone(880 + i * 110, 0.09, "sine", 0.08); },
     dead() { tone(240, 0.3, "sawtooth", 0.07); tone(160, 0.4, "sawtooth", 0.07, 0.12); },
+    splat() { tone(140, 0.16, "sawtooth", 0.1); tone(90, 0.24, "square", 0.07, 0.02); },
     fanfare() { [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.22, "sine", 0.11, i * 0.09)); },
     toggle() { return !GS.sound.toggle(); },
   };
@@ -522,6 +552,8 @@ const sound = (() => {
 function finalScore() { return tore * 10 + korn * 5; }
 
 async function gameOver() {
+  if (overShown) return;      // Aufprall- und Notbremse-Timer dürfen sich überholen
+  overShown = true;
   const score = finalScore();
   const newBadges = GS.badges.record("flatterfink", { tore, korn, score });
   const isRecord = score > best && score > 0;
