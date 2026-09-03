@@ -619,6 +619,7 @@
           </div>
           <div class="card"><h2>Datenbank &amp; Worker</h2>
             <div class="kv"><span>D1-Größe</span><b>${bytes(cf.d1 && cf.d1.fileSize)}</b></div>
+            <div class="kv"><span>Tabellen</span><b>${cf.d1 && cf.d1.tables != null ? nf(cf.d1.tables) : "–"}</b></div>
             <div class="kv"><span>Region</span><b>${esc((cf.d1 && cf.d1.region) || "–")}</b></div>
             <div class="kv"><span>Worker-Aufrufe (14 T)</span><b>${nf(wSum)}</b></div>
             <div class="kv"><span>davon Fehler</span><b class="${wErr ? "err" : ""}">${nf(wErr)}</b></div>

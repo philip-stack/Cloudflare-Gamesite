@@ -95,7 +95,19 @@ async function fetchFresh(env) {
   const a = gql && gql.data && gql.data.viewer && gql.data.viewer.accounts && gql.data.viewer.accounts[0];
   if (!a) return { error: "Unerwartete Antwort der Analytics-API" };
 
-  const db = size && size.result && size.result[0];
+  // Die LISTE liefert file_size, aber weder Region noch Tabellenzahl — das
+  // kennt nur die Detail-Abfrage, und die braucht die uuid aus der Liste.
+  // Ein zweiter Aufruf ist bei 10 Minuten Zwischenspeicher zu verschmerzen;
+  // schlägt er fehl, bleibt es bei den Werten aus der Liste.
+  let db = size && size.result && size.result[0];
+  if (db && db.uuid) {
+    try {
+      const detail = await fetch(`${REST}/accounts/${acc}/d1/database/${db.uuid}`, { headers: { Authorization: "Bearer " + token } })
+        .then(r => r.json());
+      if (detail && detail.result) db = { ...db, ...detail.result };
+    } catch (_) { /* optional */ }
+  }
+
   return {
     at: new Date().toISOString(),
     days: mergeDays(a),
@@ -103,7 +115,12 @@ async function fetchFresh(env) {
       script: w.dimensions.scriptName, status: w.dimensions.status,
       requests: w.sum.requests || 0, errors: w.sum.errors || 0,
     })),
-    d1: db ? { name: db.name, fileSize: db.file_size ?? null, region: db.running_in_region || null } : null,
+    d1: db ? {
+      name: db.name,
+      fileSize: db.file_size ?? null,
+      region: db.running_in_region || null,
+      tables: db.num_tables ?? null,
+    } : null,
   };
 }
 
