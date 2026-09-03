@@ -21,7 +21,22 @@ function resize() {
   canvas.height = Math.round(H * DPR);
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
 }
-window.addEventListener("resize", resize);
+// Größenänderung mitten im Lauf (Handy drehen, ein-/ausfahrende Browser-Leiste):
+// Hecken speichern absolute Pixel, darum werden sie proportional mitskaliert —
+// sonst sitzen Lücken, Boden und Vogel nach dem Umbruch falsch.
+window.addEventListener("resize", () => {
+  const oldH = H;
+  resize();
+  groundH = Math.max(28, H * 0.07);
+  birdX = W * 0.28;
+  if (!oldH || oldH === H) return;
+  const k = H / oldH;
+  birdY *= k;
+  for (const o of obst) {
+    o.gapY *= k; o.gap *= k; o.amp *= k;
+    if (o.korndl) o.korndl.dy *= k;
+  }
+});
 resize();
 
 // ---------- Tuning ----------
@@ -37,13 +52,16 @@ let mode = "ready";          // ready | run | dead
 let birdY, birdVY, birdX, wingT, tilt;
 let obst = [], parts = [], clouds = [];
 let scrollT = 0;             // Weltbewegung (für Boden/Parallaxe)
-let tore = 0, korn = 0;
+let tore = 0, korn = 0, kornRisk = 0;   // kornRisk = Teilmenge von korn (riskant platziert)
 let groundH = 0;
 let shakeT = 0, deathAt = 0;
 let deadSpin = 0, deadSpinV = 0;   // Eigendrehung beim Abtaumeln
 let deadLanded = false;            // am Boden zerplatzt → keine Physik/Zeichnung mehr
 let overTimer = null, overShown = false;
 let paused = false;                // Pause bei App-Wechsel (visibilitychange)
+let pops = [];                     // aufsteigende Punkte-Texte
+let trail = [];                    // Federflaum-Spur hinter dem Finken
+let stars = [];                    // Sterne, blenden zur Nacht ein
 let hintTimer = null;
 let gameT = 0;                     // Spiel-Uhr (s) — treibt wandernde Hecken
 let best = Number(localStorage.getItem("ff_best") || 0);
@@ -67,6 +85,40 @@ $("#hud-best").textContent = best;
 // ---------- Welt ----------
 function speed() { return 175 + Math.min(tore, 42) * 3.3; }          // 175 → ~314 px/s
 function gapH() { return H * (0.37 - Math.min(tore, 42) / 42 * 0.13); } // 0.37 H → 0.24 H
+
+// ---------- Himmel-Verlauf (Tag → Abend → Nacht) ----------
+// Rein kosmetisch: die Schwierigkeit bleibt unberührt, aber ein langer Lauf
+// sieht sichtbar anders aus als ein kurzer — Belohnung für Ausdauer.
+const SKY = [
+  { at: 0,    top: [126,200,232], mid: [174,224,230], bot: [216,238,200], sun: [255,240,190], sunA: 0.90, cloud: [255,255,255], cloudA: 0.50, hill: [70,140,90], hillA: 0.35, ground: [106,154,74], star: 0 },
+  { at: 0.55, top: [242,150,104], mid: [246,193,133], bot: [242,223,174], sun: [255,190,120], sunA: 1.00, cloud: [255,226,200], cloudA: 0.55, hill: [120,90,80], hillA: 0.40, ground: [122,110,66], star: 0.25 },
+  { at: 1,    top: [24,34,62],    mid: [36,48,84],    bot: [56,66,96],    sun: [180,200,255], sunA: 0.35, cloud: [120,140,180], cloudA: 0.35, hill: [30,40,62],  hillA: 0.55, ground: [38,52,44],   star: 1 },
+];
+const lerp = (a, b, t) => a + (b - a) * t;
+const mixArr = (a, b, t) => [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)];
+function rgba(c, a) {
+  return "rgba(" + Math.round(c[0]) + "," + Math.round(c[1]) + "," + Math.round(c[2]) + "," + a + ")";
+}
+function hexToRgb(h) {
+  const t = String(h).replace("#", "");
+  const v = t.length === 3 ? t.split("").map(c => c + c).join("") : t;
+  return [parseInt(v.slice(0, 2), 16) || 0, parseInt(v.slice(2, 4), 16) || 0, parseInt(v.slice(4, 6), 16) || 0];
+}
+// Volle Nacht ist nach 70 Toren erreicht.
+function sky() {
+  const p = Math.min(1, tore / 70);
+  let i = 0;
+  while (i < SKY.length - 2 && p > SKY[i + 1].at) i++;
+  const a = SKY[i], b = SKY[i + 1];
+  const t = Math.min(1, Math.max(0, (p - a.at) / (b.at - a.at)));
+  return {
+    top: mixArr(a.top, b.top, t), mid: mixArr(a.mid, b.mid, t), bot: mixArr(a.bot, b.bot, t),
+    sun: mixArr(a.sun, b.sun, t), sunA: lerp(a.sunA, b.sunA, t),
+    cloud: mixArr(a.cloud, b.cloud, t), cloudA: lerp(a.cloudA, b.cloudA, t),
+    hill: mixArr(a.hill, b.hill, t), hillA: lerp(a.hillA, b.hillA, t),
+    ground: mixArr(a.ground, b.ground, t), star: lerp(a.star, b.star, t),
+  };
+}
 
 // Mittelpunkt der Lücke. Wandernde Hecken schwingen sanft und SICHTBAR auf und
 // ab; die Lückenhöhe selbst bleibt eingefroren. Sichtbare Bewegung ist fair,
@@ -128,12 +180,15 @@ function reset() {
   wingT = 0; tilt = 0;
   deadSpin = 0; deadSpinV = 0; deadLanded = false; paused = false;
   clearTimeout(overTimer); overShown = false;
-  obst = []; parts = [];
-  tore = 0; korn = 0;
+  obst = []; parts = []; pops = []; trail = [];
+  tore = 0; korn = 0; kornRisk = 0;
   scrollT = 0;
   gameT = 0;
   clouds = Array.from({ length: 5 }, () => ({
     x: Math.random() * W, y: Math.random() * H * 0.5, r: 26 + Math.random() * 34, s: 0.12 + Math.random() * 0.18,
+  }));
+  stars = Array.from({ length: 34 }, () => ({
+    x: Math.random() * W, y: Math.random() * H * 0.62, r: 0.7 + Math.random() * 1.3, tw: Math.random() * Math.PI * 2,
   }));
   topUpObstacles();
   updateHud();
@@ -203,6 +258,12 @@ function step(dt) {
   tilt = Math.max(-0.5, Math.min(1.1, birdVY / 620));
   wingT = Math.max(0, wingT - dt * 6);
 
+  // Feder-Spur: Punkte wandern mit der Welt nach links, vorne kommt neu dazu
+  const tdx = speed() * dt;
+  for (const t of trail) t.x -= tdx;
+  trail.push({ x: birdX - 10, y: birdY + 4 });
+  if (trail.length > 12) trail.shift();
+
   // Decke: sanft abprallen
   if (birdY < BIRD_R) { birdY = BIRD_R; if (birdVY < 0) birdVY *= -0.3; }
 
@@ -225,6 +286,7 @@ function step(dt) {
       tore++;
       sound.gate(Math.min(tore, 12));
       burst(birdX + 10, birdY, "rgba(255,210,63,0.9)", 6, 120);
+      popText(birdX + 26, birdY - 12, "+10", "#ffd23f");
       if (o.minClear != null && o.minClear < 12) nearMiss();   // knapp vorbei → spürbar
     }
     // Körndl einsammeln (folgt der Lücke, auch bei wandernder Hecke)
@@ -233,9 +295,12 @@ function step(dt) {
       if (Math.hypot(kx - birdX, ky - birdY) < BIRD_R + 12) {
         o.korndl.got = true;
         korn++;
+        const risky = o.korndl.dy !== 0;          // am Heckenrand platziert
+        if (risky) kornRisk++;
         sound.korn(Math.min(korn % 8, 7));
-        burst(kx, ky, "#ffe08a", 9, 150);
-        if (navigator.vibrate) navigator.vibrate(5);
+        burst(kx, ky, risky ? "#ffd23f" : "#ffe08a", risky ? 14 : 9, risky ? 210 : 150);
+        popText(kx, ky - 14, risky ? "+12" : "+5", risky ? "#ffd23f" : "#ffe08a");
+        if (navigator.vibrate) navigator.vibrate(risky ? 9 : 5);
       }
     }
     // Kollision mit oberer/unterer Hecke — feste Lückenhöhe DIESER Hecke
@@ -345,6 +410,11 @@ function nearMiss() {
   if (navigator.vibrate) navigator.vibrate(4);
 }
 
+// Kurz aufsteigender Punkte-Text (macht Fortschritt greifbar)
+function popText(x, y, text, color) {
+  pops.push({ x, y, text, color, t: 0, life: 0.75 });
+}
+
 // ---------- Rendering ----------
 function draw(now) {
   ctx.clearRect(0, 0, W, H);
@@ -353,17 +423,37 @@ function draw(now) {
   ctx.save();
   ctx.translate(ox, oy);
 
-  // Himmel (Farbverlauf ist im CSS am #stage; hier nur Sonne + Wolken + Hügel)
+  const S = sky();
+
+  // Himmel wird jetzt HIER gemalt (nicht mehr nur per CSS am #stage), damit er
+  // über den Lauf von Tag nach Nacht wandern kann.
+  const skyG = ctx.createLinearGradient(0, 0, 0, H);
+  skyG.addColorStop(0, rgba(S.top, 1));
+  skyG.addColorStop(0.45, rgba(S.mid, 1));
+  skyG.addColorStop(1, rgba(S.bot, 1));
+  ctx.fillStyle = skyG;
+  ctx.fillRect(0, 0, W, H);
+
+  // Sterne blenden zur Nacht ein
+  if (S.star > 0.02) {
+    for (const st of stars) {
+      const tw = 0.55 + 0.45 * Math.sin(now / 700 + st.tw);
+      ctx.fillStyle = "rgba(255,255,240," + (S.star * tw) + ")";
+      ctx.fillRect(st.x, st.y, st.r, st.r);
+    }
+  }
+
+  // Sonne bzw. Mond
   const sunX = W * 0.8, sunY = H * 0.18;
   const sun = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, 90);
-  sun.addColorStop(0, "rgba(255,240,190,0.9)");
-  sun.addColorStop(1, "rgba(255,240,190,0)");
+  sun.addColorStop(0, rgba(S.sun, S.sunA));
+  sun.addColorStop(1, rgba(S.sun, 0));
   ctx.fillStyle = sun;
   ctx.fillRect(sunX - 100, sunY - 100, 200, 200);
 
   // Wolken
+  ctx.fillStyle = rgba(S.cloud, S.cloudA);
   for (const c of clouds) {
-    ctx.fillStyle = "rgba(255,255,255,0.5)";
     ctx.beginPath();
     ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2);
     ctx.arc(c.x + c.r * 0.9, c.y + 5, c.r * 0.7, 0, Math.PI * 2);
@@ -373,7 +463,7 @@ function draw(now) {
 
   // Ferne Hügel (Parallaxe)
   const hillOff = (scrollT * 0.25) % (W * 0.6);
-  ctx.fillStyle = "rgba(70,140,90,0.35)";
+  ctx.fillStyle = rgba(S.hill, S.hillA);
   for (let i = -1; i < 4; i++) {
     const bx = i * W * 0.6 - hillOff;
     ctx.beginPath();
@@ -392,12 +482,12 @@ function draw(now) {
     // Körndl (gezeichnet statt Emoji → auf allen Geräten klar sichtbar)
     if (o.korndl && !o.korndl.got) {
       const s = o.korndl;
-      drawKorndl(o.x + OBST_W / 2, cy + s.dy + Math.sin(now / 300 + s.ph) * 3);
+      drawKorndl(o.x + OBST_W / 2, cy + s.dy + Math.sin(now / 300 + s.ph) * 3, s.dy !== 0);
     }
   }
 
   // Boden
-  ctx.fillStyle = "#6a9a4a";
+  ctx.fillStyle = rgba(S.ground, 1);
   ctx.fillRect(0, H - groundH, W, groundH);
   ctx.fillStyle = "rgba(0,0,0,0.14)";
   ctx.fillRect(0, H - groundH, W, 4);
@@ -407,6 +497,16 @@ function draw(now) {
   for (let x = -go; x < W; x += 26) ctx.fillRect(x, H - groundH + 6, 12, 3);
 
   // Fink
+  // Feder-Spur hinter dem Finken (mehr Tempo-Gefühl)
+  if (trail.length) {
+    const tc = hexToRgb(SKIN.body);
+    for (let i = 0; i < trail.length; i++) {
+      const f = (i + 1) / trail.length;
+      ctx.fillStyle = rgba(tc, (f * 0.3).toFixed(3));
+      ctx.beginPath(); ctx.arc(trail[i].x, trail[i].y, 1.5 + f * 3.5, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+
   if (mode !== "ready" && !deadLanded) drawBird(now);   // beim Taumeln sichtbar, nach dem Zerplatzen weg
 
   // Partikel
@@ -417,18 +517,38 @@ function draw(now) {
     ctx.fillRect(p.x - 2, p.y - 2, 4, 4);
   }
   ctx.globalAlpha = 1;
+
+  // Punkte-Popups
+  ctx.textAlign = "center";
+  ctx.font = "800 15px 'Outfit', system-ui, sans-serif";
+  for (const q of pops) {
+    ctx.globalAlpha = Math.max(0, 1 - q.t / q.life);
+    ctx.fillStyle = q.color;
+    ctx.fillText(q.text, q.x, q.y);
+  }
+  ctx.globalAlpha = 1;
+  ctx.textAlign = "start";
+
   ctx.restore();
 }
 
-function drawKorndl(x, y) {
+function drawKorndl(x, y, risky) {
   ctx.save();
   ctx.translate(x, y);
-  // Warmes Glühen — hebt das Korn deutlich vom Himmel ab
-  const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, 22);
-  glow.addColorStop(0, "rgba(255,190,40,0.6)");
+  // Warmes Glühen hebt das Korn vom Himmel ab. Riskant platzierte Körner (nah
+  // am Heckenrand) leuchten stärker und tragen einen Ring: sie sind mehr wert,
+  // und das muss man SEHEN, bevor man das Risiko eingeht.
+  const gr = risky ? 28 : 22;
+  const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, gr);
+  glow.addColorStop(0, risky ? "rgba(255,215,60,0.85)" : "rgba(255,190,40,0.6)");
   glow.addColorStop(1, "rgba(255,190,40,0)");
   ctx.fillStyle = glow;
-  ctx.beginPath(); ctx.arc(0, 0, 22, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(0, 0, gr, 0, Math.PI * 2); ctx.fill();
+  if (risky) {
+    ctx.strokeStyle = "rgba(255,238,160,0.9)";
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(0, 0, 17, 0, Math.PI * 2); ctx.stroke();
+  }
   // Korn: goldener Samen mit dunkler Kontur (leicht gekippt)
   ctx.rotate(-0.5);
   const g = ctx.createLinearGradient(-8, -10, 8, 10);
@@ -539,7 +659,7 @@ function drawBird(now) {
   ctx.fillStyle = c.beak;
   ctx.beginPath();
   ctx.moveTo(BIRD_R + 1, -2);
-  ctx.lineTo(BIRD_R + 10, 1);
+  ctx.lineTo(BIRD_R + 6, 1);   // kürzer: der Trefferkreis ist nur r=BIRD_R
   ctx.lineTo(BIRD_R + 1, 4);
   ctx.closePath();
   ctx.fill();
@@ -562,6 +682,8 @@ function frame(now) {
   if (shakeT > 0) shakeT = Math.max(0, shakeT - dt);
   for (const p of parts) { p.t += dt; p.vy += 520 * dt; p.x += p.vx * dt; p.y += p.vy * dt; }
   parts = parts.filter(p => p.t < p.life);
+  for (const q of pops) { q.t += dt; q.y -= 42 * dt; }
+  pops = pops.filter(q => q.t < q.life);
   draw(now);
   requestAnimationFrame(frame);
 }
@@ -608,7 +730,9 @@ const sound = (() => {
 })();
 
 // ---------- Score / Bestenliste ----------
-function finalScore() { return tore * 10 + korn * 5; }
+// Riskant platzierte Körndl (nah am Heckenrand) zählen 12 statt 5 — sonst wäre
+// es rational, sie einfach zu ignorieren. Serverseitig identisch geprüft.
+function finalScore() { return tore * 10 + (korn - kornRisk) * 5 + kornRisk * 12; }
 
 async function gameOver() {
   if (overShown) return;      // Aufprall- und Notbremse-Timer dürfen sich überholen
@@ -627,7 +751,7 @@ async function gameOver() {
       ${isRecord ? `<div class="go-best-badge">👑 Persönliche Bestleistung</div>` : `<div class="sub">Rekord: ${best}</div>`}
       <div class="go-stats">
         <span>🪧 ${tore} Tore</span>
-        <span>🌾 ${korn} Körndl</span>
+        <span>🌾 ${korn} Körndl${kornRisk ? " (" + kornRisk + "× riskant)" : ""}</span>
       </div>
       ${GS.badges.chipsHtml(newBadges)}
       <div class="go-rank" id="go-rank"></div>
@@ -663,7 +787,7 @@ async function gameOver() {
   if (score > 0) {
     GS.scoreFlow(overlay.querySelector("#go-name-area"), overlay.querySelector("#go-rank"), {
       game: "flatterfink", score,
-      meta: { tore, koerndl: korn },
+      meta: { tore, koerndl: korn, koerndlRisk: kornRisk },
     });
   } else {
     const r = overlay.querySelector("#go-rank");

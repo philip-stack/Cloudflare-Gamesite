@@ -98,12 +98,18 @@ const GAMES = {
   flatterfink: {
     max: 100_000,
     scoped: true,
-    // score = Tore × 10 + Körndl × 5. Körndl sind je Tor gedeckelt (max. eins
-    // pro Lücke plus Reserve) — echte Läufe bleiben darunter, Fakes nicht.
-    check: (score, m) =>
-      Number.isFinite(m.tore) && Number.isFinite(m.koerndl) &&
-      m.tore >= 0 && m.tore <= 3_000 && m.koerndl >= 0 && m.koerndl <= m.tore + 5 &&
-      score === m.tore * 10 + m.koerndl * 5,
+    // score = Tore × 10 + Körndl × 5, wobei RISKANT platzierte Körndl (nah am
+    // Heckenrand) 12 statt 5 zählen. koerndlRisk ist optional und eine Teilmenge
+    // von koerndl — ältere, zwischengespeicherte Clients schicken es nicht und
+    // werden mit 0 weiterhin korrekt geprüft (rückwärtskompatibel).
+    check: (score, m) => {
+      const risk = m.koerndlRisk === undefined ? 0 : m.koerndlRisk;
+      return Number.isFinite(m.tore) && Number.isFinite(m.koerndl) && Number.isFinite(risk) &&
+        m.tore >= 0 && m.tore <= 3_000 &&
+        m.koerndl >= 0 && m.koerndl <= m.tore + 5 &&
+        risk >= 0 && risk <= m.koerndl &&
+        score === m.tore * 10 + (m.koerndl - risk) * 5 + risk * 12;
+    },
   },
 };
 
