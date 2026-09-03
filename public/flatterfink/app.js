@@ -71,7 +71,10 @@ function spawnObstacle(x) {
   const gapY = lo + Math.random() * Math.max(10, hi - lo);
   // ~45 % der Lücken tragen ein Körndl in der Mitte
   const korndl = Math.random() < 0.45 ? { x: x + OBST_W / 2, y: gapY, got: false, ph: Math.random() * Math.PI * 2 } : null;
-  obst.push({ x, gapY, passed: false, korndl });
+  // Lückenhöhe HIER einfrieren: Hecken entstehen weit rechts außerhalb des
+  // Bildes, darum bleibt die Schwierigkeits-Steigerung für Spieler:innen
+  // unsichtbar. Eine bereits sichtbare Hecke ändert sich nie mehr.
+  obst.push({ x, gapY, gap: g, passed: false, korndl });
 }
 
 function topUpObstacles() {
@@ -158,8 +161,8 @@ function step(dt) {
       burst(o.korndl.x, o.korndl.y, "#ffe08a", 9, 150);
       if (navigator.vibrate) navigator.vibrate(5);
     }
-    // Kollision mit oberer/unterer Hecke
-    const g = gapH();
+    // Kollision mit oberer/unterer Hecke — feste Lücke DIESER Hecke
+    const g = o.gap;
     if (mode === "run" &&
       (circleHitsRect(birdX, birdY, BIRD_R, o.x, 0, OBST_W, o.gapY - g / 2) ||
         circleHitsRect(birdX, birdY, BIRD_R, o.x, o.gapY + g / 2, OBST_W, H))) {
@@ -245,10 +248,10 @@ function draw(now) {
     ctx.fill();
   }
 
-  // Hecken (Röhren)
-  const g = gapH();
+  // Hecken (Röhren) — jede zeichnet ihre eigene, fest eingefrorene Lücke
   for (const o of obst) {
     if (o.x > W + 4 || o.x < -OBST_W - 4) continue;
+    const g = o.gap;
     drawHedge(o.x, 0, OBST_W, o.gapY - g / 2, true);
     drawHedge(o.x, o.gapY + g / 2, OBST_W, H - (o.gapY + g / 2), false);
     // Körndl (gezeichnet statt Emoji → auf allen Geräten klar sichtbar)
