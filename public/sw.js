@@ -6,7 +6,7 @@
 // der Hub auch beim allerersten Offline-Aufruf erscheint.
 // API-Anfragen (/api/…) werden nie gecacht.
 // ====================================================================
-const CACHE = "gamesite-v85";
+const CACHE = "gamesite-v86";
 // CacheStorage ist pro Origin (nicht pro Scope) — die drei PWAs (Hub, /fire/noe/,
 // /tanken/) teilen sich denselben Speicher. Beim Aufräumen NUR eigene Cache-Namen
 // (gleicher Präfix) löschen, sonst wischt der zuletzt aktivierte SW die Shells der
@@ -34,8 +34,9 @@ const SHELL = [
   "/schlange/", "/schlange/style.css", "/schlange/app.js",
   "/kritzeln/", "/kritzeln/style.css", "/kritzeln/app.js",
   "/quiz/", "/quiz/style.css", "/quiz/app.js",
-  // Werkzeug (Kochstudio; /tanken/ & /fire/noe/ haben eigene Service-Worker)
+  // Werkzeug (Kochstudio + Briefing; /tanken/ & /fire/noe/ haben eigene Service-Worker)
   "/kochstudio/", "/kochstudio/style.css", "/kochstudio/app.js",
+  "/briefing/", "/briefing/app.js",
   // Schriftdateien (latein — deckt de-AT inkl. äöüß ab)
   "/fonts/fraunce-3.woff2", "/fonts/fraunce-4.woff2", "/fonts/outfit-7.woff2",
 ];

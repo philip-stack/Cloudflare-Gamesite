@@ -805,6 +805,44 @@
 
         ${cfBlock}
 
+        ${(() => {
+          // Tages-Briefing einstellen. Wohnt hier und nicht auf /briefing/,
+          // weil die Seite öffentlich ist — Einstellungen gehören hinter den
+          // Schlüssel.
+          const bc = (d.briefing && d.briefing.cfg) || {};
+          const bl = d.briefing && d.briefing.last;
+          const bez = (d.briefing && d.briefing.bezirke) || {};
+          const opts = `<option value="">– kein Bezirk –</option>` + Object.entries(bez)
+            .sort((a, b2) => a[1].localeCompare(b2[1]))
+            .map(([c, n]) => `<option value="${esc(c)}"${c === bc.bezirk ? " selected" : ""}>${esc(n)}</option>`).join("");
+          const fuels = { DIE: "Diesel", SUP: "Super 95", GAS: "CNG" };
+          return `${title("Tages-Briefing", `<span class="toolbar">
+              <button class="btn sm" id="brf-now">Jetzt erzeugen</button>
+              <button class="btn sm" id="brf-push">Erzeugen + pushen</button>
+            </span>`)}
+          <div class="card full">
+            <div class="kv"><span>Zustand</span><b>${bc.on ? '<span class="pill ok">an</span>' : '<span class="pill warn">aus</span>'}</b></div>
+            <div class="kv"><span>letztes Briefing</span><b>${bl ? esc(bl.day) + " · " + (bl.via === "ai" ? "mit KI" : "ohne KI") : "–"}</b></div>
+            ${bl ? `<p class="note">„${esc(bl.text)}"</p>` : ""}
+            <div class="toolbar" style="margin-top:12px">
+              <label class="switch"><input type="checkbox" id="brf-on" ${bc.on ? "checked" : ""} /> aktiv</label>
+              <input class="filter" id="brf-hour" type="number" min="0" max="23" value="${bc.hour ?? 6}" style="width:74px" title="Stunde (Wiener Zeit)" />
+              <input class="filter" id="brf-name" placeholder="Push an Namen" value="${esc(bc.name || "")}" style="width:150px" />
+            </div>
+            <div class="toolbar" style="margin-top:8px">
+              <input class="filter" id="brf-lat" placeholder="Breite (48.31)" value="${bc.lat ?? ""}" style="width:130px" />
+              <input class="filter" id="brf-lng" placeholder="Länge (16.36)" value="${bc.lng ?? ""}" style="width:130px" />
+              <select class="filter" id="brf-fuel">${Object.entries(fuels).map(([k2, v]) => `<option value="${k2}"${bc.fuel === k2 ? " selected" : ""}>${v}</option>`).join("")}</select>
+              <select class="filter" id="brf-bezirk">${opts}</select>
+              <button class="btn p sm" id="brf-save">Speichern</button>
+            </div>
+            <p class="note">Läuft über den bestehenden Cron: ab der eingestellten Stunde (Wiener Zeit) wird einmal
+              pro Tag erzeugt und — wenn ein Name eingetragen ist — als Push verschickt. Jeder Baustein ist optional:
+              ohne Koordinaten kein Wetter und kein Spritpreis, ohne Bezirk keine Einsätze. Ein Aufruf kostet ~20 Neuronen
+              von 10.000 pro Tag.</p>
+          </div>`;
+        })()}
+
         ${title("Tabellen", `<span class="muted">Zeilen je Tabelle — was unbemerkt wächst</span>`)}
         <div class="card full">
           <table><thead><tr><th>Tabelle</th><th class="num">Zeilen</th><th>Aufräumen</th></tr></thead>
@@ -840,6 +878,26 @@
       on("#err-522", () => act({ action: "clear522" }, "Alle 522-Meldungen (externe Quelle) löschen?"));
       on("#err-clear", () => { if (confirmType("LÖSCHEN", "Das GESAMTE Fehler-Log löschen?")) act({ action: "clearErrors" }); });
       on("#flush-queue", () => { if (confirmType("LÖSCHEN", "Push-Warteschlange komplett leeren?")) act({ action: "flushQueue" }); });
+      on("#brf-save", async () => {
+        const r = await act({
+          action: "saveBriefing",
+          on: $("#brf-on").checked,
+          hour: $("#brf-hour").value,
+          name: $("#brf-name").value,
+          lat: $("#brf-lat").value.trim(),
+          lng: $("#brf-lng").value.trim(),
+          fuel: $("#brf-fuel").value,
+          bezirk: $("#brf-bezirk").value,
+        }, null, true);
+        if (r && r.ok) load();
+      });
+      const brf = async (push) => {
+        const r = await act({ action: "briefingNow", push }, null, true);
+        if (r) alert(r.text ? r.text : ("Ergebnis: " + JSON.stringify(r)));
+        load();
+      };
+      on("#brf-now", () => brf(false));
+      on("#brf-push", () => brf(true));
       on("#cf-refresh", async (ev) => {
         const b = ev.currentTarget || $("#cf-refresh");
         if (b) { b.disabled = true; b.textContent = "holt…"; }

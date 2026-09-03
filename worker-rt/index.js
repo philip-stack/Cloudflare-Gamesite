@@ -767,6 +767,9 @@ export default {
         await Promise.allSettled([
           fetch(base + "/api/fire/cron", { headers }),
           fetch(base + "/api/sprit/cron", { headers }),
+          // Tages-Briefing: entscheidet selbst, ob die Stunde passt und ob
+          // heute schon eines geschrieben wurde.
+          fetch(base + "/api/briefing/cron", { headers }),
         ]);
       } catch (_) { /* nächster Lauf versucht es erneut */ }
     })());

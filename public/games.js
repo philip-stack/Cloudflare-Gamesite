@@ -109,6 +109,11 @@
       long: "Günstigste Tankstellen im Umkreis oder entlang deiner Route (E-Control, gratis).",
     },
     {
+      key: "briefing", name: "Tages-Briefing", icon: "☀️", accent: "#e8c15a", href: "/briefing/",
+      desc: "Der Morgen in drei Sätzen.",
+      long: "Spritpreis, Wetter und Einsätze der Nacht — jeden Morgen zusammengefasst, kommt auch als Push.",
+    },
+    {
       key: "fire", name: "Feuerwehr NÖ", icon: "🚒", accent: "#e2685a", href: "/fire/noe/",
       desc: "Einsätze in NÖ, live.",
       long: "Aktuelle Feuerwehr-Einsätze in Niederösterreich — Karte, Bezirks-Alarm, Historie.",

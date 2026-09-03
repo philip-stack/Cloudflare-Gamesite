@@ -1,6 +1,8 @@
 import { json, clientIp, rateLimit, one, many } from "./_util.js";
 import { opsEvaluate } from "./_ops.js";
 import { cfStats } from "./_cf.js";
+import { BEZIRK } from "./fire/_bezirk.js";
+import { generate, loadCfg } from "./briefing/_gen.js";
 
 // ====================================================================
 // Betreiber-Dashboard (privat) — bündelt die ohnehin gesammelten
@@ -15,6 +17,7 @@ import { cfStats } from "./_cf.js";
 //   POST /api/admin              (Header x-admin-key, JSON { action, … })
 //     → clearErrors | clear522 | flushQueue | deleteScore{id}
 //       | banDevice{device} | unbanDevice{device} | triggerCron | refreshCf
+//       | saveBriefing{…} | briefingNow{push?}
 //
 // Fehlgeschlagene Zugriffe landen als "auth:fail" im admin_log (max. 1 Zeile
 // pro IP und Minute, damit ein Brute-Force-Versuch das Protokoll nicht mit
@@ -133,7 +136,7 @@ export async function onRequestGet({ request, env }) {
     liveRooms, adminLog,
     tScores, tErrors, tDevices, alertRow, usage,
     recent, banned, tableRows, health,
-    opsLastRow, opsLog, cf,
+    opsLastRow, opsLog, cf, briefingCfg, briefingLast,
   ] = await Promise.all([
     // ---- Scores ----
     q(vU, () => cnt("SELECT COUNT(*) n FROM scores"), 0),
@@ -247,6 +250,10 @@ export async function onRequestGet({ request, env }) {
 
     // ---- Cloudflare-Kontingente (10 min zwischengespeichert) ----
     q(vS, () => cfStats(env), null),
+
+    // ---- Tages-Briefing: Einstellungen + letzter Text ----
+    q(vS, () => loadCfg(env), null),
+    q(vS, () => one(env, "SELECT day, via, at, substr(text,1,300) text FROM briefing ORDER BY day DESC LIMIT 1"), null),
   ]);
 
   // Einsendungen je Spiel: :daily/:weekly auf das Basisspiel zusammenfassen
@@ -294,6 +301,7 @@ export async function onRequestGet({ request, env }) {
     reach: { players: reachTotal, new7: reachNew7, active7: reachActive7, returning: reachReturning },
     ops: { since: opsLastRow?.at || null, sinceStatus: opsLastRow?.status || null, log: opsLog },
     cf,
+    briefing: { cfg: briefingCfg, last: briefingLast, bezirke: BEZIRK },
     kritzeln: { players: kPlayers, games: kGames, topName: kTop?.name || null, topPoints: kTop?.points ?? 0, entries: kEntries },
     quiz: { players: qPlayers, games: qGames, topName: qTop?.name || null, topPoints: qTop?.points ?? 0, entries: qEntries, reportCount: qReportCount, reports: qReports },
     live: { rooms: liveRooms },
@@ -393,6 +401,34 @@ export async function onRequestPost({ request, env }) {
         const name = String(b.name || "").trim().slice(0, 16);
         await run("INSERT INTO app_config (k, v) VALUES ('alert_name', ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v", name);
         return json({ ok: true, name });
+      }
+      case "saveBriefing": {
+        // Einstellungen des Tages-Briefings. Alles einzeln optional: ohne
+        // Koordinaten kein Wetter/Sprit, ohne Bezirk keine Einsätze.
+        const lat = Number(b.lat), lng = Number(b.lng);
+        const okGeo = Number.isFinite(lat) && Number.isFinite(lng) && lat > 45 && lat < 50 && lng > 13 && lng < 18;
+        if ((b.lat !== "" && b.lat != null) && !okGeo) return json({ error: "Koordinaten außerhalb Österreichs" }, 400);
+        const bez = String(b.bezirk || "").trim();
+        if (bez && !/^\d{2,3}$/.test(bez)) return json({ error: "Ungültiger Bezirks-Code" }, 400);
+        const vals = {
+          briefing_on: b.on ? "1" : "0",
+          briefing_hour: String(Math.min(23, Math.max(0, Number(b.hour) || 0))),
+          briefing_name: String(b.name || "").trim().slice(0, 16),
+          briefing_lat: okGeo ? String(lat) : "",
+          briefing_lng: okGeo ? String(lng) : "",
+          briefing_fuel: ["DIE", "SUP", "GAS"].includes(String(b.fuel)) ? String(b.fuel) : "DIE",
+          briefing_bezirk: bez,
+        };
+        for (const [k, v] of Object.entries(vals)) {
+          await run("INSERT INTO app_config (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v", k, v);
+        }
+        return json({ ok: true });
+      }
+      case "briefingNow": {
+        // Sofort erzeugen — übergeht Uhrzeit und „heute schon erledigt".
+        // push:false, damit ein Test nicht jedes Mal aufs Handy klingelt.
+        const r = await generate(env, { force: true, push: !!b.push });
+        return json(r);
       }
       case "refreshCf": {
         // Die Cloudflare-Zahlen sind 10 Minuten zwischengespeichert (die
