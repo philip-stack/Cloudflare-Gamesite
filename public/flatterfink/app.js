@@ -40,6 +40,9 @@ let scrollT = 0;             // Weltbewegung (für Boden/Parallaxe)
 let tore = 0, korn = 0;
 let groundH = 0;
 let shakeT = 0, deathAt = 0;
+let deadSpin = 0, deadSpinV = 0;   // Eigendrehung beim Abtaumeln
+let paused = false;                // Pause bei App-Wechsel (visibilitychange)
+let hintTimer = null;
 let best = Number(localStorage.getItem("ff_best") || 0);
 let submitted = false;
 
@@ -92,6 +95,7 @@ function reset() {
   birdY = H * 0.42;
   birdVY = 0;
   wingT = 0; tilt = 0;
+  deadSpin = 0; deadSpinV = 0; paused = false;
   obst = []; parts = [];
   tore = 0; korn = 0;
   scrollT = 0;
@@ -107,12 +111,42 @@ function startRun() {
   reset();
   mode = "run";
   birdVY = FLAP * 0.6;
-  $("#hint").classList.remove("hidden");
-  setTimeout(() => $("#hint").classList.add("hidden"), 3500);
+  showHint("TIPPEN = flattern", 3500);
 }
 
+// Einblend-Text unten; Start-Tipp und Pause-Hinweis teilen sich das Element.
+// ms = 0 → bleibt stehen, bis aktiv versteckt.
+function showHint(text, ms) {
+  const h = $("#hint"); if (!h) return;
+  clearTimeout(hintTimer);
+  h.textContent = text;
+  h.classList.remove("hidden");
+  if (ms) hintTimer = setTimeout(() => h.classList.add("hidden"), ms);
+}
+function hideHint() {
+  clearTimeout(hintTimer);
+  const h = $("#hint"); if (h) h.classList.add("hidden");
+}
+
+// ---------- Pause bei App-Wechsel ----------
+// Wechselt man mitten im Lauf die App (Anruf o. Ä.), landet man bei der
+// Rückkehr sonst ohne Vorwarnung mitten im Flug. Darum anhalten und erst
+// auf Tippen weiterspielen.
+function pauseGame() {
+  if (mode !== "run" || paused) return;
+  paused = true;
+  showHint("PAUSE — tippen zum Weiterspielen", 0);
+}
+function resumeGame() {
+  if (!paused) return;
+  paused = false;
+  hideHint();
+  last = performance.now();   // verhindert ein Riesen-dt nach der Pause
+}
+document.addEventListener("visibilitychange", () => { if (document.hidden) pauseGame(); });
+
 function flap() {
-  if (mode !== "run") return;
+  if (mode !== "run" || paused) return;
   birdVY = FLAP;
   wingT = 1;
   sound.flap();
@@ -189,11 +223,30 @@ function die() {
   if (mode !== "run") return;
   mode = "dead";
   deathAt = performance.now();
+  hideHint();
+  // Abtaumeln: kurzer Aufwärts-Hüpfer, dann Sturz mit Eigendrehung — liest
+  // sich deutlich besser als ein reines Zerplatzen.
+  birdVY = -250;
+  deadSpin = tilt;
+  deadSpinV = (6.5 + Math.random() * 3) * (Math.random() < 0.5 ? -1 : 1);
   burst(birdX, birdY, "#ffd23f", 26, 260);
   shakeT = 0.5;
   sound.dead();
   if (navigator.vibrate) navigator.vibrate([60, 40, 80]);
-  setTimeout(gameOver, 650);
+  setTimeout(gameOver, 1150);
+}
+
+// Todes-Physik: der Fink fällt weiter und dreht sich, die Welt steht still.
+function stepDead(dt) {
+  birdVY = Math.min(MAX_FALL, birdVY + GRAV * dt);
+  birdY += birdVY * dt;
+  deadSpin += deadSpinV * dt;
+  const floor = H - groundH - BIRD_R;
+  if (birdY >= floor) {
+    birdY = floor;
+    if (birdVY > 180) { birdVY *= -0.28; deadSpinV *= 0.4; }   // kleiner Aufprall-Hüpfer
+    else { birdVY = 0; deadSpinV = 0; }                        // liegen bleiben
+  }
 }
 
 function updateHud() {
@@ -272,7 +325,7 @@ function draw(now) {
   for (let x = -go; x < W; x += 26) ctx.fillRect(x, H - groundH + 6, 12, 3);
 
   // Fink
-  if (mode !== "ready" && (mode !== "dead" || performance.now() - deathAt < 120)) drawBird(now);
+  if (mode !== "ready") drawBird(now);   // beim Tod weiter sichtbar (Abtaumeln)
 
   // Partikel
   for (const p of parts) {
@@ -369,7 +422,7 @@ function drawBird(now) {
   const c = SKIN;
   ctx.save();
   ctx.translate(birdX, birdY);
-  ctx.rotate(tilt);
+  ctx.rotate(mode === "dead" ? deadSpin : tilt);
 
   // Schatten/Glow
   ctx.fillStyle = "rgba(255,210,63,0.18)";
@@ -417,7 +470,8 @@ let last = performance.now();
 function frame(now) {
   const dt = Math.min(0.032, (now - last) / 1000);
   last = now;
-  if (mode === "run") step(dt);
+  if (mode === "run" && !paused) step(dt);
+  else if (mode === "dead") stepDead(dt);
   if (shakeT > 0) shakeT = Math.max(0, shakeT - dt);
   for (const p of parts) { p.t += dt; p.vy += 520 * dt; p.x += p.vx * dt; p.y += p.vy * dt; }
   parts = parts.filter(p => p.t < p.life);
@@ -427,9 +481,17 @@ function frame(now) {
 requestAnimationFrame(frame);
 
 // ---------- Input ----------
-stage.addEventListener("pointerdown", e => { e.preventDefault(); flap(); });
+stage.addEventListener("pointerdown", e => {
+  e.preventDefault();
+  if (paused) { resumeGame(); return; }   // erster Tipp beendet nur die Pause
+  flap();
+});
 window.addEventListener("keydown", e => {
-  if (e.code === "Space" || e.code === "ArrowUp") { e.preventDefault(); flap(); }
+  if (e.code === "Space" || e.code === "ArrowUp") {
+    e.preventDefault();
+    if (paused) { resumeGame(); return; }
+    flap();
+  }
 });
 
 // ---------- Sound ----------
