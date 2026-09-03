@@ -171,6 +171,13 @@
     .mini-body { margin-top:5px; padding:7px 9px; border-left:2px solid var(--line-2); font:400 11px/1.5 var(--mono); color:var(--ink-2); word-break:break-word; }
     .mini-body .muted { display:inline-block; min-width:44px; color:var(--ink-3); }
 
+    /* Auslastungsbalken (Anteil am Tageskontingent). Bewusst ein flacher
+       Streifen ohne Verlauf — er soll ablesbar sein, nicht hübsch. */
+    .bar { height:5px; background:var(--line); border-radius:2px; overflow:hidden; margin:6px 0 3px; }
+    .bar > i { display:block; height:100%; background:var(--ink-2); }
+    .bar.warn > i { background:var(--warn); }
+    .bar.bad > i { background:var(--bad); }
+
     /* ---------- Verlaufskurven ---------- */
     .spark { width:100%; height:40px; display:block; cursor:crosshair; }
     .spark polyline { fill:none; stroke:var(--ink-2); stroke-width:1.25; stroke-linejoin:round; stroke-linecap:round; }
@@ -463,6 +470,14 @@
     }
 
     function render(d) {
+      // Kleine Bausteine: leere Abschnitte werden zu einer Zeile, selten
+      // Gebrauchtes zu einem Klappblock. Beides gegen die Endlos-Seite.
+      const card = (inner) => `<div class="card full">${inner}</div>`;
+      const or = (rows, table, leer) => (rows ? card(table) : `<p class="quiet">${leer}</p>`);
+      const fold = (title, inner, sub) =>
+        `<details class="fold"><summary>${title}${sub ? `<span class="muted">${sub}</span>` : ""}</summary><div class="fold-body">${inner}</div></details>`;
+      const title = (t, tools) => `<div class="section-title">${t}${tools || ""}</div>`;
+
       // „seit … ohne Vorfall" — der Zeitpunkt des letzten Statuswechsels sagt
       // mehr als ein grüner Punkt, der immer grün ist.
       const ops = d.ops || {};
@@ -555,6 +570,68 @@
         `<tr><td class="mono">${esc(t)}</td><td class="num">${nf(n)}</td><td class="muted">${esc(SELBST[t] || "von Hand")}</td></tr>`).join("")
         || '<tr><td colspan="3" class="muted">keine Daten</td></tr>';
 
+      // ---------- Cloudflare-Kontingente ----------
+      // Zeigt, wie viel vom Gratis-Tagesbudget weg ist. „heute" ist immer ein
+      // Teiltag (UTC) — darum steht der Vortag daneben, der ist vollständig.
+      const cf = d.cf || null;
+      const bytes = (n) => n == null ? "–" : n >= 1e6 ? (n / 1e6).toFixed(1) + " MB" : Math.round(n / 1e3) + " kB";
+      const pct = (n, lim) => (!lim || n == null) ? 0 : Math.min(100, (n / lim) * 100);
+      const barCls = (p) => p >= 80 ? "bar bad" : p >= 50 ? "bar warn" : "bar";
+      const meter = (label, n, lim) => {
+        const p = pct(n, lim);
+        return `<div class="kv"><span>${label}</span><b>${nf(n)} · ${p.toFixed(p < 10 ? 1 : 0)} %</b></div>
+                <div class="${barCls(p)}"><i style="width:${p.toFixed(1)}%"></i></div>
+                <p class="note" style="margin-top:2px">von ${nf(lim)} / Tag</p>`;
+      };
+
+      let cfBlock;
+      if (!cf) cfBlock = "";
+      else if (cf.error && !cf.days) {
+        cfBlock = `${title("Cloudflare")}<p class="quiet">${esc(cf.error)}</p>
+          <p class="note">Token anlegen (Account Analytics: Read + D1: Read), dann:
+          <code>wrangler pages secret put CF_API_TOKEN --project-name philip-stack</code> und ebenso <code>CF_ACCOUNT_ID</code>.</p>`;
+      } else {
+        const days = cf.days || [];
+        const heute = days[0] || {};
+        const gestern = days[1] || {};
+        const L = cf.limits || {};
+        const wSum = (cf.workers || []).reduce((a, w) => a + w.requests, 0);
+        const wErr = (cf.workers || []).reduce((a, w) => a + w.errors, 0);
+        const cfRows = days.slice(0, 10).map(x =>
+          `<tr><td class="t">${esc(x.d)}</td><td class="num">${nf(x.pagesReq)}</td>
+           <td class="num ${x.pagesErr ? "err" : ""}">${nf(x.pagesErr)}</td>
+           <td class="num">${nf(x.rowsRead)}</td><td class="num">${nf(x.rowsWritten)}</td>
+           <td class="num">${nf(x.doReq)}</td><td class="num ${x.doErr ? "err" : ""}">${nf(x.doErr)}</td></tr>`).join("");
+
+        cfBlock = `${title("Cloudflare", `<span class="muted">${cf.stale ? "veraltet · " : ""}Stand vor ${fmtAge(cf.ageSec || 0)}${cf.cached ? " (zwischengespeichert)" : ""}</span>`)}
+        <div class="grid">
+          <div class="card"><h2>D1 · Zeilen gelesen (heute)</h2>
+            ${meter("gelesen", heute.rowsRead || 0, L.d1RowsRead)}
+            <div class="kv"><span>gestern</span><b>${nf(gestern.rowsRead || 0)}</b></div>
+          </div>
+          <div class="card"><h2>D1 · Zeilen geschrieben (heute)</h2>
+            ${meter("geschrieben", heute.rowsWritten || 0, L.d1RowsWritten)}
+            <div class="kv"><span>gestern</span><b>${nf(gestern.rowsWritten || 0)}</b></div>
+          </div>
+          <div class="card"><h2>Pages Functions (heute)</h2>
+            ${meter("Anfragen", heute.pagesReq || 0, L.pagesRequests)}
+            <div class="kv"><span>Fehler heute</span><b class="${heute.pagesErr ? "err" : ""}">${nf(heute.pagesErr || 0)}</b></div>
+          </div>
+          <div class="card"><h2>Datenbank &amp; Worker</h2>
+            <div class="kv"><span>D1-Größe</span><b>${bytes(cf.d1 && cf.d1.fileSize)}</b></div>
+            <div class="kv"><span>Region</span><b>${esc((cf.d1 && cf.d1.region) || "–")}</b></div>
+            <div class="kv"><span>Worker-Aufrufe (14 T)</span><b>${nf(wSum)}</b></div>
+            <div class="kv"><span>davon Fehler</span><b class="${wErr ? "err" : ""}">${nf(wErr)}</b></div>
+          </div>
+        </div>
+        ${cfRows ? `<div class="card full" style="margin-top:12px">
+          <table><thead><tr><th>Tag (UTC)</th><th class="num">Anfragen</th><th class="num">Fehler</th>
+            <th class="num">D1 gelesen</th><th class="num">D1 geschr.</th><th class="num">DO</th><th class="num">DO-Fehler</th></tr></thead>
+          <tbody>${cfRows}</tbody></table>
+          <p class="note">Direkt von der Cloudflare-Analytics-API, alle 10 Minuten neu geholt. „Anfragen" sind Aufrufe der Pages Functions (also API-Aufrufe), NICHT Seitenaufrufe — statische Dateien tauchen hier nicht auf. ${cf.error ? "Letzter Abruf schlug fehl: " + esc(cf.error) : ""}</p>
+        </div>` : ""}`;
+      }
+
       // Vorfall-Verlauf: Zeilen sind neu→alt, die Dauer eines Vorfalls ist
       // der Abstand zur nächst-NEUEREN Zeile (dem „wieder ok").
       const opsRows = (ops.log || []).map((x, i, arr) => {
@@ -571,14 +648,6 @@
       const logRows = (d.adminLog || []).map(x =>
         `<tr><td class="t">${esc((x.created_at || "").slice(5, 16))}</td><td><b>${esc(x.action)}</b> <span class="muted">${esc(x.detail || "")}</span></td></tr>`).join("")
         || '<tr><td colspan="2" class="muted">keine Aktionen protokolliert</td></tr>';
-
-      // Kleine Bausteine: leere Abschnitte werden zu einer Zeile, selten
-      // Gebrauchtes zu einem Klappblock. Beides gegen die Endlos-Seite.
-      const card = (inner) => `<div class="card full">${inner}</div>`;
-      const or = (rows, table, leer) => (rows ? card(table) : `<p class="quiet">${leer}</p>`);
-      const fold = (title, inner, sub) =>
-        `<details class="fold"><summary>${title}${sub ? `<span class="muted">${sub}</span>` : ""}</summary><div class="fold-body">${inner}</div></details>`;
-      const title = (t, tools) => `<div class="section-title">${t}${tools || ""}</div>`;
 
       const errCount = e.last24h - e.upstream522;
       const V = {};
@@ -709,6 +778,8 @@
           </div>
           <p class="note">Push bei ok→Achtung und zurück — mit derselben Bewertung wie die Statuszeile oben (Fehlerspitze, Push-Stau, hängende Crons, Fire-Notiz, VAPID). Fehler werden dafür im 15-Minuten-Fenster gemessen, in der Anzeige über 24 Stunden. Voraussetzung: Push im Profil unter genau diesem Namen aktiviert. („Fire-Cron hängt" kann sich nicht selbst melden — dafür die Statuszeile.)</p>
         </div>
+
+        ${cfBlock}
 
         ${title("Tabellen", `<span class="muted">Zeilen je Tabelle — was unbemerkt wächst</span>`)}
         <div class="card full">

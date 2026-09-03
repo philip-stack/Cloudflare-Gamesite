@@ -104,6 +104,16 @@ const answer = {
   recent: [{ id: 9, game: "komet", name: "Philip", device: "abcdef123456", score: 1234, meta: "{}", created_at: "2026-09-03 08:00:00" }],
   banned: [{ device: "deadbeef1234", at: "2026-09-01 10:00:00" }],
   health: { cron: { ok: true }, vapid: true },
+  cf: {
+    at: new Date().toISOString(), cached: true, ageSec: 120,
+    days: [
+      { d: "2026-09-03", pagesReq: 900, pagesErr: 2, rowsRead: 4_600_000, rowsWritten: 10_000, readQ: 10, writeQ: 4, doReq: 6, doErr: 4 },
+      { d: "2026-09-02", pagesReq: 2351, pagesErr: 0, rowsRead: 2_658_085, rowsWritten: 20_629, readQ: 19, writeQ: 8, doReq: 0, doErr: 0 },
+    ],
+    workers: [{ script: "philip-stack-rt", status: "success", requests: 4639, errors: 0 }],
+    d1: { name: "wuerfelpoker", fileSize: 1470464, region: "EEUR" },
+    limits: { d1RowsRead: 5_000_000, d1RowsWritten: 100_000, pagesRequests: 100_000, workerRequests: 100_000 },
+  },
 };
 
 const content = byId("#content"), tabs = byId("#tabs"), ampel = byId("#ampel");
@@ -157,11 +167,30 @@ sandbox.ANSWER = answer;
 }
 {
   const h = renderAs("system");
+  assert("System: Cloudflare-Abschnitt", h.includes("Cloudflare") && h.includes("D1-Größe") && h.includes("1.5 MB"));
+  // 4,6 Mio. von 5 Mio. = 92 % → der Balken MUSS rot sein, das ist der
+  // eigentliche Zweck der Anzeige.
+  assert("System: Auslastungsbalken schlägt bei 92 % auf rot", h.includes('class="bar bad"') && h.includes("92 %"));
+  assert("System: Tagestabelle mit DO-Fehlern", h.includes("DO-Fehler") && h.includes("2026-09-02"));
+  assert("System: Hinweis dass Anfragen keine Seitenaufrufe sind", h.includes("NICHT Seitenaufrufe"));
   assert("System: Vorfall-Verlauf mit Grund", h.includes("Vorfall-Verlauf") && h.includes("Push-Queue: 900"));
   assert("System: Vorfall-Dauer berechnet", h.includes(">12 min<"));
   assert("System: Crons + Push + Tabellen", h.includes("Fire-Cron") && h.includes("Sprit-Cron") && h.includes("Tabellen"));
   assert("System: Alarm-Feld", h.includes("alert-name"));
   assert("System: Admin-Protokoll als Klappblock", h.includes("Admin-Protokoll") && h.includes("auth:fail"));
+}
+
+// Ohne Cloudflare-Token muss die System-Ansicht trotzdem stehen und erklären,
+// was zu tun ist — der Rest des Panels hängt nicht an diesen Zahlen.
+{
+  const ohne = JSON.parse(JSON.stringify(answer));
+  ohne.cf = { error: "CF_API_TOKEN / CF_ACCOUNT_ID nicht gesetzt", limits: {} };
+  sandbox.ANSWER = ohne;
+  vm.runInContext(`view = "system"; lastData = ANSWER; render(ANSWER);`, ctx);
+  const h = content.innerHTML;
+  assert("ohne CF-Token: Hinweis statt Zahlen", h.includes("CF_API_TOKEN") && h.includes("wrangler pages secret put"));
+  assert("ohne CF-Token: übrige System-Ansicht bleibt", h.includes("Tabellen") && h.includes("alert-name"));
+  sandbox.ANSWER = answer;
 }
 
 // ---------- Reiter + Statuszeile ----------

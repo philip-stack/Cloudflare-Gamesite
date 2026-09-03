@@ -1,5 +1,6 @@
 import { json, clientIp, rateLimit, one, many } from "./_util.js";
 import { opsEvaluate } from "./_ops.js";
+import { cfStats } from "./_cf.js";
 
 // ====================================================================
 // Betreiber-Dashboard (privat) — bündelt die ohnehin gesammelten
@@ -132,7 +133,7 @@ export async function onRequestGet({ request, env }) {
     liveRooms, adminLog,
     tScores, tErrors, tDevices, alertRow, usage,
     recent, banned, tableRows, health,
-    opsLastRow, opsLog,
+    opsLastRow, opsLog, cf,
   ] = await Promise.all([
     // ---- Scores ----
     q(vU, () => cnt("SELECT COUNT(*) n FROM scores"), 0),
@@ -243,6 +244,9 @@ export async function onRequestGet({ request, env }) {
     // ---- Vorfall-Verlauf: letzter Wechsel (für „seit … ok") + Liste ----
     one(env, "SELECT at, status FROM ops_log ORDER BY id DESC LIMIT 1").catch(() => null),
     q(vS, () => many(env, "SELECT at, status, reasons FROM ops_log ORDER BY id DESC LIMIT 20"), []),
+
+    // ---- Cloudflare-Kontingente (10 min zwischengespeichert) ----
+    q(vS, () => cfStats(env), null),
   ]);
 
   // Einsendungen je Spiel: :daily/:weekly auf das Basisspiel zusammenfassen
@@ -289,6 +293,7 @@ export async function onRequestGet({ request, env }) {
     db: { rateRows: rate, usedTokens: usedTok, bannedDevices: banned.length, tables: tableRows || {} },
     reach: { players: reachTotal, new7: reachNew7, active7: reachActive7, returning: reachReturning },
     ops: { since: opsLastRow?.at || null, sinceStatus: opsLastRow?.status || null, log: opsLog },
+    cf,
     kritzeln: { players: kPlayers, games: kGames, topName: kTop?.name || null, topPoints: kTop?.points ?? 0, entries: kEntries },
     quiz: { players: qPlayers, games: qGames, topName: qTop?.name || null, topPoints: qTop?.points ?? 0, entries: qEntries, reportCount: qReportCount, reports: qReports },
     live: { rooms: liveRooms },
