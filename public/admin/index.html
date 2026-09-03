@@ -350,10 +350,23 @@
 
     function showGate() { $("#dash").hidden = true; $("#gate").hidden = false; $("#key").focus(); stopAuto(); }
     function showDash() { $("#gate").hidden = true; $("#dash").hidden = false; startAuto(); }
+    // Zuletzt in einem Formularfeld geändert — die Auto-Aktualisierung baut
+    // #content komplett neu, und das setzt jede noch nicht gespeicherte
+    // Auswahl zurück. Vorher wurde nur ein fokussiertes INPUT geschützt: ein
+    // <select> fiel durch, also sprang die Treibstoff- oder Bezirkswahl alle
+    // 45 Sekunden auf den gespeicherten Wert zurück.
+    let lastEdit = 0;
+    document.addEventListener("change", e => { if (e.target && e.target.closest("#content")) lastEdit = Date.now(); }, true);
+    document.addEventListener("input", e => { if (e.target && e.target.closest("#content")) lastEdit = Date.now(); }, true);
+
     function startAuto() {
       if (timer || !$("#auto").checked) return;
-      // Nicht neu laden, während in ein Feld getippt wird (sonst Verlust der Eingabe).
-      timer = setInterval(() => { const a = document.activeElement; if (a && a.tagName === "INPUT") return; load(); }, 45000);
+      timer = setInterval(() => {
+        const a = document.activeElement;
+        if (a && (a.tagName === "INPUT" || a.tagName === "SELECT" || a.tagName === "TEXTAREA")) return;
+        if (Date.now() - lastEdit < 90000) return;   // frisch geändert und noch nicht gespeichert
+        load();
+      }, 45000);
     }
     function stopAuto() { if (timer) { clearInterval(timer); timer = null; } }
 
@@ -889,7 +902,7 @@
           fuel: $("#brf-fuel").value,
           bezirk: $("#brf-bezirk").value,
         }, null, true);
-        if (r && r.ok) load();
+        if (r && r.ok) { lastEdit = 0; load(); }
       });
       const brf = async (push) => {
         const r = await act({ action: "briefingNow", push }, null, true);

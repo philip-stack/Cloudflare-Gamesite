@@ -169,10 +169,12 @@ export async function compose(env, raw) {
   if (!env.AI) return { text: plain, via: "plain" };
 
   const prompt =
-    "Du schreibst ein kurzes Morgen-Briefing für eine Person in Niederösterreich. "
-    + "Verwende AUSSCHLIESSLICH die folgenden Daten, erfinde nichts dazu und lasse nichts weg, was drinsteht. "
-    + "Höchstens drei kurze Sätze, österreichisches Deutsch, sachlich und freundlich, ohne Aufzählung, "
-    + "ohne Überschrift, ohne Emojis. Beginne mit einem kurzen Gruß.\n\n"
+    "Du schreibst mir ein kurzes Morgen-Briefing. Ich wohne in Niederösterreich. "
+    + "Sprich mich mit DU an, nicht mit Sie, und schreib österreichisches Deutsch. "
+    + "Verwende AUSSCHLIESSLICH die folgenden Daten und erfinde nichts dazu. "
+    + "JEDER vorhandene Block muss vorkommen: Wetter, Spritpreis (mit Preis und Ort) und Einsätze. "
+    + "Runde Temperaturen auf ganze Grad. Höchstens drei kurze Sätze, sachlich und freundlich, "
+    + "ohne Aufzählung, ohne Überschrift, ohne Emojis. Beginne mit einem kurzen Gruß.\n\n"
     + "Daten (JSON):\n" + JSON.stringify(raw);
 
   try {
@@ -183,6 +185,13 @@ export async function compose(env, raw) {
     const t = String((res && (res.response || res.result)) || "").trim();
     // Zu kurz oder zu lang heißt: das Modell hat nicht getan, was es sollte.
     if (t.length < 40 || t.length > 900) return { text: plain, via: "plain" };
+    // Beim ersten Lauf hat das Modell den Spritpreis einfach weggelassen,
+    // obwohl er in den Daten stand. Wenn der Preis fehlt, ist der Text
+    // unvollständig → nüchterne Fassung, die ihn garantiert enthält.
+    if (raw.sprit && raw.sprit.price != null) {
+      const p = raw.sprit.price.toFixed(3);
+      if (!t.includes(p) && !t.includes(p.replace(".", ","))) return { text: plain, via: "plain" };
+    }
     return { text: t, via: "ai" };
   } catch (_) {
     return { text: plain, via: "plain" };

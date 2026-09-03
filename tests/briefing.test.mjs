@@ -86,6 +86,38 @@ const RAW = {
   assert("Antwort ist kurz gehalten (max_tokens)", gesehen.max_tokens <= 300);
 }
 
+{
+  // Beim ersten echten Lauf hat das Modell den Spritpreis weggelassen, obwohl
+  // er in den Daten stand. Ein Text ohne den Preis ist unvollstaendig.
+  const env = { AI: { run: async () => ({ response: "Guten Morgen! Heute ist es teils bewoelkt bei 16 bis 28 Grad, und im Bezirk Korneuburg war wenig los." }) } };
+  const r = await compose(env, RAW);
+  assert("KI laesst den Preis weg → Rueckfall auf die nuechterne Fassung", r.via === "plain" && /1,559/.test(r.text));
+}
+{
+  const env = { AI: { run: async () => ({ response: "Guten Morgen! Teils bewoelkt, 16 bis 28 Grad. Diesel kostet 1,559 € bei der Turmoel in Korneuburg. Drei Einsaetze im Bezirk." }) } };
+  const r = await compose(env, RAW);
+  assert("Preis mit Komma zaehlt als vorhanden", r.via === "ai");
+}
+{
+  const env = { AI: { run: async () => ({ response: "Guten Morgen! Teils bewoelkt, 16 bis 28 Grad. Diesel kostet 1.559 Euro bei der Turmoel. Drei Einsaetze im Bezirk." }) } };
+  const r = await compose(env, RAW);
+  assert("Preis mit Punkt zaehlt auch als vorhanden", r.via === "ai");
+}
+{
+  // Ohne Sprit-Block darf die Pruefung nicht zuschlagen.
+  const ohne = { ...RAW, sprit: null };
+  const env = { AI: { run: async () => ({ response: "Guten Morgen! Teils bewoelkt bei 16 bis 28 Grad, im Bezirk Korneuburg drei Einsaetze." }) } };
+  const r = await compose(env, ohne);
+  assert("ohne Sprit-Daten keine Preis-Pruefung", r.via === "ai");
+}
+{
+  let p = null;
+  const env = { AI: { run: async (m, o) => { p = o.messages[0].content; return { response: "x".repeat(60) + " 1,559 " }; } } };
+  await compose(env, RAW);
+  assert("Prompt verlangt die Du-Form", /mit DU an/.test(p) && /nicht mit Sie/i.test(p));
+  assert("Prompt verlangt alle Blöcke", /JEDER vorhandene Block/.test(p));
+}
+
 // ---------- generate(): Zeitpunkt, Idempotenz, Push ----------
 // Kleine D1-Attrappe: app_config als Map, briefing als Map, fire_op als Liste.
 function mockEnv(cfg, opts = {}) {
