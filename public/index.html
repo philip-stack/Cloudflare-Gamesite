@@ -463,6 +463,10 @@
       <a href="/impressum/">Impressum</a>
       <span aria-hidden="true">·</span>
       <a href="/datenschutz/">Datenschutz</a>
+      <!-- Nur für den Betreiber sichtbar (siehe unten) — das Panel selbst ist
+           mit dem Schlüssel geschützt, das Ausblenden ist reines Aufräumen. -->
+      <span id="op-sep" aria-hidden="true" hidden>·</span>
+      <a id="op-link" href="/admin/" hidden>🔧 Betrieb</a>
     </footer>
   </main>
 
@@ -503,9 +507,21 @@
     });
 
     // --- Werkzeuge (Neben-Apps) in eigener Sektion ---
+    // Betreiber-Erkennung: rein kosmetisch. Alles, was hier ein- oder
+    // ausgeblendet wird, ist serverseitig ohnehin mit dem Schlüssel geschützt
+    // — der Name im localStorage ist keine Berechtigung.
+    const OPERATOR = "flip";
+    const isOperator = myName.toLowerCase() === OPERATOR;
+
+    // Betriebs-Link in der Fußzeile nur für den Betreiber zeigen.
+    if (isOperator) {
+      const l = document.getElementById("op-link"), sep = document.getElementById("op-sep");
+      if (l) l.hidden = false;
+      if (sep) sep.hidden = false;
+    }
+
     // Werkzeuge mit onlyFor sind persönlich (z. B. das Tages-Briefing mit
-    // Wohnort und Bezirk) und erscheinen nur unter diesem Namen. Das ist
-    // Aufräumen, kein Schutz — die Seite selbst verlangt den Betriebsschlüssel.
+    // Wohnort und Bezirk) und erscheinen nur unter diesem Namen.
     const TOOLS = (window.TOOLS || []).filter(t => !t.onlyFor || t.onlyFor === myName.toLowerCase());
     const toolsNav = document.querySelector("#tools-nav");
     if (TOOLS.length && toolsNav) {
