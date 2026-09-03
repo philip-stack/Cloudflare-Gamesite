@@ -4,86 +4,208 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="robots" content="noindex, nofollow" />
-  <meta name="theme-color" content="#0c0f14" />
+  <meta name="theme-color" content="#0b0c0d" media="(prefers-color-scheme: dark)" />
+  <meta name="theme-color" content="#f6f4ef" media="(prefers-color-scheme: light)" />
   <title>Betrieb · Dashboard</title>
   <style>
-    :root { --bg:#0c0f14; --card:#141a22; --line:#26303c; --ink:#eef3f8; --muted:#93a2b4; --accent:#4fd0e0; --ok:#37d38a; --warn:#ffb020; --bad:#ff5b4d; }
+    /* ================================================================
+       Betriebskonsole — Messgeräte-Optik statt Dashboard-Deko.
+       Grundsätze: fast einfarbig, Signalfarben NUR für Status, Zahlen
+       durchgehend monospace und rechts ausgerichtet, Haarlinien statt
+       schwebender Kacheln, kein Verlauf, kein Leuchten, keine Icons als
+       Schmuck. Hell und dunkel folgen dem System.
+       ================================================================ */
+    :root {
+      color-scheme: dark light;
+      --bg:#0b0c0d; --panel:#121314; --ink:#e8e6e1; --ink-2:#9a9b97; --ink-3:#6b6d69;
+      --line:rgba(232,230,225,.11); --line-2:rgba(232,230,225,.24);
+      --ok:#77b45f; --warn:#c9922f; --bad:#cd5442;
+      --mono:ui-monospace,"SF Mono","Cascadia Mono","Roboto Mono",Menlo,Consolas,monospace;
+      --ui:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,system-ui,sans-serif;
+    }
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg:#f6f4ef; --panel:#fffefa; --ink:#191a19; --ink-2:#5a5d59; --ink-3:#85887f;
+        --line:rgba(25,26,25,.14); --line-2:rgba(25,26,25,.28);
+        --ok:#3d7a2c; --warn:#8a6410; --bad:#a5341f;
+      }
+    }
     * { box-sizing:border-box; }
-    body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
-    .wrap { max-width:960px; margin:0 auto; padding:20px 16px 80px; }
-    header { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:14px; flex-wrap:wrap; }
-    h1 { font-size:1.2rem; margin:0; letter-spacing:-.01em; } h1 span { color:var(--accent); }
-    .btn { border:1px solid var(--line); background:var(--card); color:var(--ink); border-radius:10px; padding:8px 13px; font:700 .84rem inherit; cursor:pointer; }
-    .btn:hover { border-color:var(--accent); }
-    .btn.p { background:linear-gradient(160deg,var(--accent),#2ba7b8); color:#04121a; border:0; }
-    .btn.bad { color:var(--bad); border-color:rgba(255,91,77,.4); }
-    .btn.sm { padding:5px 9px; font-size:.76rem; border-radius:8px; }
-    .muted { color:var(--muted); } .mono { font-variant-numeric:tabular-nums; }
-    .gate { max-width:420px; margin:12vh auto 0; text-align:center; }
-    .gate input { width:100%; padding:12px 14px; border-radius:12px; border:1px solid var(--line); background:var(--card); color:var(--ink); font:inherit; margin:10px 0; }
-    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:12px; }
-    .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px 16px; }
-    .card h2 { font-size:.72rem; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin:0 0 10px; font-weight:800; display:flex; justify-content:space-between; align-items:center; gap:8px; }
-    .big { font-size:1.9rem; font-weight:900; letter-spacing:-.02em; }
-    .kv { display:flex; justify-content:space-between; gap:10px; padding:3px 0; font-size:.9rem; }
-    .kv b { font-weight:700; }
-    .pill { display:inline-block; font-size:.72rem; font-weight:800; padding:2px 9px; border-radius:999px; }
-    .pill.ok { background:rgba(55,211,138,.16); color:var(--ok); } .pill.warn { background:rgba(255,176,32,.16); color:var(--warn); } .pill.bad { background:rgba(255,91,77,.16); color:var(--bad); }
-    table { width:100%; border-collapse:collapse; font-size:.82rem; }
-    th { text-align:left; color:var(--muted); font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; padding:4px 6px; }
-    td { padding:6px 6px; border-top:1px solid var(--line); vertical-align:top; }
-    td.t { color:var(--muted); white-space:nowrap; } td.m { word-break:break-word; }
-    .num { text-align:right; font-variant-numeric:tabular-nums; }
-    .section-title { margin:24px 2px 10px; font-size:.98rem; font-weight:800; display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; }
-    .err { color:var(--bad); } .foot { margin-top:26px; color:var(--muted); font-size:.78rem; }
+    body { margin:0; background:var(--bg); color:var(--ink); font:13px/1.5 var(--ui); -webkit-font-smoothing:antialiased; }
+    .wrap { max-width:1100px; margin:0 auto; padding:0 18px 90px; }
+
+    /* ---------- Kopf (bleibt oben stehen) ---------- */
+    header {
+      position:sticky; top:0; z-index:20; background:var(--bg);
+      border-bottom:1px solid var(--line); margin:0 -18px 4px; padding:12px 18px;
+      display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap;
+    }
+    h1 { margin:0; font:500 11px/1 var(--mono); text-transform:uppercase; letter-spacing:.24em; color:var(--ink); }
+    h1 span { color:var(--ink-3); }
+    #stamp { font:400 10.5px/1 var(--mono); color:var(--ink-3); letter-spacing:.04em; }
+
+    /* ---------- Knöpfe ---------- */
+    .btn {
+      font:500 10.5px/1 var(--mono); text-transform:uppercase; letter-spacing:.13em;
+      padding:8px 11px; border:1px solid var(--line-2); background:transparent; color:var(--ink);
+      border-radius:3px; cursor:pointer;
+    }
+    .btn:hover { background:var(--panel); border-color:var(--ink-3); }
+    .btn.p { background:var(--ink); color:var(--bg); border-color:var(--ink); }
+    .btn.bad { color:var(--bad); border-color:var(--bad); }
+    .btn.sm { padding:6px 8px; font-size:10px; letter-spacing:.1em; }
+    :focus-visible { outline:2px solid var(--ink-2); outline-offset:2px; }
+
+    .muted { color:var(--ink-2); }
+    .mono { font-family:var(--mono); font-variant-numeric:tabular-nums; }
+    .err { color:var(--bad); }
+
+    /* ---------- Anmeldung ---------- */
+    .gate { max-width:320px; margin:18vh auto 0; }
+    .gate h1 { margin-bottom:8px; }
+    .gate p { color:var(--ink-2); font-size:12px; }
+    .gate input {
+      width:100%; padding:10px 12px; border-radius:3px; border:1px solid var(--line-2);
+      background:var(--panel); color:var(--ink); font:13px/1 var(--mono); margin:12px 0 10px;
+    }
+
+    /* ---------- Status-Zeile ---------- */
+    .ampel {
+      display:flex; align-items:center; gap:11px; padding:11px 14px; margin:14px 0 0;
+      background:var(--panel); border:1px solid var(--line); border-left:3px solid var(--ink-3); border-radius:3px;
+    }
+    .ampel.ok { border-left-color:var(--ok); } .ampel.warn { border-left-color:var(--warn); } .ampel.bad { border-left-color:var(--bad); }
+    .dot { width:7px; height:7px; border-radius:1px; flex:none; }
+    .dot.ok { background:var(--ok); } .dot.warn { background:var(--warn); } .dot.bad { background:var(--bad); }
+    .ampel .txt { font:500 11px/1 var(--mono); text-transform:uppercase; letter-spacing:.18em; }
+    .ampel .warns { color:var(--ink-2); font-size:12px; }
+
+    /* ---------- Raster aus Haarlinien (keine schwebenden Kacheln) ---------- */
+    .grid {
+      display:grid; grid-template-columns:repeat(auto-fit,minmax(215px,1fr));
+      gap:1px; background:var(--line); border:1px solid var(--line); border-radius:3px;
+      overflow:hidden; margin:18px 0;
+    }
+    .card { background:var(--bg); border:1px solid var(--line); border-radius:3px; padding:13px 15px 15px; }
+    .grid > .card { border:0; border-radius:0; }
+    .card h2 {
+      margin:0 0 9px; font:500 9.5px/1 var(--mono); text-transform:uppercase; letter-spacing:.16em;
+      color:var(--ink-3); display:flex; align-items:center; justify-content:space-between; gap:8px;
+    }
+    .big { font:400 1.7rem/1.1 var(--mono); font-variant-numeric:tabular-nums; letter-spacing:-.02em; margin:2px 0 8px; }
+    .kv { display:flex; align-items:baseline; justify-content:space-between; gap:10px; padding:3px 0; font-size:12px; }
+    .kv > span:first-child { color:var(--ink-2); }
+    .kv b { font-family:var(--mono); font-variant-numeric:tabular-nums; font-weight:500; }
+    .note { color:var(--ink-3); font-size:11px; line-height:1.45; margin:9px 0 0; }
+
+    .pill {
+      display:inline-block; font:500 9px/1 var(--mono); text-transform:uppercase; letter-spacing:.14em;
+      padding:3px 5px; border:1px solid currentColor; border-radius:2px;
+    }
+    .pill.ok { color:var(--ok); } .pill.warn { color:var(--warn); } .pill.bad { color:var(--bad); }
+
+    /* ---------- Tabellen ---------- */
+    table { width:100%; border-collapse:collapse; font-size:12px; }
+    th {
+      text-align:left; font:500 9.5px/1 var(--mono); text-transform:uppercase; letter-spacing:.14em;
+      color:var(--ink-3); padding:7px 8px; border-bottom:1px solid var(--line-2); white-space:nowrap;
+    }
+    td { padding:7px 8px; border-top:1px solid var(--line); vertical-align:top; }
+    tbody tr:hover td { background:var(--panel); }
+    td.t { font-family:var(--mono); font-size:11px; color:var(--ink-3); white-space:nowrap; }
+    td.m { word-break:break-word; }
+    .num { text-align:right; font-family:var(--mono); font-variant-numeric:tabular-nums; }
+    .dev { font-family:var(--mono); font-size:11px; color:var(--ink-3); }
+
+    /* ---------- Abschnittsmarken: Text — Linie — Werkzeuge ---------- */
+    .section-title {
+      margin:26px 0 9px; font:500 9.5px/1 var(--mono); text-transform:uppercase; letter-spacing:.2em;
+      color:var(--ink-2); display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+    }
+    .section-title::after { content:""; order:2; flex:1; min-width:24px; height:1px; background:var(--line); }
+    .section-title > .toolbar, .section-title > .btn { order:3; }
+    .section-title .muted { text-transform:none; letter-spacing:0; font-family:var(--ui); font-size:11px; }
     .full { grid-column:1/-1; overflow-x:auto; }
-    .ampel { display:flex; align-items:center; gap:10px; padding:12px 16px; border-radius:14px; border:1px solid var(--line); background:var(--card); margin-bottom:14px; }
-    .dot { width:14px; height:14px; border-radius:50%; flex:none; box-shadow:0 0 12px currentColor; }
-    .dot.ok { color:var(--ok); background:var(--ok); } .dot.warn { color:var(--warn); background:var(--warn); } .dot.bad { color:var(--bad); background:var(--bad); }
-    .ampel .txt { font-weight:800; } .ampel .warns { color:var(--muted); font-size:.85rem; font-weight:600; }
-    .spark { width:100%; height:44px; display:block; cursor:crosshair; }
-    .spark polyline { fill:none; stroke:var(--accent); stroke-width:2; stroke-linejoin:round; stroke-linecap:round; }
-    .spark .area { fill:rgba(79,208,224,.12); stroke:none; }
-    .spark .marker { stroke:var(--warn); stroke-width:1.5; }
+    .foot { margin-top:28px; color:var(--ink-3); font-size:11px; line-height:1.6; }
+
+    /* ---------- Verlaufskurven ---------- */
+    .spark { width:100%; height:40px; display:block; cursor:crosshair; }
+    .spark polyline { fill:none; stroke:var(--ink-2); stroke-width:1.25; stroke-linejoin:round; stroke-linecap:round; }
+    .spark .area { fill:var(--line); stroke:none; }
+    .spark .marker { stroke:var(--warn); stroke-width:1; }
     .sparkbox { position:relative; }
-    .sptip { position:absolute; top:-4px; transform:translateX(-50%); background:#0a0e13; border:1px solid var(--line); color:var(--ink); font:800 .74rem inherit; padding:3px 8px; border-radius:7px; white-space:nowrap; pointer-events:none; z-index:6; box-shadow:0 6px 16px rgba(0,0,0,.55); }
-    .sparkwrap .lbl { display:flex; justify-content:space-between; font-size:.8rem; margin-top:4px; }
-    .switch { display:inline-flex; align-items:center; gap:6px; font-size:.82rem; color:var(--muted); cursor:pointer; }
-    .toolbar { display:flex; gap:8px; flex-wrap:wrap; }
-    input.filter { background:var(--bg); border:1px solid var(--line); color:var(--ink); border-radius:8px; padding:6px 10px; font:inherit; font-size:.82rem; }
-    .dev { font-family:ui-monospace,monospace; font-size:.74rem; color:var(--muted); }
-    /* Touch: Zeilen-Aktionen (🗑/🚫/✓/…) größer & auseinander, damit sie am Handy treffbar sind. */
+    .sptip {
+      position:absolute; top:-2px; transform:translateX(-50%); background:var(--bg);
+      border:1px solid var(--line-2); color:var(--ink); font:500 10.5px var(--mono);
+      padding:3px 6px; border-radius:2px; white-space:nowrap; pointer-events:none; z-index:6;
+    }
+    .sparkwrap .lbl { display:flex; justify-content:space-between; font:400 10.5px var(--mono); color:var(--ink-3); margin-top:3px; }
+
+    /* ---------- Bedienelemente ---------- */
+    .switch { display:inline-flex; align-items:center; gap:6px; font:500 10px var(--mono); text-transform:uppercase; letter-spacing:.13em; color:var(--ink-2); cursor:pointer; }
+    .toolbar { display:flex; gap:7px; flex-wrap:wrap; align-items:center; }
+    input.filter, select.filter {
+      background:var(--panel); border:1px solid var(--line-2); color:var(--ink);
+      border-radius:3px; padding:7px 9px; font:12px/1 var(--mono);
+    }
+
+    /* ---------- Tastaturkürzel ---------- */
+    #help { position:fixed; inset:0; z-index:60; background:rgba(0,0,0,.55); display:grid; place-items:center; padding:20px; }
+    #help[hidden] { display:none; }
+    #help .box { background:var(--bg); border:1px solid var(--line-2); border-radius:4px; padding:18px 20px; min-width:260px; }
+    #help h2 { margin:0 0 12px; font:500 9.5px/1 var(--mono); text-transform:uppercase; letter-spacing:.18em; color:var(--ink-3); }
+    #help .kv { padding:4px 0; }
+    code { font:400 11px var(--mono); color:var(--ink-2); }
+    kbd { font:500 11px var(--mono); border:1px solid var(--line-2); border-radius:2px; padding:2px 6px; background:var(--panel); }
+
+    /* Touch: Zeilen-Aktionen größer & auseinander, damit sie am Handy treffbar sind. */
     @media (pointer:coarse) {
-      .btn.sm { min-height:40px; padding:8px 12px; font-size:.8rem; }
-      td .btn + .btn, .toolbar .btn + .btn { margin-left:6px; }
+      .btn.sm { min-height:40px; padding:9px 11px; }
+      td .btn + .btn, .toolbar .btn + .btn { margin-left:5px; }
       td .btn { margin-bottom:4px; }
     }
-    /* Schmale Screens: Zeit-Spalte darf umbrechen → Tabellen werden schmaler statt weit zu scrollen. */
-    @media (max-width:480px) { td.t { white-space:normal; } }
+    /* Schmale Screens: Zeit-Spalte darf umbrechen → Tabellen scrollen weniger. */
+    @media (max-width:480px) { td.t { white-space:normal; } header { gap:8px; } }
+    @media (prefers-reduced-motion: reduce) { * { animation:none !important; transition:none !important; } }
   </style>
 </head>
 <body>
   <div class="wrap">
     <div id="gate" class="gate" hidden>
-      <h1>🔒 Betrieb</h1>
-      <p class="muted">Zugriffsschlüssel eingeben.</p>
-      <input id="key" type="password" placeholder="Schlüssel" autocomplete="off" />
+      <h1>Spieleabend <span>/ Betrieb</span></h1>
+      <p class="muted">Zugriffsschlüssel</p>
+      <input id="key" type="password" placeholder="················" autocomplete="off" />
       <button class="btn p" id="enter" style="width:100%">Anmelden</button>
-      <p id="gate-msg" class="err" style="min-height:1.2em"></p>
+      <p id="gate-msg" class="err" style="min-height:1.2em;font-size:12px"></p>
     </div>
 
     <div id="dash" hidden>
       <header>
-        <h1>Betrieb<span>·Dashboard</span></h1>
+        <h1>Spieleabend <span>/ Betrieb</span></h1>
         <div class="toolbar">
+          <span id="stamp"></span>
           <label class="switch"><input type="checkbox" id="auto" checked /> Auto</label>
-          <button class="btn" id="refresh">↻ Aktualisieren</button>
+          <button class="btn" id="refresh" title="Taste R">Laden</button>
+          <button class="btn" id="help-btn" title="Tastaturkürzel (?)">?</button>
           <button class="btn" id="logout">Abmelden</button>
         </div>
       </header>
       <div id="ampel" class="ampel"><span class="dot warn"></span><span class="txt">lädt…</span></div>
-      <p id="stamp" class="muted mono" style="margin-top:-6px;font-size:.8rem"></p>
       <div id="content"></div>
+    </div>
+  </div>
+
+  <div id="help" hidden>
+    <div class="box">
+      <h2>Tastaturkürzel</h2>
+      <div class="kv"><span>Neu laden</span><b><kbd>R</kbd></b></div>
+      <div class="kv"><span>Auto-Aktualisierung</span><b><kbd>A</kbd></b></div>
+      <div class="kv"><span>Suche</span><b><kbd>/</kbd></b></div>
+      <div class="kv"><span>Zeitraum 7 / 30 / 90 Tage</span><b><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd></b></div>
+      <div class="kv"><span>Fehler: gruppiert / Verlauf</span><b><kbd>F</kbd></b></div>
+      <div class="kv"><span>Diese Liste</span><b><kbd>?</kbd></b></div>
+      <div class="kv"><span>Schließen</span><b><kbd>Esc</kbd></b></div>
+      <p class="note">Greifen nur, wenn der Fokus nicht in einem Eingabefeld steht.</p>
     </div>
   </div>
 
@@ -92,6 +214,8 @@
     const LS = "admin_key";
     const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
     const nf = n => (n == null ? "–" : Number(n).toLocaleString("de-AT"));
+    // "YYYY-MM-DD HH:MM:SS" (UTC, wie SQLite es schreibt) → Alter in ms.
+    function ageMs(s) { const t = Date.parse(String(s || "").replace(" ", "T") + "Z"); return Number.isFinite(t) ? Date.now() - t : Infinity; }
     function fmtAge(s) { if (s == null) return "–"; if (s < 90) return s + " s"; if (s < 5400) return Math.round(s / 60) + " min"; if (s < 172800) return Math.round(s / 3600) + " h"; return Math.round(s / 86400) + " d"; }
     const key = () => localStorage.getItem(LS);
 
@@ -242,11 +366,13 @@
       // Ampel
       const amp = $("#ampel");
       const cls = d.status === "ok" ? "ok" : d.status === "bad" ? "bad" : "warn";
+      amp.className = "ampel " + cls;      // Signalfarbe sitzt am linken Rand, nicht als Leuchtpunkt
       amp.innerHTML = `<span class="dot ${cls}"></span><span class="txt">${d.status === "ok" ? "Alles ok" : "Achtung"}</span>` +
         (d.warns && d.warns.length ? `<span class="warns">· ${d.warns.map(esc).join(" · ")}</span>` : "");
-      $("#stamp").textContent = "Stand: " + new Date(d.generatedAt).toLocaleString("de-AT");
+      $("#stamp").textContent = new Date(d.generatedAt).toLocaleTimeString("de-AT");
 
       const s = d.scores, e = d.errors, p = d.push, f = d.fire, db = d.db, k = d.kritzeln || {}, q = d.quiz || {}, sp = d.sprit || {};
+      const rc = d.reach || {};
 
       const gameRows = (s.games || []).map(g =>
         `<div class="kv"><span>${esc(g.game)} <span class="muted">· ${nf(g.players)} Sp.</span></span><b class="mono">${nf(g.subs)}</b></div>`).join("") || '<p class="muted">keine</p>';
@@ -259,7 +385,13 @@
       if (errView === "top") {
         const rows = (e.top || []).filter(x => !pageFilter || x.page === pageFilter);
         errBody = `<table><thead><tr><th class="num">×</th><th>Fehler</th><th>zuletzt</th></tr></thead><tbody>` +
-          (rows.map(x => `<tr><td class="num"><b>${nf(x.n)}</b></td><td class="m">${esc(x.msg)}<br><span class="muted">${esc(x.page || "")}</span></td><td class="t">${esc((x.last || "").slice(5, 16))}</td></tr>`).join("") || '<tr><td colspan="3" class="muted">keine Fehler in 24 h 🎉</td></tr>') + `</tbody></table>`;
+          (rows.map(x => {
+            // firstSeen = erstes Auftreten ÜBERHAUPT (nicht im 24-h-Fenster) →
+            // damit unterscheidbar wird, was heute neu dazugekommen ist.
+            const neu = ageMs(x.firstSeen) < 864e5;
+            const alt = x.total > x.n ? ` · ${nf(x.total)} gesamt` : "";
+            return `<tr><td class="num"><b>${nf(x.n)}</b></td><td class="m">${neu ? '<span class="pill warn">neu</span> ' : ""}${esc(x.msg)}<br><span class="muted">${esc(x.page || "")}${alt}</span></td><td class="t">${esc((x.last || "").slice(5, 16))}</td></tr>`;
+          }).join("") || '<tr><td colspan="3" class="muted">keine Fehler in 24 h 🎉</td></tr>') + `</tbody></table>`;
       } else {
         const rows = (e.latest || []).filter(x => !pageFilter || x.page === pageFilter);
         errBody = `<table><thead><tr><th>Zeit</th><th>Fehler</th></tr></thead><tbody>` +
@@ -269,15 +401,15 @@
 
       // Moderation
       const recRows = (d.recent || []).map(x =>
-        `<tr><td class="t">${esc((x.created_at || "").slice(5, 16))}</td><td>${esc(x.game)}</td><td>${esc(x.name)}</td><td class="num mono">${nf(x.score)}</td><td class="dev">${esc((x.device || "").slice(0, 12))}…</td><td class="num"><button class="btn sm bad" data-del="${x.id}">🗑</button> <button class="btn sm" data-ban="${esc(x.device || "")}">🚫</button></td></tr>`).join("") || '<tr><td colspan="6" class="muted">keine</td></tr>';
+        `<tr><td class="t">${esc((x.created_at || "").slice(5, 16))}</td><td>${esc(x.game)}</td><td>${esc(x.name)}</td><td class="num mono">${nf(x.score)}</td><td class="dev">${esc((x.device || "").slice(0, 12))}…</td><td class="num"><button class="btn sm bad" data-del="${x.id}">löschen</button> <button class="btn sm" data-ban="${esc(x.device || "")}">sperren</button></td></tr>`).join("") || '<tr><td colspan="6" class="muted">keine</td></tr>';
       const banRows = (d.banned || []).map(x =>
         `<tr><td class="dev">${esc(x.device)}</td><td class="t">${esc((x.at || "").slice(0, 16))}</td><td class="num"><button class="btn sm" data-unban="${esc(x.device)}">entsperren</button></td></tr>`).join("") || '<tr><td colspan="3" class="muted">keine gesperrten Geräte</td></tr>';
       const drawRows = (k.entries || []).map((x, i) =>
-        `<tr><td class="num">${i + 1}</td><td>${esc(x.name)}</td><td class="num mono">${nf(x.points)}</td><td class="num mono">${nf(x.games)}</td><td class="num mono">${nf(x.wins)}</td><td class="num"><button class="btn sm bad" data-drawdel="${esc(x.name)}">🗑</button></td></tr>`).join("") || '<tr><td colspan="6" class="muted">keine Einträge</td></tr>';
+        `<tr><td class="num">${i + 1}</td><td>${esc(x.name)}</td><td class="num mono">${nf(x.points)}</td><td class="num mono">${nf(x.games)}</td><td class="num mono">${nf(x.wins)}</td><td class="num"><button class="btn sm bad" data-drawdel="${esc(x.name)}">löschen</button></td></tr>`).join("") || '<tr><td colspan="6" class="muted">keine Einträge</td></tr>';
       const quizRows = (q.entries || []).map((x, i) =>
-        `<tr><td class="num">${i + 1}</td><td>${esc(x.name)}</td><td class="num mono">${nf(x.points)}</td><td class="num mono">${nf(x.games)}</td><td class="num mono">${nf(x.wins)}</td><td class="num"><button class="btn sm bad" data-quizdel="${esc(x.name)}">🗑</button></td></tr>`).join("") || '<tr><td colspan="6" class="muted">keine Einträge</td></tr>';
+        `<tr><td class="num">${i + 1}</td><td>${esc(x.name)}</td><td class="num mono">${nf(x.points)}</td><td class="num mono">${nf(x.games)}</td><td class="num mono">${nf(x.wins)}</td><td class="num"><button class="btn sm bad" data-quizdel="${esc(x.name)}">löschen</button></td></tr>`).join("") || '<tr><td colspan="6" class="muted">keine Einträge</td></tr>';
       const quizReportRows = (q.reports || []).map(x =>
-        `<tr><td class="t">${esc((x.created_at || "").slice(5, 16))}</td><td class="m"><b>${esc((x.msg || "").replace(/^FRAGE GEMELDET: /, ""))}</b><br><span class="muted">${esc(x.extra || "")}</span></td><td class="num"><button class="btn sm" data-reportdel="${x.id}" title="Erledigt / entfernen">✓</button></td></tr>`).join("") || '<tr><td colspan="3" class="muted">keine Meldungen 🎉</td></tr>';
+        `<tr><td class="t">${esc((x.created_at || "").slice(5, 16))}</td><td class="m"><b>${esc((x.msg || "").replace(/^FRAGE GEMELDET: /, ""))}</b><br><span class="muted">${esc(x.extra || "")}</span></td><td class="num"><button class="btn sm" data-reportdel="${x.id}" title="Erledigt / entfernen">erledigt</button></td></tr>`).join("") || '<tr><td colspan="3" class="muted">keine Meldungen 🎉</td></tr>';
 
       // Live-Räume (aktive Echtzeit-Spiele)
       const GAME_ICON = { quiz: "🧠", kritzeln: "🎨", party: "🎉", funkelfeld: "💎", komet: "☄️", flatterfink: "🐦", sternensturm: "🚀", galopp: "🦄", wumms: "🦝", meeri: "🐹", schlange: "🐍", wuerfelpoker: "🎲", kochstudio: "🍳" };
@@ -303,6 +435,12 @@
         `<tr><td>${GAME_ICON[g] || "🎮"} ${esc(g)}</td><td class="num mono">${nf(u.play)}</td><td class="num mono">${u.duel ? nf(u.duel) : "·"}</td><td class="num mono">${u.share ? nf(u.share) : "·"}</td></tr>`).join("")
         || '<tr><td colspan="4" class="muted">noch keine Nutzungsdaten</td></tr>';
 
+      // Tabellengrößen: absteigend, mit Hinweis was sich selbst aufräumt
+      const SELBST = { rate: "selbst", used_token: "selbst", stat_daily: "wächst langsam", push_queue: "nach Zustellung", live_room: "selbst" };
+      const tableRows = Object.entries(d.db && d.db.tables || {}).sort((a, b) => b[1] - a[1]).map(([t, n]) =>
+        `<tr><td class="mono">${esc(t)}</td><td class="num">${nf(n)}</td><td class="muted">${esc(SELBST[t] || "von Hand")}</td></tr>`).join("")
+        || '<tr><td colspan="3" class="muted">keine Daten</td></tr>';
+
       // Admin-Audit-Log
       const logRows = (d.adminLog || []).map(x =>
         `<tr><td class="t">${esc((x.created_at || "").slice(5, 16))}</td><td><b>${esc(x.action)}</b> <span class="muted">${esc(x.detail || "")}</span></td></tr>`).join("")
@@ -310,7 +448,14 @@
 
       $("#content").innerHTML = `
         <div class="grid">
-          <div class="card"><h2>Scores</h2><div class="big mono">${nf(s.total)}</div><div class="kv"><span class="muted">letzte 24 h</span><b class="mono">${nf(s.last24h)}</b></div></div>
+          <div class="card"><h2>Reichweite</h2>
+            <div class="big mono">${nf(rc.players)}</div>
+            <div class="kv"><span>aktiv · 7 Tage</span><b>${nf(rc.active7)}</b></div>
+            <div class="kv"><span>neu · 7 Tage</span><b>${nf(rc.new7)}</b></div>
+            <div class="kv"><span>an ≥ 2 Tagen da</span><b>${nf(rc.returning)}</b></div>
+            <p class="note">Gezählt werden verschiedene Bestenlisten-Namen — die beste Näherung für „Menschen", die ohne Mitschneiden möglich ist.</p>
+          </div>
+          <div class="card"><h2>Scores</h2><div class="big mono">${nf(s.total)}</div><div class="kv"><span>letzte 24 h</span><b>${nf(s.last24h)}</b></div></div>
           <div class="card"><h2>Interne Fehler (24 h)</h2><div class="big mono ${(e.last24h - e.upstream522) ? "err" : ""}">${nf(e.last24h - e.upstream522)}</div><div class="kv"><span class="muted">extern (522)</span><b class="mono">${nf(e.upstream522)}</b></div></div>
           <div class="card"><h2>Push</h2><div class="big mono">${nf(p.subscriptions)}</div><div class="kv"><span class="muted">Queue</span><b class="mono">${nf(p.queued)}${p.oldestAgeSec != null ? " · " + fmtAge(p.oldestAgeSec) : ""}</b></div></div>
           <div class="card"><h2>Fire-Cron ${firePill(f)}</h2>
@@ -325,7 +470,7 @@
           </div>
         </div>
 
-        <div class="section-title">📈 Trends
+        <div class="section-title">Trends
           <span class="toolbar">${[7, 30, 90].map(n => `<button class="btn sm${trendDays === n ? " p" : ""}" data-days="${n}">${n} T</button>`).join("")}</span>
         </div>
         <div class="grid">
@@ -334,10 +479,10 @@
           ${sparkCard("Fehler / Tag", d.trends.errors)}
         </div>
 
-        <div class="section-title">🎮 Nutzung <span class="muted" style="font-weight:600;font-size:.8rem">anonym · letzte ${d.trends.days} Tage</span></div>
+        <div class="section-title">Nutzung <span class="muted">anonym · letzte ${d.trends.days} Tage</span></div>
         <div class="grid">
           <div class="card full"><h2>Was wird gespielt — Starts · Duelle · Teilen</h2>
-            <table><thead><tr><th>Spiel</th><th class="num">▶️ Starts</th><th class="num">⚔️ Duelle</th><th class="num">📤 Teilen</th></tr></thead><tbody>${usageRows}</tbody></table>
+            <table><thead><tr><th>Spiel</th><th class="num">Starts</th><th class="num">Duelle</th><th class="num">Teilen</th></tr></thead><tbody>${usageRows}</tbody></table>
             <p class="muted" style="font-size:.76rem;margin:8px 2px 0">„Starts" = gespielte Runden (anonym). „Duelle" = über einen Herausforderungs-Link gestartet. „Teilen" = Teilen-Karte erzeugt. Ganz ohne Personenbezug.</p>
           </div>
         </div>
@@ -346,16 +491,16 @@
           <div class="card"><h2>Einsendungen je Spiel</h2>${gameRows}</div>
           <div class="card"><h2>Weltrekorde</h2>${topRows}</div>
           <div class="card"><h2>DB-Hilfstabellen</h2>
-            <div class="kv"><span class="muted">rate-Buckets</span><b class="mono">${nf(db.rateRows)}</b></div>
-            <div class="kv"><span class="muted">verbrauchte Token</span><b class="mono">${nf(db.usedTokens)}</b></div>
-            <div class="kv"><span class="muted">gesperrte Geräte</span><b class="mono">${nf(db.bannedDevices)}</b></div>
+            <div class="kv"><span>rate-Buckets</span><b>${nf(db.rateRows)}</b></div>
+            <div class="kv"><span>verbrauchte Token</span><b>${nf(db.usedTokens)}</b></div>
+            <div class="kv"><span>gesperrte Geräte</span><b>${nf(db.bannedDevices)}</b></div>
           </div>
-          <div class="card"><h2>🎨 Kritzeln &amp; Raten</h2>
+          <div class="card"><h2>Kritzeln &amp; Raten</h2>
             <div class="kv"><span class="muted">Spiele gesamt</span><b class="mono">${nf(k.games)}</b></div>
             <div class="kv"><span class="muted">Spieler:innen</span><b class="mono">${nf(k.players)}</b></div>
             <div class="kv"><span class="muted">Top</span><b class="mono">${k.topName ? esc(k.topName) + " · " + nf(k.topPoints) : "–"}</b></div>
           </div>
-          <div class="card"><h2>🧠 Wer weiß's?</h2>
+          <div class="card"><h2>Wer weiß's?</h2>
             <div class="kv"><span class="muted">Spiele gesamt</span><b class="mono">${nf(q.games)}</b></div>
             <div class="kv"><span class="muted">Spieler:innen</span><b class="mono">${nf(q.players)}</b></div>
             <div class="kv"><span class="muted">Top</span><b class="mono">${q.topName ? esc(q.topName) + " · " + nf(q.topPoints) : "–"}</b></div>
@@ -363,13 +508,20 @@
           </div>
         </div>
 
-        <div class="section-title">🟢 Aktive Räume <span class="muted" style="font-weight:400;font-size:.8rem">(Live-Spiele gerade)</span></div>
+        <div class="section-title">Tabellen <span class="muted">Zeilen je Tabelle — was unbemerkt wächst</span></div>
+        <div class="card full">
+          <table><thead><tr><th>Tabelle</th><th class="num">Zeilen</th><th>Aufräumen</th></tr></thead>
+          <tbody>${tableRows}</tbody></table>
+          <p class="note">D1 im Gratis-Tarif: 5 Mio. gelesene Zeilen pro Tag. <code>rate</code> und <code>used_token</code> räumen sich selbst ab, <code>error_log</code> und <code>client_log</code> nur über die Knöpfe im Fehler-Abschnitt, <code>sprit_price_log</code> und <code>fire_op</code> wachsen dauerhaft mit.</p>
+        </div>
+
+        <div class="section-title">Aktive Räume <span class="muted">Live-Spiele gerade</span></div>
         <div class="card full">
           <table><thead><tr><th>Spiel</th><th>Code</th><th class="num">Spieler</th><th>Phase</th><th>seit</th></tr></thead>
           <tbody>${liveRows}</tbody></table>
         </div>
 
-        <div class="section-title">🐞 Fehler-Log
+        <div class="section-title">Fehler-Log
           <span class="toolbar">
             <select class="filter" id="err-page">${pageOpts}</select>
             <button class="btn sm" id="err-toggle">${errView === "top" ? "Verlauf" : "Gruppiert"}</button>
@@ -379,13 +531,13 @@
         </div>
         <div class="card full">${errBody}</div>
 
-        <div class="section-title">📱 Client-Fehler <span class="muted" style="font-weight:400;font-size:.8rem">(Geräte · ${nf(ce.last24h)} in 24 h / ${nf(ce.total)} gesamt)</span></div>
+        <div class="section-title">Client-Fehler <span class="muted">Geräte · ${nf(ce.last24h)} in 24 h / ${nf(ce.total)} gesamt</span></div>
         <div class="card full">
           <table><thead><tr><th>Zeit</th><th>Fehler (Gerät)</th></tr></thead>
           <tbody>${clRows}</tbody></table>
         </div>
 
-        <div class="section-title">🛡️ Moderation
+        <div class="section-title">Moderation
           <button class="btn sm bad" id="flush-queue">Push-Queue leeren</button>
         </div>
         <div class="card full">
@@ -397,13 +549,13 @@
           <table><tbody>${banRows}</tbody></table>
         </div>
 
-        <div class="section-title">🏆 Bestenliste bereinigen</div>
+        <div class="section-title">Bestenliste bereinigen</div>
         <div class="card full">
           <div class="toolbar" style="margin-bottom:8px"><select class="filter" id="board-game">${`<option value="">– Spiel wählen –</option>` + (s.games || []).map(g => `<option value="${esc(g.game)}"${g.game === boardGame ? " selected" : ""}>${esc(g.game)}</option>`).join("")}</select></div>
           <div id="board-out"></div>
         </div>
 
-        <div class="section-title">🔎 Suche (Name / Gerät)</div>
+        <div class="section-title">Suche · Name oder Gerät</div>
         <div class="card full">
           <div class="toolbar" style="margin-bottom:8px">
             <input class="filter" id="search-q" placeholder="Name oder Geräte-ID…" value="${esc(searchQ)}" style="flex:1;min-width:160px" />
@@ -412,23 +564,23 @@
           <div id="search-out"></div>
         </div>
 
-        <div class="section-title">🎨 Kritzeln-Bestenliste bereinigen
-          <span class="toolbar"><button class="btn sm" id="draw-csv">⬇ CSV</button><button class="btn sm bad" id="draw-clear">Alle löschen</button></span>
+        <div class="section-title">Kritzeln-Bestenliste bereinigen
+          <span class="toolbar"><button class="btn sm" id="draw-csv">CSV</button><button class="btn sm bad" id="draw-clear">Alle löschen</button></span>
         </div>
         <div class="card full">
           <table><thead><tr><th class="num">#</th><th>Name</th><th class="num">Punkte</th><th class="num">Spiele</th><th class="num">Siege</th><th class="num">Aktion</th></tr></thead>
           <tbody>${drawRows}</tbody></table>
         </div>
 
-        <div class="section-title">🧠 Wer-weiß's-Bestenliste bereinigen
-          <span class="toolbar"><button class="btn sm" id="quiz-csv">⬇ CSV</button><button class="btn sm bad" id="quiz-clear">Alle löschen</button></span>
+        <div class="section-title">Wer-weiß's-Bestenliste bereinigen
+          <span class="toolbar"><button class="btn sm" id="quiz-csv">CSV</button><button class="btn sm bad" id="quiz-clear">Alle löschen</button></span>
         </div>
         <div class="card full">
           <table><thead><tr><th class="num">#</th><th>Name</th><th class="num">Punkte</th><th class="num">Spiele</th><th class="num">Siege</th><th class="num">Aktion</th></tr></thead>
           <tbody>${quizRows}</tbody></table>
         </div>
 
-        <div class="section-title">🚩 Gemeldete Fragen (Wer weiß's?)
+        <div class="section-title">Gemeldete Fragen
           <button class="btn sm bad" id="quiz-reports-clear">Meldungen leeren</button>
         </div>
         <div class="card full">
@@ -436,27 +588,27 @@
           <tbody>${quizReportRows}</tbody></table>
         </div>
 
-        <div class="section-title">🧾 Admin-Protokoll <span class="muted" style="font-weight:400;font-size:.8rem">(letzte Aktionen)</span></div>
+        <div class="section-title">Admin-Protokoll <span class="muted">letzte Aktionen</span></div>
         <div class="card full">
           <table><thead><tr><th>Zeit</th><th>Aktion</th></tr></thead>
           <tbody>${logRows}</tbody></table>
         </div>
 
-        <div class="section-title">⚙️ Aktionen & Alarm</div>
+        <div class="section-title">Aktionen &amp; Alarm</div>
         <div class="card">
           <div class="toolbar" style="margin-bottom:10px">
-            <button class="btn" id="trigger-cron">🚒 Fire-Cron jetzt laufen lassen</button>
-            <button class="btn" id="trigger-sprit">⛽ Sprit-Cron jetzt laufen lassen</button>
+            <button class="btn" id="trigger-cron">Fire-Cron auslösen</button>
+            <button class="btn" id="trigger-sprit">Sprit-Cron auslösen</button>
           </div>
           <label class="muted" style="display:block;font-size:.82rem;margin-bottom:6px">Betreiber-Alarm an Bestenlisten-Namen (leer = aus):</label>
           <div class="toolbar">
             <input class="filter" id="alert-name" placeholder="dein Name" value="${esc(d.alert && d.alert.name || "")}" style="flex:1;min-width:140px" />
             <button class="btn p sm" id="alert-save">Speichern</button>
           </div>
-          <p class="muted" style="font-size:.76rem;margin:8px 0 0">Push bei ok→Achtung (Fehlerspitze / Push-Queue-Stau). Voraussetzung: Push im Profil unter genau diesem Namen aktiviert. („Fire-Cron hängt" kann sich nicht selbst melden — dafür das Banner in der App.)</p>
+          <p class="note">Push bei ok→Achtung und zurück — mit derselben Bewertung wie die Statuszeile oben (Fehlerspitze, Push-Stau, hängende Crons, Fire-Notiz, VAPID). Fehler werden dafür im 15-Minuten-Fenster gemessen, hier oben über 24 Stunden. Voraussetzung: Push im Profil unter genau diesem Namen aktiviert. („Fire-Cron hängt" kann sich nicht selbst melden — dafür die Statuszeile.)</p>
         </div>
 
-        <p class="foot">Rein private Betriebsübersicht. Schreib-Aktionen brauchen den Header-Schlüssel (CSRF-resistent). Kein Tracking Dritter; keine personenbezogenen Daten außer den frei gewählten Bestenlisten-Namen.</p>`;
+        <p class="foot">Rein private Betriebsübersicht. Schreib-Aktionen brauchen den Header-Schlüssel (CSRF-resistent). Fehlgeschlagene Anmeldungen stehen als <b>auth:fail</b> im Admin-Protokoll. Kein Tracking Dritter; keine personenbezogenen Daten außer den frei gewählten Bestenlisten-Namen. · Tastaturkürzel: <kbd>?</kbd></p>`;
 
       wire(e);
       document.querySelectorAll(".sparkbox").forEach(attachSparkHover);
@@ -504,6 +656,28 @@
     $("#logout").addEventListener("click", () => { localStorage.removeItem(LS); showGate(); });
     $("#auto").addEventListener("change", () => { if ($("#auto").checked) startAuto(); else stopAuto(); });
     document.addEventListener("visibilitychange", () => { if (document.hidden) stopAuto(); else if (!$("#dash").hidden) { startAuto(); load(); } });
+
+    // ---------- Tastaturkürzel ----------
+    // Ein Betriebspanel bedient man im Vorbeigehen; die Maus soll dafür nicht
+    // nötig sein. Greift nur außerhalb von Eingabefeldern.
+    function toggleHelp(on) { $("#help").hidden = !on; }
+    $("#help-btn").addEventListener("click", () => toggleHelp($("#help").hidden));
+    $("#help").addEventListener("click", ev => { if (ev.target === $("#help")) toggleHelp(false); });
+
+    document.addEventListener("keydown", ev => {
+      if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
+      if (ev.key === "Escape") return toggleHelp(false);
+      const t = ev.target;
+      if (t && (t.tagName === "INPUT" || t.tagName === "SELECT" || t.tagName === "TEXTAREA")) return;
+      if ($("#dash").hidden) return;
+      const k = ev.key;
+      if (k === "?") { ev.preventDefault(); toggleHelp($("#help").hidden); }
+      else if (k === "r" || k === "R") { ev.preventDefault(); load(); }
+      else if (k === "a" || k === "A") { const c = $("#auto"); c.checked = !c.checked; c.dispatchEvent(new Event("change")); }
+      else if (k === "f" || k === "F") { if (lastData) { errView = errView === "top" ? "latest" : "top"; render(lastData); } }
+      else if (k === "/") { ev.preventDefault(); const q = $("#search-q"); if (q) { q.focus(); q.select(); } }
+      else if (k === "1" || k === "2" || k === "3") { trendDays = [7, 30, 90][Number(k) - 1]; load(); }
+    });
 
     load();
   </script>

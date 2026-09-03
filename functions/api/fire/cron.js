@@ -3,6 +3,7 @@ import { pushToEndpoint, sendToName } from "../push.js";
 import { BEZIRK, bezName } from "./_bezirk.js";
 import { kindOf, shouldEscalate, kindAllows, withinRadius } from "./_parse.js";
 import { geocode } from "./geo.js";
+import { opsFacts, opsEvaluate } from "../_ops.js";
 
 // ====================================================================
 // Zeitgesteuerte Prüfung neuer Feuerwehr-Einsätze (NÖ) und Bezirks-Alarm.
@@ -366,6 +367,11 @@ async function maintenance(env) {
 // Zustand wird in app_config gemerkt). Alles best-effort — darf den Cron nie
 // stören. Hinweis: „Fire-Cron hängt" kann sich hier naturgemäß nicht selbst
 // melden (dann liefe dieser Code nicht); dafür bleibt das Dashboard-Banner.
+//
+// Bewertet wird mit opsEvaluate() aus _ops.js — derselben Funktion, die die
+// Ampel im Dashboard rechnet. Vorher waren es zwei getrennte Listen: hier nur
+// Fehlerspitze und Push-Queue, im Dashboard sieben Bedingungen. Ein hängender
+// Sprit-Cron oder fehlendes VAPID war damit rot im Panel, aber stumm.
 // ------------------------------------------------------------------
 async function checkAdminAlert(env) {
   try {
@@ -373,14 +379,11 @@ async function checkAdminAlert(env) {
     const name = cfg && cfg.v;
     if (!name) return;   // Alarm aus
 
-    const e15 = (await env.DB.prepare(
-      "SELECT COUNT(*) n FROM error_log WHERE created_at > datetime('now','-15 minutes') AND msg NOT LIKE '%HTTP 522%'"
-    ).first())?.n ?? 0;
-    const q = (await env.DB.prepare("SELECT COUNT(*) n FROM push_queue").first())?.n ?? 0;
-
-    const reasons = [];
-    if (e15 > 15) reasons.push(`${e15} interne Fehler/15 min`);
-    if (q > 200) reasons.push(`Push-Queue ${q}`);
+    // 15-Minuten-Fenster für Fehler: ein Alarm soll auf Spitzen reagieren,
+    // nicht auf das Tagesmittel.
+    const facts = await opsFacts(env, { errWindowMin: 15 });
+    const { warns } = opsEvaluate(facts);
+    const reasons = warns;
     const bad = reasons.length > 0;
 
     const prev = (await env.DB.prepare("SELECT v FROM app_config WHERE k='alert_state'").first())?.v || "ok";

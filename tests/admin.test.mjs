@@ -77,5 +77,33 @@ const withKey = (extra = {}) => ({ "x-admin-key": TOKEN, ...extra });
   assert("unbekannte Aktion → 400", r.status === 400);
 }
 
+// ---------- Fehlversuche landen im Audit-Log (ISMS) ----------
+{
+  const db = mockDB();
+  await mod.onRequestGet({ request: req({ headers: { "x-admin-key": "falsch" } }), env: envWith(db) });
+  const row = db._runs.find(x => /INSERT INTO admin_log/.test(x.sql) && /auth:fail/.test(x.sql));
+  assert("GET-Fehlversuch wird protokolliert", !!row);
+  assert("protokolliert die Quelle, NICHT den Schlüssel",
+    !!row && row.args.every(a => String(a).indexOf("falsch") < 0) && /Header/.test(String(row.args[0])));
+}
+{
+  const db = mockDB();
+  await mod.onRequestPost({ request: req({ method: "POST", headers: { "x-admin-key": "falsch" }, body: "{}" }), env: envWith(db) });
+  assert("POST-Fehlversuch wird protokolliert",
+    db._runs.some(x => /INSERT INTO admin_log/.test(x.sql) && /auth:fail/.test(x.sql) && /POST/.test(String(x.args[0]))));
+}
+
+// ---------- Erfolgreicher GET: liefert die neuen Kennzahlen ----------
+{
+  const r = await mod.onRequestGet({ request: req({ headers: withKey() }), env: envWith(mockDB()) });
+  const b = await r.json();
+  assert("GET mit Schlüssel → 200", r.status === 200);
+  assert("Antwort enthält Reichweite", !!b.reach && typeof b.reach.players === "number");
+  assert("Antwort enthält Tabellengrößen", !!b.db && typeof b.db.tables === "object");
+  // Ohne Fire-Lauf (der Mock liefert eine leere Zeile) MUSS die Ampel warnen —
+  // sonst wäre ein hängender Cron ein stiller Grünzustand.
+  assert("kein Fire-Lauf → Ampel warnt", b.status === "warn" && b.warns.some(w => /Fire-Cron/.test(w)));
+}
+
 console.log(ok ? "\n✅ admin: alle Tests grün" : "\n❌ admin: Tests fehlgeschlagen");
 process.exit(ok ? 0 : 1);

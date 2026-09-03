@@ -1,4 +1,5 @@
 import { json, clientIp, rateLimit, one, many } from "./_util.js";
+import { opsEvaluate } from "./_ops.js";
 
 // ====================================================================
 // Betreiber-Dashboard (privat) — bündelt die ohnehin gesammelten
@@ -9,6 +10,10 @@ import { json, clientIp, rateLimit, one, many } from "./_util.js";
 //   POST /api/admin              (Header x-admin-key, JSON { action, … })
 //     → clearErrors | clear522 | flushQueue | deleteScore{id}
 //       | banDevice{device} | unbanDevice{device} | triggerCron
+//
+// Fehlgeschlagene Zugriffe landen als "auth:fail" im admin_log (max. 1 Zeile
+// pro IP und Minute, damit ein Brute-Force-Versuch das Protokoll nicht mit
+// sich selbst zuschüttet). Der versuchte Schlüssel wird NIE gespeichert.
 //
 // Schutz: ADMIN_TOKEN ist ein Pages-Secret (selbst erzeugt, gratis, hat
 // nichts mit externen Diensten zu tun). Ohne gültigen Schlüssel: 401.
@@ -39,11 +44,29 @@ function ageSec(s) {
 
 // one()/many() kommen jetzt aus _util.js (früher hier privat dupliziert).
 
+// Fehlgeschlagener Zugriff → eine Zeile ins Audit-Log. Gedrosselt auf 1×/IP
+// und Minute: sonst verdrängt ein Brute-Force-Versuch mit seinen eigenen
+// Zeilen genau die echten Einträge, die man danach sehen will.
+// Protokolliert wird NUR, DASS ein Schlüssel mitkam — niemals welcher.
+async function logAuthFail(env, request, method) {
+  try {
+    const ip = clientIp(request);
+    if (!(await rateLimit(env, "adminfail:" + ip, 1, 60))) return;
+    const url = new URL(request.url);
+    const via = request.headers.get("x-admin-key") ? "Header" : (url.searchParams.get("key") ? "URL" : "ohne");
+    await env.DB.prepare("INSERT INTO admin_log (action, detail, ip) VALUES ('auth:fail', ?, ?)")
+      .bind(`${method} · Schlüssel: ${via}`, ip).run();
+  } catch (_) { /* Protokoll darf den Ablauf nie stören */ }
+}
+
 export async function onRequestGet({ request, env }) {
   if (!(await rateLimit(env, "admin:" + clientIp(request), 30, 60))) {
     return json({ error: "Zu viele Anfragen" }, 429);
   }
-  if (!keyOk(env, request)) return json({ error: "Nicht berechtigt" }, 401);
+  if (!keyOk(env, request)) {
+    await logAuthFail(env, request, "GET");
+    return json({ error: "Nicht berechtigt" }, 401);
+  }
 
   const url = new URL(request.url);
 
@@ -69,11 +92,137 @@ export async function onRequestGet({ request, env }) {
   // Trend-Zeitraum (validiert → sichere Zahl für die Interpolation unten)
   const days = [7, 30, 90].includes(+url.searchParams.get("days")) ? +url.searchParams.get("days") : 30;
 
-  // ---- Scores ----
-  const sTotal = (await one(env, "SELECT COUNT(*) n FROM scores"))?.n ?? 0;
-  const s24 = (await one(env, "SELECT COUNT(*) n FROM scores WHERE created_at > datetime('now','-1 day')"))?.n ?? 0;
-  const perRaw = await many(env,
-    "SELECT game, name, MAX(score) top, COUNT(*) subs, COUNT(DISTINCT lower(name)) players FROM scores GROUP BY game");
+  // Quiz-Meldungen (page='quiz-report') sind KEINE Fehler → aus allen
+  // Fehler-Zahlen und -Listen ausschließen (eigener Block weiter unten),
+  // damit die Ampel sauber bleibt.
+  const NOREP = "page IS NOT 'quiz-report'";
+  const cnt = (sql, ...a) => one(env, sql, ...a).then(r => r?.n ?? 0);
+
+  // Tote Live-Room-Zeilen wegräumen (falls ein DO abstürzte, ohne zu löschen).
+  // Muss VOR der Abfrage laufen, darum nicht im Parallel-Block.
+  try { await env.DB.prepare("DELETE FROM live_room WHERE updated_at < datetime('now','-10 minutes')").run(); } catch (_) {}
+
+  // Ab hier ALLES parallel. Vorher lief jede der gut 40 Abfragen einzeln
+  // hintereinander — bei 45-Sekunden-Auto-Refresh war dieses Dashboard damit
+  // der teuerste Endpunkt der ganzen Plattform, für genau einen Nutzer.
+  const [
+    sTotal, s24, perRaw,
+    reachTotal, reachNew7, reachActive7, reachReturning,
+    eTotal, e24, e522, eTop, eLatest,
+    clTotal, cl24, clLatest,
+    pSubs, pQueue, pOldestRow,
+    fh, fOpen, fKept,
+    shRow, sAlerts, sSubs, sLog,
+    rate, usedTok,
+    kPlayers, kGames, kTop, kEntries,
+    qPlayers, qGames, qTop, qEntries, qReportCount, qReports,
+    liveRooms, adminLog,
+    tScores, tErrors, tDevices, alertRow, usage,
+    recent, banned, tableRows, health,
+  ] = await Promise.all([
+    // ---- Scores ----
+    cnt("SELECT COUNT(*) n FROM scores"),
+    cnt("SELECT COUNT(*) n FROM scores WHERE created_at > datetime('now','-1 day')"),
+    many(env, "SELECT game, name, MAX(score) top, COUNT(*) subs, COUNT(DISTINCT lower(name)) players FROM scores GROUP BY game"),
+
+    // ---- Reichweite: die Zahl, an der alles andere hängt ----
+    // Namen sind frei gewählt und nicht eindeutig — das ist die beste
+    // verfügbare Näherung für „Menschen", ohne irgendwas mitzuschneiden.
+    cnt("SELECT COUNT(DISTINCT lower(name)) n FROM scores"),
+    cnt("SELECT COUNT(*) n FROM (SELECT lower(name) nm, MIN(created_at) f FROM scores GROUP BY lower(name)) WHERE f > datetime('now','-7 days')"),
+    cnt("SELECT COUNT(DISTINCT lower(name)) n FROM scores WHERE created_at > datetime('now','-7 days')"),
+    cnt("SELECT COUNT(*) n FROM (SELECT lower(name) nm, COUNT(DISTINCT date(created_at)) dd FROM scores GROUP BY lower(name)) WHERE dd >= 2"),
+
+    // ---- Fehler-Log ----
+    cnt(`SELECT COUNT(*) n FROM error_log WHERE ${NOREP}`),
+    cnt(`SELECT COUNT(*) n FROM error_log WHERE created_at > datetime('now','-1 day') AND ${NOREP}`),
+    cnt("SELECT COUNT(*) n FROM error_log WHERE created_at > datetime('now','-1 day') AND msg LIKE '%HTTP 522%'"),
+    // Gruppiert über die GANZE Tabelle, gefiltert auf 24 h per HAVING: so
+    // kommt firstSeen (erstes Auftreten überhaupt) in EINEM Durchlauf mit —
+    // damit lässt sich „neue Fehlerart" von „altem Bekannten" unterscheiden.
+    many(env,
+      `SELECT msg, MAX(created_at) last, MAX(page) page, MIN(created_at) firstSeen, COUNT(*) total,` +
+      ` SUM(CASE WHEN created_at > datetime('now','-1 day') THEN 1 ELSE 0 END) n` +
+      ` FROM error_log WHERE ${NOREP} GROUP BY msg HAVING n > 0 ORDER BY n DESC LIMIT 20`),
+    many(env, `SELECT created_at, page, msg, ua FROM error_log WHERE ${NOREP} ORDER BY id DESC LIMIT 25`),
+
+    // ---- Client-Fehler (Geräte, /api/log) ----
+    cnt("SELECT COUNT(*) n FROM client_log"),
+    cnt("SELECT COUNT(*) n FROM client_log WHERE created_at > datetime('now','-1 day')"),
+    many(env, "SELECT created_at, page, msg, ua FROM client_log ORDER BY id DESC LIMIT 25"),
+
+    // ---- Push ----
+    cnt("SELECT COUNT(*) n FROM push_sub"),
+    cnt("SELECT COUNT(*) n FROM push_queue"),
+    one(env, "SELECT MIN(created_at) t FROM push_queue"),
+
+    // ---- Fire ----
+    one(env, "SELECT last_run, active, detail_fetched, note FROM fire_health WHERE k='cron'"),
+    cnt("SELECT COUNT(*) n FROM fire_op WHERE ended=0"),
+    cnt("SELECT COUNT(*) n FROM fire_op"),
+
+    // ---- Sprit (Preis-Alarm) ----
+    one(env, "SELECT v FROM app_config WHERE k='sprit_cron_at'"),
+    cnt("SELECT COUNT(*) n FROM sprit_alert"),
+    cnt("SELECT COUNT(DISTINCT endpoint) n FROM sprit_alert"),
+    cnt("SELECT COUNT(*) n FROM sprit_price_log"),
+
+    // ---- DB-Hilfstabellen ----
+    cnt("SELECT COUNT(*) n FROM rate"),
+    cnt("SELECT COUNT(*) n FROM used_token"),
+
+    // ---- Kritzeln & Raten ----
+    cnt("SELECT COUNT(*) n FROM draw_score"),
+    cnt("SELECT COALESCE(SUM(wins),0) n FROM draw_score"),   // je Spiel genau 1 Sieg
+    one(env, "SELECT name, points FROM draw_score ORDER BY points DESC LIMIT 1"),
+    many(env, "SELECT name, points, games, wins, best FROM draw_score ORDER BY points DESC LIMIT 50"),
+
+    // ---- Wer weiß's? (Quiz) ----
+    cnt("SELECT COUNT(*) n FROM quiz_score"),
+    cnt("SELECT COALESCE(SUM(wins),0) n FROM quiz_score"),    // je Spiel genau 1 Sieg
+    one(env, "SELECT name, points FROM quiz_score ORDER BY points DESC LIMIT 1"),
+    many(env, "SELECT name, points, games, wins, best FROM quiz_score ORDER BY points DESC LIMIT 50"),
+    cnt("SELECT COUNT(*) n FROM error_log WHERE page = 'quiz-report'"),
+    many(env, "SELECT id, created_at, msg, extra FROM error_log WHERE page = 'quiz-report' ORDER BY id DESC LIMIT 40"),
+
+    // ---- Live-Räume + Audit-Log ----
+    many(env, "SELECT code, game, players, state, updated_at FROM live_room WHERE updated_at > datetime('now','-2 minutes') AND players > 0 ORDER BY updated_at DESC LIMIT 50"),
+    many(env, "SELECT action, detail, created_at FROM admin_log ORDER BY id DESC LIMIT 40"),
+
+    // ---- Trends (Zeitraum 7/30/90 Tage, roh je Tag; Client füllt Lücken) ----
+    many(env, `SELECT date(created_at) d, COUNT(*) n FROM scores WHERE created_at > datetime('now','-${days} days') GROUP BY d`),
+    many(env, `SELECT date(created_at) d, COUNT(*) n FROM error_log WHERE created_at > datetime('now','-${days} days') GROUP BY d`),
+    many(env, `SELECT date(created_at) d, COUNT(DISTINCT device) n FROM scores WHERE created_at > datetime('now','-${days} days') AND device IS NOT NULL GROUP BY d`),
+    one(env, "SELECT v FROM app_config WHERE k='alert_name'"),
+
+    // ---- Nutzungszähler (anonym, aggregiert): play/duel/share je Spiel ----
+    many(env, `SELECT k, SUM(n) n FROM stat_daily WHERE day > date('now','-${days} days') GROUP BY k ORDER BY n DESC`),
+
+    // ---- Moderation ----
+    many(env, "SELECT id, game, name, device, score, substr(meta,1,140) meta, created_at FROM scores ORDER BY id DESC LIMIT 40"),
+    many(env, "SELECT device, at FROM banned_device ORDER BY at DESC LIMIT 100"),
+
+    // ---- Tabellengrößen: was wächst unbemerkt? (eine Abfrage) ----
+    one(env,
+      "SELECT (SELECT COUNT(*) FROM scores) scores," +
+      " (SELECT COUNT(*) FROM error_log) error_log," +
+      " (SELECT COUNT(*) FROM client_log) client_log," +
+      " (SELECT COUNT(*) FROM rate) rate," +
+      " (SELECT COUNT(*) FROM used_token) used_token," +
+      " (SELECT COUNT(*) FROM sprit_price_log) sprit_price_log," +
+      " (SELECT COUNT(*) FROM sprit_alert) sprit_alert," +
+      " (SELECT COUNT(*) FROM stat_daily) stat_daily," +
+      " (SELECT COUNT(*) FROM push_queue) push_queue," +
+      " (SELECT COUNT(*) FROM push_sub) push_sub," +
+      " (SELECT COUNT(*) FROM fire_op) fire_op," +
+      " (SELECT COUNT(*) FROM admin_log) admin_log"),
+
+    // ---- Health (Cron-Totmann + VAPID) ----
+    fetch(new URL("/api/health", request.url).toString(), { headers: { "User-Agent": "admin/health" } })
+      .then(r => r.json()).catch(() => null),
+  ]);
+
+  // Einsendungen je Spiel: :daily/:weekly auf das Basisspiel zusammenfassen
   const games = {};
   for (const r of perRaw) {
     const g = baseGame(r.game);
@@ -83,100 +232,23 @@ export async function onRequestGet({ request, env }) {
     if (r.top > e.top) { e.top = r.top; e.topName = r.name; }
   }
 
-  // ---- Fehler-Log: Gesamt, gruppiert (24h), letzte roh (inkl. UA), 522 separat ----
-  // Quiz-Meldungen (page='quiz-report') sind KEINE Fehler → aus allen Fehler-Zahlen
-  // und -Listen ausschließen (eigener Block weiter unten), damit die Ampel sauber bleibt.
-  const NOREP = "page IS NOT 'quiz-report'";
-  const eTotal = (await one(env, `SELECT COUNT(*) n FROM error_log WHERE ${NOREP}`))?.n ?? 0;
-  const e24 = (await one(env, `SELECT COUNT(*) n FROM error_log WHERE created_at > datetime('now','-1 day') AND ${NOREP}`))?.n ?? 0;
-  const e522 = (await one(env, "SELECT COUNT(*) n FROM error_log WHERE created_at > datetime('now','-1 day') AND msg LIKE '%HTTP 522%'"))?.n ?? 0;
-  const eTop = await many(env,
-    `SELECT msg, COUNT(*) n, MAX(created_at) last, MAX(page) page FROM error_log ` +
-    `WHERE created_at > datetime('now','-1 day') AND ${NOREP} GROUP BY msg ORDER BY n DESC LIMIT 20`);
-  const eLatest = await many(env,
-    `SELECT created_at, page, msg, ua FROM error_log WHERE ${NOREP} ORDER BY id DESC LIMIT 25`);
-
-  // ---- Client-Fehler (Geräte, /api/log → eigene Tabelle) ----
-  const clTotal = (await one(env, "SELECT COUNT(*) n FROM client_log"))?.n ?? 0;
-  const cl24 = (await one(env, "SELECT COUNT(*) n FROM client_log WHERE created_at > datetime('now','-1 day')"))?.n ?? 0;
-  const clLatest = await many(env, "SELECT created_at, page, msg, ua FROM client_log ORDER BY id DESC LIMIT 25");
-
-  // ---- Push ----
-  const pSubs = (await one(env, "SELECT COUNT(*) n FROM push_sub"))?.n ?? 0;
-  const pQueue = (await one(env, "SELECT COUNT(*) n FROM push_queue"))?.n ?? 0;
-  const pOldest = (await one(env, "SELECT MIN(created_at) t FROM push_queue"))?.t || null;
-
-  // ---- Fire ----
-  const fh = await one(env, "SELECT last_run, active, detail_fetched, note FROM fire_health WHERE k='cron'");
-  const fOpen = (await one(env, "SELECT COUNT(*) n FROM fire_op WHERE ended=0"))?.n ?? 0;
-  const fKept = (await one(env, "SELECT COUNT(*) n FROM fire_op"))?.n ?? 0;
-
-  // ---- Sprit (Preis-Alarm) ----
-  const sh = (await one(env, "SELECT v FROM app_config WHERE k='sprit_cron_at'"))?.v || null;
+  const pOldest = pOldestRow?.t || null;
+  const sh = shRow?.v || null;
   const sAge = sh ? Math.max(0, Math.round((Date.now() - Date.parse(sh)) / 1000)) : null;   // ISO → Alter
-  const sAlerts = (await one(env, "SELECT COUNT(*) n FROM sprit_alert"))?.n ?? 0;
-  const sSubs = (await one(env, "SELECT COUNT(DISTINCT endpoint) n FROM sprit_alert"))?.n ?? 0;
-  const sLog = (await one(env, "SELECT COUNT(*) n FROM sprit_price_log"))?.n ?? 0;
+  const alertName = alertRow?.v || "";
 
-  // ---- DB-Hilfstabellen ----
-  const rate = (await one(env, "SELECT COUNT(*) n FROM rate"))?.n ?? 0;
-  const usedTok = (await one(env, "SELECT COUNT(*) n FROM used_token"))?.n ?? 0;
-
-  // ---- Kritzeln & Raten (dauerhafte Bestenliste) ----
-  const kPlayers = (await one(env, "SELECT COUNT(*) n FROM draw_score"))?.n ?? 0;
-  const kGames = (await one(env, "SELECT COALESCE(SUM(wins),0) n FROM draw_score"))?.n ?? 0;   // je Spiel genau 1 Sieg
-  const kTop = await one(env, "SELECT name, points FROM draw_score ORDER BY points DESC LIMIT 1");
-  const kEntries = await many(env, "SELECT name, points, games, wins, best FROM draw_score ORDER BY points DESC LIMIT 50");
-
-  // ---- Wer weiß's? (Quiz, dauerhafte Bestenliste + gemeldete Fragen) ----
-  const qPlayers = (await one(env, "SELECT COUNT(*) n FROM quiz_score"))?.n ?? 0;
-  const qGames = (await one(env, "SELECT COALESCE(SUM(wins),0) n FROM quiz_score"))?.n ?? 0;   // je Spiel genau 1 Sieg
-  const qTop = await one(env, "SELECT name, points FROM quiz_score ORDER BY points DESC LIMIT 1");
-  const qEntries = await many(env, "SELECT name, points, games, wins, best FROM quiz_score ORDER BY points DESC LIMIT 50");
-  const qReportCount = (await one(env, "SELECT COUNT(*) n FROM error_log WHERE page = 'quiz-report'"))?.n ?? 0;
-  const qReports = await many(env, "SELECT id, created_at, msg, extra FROM error_log WHERE page = 'quiz-report' ORDER BY id DESC LIMIT 40");
-
-  // ---- Live-Räume (Heartbeat der Echtzeit-DOs) ----
-  // Tote Zeilen wegräumen (falls ein DO abstürzte, ohne zu löschen), dann nur frische zeigen.
-  try { await env.DB.prepare("DELETE FROM live_room WHERE updated_at < datetime('now','-10 minutes')").run(); } catch (_) {}
-  const liveRooms = await many(env,
-    "SELECT code, game, players, state, updated_at FROM live_room WHERE updated_at > datetime('now','-2 minutes') AND players > 0 ORDER BY updated_at DESC LIMIT 50");
-
-  // ---- Admin-Audit-Log ----
-  const adminLog = await many(env, "SELECT action, detail, created_at FROM admin_log ORDER BY id DESC LIMIT 40");
-
-  // ---- Health (Cron-Totmann + VAPID) direkt einbinden ----
-  let health = null;
-  try {
-    const hr = await fetch(new URL("/api/health", request.url).toString(), { headers: { "User-Agent": "admin/health" } });
-    health = await hr.json();
-  } catch (_) { /* Health optional */ }
-
-  // ---- Trends (Zeitraum wählbar 7/30/90 Tage, roh je Tag; Client füllt Lücken) ----
-  const tScores = await many(env, `SELECT date(created_at) d, COUNT(*) n FROM scores WHERE created_at > datetime('now','-${days} days') GROUP BY d`);
-  const tErrors = await many(env, `SELECT date(created_at) d, COUNT(*) n FROM error_log WHERE created_at > datetime('now','-${days} days') GROUP BY d`);
-  const tDevices = await many(env, `SELECT date(created_at) d, COUNT(DISTINCT device) n FROM scores WHERE created_at > datetime('now','-${days} days') AND device IS NOT NULL GROUP BY d`);
-  const alertName = (await one(env, "SELECT v FROM app_config WHERE k='alert_name'"))?.v || "";
-
-  // ---- Nutzungszähler (anonym, aggregiert): play/duel/share je Spiel ----
-  const usage = await many(env, `SELECT k, SUM(n) n FROM stat_daily WHERE day > date('now','-${days} days') GROUP BY k ORDER BY n DESC`);
-
-  // ---- Moderation: letzte Einsendungen + gesperrte Geräte ----
-  const recent = await many(env,
-    "SELECT id, game, name, device, score, substr(meta,1,140) meta, created_at FROM scores ORDER BY id DESC LIMIT 40");
-  const banned = await many(env, "SELECT device, at FROM banned_device ORDER BY at DESC LIMIT 100");
-
-  // ---- Gesamtstatus (Ampel) ----
+  // ---- Gesamtstatus (Ampel) — dieselbe Bewertung wie der Push-Alarm ----
   const fAge = ageSec(fh?.last_run);
-  let status = "ok";
-  const warns = [];
-  if (fAge == null || fAge > 900) { status = "warn"; warns.push(fAge == null ? "Fire-Cron: kein Lauf" : "Fire-Cron verzögert"); }
-  if (fh?.note && fh.note !== "ok") { status = "warn"; warns.push("Fire: " + fh.note); }
-  if (e24 - e522 > 20) { status = "warn"; warns.push(`${e24 - e522} interne Fehler/24 h`); }
-  if (pQueue > 200) { status = "warn"; warns.push(`Push-Queue: ${pQueue}`); }
-  if (sAge != null && sAge > 1800) { status = "warn"; warns.push("Sprit-Cron verzögert"); }
-  if (health && health.cron && health.cron.ok === false) { status = "warn"; warns.push("Health: Cron-Totmann rot"); }
-  if (health && health.vapid === false) { status = "warn"; warns.push("Health: VAPID nicht konfiguriert"); }
+  const { status, warns } = opsEvaluate({
+    fireAgeSec: fAge,
+    fireNote: fh?.note || null,
+    errCount: e24 - e522,          // 522 kommt von außen und zählt nicht als unser Fehler
+    errWindowMin: 1440,
+    pushQueue: pQueue,
+    spritAgeSec: sAge,
+    healthCronOk: health && health.cron ? health.cron.ok : null,
+    vapid: health ? health.vapid : null,
+  });
 
   return json({
     generatedAt: new Date().toISOString(),
@@ -190,7 +262,8 @@ export async function onRequestGet({ request, env }) {
       note: fh?.note || null, openOps: fOpen, keptOps: fKept,
     },
     sprit: { lastRun: sh, ageSec: sAge, alerts: sAlerts, subscribers: sSubs, priceLog: sLog },
-    db: { rateRows: rate, usedTokens: usedTok, bannedDevices: banned.length },
+    db: { rateRows: rate, usedTokens: usedTok, bannedDevices: banned.length, tables: tableRows || {} },
+    reach: { players: reachTotal, new7: reachNew7, active7: reachActive7, returning: reachReturning },
     kritzeln: { players: kPlayers, games: kGames, topName: kTop?.name || null, topPoints: kTop?.points ?? 0, entries: kEntries },
     quiz: { players: qPlayers, games: qGames, topName: qTop?.name || null, topPoints: qTop?.points ?? 0, entries: qEntries, reportCount: qReportCount, reports: qReports },
     live: { rooms: liveRooms },
@@ -208,7 +281,10 @@ export async function onRequestPost({ request, env }) {
   if (!(await rateLimit(env, "adminw:" + clientIp(request), 30, 60))) {
     return json({ error: "Zu viele Anfragen" }, 429);
   }
-  if (!keyOk(env, request)) return json({ error: "Nicht berechtigt" }, 401);
+  if (!keyOk(env, request)) {
+    await logAuthFail(env, request, "POST");
+    return json({ error: "Nicht berechtigt" }, 401);
+  }
 
   const b = await request.json().catch(() => ({}));
   const action = String(b.action || "");
