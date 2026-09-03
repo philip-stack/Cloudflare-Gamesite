@@ -314,12 +314,9 @@ function drawKorndl(x, y) {
 
 function drawHedge(x, y, w, h, top) {
   if (h <= 0) return;
-  const grad = ctx.createLinearGradient(x, 0, x + w, 0);
-  grad.addColorStop(0, "#4f8f3a");
-  grad.addColorStop(0.5, "#63ab48");
-  grad.addColorStop(1, "#3f7a2e");
-  ctx.fillStyle = grad;
   const r = 10;
+  ctx.save();
+  // Heckenform: nur die zur Lücke zeigende Kante ist abgerundet.
   ctx.beginPath();
   if (top) {
     ctx.moveTo(x, y);
@@ -337,7 +334,18 @@ function drawHedge(x, y, w, h, top) {
     ctx.lineTo(x, y + h);
   }
   ctx.closePath();
-  ctx.fill();
+  // WICHTIG: alles Folgende auf die Heckenform beschneiden. Sonst ragt die
+  // Kappe (ein Rechteck über die volle Breite) in die abgerundeten Ecken und
+  // stand dort als graues Halbtransparent allein auf dem Himmel.
+  ctx.clip();
+
+  const grad = ctx.createLinearGradient(x, 0, x + w, 0);
+  grad.addColorStop(0, "#4f8f3a");
+  grad.addColorStop(0.5, "#63ab48");
+  grad.addColorStop(1, "#3f7a2e");
+  ctx.fillStyle = grad;
+  ctx.fillRect(x, y, w, h);
+
   // Blätter-Textur (dezente Tupfen)
   ctx.fillStyle = "rgba(255,255,255,0.08)";
   for (let ty = y + 8; ty < y + h - 6; ty += 16) {
@@ -346,10 +354,12 @@ function drawHedge(x, y, w, h, top) {
     ctx.arc(x + w * 0.68, ty + 8, 2.4, 0, Math.PI * 2);
     ctx.fill();
   }
-  // Kappe
+  // Kappe am Lücken-Rand — folgt jetzt der Rundung, weil beschnitten.
   ctx.fillStyle = "rgba(0,0,0,0.12)";
   if (top) ctx.fillRect(x, y + h - 6, w, 6);
   else ctx.fillRect(x, y, w, 6);
+
+  ctx.restore();
 }
 
 function drawBird(now) {
