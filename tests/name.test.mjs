@@ -154,6 +154,10 @@ console.log("\n— Begrüßung (public/index.html) —");
   const html = readFileSync(path.join(__dirname, "..", "public", "index.html"), "utf8");
 
   assert("natives <dialog> (Fokusfalle/Esc gratis)", /<dialog id="welcome"/.test(html));
+  // core.css setzt * { margin: 0 } und killt damit die vom Browser gelieferte
+  // Zentrierung des <dialog>. Ohne margin: auto klebt es links oben.
+  assert("Dialog ist mittig (margin: auto trotz core.css-Reset)",
+    /\.welc \{[\s\S]{0,400}?margin: auto;/.test(html));
   assert("Dialog ist benannt (aria-labelledby)", /aria-labelledby="welc-h"/.test(html));
   assert("Eingabefeld hat ein <label>", /<label class="welc-lab" for="welc-name">/.test(html));
   assert("Feld ist mit dem Hinweis verknüpft", /aria-describedby="welc-hint"/.test(html));

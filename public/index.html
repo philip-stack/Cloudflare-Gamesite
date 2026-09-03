@@ -40,6 +40,10 @@
 
     /* ===== Begrüßung beim ersten Besuch (natives <dialog>) ===== */
     .welc {
+      /* Ein <dialog> zentriert sich selbst ueber margin: auto — das kippt aber
+         der globale Reset in core.css (* { margin: 0 }) um. Daher hier wieder
+         ausdruecklich setzen, sonst klebt das Fenster links oben. */
+      margin: auto;
       border: 0; padding: 0; max-width: 27rem; width: calc(100vw - 28px);
       max-height: min(92dvh, 720px); overflow: auto;
       border-radius: 22px; background: var(--bg0); color: var(--ink);
