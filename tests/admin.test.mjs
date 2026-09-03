@@ -76,6 +76,16 @@ const withKey = (extra = {}) => ({ "x-admin-key": TOKEN, ...extra });
   const r = await mod.onRequestPost({ request: req({ method: "POST", headers: withKey(), body: JSON.stringify({ action: "gibtsnicht" }) }), env: envWith(mockDB()) });
   assert("unbekannte Aktion → 400", r.status === 400);
 }
+{
+  // Cloudflare-Zahlen von Hand neu holen: ohne CF_API_TOKEN muss die Aktion
+  // sauber mit ok:false und Grund antworten statt zu scheitern.
+  const db = mockDB();
+  const r = await mod.onRequestPost({ request: req({ method: "POST", headers: withKey(), body: JSON.stringify({ action: "refreshCf" }) }), env: envWith(db) });
+  const b = await r.json();
+  assert("refreshCf → 200", r.status === 200);
+  assert("refreshCf ohne Token → ok:false mit Grund", b.ok === false && /CF_API_TOKEN/.test(b.error || ""));
+  assert("refreshCf steht im Audit-Log", db._runs.some(x => /INSERT INTO admin_log/.test(x.sql) && x.args[0] === "refreshCf"));
+}
 
 // ---------- Fehlversuche landen im Audit-Log (ISMS) ----------
 {

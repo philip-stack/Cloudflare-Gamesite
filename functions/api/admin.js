@@ -14,7 +14,7 @@ import { cfStats } from "./_cf.js";
 //     eben leer für die Gruppen, die diese Ansicht nicht braucht.
 //   POST /api/admin              (Header x-admin-key, JSON { action, … })
 //     → clearErrors | clear522 | flushQueue | deleteScore{id}
-//       | banDevice{device} | unbanDevice{device} | triggerCron
+//       | banDevice{device} | unbanDevice{device} | triggerCron | refreshCf
 //
 // Fehlgeschlagene Zugriffe landen als "auth:fail" im admin_log (max. 1 Zeile
 // pro IP und Minute, damit ein Brute-Force-Versuch das Protokoll nicht mit
@@ -393,6 +393,13 @@ export async function onRequestPost({ request, env }) {
         const name = String(b.name || "").trim().slice(0, 16);
         await run("INSERT INTO app_config (k, v) VALUES ('alert_name', ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v", name);
         return json({ ok: true, name });
+      }
+      case "refreshCf": {
+        // Die Cloudflare-Zahlen sind 10 Minuten zwischengespeichert (die
+        // Analytics-API ist langsam und gedrosselt). maxAgeSec: 0 erzwingt
+        // einen frischen Abruf — bewusst als Aktion und nicht automatisch.
+        const cf = await cfStats(env, { maxAgeSec: 0 });
+        return json({ ok: !cf.error, error: cf.error || null, at: cf.at || null });
       }
       case "triggerCron": {
         const token = env && env.CRON_TOKEN;

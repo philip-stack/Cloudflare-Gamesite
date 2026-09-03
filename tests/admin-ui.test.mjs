@@ -176,6 +176,7 @@ sandbox.ANSWER = answer;
   // eigentliche Zweck der Anzeige.
   assert("System: Auslastungsbalken schlägt bei 92 % auf rot", h.includes('class="bar bad"') && h.includes("92 %"));
   assert("System: KI-Widget für das Kochstudio", h.includes("Workers AI") && h.includes("Rezepte heute"));
+  assert("System: Cloudflare-Zahlen von Hand neu holbar", h.includes('id="cf-refresh"'));
   // 8 Aufrufe auf 1000 Neuronen im Fenster = 125 je Rezept; heute sind 500
   // verbraucht, also (10000-500)/125 = 76 weitere möglich.
   assert("System: Restschätzung aus dem Mittelwert", h.includes("125 Neuronen je Rezept") && h.includes(">76<"));
@@ -199,6 +200,8 @@ sandbox.ANSWER = answer;
   const h = content.innerHTML;
   assert("ohne CF-Token: Hinweis statt Zahlen", h.includes("CF_API_TOKEN") && h.includes("wrangler pages secret put"));
   assert("ohne CF-Token: übrige System-Ansicht bleibt", h.includes("Tabellen") && h.includes("alert-name"));
+  // Nach dem Setzen eines Secrets will man sofort nachsehen können.
+  assert("ohne CF-Token: Neu-holen-Knopf trotzdem da", h.includes('id="cf-refresh"'));
   sandbox.ANSWER = answer;
 }
 

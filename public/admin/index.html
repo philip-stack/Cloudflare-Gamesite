@@ -587,7 +587,7 @@
       let cfBlock;
       if (!cf) cfBlock = "";
       else if (cf.error && !cf.days) {
-        cfBlock = `${title("Cloudflare")}<p class="quiet">${esc(cf.error)}</p>
+        cfBlock = `${title("Cloudflare", `<span class="toolbar"><button class="btn sm" id="cf-refresh">Neu holen</button></span>`)}<p class="quiet">${esc(cf.error)}</p>
           <p class="note">Token anlegen (Account Analytics: Read + D1: Read), dann:
           <code>wrangler pages secret put CF_API_TOKEN --project-name philip-stack</code> und ebenso <code>CF_ACCOUNT_ID</code>.</p>`;
       } else {
@@ -604,7 +604,8 @@
            <td class="num">${x.aiReq ? nf(x.aiReq) + " · " + nf(Math.round(x.aiNeurons)) : "·"}</td>
            <td class="num">${nf(x.doReq)}</td><td class="num ${x.doErr ? "err" : ""}">${nf(x.doErr)}</td></tr>`).join("");
 
-        cfBlock = `${title("Cloudflare", `<span class="muted">${cf.stale ? "veraltet · " : ""}Stand vor ${fmtAge(cf.ageSec || 0)}${cf.cached ? " (zwischengespeichert)" : ""}</span>`)}
+        cfBlock = `${title("Cloudflare", `<span class="muted">${cf.stale ? "veraltet · " : ""}Stand vor ${fmtAge(cf.ageSec || 0)}</span>
+            <span class="toolbar"><button class="btn sm" id="cf-refresh" title="Zwischenspeicher überspringen">Neu holen</button></span>`)}
         <div class="grid">
           <div class="card"><h2>D1 · Zeilen gelesen (heute)</h2>
             ${meter("gelesen", heute.rowsRead || 0, L.d1RowsRead)}
@@ -839,6 +840,13 @@
       on("#err-522", () => act({ action: "clear522" }, "Alle 522-Meldungen (externe Quelle) löschen?"));
       on("#err-clear", () => { if (confirmType("LÖSCHEN", "Das GESAMTE Fehler-Log löschen?")) act({ action: "clearErrors" }); });
       on("#flush-queue", () => { if (confirmType("LÖSCHEN", "Push-Warteschlange komplett leeren?")) act({ action: "flushQueue" }); });
+      on("#cf-refresh", async (ev) => {
+        const b = ev.currentTarget || $("#cf-refresh");
+        if (b) { b.disabled = true; b.textContent = "holt…"; }
+        const r = await act({ action: "refreshCf" }, null, true);   // act() lädt sonst schon selbst
+        if (r && r.error) alert("Cloudflare: " + r.error);
+        load();
+      });
       on("#trigger-cron", async () => { const d = await act({ action: "triggerCron" }); if (d) alert("Fire-Cron-Status: " + d.cronStatus); });
       const ts = $("#trigger-sprit"); if (ts) ts.onclick = async () => { const d = await act({ action: "triggerCron", which: "sprit" }); if (d) alert("Sprit-Cron: " + d.cronStatus + " · geprüft " + ((d.result && d.result.checked) ?? "–") + ", gesendet " + ((d.result && d.result.sent) ?? "–")); };
       document.querySelectorAll("[data-del]").forEach(b => b.onclick = () => act({ action: "deleteScore", id: Number(b.dataset.del) }, "Diesen Score löschen?"));
