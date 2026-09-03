@@ -1,11 +1,12 @@
 // Betriebsstatus: opsEvaluate() ist die EINZIGE Definition von „läuft alles?"
 // — Dashboard-Ampel und Push-Alarm hängen beide daran. Eine Fehlbewertung
 // heißt entweder Fehlalarm oder, schlimmer, ein stummer Ausfall.
+import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const modUrl = "file://" + path.join(__dirname, "..", "functions", "api", "_ops.js").replace(/\\/g, "/");
-const { opsEvaluate, opsFacts, opsTransition, OPS_LIMITS } = await import(modUrl);
+const { opsEvaluate, opsFacts, opsTransition, OPS_LIMITS, opsDue, houseDue } = await import(modUrl);
 
 let ok = true;
 const assert = (name, cond) => { if (cond) console.log("OK  ", name); else { console.log("FAIL", name); ok = false; } };
@@ -117,6 +118,67 @@ for (const [name, patch, re] of faelle) {
     const env = { DB: { prepare() { throw new Error("DB weg"); } } };
     assert("DB-Fehler → false statt Ausnahme", (await opsTransition(env, "warn", [])) === false);
   }
+}
+
+// ---------- Taktung: was muss NICHT alle 2 Minuten laufen ----------
+// Hintergrund: der Fire-Cron läuft 720× am Tag. Jede Abfrage darin zählt 720×
+// aufs D1-Leselimit — auch die, die Zeilen löscht, die Tage alt sind.
+{
+  const bei = (min) => new Date(Date.UTC(2026, 8, 3, 12, min, 0));
+  const treffer = (fn) => { let n = 0; for (let m = 0; m < 60; m += 2) if (fn(bei(m))) n++; return n; };
+
+  // Bei 2-Minuten-Takt: genau ein Lauf je 10-Minuten-Fenster.
+  assert("opsDue: 6× pro Stunde (alle 10 min)", treffer(opsDue) === 6);
+  assert("opsDue: trifft die Minute 0", opsDue(bei(0)) === true);
+  assert("opsDue: trifft 10, 20, 30, 40, 50", [10, 20, 30, 40, 50].every(m => opsDue(bei(m))));
+  assert("opsDue: nicht bei 2, 4, 6, 8", [2, 4, 6, 8].every(m => !opsDue(bei(m))));
+  // 720 → 144 Läufe/Tag: die Ersparnis, um die es geht.
+  assert("opsDue: 144 statt 720 Läufe am Tag", treffer(opsDue) * 24 === 144);
+
+  assert("houseDue: 1× pro Stunde", treffer(houseDue) === 1);
+  assert("houseDue: nur zu Beginn der Stunde", houseDue(bei(0)) === true && houseDue(bei(30)) === false);
+
+  // Ohne Argument darf es nicht krachen (der Cron ruft es so auf).
+  assert("ohne Argument nutzbar", typeof opsDue() === "boolean" && typeof houseDue() === "boolean");
+
+  // Die Drosselung darf einen hängenden Cron NICHT später sichtbar machen:
+  // die Grenzwerte liegen deutlich über dem 10-Minuten-Takt.
+  assert("Alarm bleibt scharf: Grenzen > Prüfabstand",
+    OPS_LIMITS.fireAgeSec >= 600 && OPS_LIMITS.spritAgeSec >= 600);
+}
+
+// ---------- Die Abfragen brauchen ihre Indizes ----------
+// Ein Index auf der Filterspalte ist hier kein Feinschliff: ohne ihn liest
+// SQLite die ganze Tabelle, und das 720× am Tag.
+{
+  const migDir = path.join(__dirname, "..", "migrations");
+  const alle = readdirSync(migDir).filter(f => f.endsWith(".sql"))
+    .map(f => readFileSync(path.join(migDir, f), "utf8")).join("\n");
+  const hat = (tabelle, spalte) =>
+    new RegExp("CREATE INDEX[^;]*ON\\s+" + tabelle + "\\s*\\(\\s*" + spalte, "i").test(alle);
+
+  assert("Index error_log(created_at)", hat("error_log", "created_at"));
+  assert("Index client_log(created_at)", hat("client_log", "created_at"));
+  assert("Index push_queue(created_at)", hat("push_queue", "created_at"));
+  assert("Index fire_seen(at)", hat("fire_seen", "at"));
+  // Primärschlüssel ist (station_id, fuel, day) — für "WHERE day < ?" nutzlos.
+  assert("Index sprit_price_log(day)", hat("sprit_price_log", "day"));
+}
+
+// ---------- Die Crons benutzen die Taktung wirklich ----------
+{
+  const fire = readFileSync(path.join(__dirname, "..", "functions", "api", "fire", "cron.js"), "utf8");
+  const sprit = readFileSync(path.join(__dirname, "..", "functions", "api", "sprit", "cron.js"), "utf8");
+
+  assert("fire: Ampel hinter opsDue", /if \(opsDue\(\)\) await checkAdminAlert\(env\)/.test(fire));
+  assert("fire: Lebenszeichen weiter in JEDEM Lauf",
+    /await writeHealth\(env, list\.length, detailFetched, "ok"\);/.test(fire) &&
+    !/if \([a-zA-Z]+\(\)\) await writeHealth/.test(fire));
+  assert("fire: Aufräum-Löschungen hinter houseDue",
+    /if \(houseDue\(\)\) \{[\s\S]{0,400}DELETE FROM fire_seen/.test(fire) &&
+    /if \(houseDue\(\)\) \{[\s\S]{0,400}DELETE FROM push_queue/.test(fire));
+  assert("sprit: Preisverlauf hinter houseDue",
+    /if \(houseDue\(\)\) \{[\s\S]{0,400}DELETE FROM sprit_price_log/.test(sprit));
 }
 
 console.log(ok ? "\n✅ ops: alle Tests grün" : "\n❌ ops: Tests fehlgeschlagen");

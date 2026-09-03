@@ -3,7 +3,7 @@ import { pushToEndpoint, sendToName } from "../push.js";
 import { BEZIRK, bezName } from "./_bezirk.js";
 import { kindOf, shouldEscalate, kindAllows, withinRadius } from "./_parse.js";
 import { geocode } from "./geo.js";
-import { opsFacts, opsEvaluate, opsTransition } from "../_ops.js";
+import { opsFacts, opsEvaluate, opsTransition, opsDue, houseDue } from "../_ops.js";
 
 // ====================================================================
 // Zeitgesteuerte Prüfung neuer Feuerwehr-Einsätze (NÖ) und Bezirks-Alarm.
@@ -178,8 +178,12 @@ export async function onRequestGet({ request, env }) {
     for (const n of nums) {
       await env.DB.prepare("INSERT OR IGNORE INTO fire_seen (n) VALUES (?)").bind(n).run();
     }
-    await env.DB.prepare("DELETE FROM fire_seen WHERE at < datetime('now','-2 days')").run();
-    await env.DB.prepare("DELETE FROM push_queue WHERE created_at < datetime('now','-1 day')").run();
+    // Nur stündlich: beide Löschungen räumen Zeilen weg, die 1–2 Tage alt
+    // sind — 720× am Tag danach zu suchen bringt nichts und kostet Lesezeilen.
+    if (houseDue()) {
+      await env.DB.prepare("DELETE FROM fire_seen WHERE at < datetime('now','-2 days')").run();
+      await env.DB.prepare("DELETE FROM push_queue WHERE created_at < datetime('now','-1 day')").run();
+    }
   } catch (e) { await logError(env, "fire-cron: seen-mark " + e.message, "fire/cron"); }
 
   // ---- Historie schreiben (inkl. Wehren) ----
@@ -313,13 +317,19 @@ export async function onRequestGet({ request, env }) {
 
     // 3 Tage aufheben, damit geteilte Deep-Links so lange funktionieren
     // (die App-Liste zeigt trotzdem nur die letzten 24 h — siehe noe.js).
-    await env.DB.prepare("DELETE FROM fire_op WHERE ended=1 AND ended_at < datetime('now','-3 days')").run();
+    // Stündlich genügt — die Grenze ist 3 Tage.
+    if (houseDue()) {
+      await env.DB.prepare("DELETE FROM fire_op WHERE ended=1 AND ended_at < datetime('now','-3 days')").run();
+    }
   } catch (e) {
     await logError(env, "fire-cron: history " + e.message, "fire/cron");
   }
 
   await writeHealth(env, list.length, detailFetched, "ok");
-  await checkAdminAlert(env);
+  // Betriebsstatus nur alle 10 Minuten prüfen (siehe opsDue): der Lebenszeichen-
+  // Zeitstempel oben wird weiter in JEDEM Lauf geschrieben, die Erkennung eines
+  // hängenden Crons bleibt also unverändert scharf.
+  if (opsDue()) await checkAdminAlert(env);
   await sweepStale(env);
   // Gelegentliche plattformweite Aufräum-Runde (der Cron läuft alle 2 Min →
   // ~2 %/Lauf ≈ alle ~1,5 h). Verhindert unbegrenztes Wachstum der Tabellen.

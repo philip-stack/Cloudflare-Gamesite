@@ -376,6 +376,15 @@ Alle drei Crons hängen am selben `scheduled`-Handler des Workers
 und `/api/briefing/cron` mit dem `x-cron-key`. Cloudflare Pages kann selbst
 keine Cron-Trigger — deshalb der Umweg über den Worker.
 
+**Nicht alles im Cron muss im Minutentakt laufen.** Der 2-Minuten-Takt heißt
+720 Läufe am Tag, und jede Abfrage darin zählt 720× aufs D1-Leselimit — auch
+eine, die Zeilen löscht, die drei Tage alt sind. Zwei Takt-Helfer in `_ops.js`
+regeln das: `opsDue()` (alle 10 min) für die Ampel-Auswertung und `houseDue()`
+(stündlich) für die Aufräum-Löschungen. Beide leiten sich aus der Uhr ab und
+nicht aus einem gespeicherten Zeitstempel — der wäre selbst eine Abfrage pro
+Lauf und damit Teil des Problems. Das Lebenszeichen (`fire_health`) schreibt
+weiter **jeder** Lauf, ein hängender Cron fällt also unverändert schnell auf.
+
 ## Sicherheit
 
 - **Security-Header** via `public/_headers`: strenge **Content-Security-Policy**
@@ -424,10 +433,11 @@ wuerfelpoker/
 ├── wrangler.toml              Pages-Config + D1-Binding (DB) + AI-Binding (Kochstudio)
 ├── migrations/                D1-Schema als versionierte, idempotente Migrationen
 │   ├── 0001_init.sql          Baseline (Würfelpoker, scores, used_token, banned_device, cloud_saves, party*, push_*, error_log, rate, draw_score, fire_*)
-│   └── 0002…0013_*.sql        additive Änderungen: draw_score-Gerät, fire_alert-Arten/Geo,
+│   └── 0002…0014_*.sql        additive Änderungen: draw_score-Gerät, fire_alert-Arten/Geo,
 │                              sprit_alert/-price_log, quiz_score, live_room+admin_log (0009),
 │                              client_log getrennt (0010), stat_daily (0011), ops_log (0012),
-│                              briefing (0013). Anwenden: wrangler d1 migrations apply wuerfelpoker --remote
+│                              briefing (0013), Aufräum-Indizes (0014).
+│                              Anwenden: wrangler d1 migrations apply wuerfelpoker --remote
 ├── reset-dev.sql              ⚠️ nur lokal: setzt Würfelpoker-Tabellen zurück (enthält DROPs)
 ├── schema.sql                 nur noch Hinweis-Datei (zeigt auf migrations/)
 ├── public/                    statische Spiele (1 Ordner = 1 Spiel)

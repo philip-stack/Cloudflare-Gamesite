@@ -18,6 +18,26 @@ export const OPS_LIMITS = {
   errPerWindow: 15,     // Alarm-Fenster (15 min) — Spitze, nicht Grundrauschen
 };
 
+// Wie oft muss der Betriebsstatus geprüft werden? Der Cron läuft alle 2
+// Minuten; die Ampel-Auswertung kostet 4 Abfragen. Für einen Betriebsalarm ist
+// eine Verzögerung von höchstens 10 Minuten belanglos — die Grenzwerte oben
+// liegen bei 15 bzw. 30 Minuten, ein Alarm kann also gar nicht später kommen
+// als vorher. Damit fällt die Prüfung von 720 auf 144 Läufe am Tag.
+//
+// Bewusst aus der Uhr abgeleitet und nicht aus einem gespeicherten Zeitstempel:
+// Letzteres wäre selbst eine Abfrage pro Lauf und damit ein Teil des Problems.
+// Bei 2-Minuten-Takt trifft "Minute % 10 < 2" genau einen Lauf je 10 Minuten.
+export function opsDue(now = new Date()) {
+  return now.getUTCMinutes() % 10 < 2;
+}
+
+// Aufräum-Löschungen (alte Warteschlangen-Einträge, gesehene Einsätze,
+// Preisverlauf). Die dürfen stündlich laufen — sie löschen Zeilen, die Tage
+// alt sind. Vorher liefen sie in jedem Lauf, also 720× für dieselbe Arbeit.
+export function houseDue(now = new Date()) {
+  return now.getUTCMinutes() < 2;
+}
+
 // f = {
 //   fireAgeSec, fireNote, errCount, errWindowMin, pushQueue,
 //   spritAgeSec, healthCronOk (bool|null), vapid (bool|null)

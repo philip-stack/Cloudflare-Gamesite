@@ -2,6 +2,7 @@ import { json, logError } from "../_util.js";
 import { pushToEndpoint } from "../push.js";
 import { ecByAddress, FUELS } from "./_ec.js";
 import { alertTransition, groupKey } from "./_logic.js";
+import { houseDue } from "../_ops.js";
 
 // ====================================================================
 // Zeitgesteuerte Preis-Prüfung für den Sprit-Alarm.
@@ -112,6 +113,12 @@ export async function onRequestGet({ request, env }) {
     }
   }
 
-  try { await env.DB.prepare("DELETE FROM sprit_price_log WHERE day < date('now','-30 days')").run(); } catch (_) {}
+  // Preisverlauf einmal pro Stunde ausdünnen, nicht alle 2 Minuten: gelöscht
+  // werden Zeilen, die 30 Tage alt sind. Der Primärschlüssel beginnt mit
+  // station_id, für "WHERE day < ?" gibt es daher einen eigenen Index
+  // (Migration 0014) — vorher war das ein voller Scan pro Lauf.
+  if (houseDue()) {
+    try { await env.DB.prepare("DELETE FROM sprit_price_log WHERE day < date('now','-30 days')").run(); } catch (_) {}
+  }
   return json({ ok: true, alerts: alerts.length, checked, sent });
 }
