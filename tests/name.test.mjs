@@ -179,6 +179,11 @@ console.log("\n— Begrüßung (public/index.html) —");
   assert("Wegklicken möglich", /id="welc-skip"/.test(html));
   assert("Esc gilt als spaeter", /addEventListener\("cancel"/.test(html) && /spaeter\(\)/.test(html));
   assert("Entscheidung wird gemerkt", /bb_onboard_v1/.test(html));
+  // Der Hinweis traegt hidden und hat display:flex — ohne die zentrale Regel
+  // in core.css wuerde er IMMER stehen, auch bei laengst gesetztem Namen.
+  const core = readFileSync(path.join(__dirname, "..", "public", "styles", "core.css"), "utf8");
+  assert("core.css laesst das hidden-Attribut gewinnen",
+    /\[hidden\] \{ display: none !important; \}/.test(core));
   assert("nach Wegklicken bleibt ein leiser Hinweis", /id="name-nudge"/.test(html) && /id="nudge-open"/.test(html));
 
   // Nur für Neue.

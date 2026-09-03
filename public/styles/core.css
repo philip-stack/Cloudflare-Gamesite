@@ -13,6 +13,13 @@
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* Das hidden-Attribut muss gewinnen. Die Browser-Vorgabe [hidden]{display:none}
+   steht im UA-Stylesheet und verliert daher gegen JEDE eigene Regel — eine
+   Klasse mit display:flex/grid zeigt ein hidden-Element also trotzdem an.
+   Diese Falle wurde hier schon einzeln geflickt (fire, tanken, wumms, meeri);
+   ab hier gilt sie einmal fuer alle Seiten mit core.css. */
+[hidden] { display: none !important; }
+
 :root {
   /* ---- Basis-Palette (Dunkel) ---- */
   --bg0: #0a0e0b;
