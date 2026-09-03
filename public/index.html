@@ -38,6 +38,77 @@
       padding: 8vh 16px 60px;
     }
 
+    /* ===== Begrüßung beim ersten Besuch (natives <dialog>) ===== */
+    .welc {
+      border: 0; padding: 0; max-width: 27rem; width: calc(100vw - 28px);
+      max-height: min(92dvh, 720px); overflow: auto;
+      border-radius: 22px; background: var(--bg0); color: var(--ink);
+      box-shadow: 0 0 0 1px var(--edge) inset, 0 24px 70px rgba(0,0,0,0.55);
+    }
+    .welc::backdrop { background: rgba(6,9,7,0.72); backdrop-filter: blur(3px); }
+    .welc form { padding: 26px 22px calc(20px + env(safe-area-inset-bottom)); }
+    .welc h2 {
+      font-family: var(--font-display); font-style: italic; font-weight: 800;
+      font-size: 1.6rem; line-height: 1.15; margin-bottom: 8px;
+      background: var(--foil); background-size: 250% 100%;
+      -webkit-background-clip: text; background-clip: text; color: transparent;
+    }
+    .welc-sub { color: var(--muted); font-size: 0.95rem; line-height: 1.55; }
+    .welc-lab { display: block; margin: 18px 0 6px; font-size: 0.8rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+    .welc input {
+      width: 100%; padding: 13px 14px; font: inherit; font-size: 1.05rem;
+      color: var(--ink); background: var(--card); border: 1px solid var(--edge);
+      border-radius: 14px;
+    }
+    .welc input:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+    .welc input[aria-invalid="true"] { border-color: #e2725b; }
+    .welc-hint { min-height: 1.3em; margin-top: 7px; font-size: 0.85rem; color: var(--muted); }
+    .welc-hint.bad { color: #ff9b86; }
+    .welc-hint.good { color: #7fd6a2; }
+    .welc-sug-h { margin: 16px 0 8px; font-size: 0.85rem; color: var(--muted); }
+    .welc-sug { display: flex; flex-wrap: wrap; gap: 7px; }
+    .welc-sug button {
+      font: inherit; font-size: 0.88rem; padding: 7px 12px; cursor: pointer;
+      color: var(--ink); background: var(--card); border: 1px solid var(--edge);
+      border-radius: 999px;
+    }
+    .welc-dp { margin: 18px 0 4px; font-size: 0.88rem; color: var(--muted); }
+    .welc-dp summary { cursor: pointer; color: var(--gold); }
+    .welc-dp ul { margin: 10px 0 8px 18px; line-height: 1.5; }
+    .welc-dp li { margin-bottom: 6px; }
+    .welc-dp b { color: var(--ink); font-weight: 600; }
+    .welc-dp a { color: var(--gold); }
+    .welc-go {
+      width: 100%; margin-top: 18px; padding: 14px; font: inherit; font-weight: 700;
+      font-size: 1.02rem; cursor: pointer; border: 0; border-radius: 14px;
+      background: var(--gold); color: #1a1508;
+    }
+    .welc-go[disabled] { opacity: 0.55; cursor: progress; }
+    .welc-skip {
+      width: 100%; margin-top: 9px; padding: 11px; font: inherit; font-size: 0.9rem;
+      cursor: pointer; border: 0; border-radius: 12px; background: none; color: var(--muted);
+    }
+    .welc-skip:hover { color: var(--ink); }
+    body.has-modal { overflow: hidden; }
+    @media (prefers-reduced-motion: no-preference) {
+      .welc[open] { animation: welc-in 0.26s cubic-bezier(0.2, 0.8, 0.3, 1); }
+      @keyframes welc-in { from { opacity: 0; transform: translateY(14px) scale(0.97); } }
+    }
+
+    /* Wer die Begrüßung weggeklickt hat, bekommt nur noch diesen leisen Hinweis. */
+    .name-nudge {
+      display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+      margin: 0 0 18px; padding: 12px 14px; border-radius: 14px;
+      background: var(--card); box-shadow: 0 0 0 1px var(--edge) inset;
+      font-size: 0.9rem; color: var(--muted); line-height: 1.45;
+    }
+    .name-nudge b { color: var(--ink); font-weight: 600; }
+    .name-nudge button {
+      margin-left: auto; font: inherit; font-size: 0.88rem; font-weight: 700;
+      padding: 8px 13px; cursor: pointer; border: 0; border-radius: 999px;
+      background: var(--gold); color: #1a1508;
+    }
+
     .hero { text-align: center; margin-bottom: 44px; }
     .hero .overline {
       font-size: 0.72rem;
@@ -445,6 +516,12 @@
 
     <input type="search" id="game-search" class="game-search" placeholder="🔍 Spiel suchen …" autocomplete="off" aria-label="Spiel suchen">
 
+    <!-- Nur sichtbar, wenn die Begrüßung weggeklickt wurde (siehe Skript) -->
+    <div class="name-nudge" id="name-nudge" hidden>
+      <span><b>Noch ohne Namen.</b> Ohne Namen landen deine Punkte in keiner Bestenliste.</span>
+      <button type="button" id="nudge-open">Namen wählen</button>
+    </div>
+
     <!-- Karten werden aus der zentralen Registry (/games.js) erzeugt -->
     <nav class="apps" id="apps"></nav>
 
@@ -469,6 +546,49 @@
       <a id="op-link" href="/admin/" hidden>🔧 Betrieb</a>
     </footer>
   </main>
+
+  <!-- ================= Begrüßung beim ersten Besuch =================
+       Natives <dialog> statt selbstgebautem Overlay: Fokus bleibt drin,
+       Esc schließt, der Hintergrund ist für Screenreader stillgelegt — all
+       das muss man dann nicht selbst richtig hinbekommen.
+
+       Es wird NUR gezeigt, wenn noch kein Name gespeichert ist. Erzwungen
+       wird nichts: Wegklicken ist erlaubt und wird gemerkt.
+       Die Datenschutz-Info ist zweistufig — ein Satz sofort, Details auf
+       Wunsch, ganze Erklärung verlinkt. -->
+  <dialog id="welcome" class="welc" aria-labelledby="welc-h">
+    <form id="welc-form" novalidate>
+      <h2 id="welc-h">Willkommen beim Spieleabend</h2>
+      <p class="welc-sub">
+        Wie sollen wir dich nennen? Der Name steht in den Bestenlisten und gilt für
+        alle Spiele. Mehr braucht es nicht — kein Konto, keine E-Mail, kein Passwort.
+      </p>
+
+      <label class="welc-lab" for="welc-name">Dein Name</label>
+      <input id="welc-name" name="name" type="text" maxlength="16"
+             autocomplete="nickname" autocapitalize="words" spellcheck="false"
+             enterkeyhint="go" placeholder="z. B. Flip" aria-describedby="welc-hint">
+      <p class="welc-hint" id="welc-hint" role="status" aria-live="polite">2 bis 16 Zeichen</p>
+
+      <p class="welc-sug-h">Keine Idee? Tipp eine an:</p>
+      <div class="welc-sug" id="welc-sug"></div>
+
+      <details class="welc-dp">
+        <summary>Was passiert mit dem Namen?</summary>
+        <ul>
+          <li>Er bleibt <b>auf diesem Gerät</b> gespeichert, damit du ihn nicht jedes Mal eintippen musst.</li>
+          <li>Zum Server geht er erst, wenn du einen Punktestand einsendest — dann steht er mit den Punkten in der öffentlichen Bestenliste.</li>
+          <li>Kein Konto, keine Werbung, kein Tracking, keine Dienste von Dritten.</li>
+          <li>Ein Spitzname genügt völlig. Dein echter Name muss das nicht sein.</li>
+          <li>Ändern oder löschen kannst du ihn jederzeit im Profil.</li>
+        </ul>
+        <p><a href="/datenschutz/">Zur ganzen Datenschutzerklärung</a></p>
+      </details>
+
+      <button class="welc-go" id="welc-go" type="submit">Los geht's</button>
+      <button class="welc-skip" id="welc-skip" type="button">Erst mal nur umschauen</button>
+    </form>
+  </dialog>
 
   <script src="/shared.js?v=c53599e3"></script>
   <script src="/games.js?v=7edf6458"></script>
@@ -853,6 +973,143 @@
       const pc = nav.querySelector(".app-card.profile");
       if (pc) nav.insertBefore(pc, nav.firstElementChild);
     } catch {}
+
+    // ================= Begrüßung beim ersten Besuch =================
+    // Wer neu kommt, wird nach einem Namen gefragt — ohne Namen zählt kein
+    // Punktestand (siehe GS.submitScore) und die halbe Seite bleibt leer.
+    // Dazu in einem Satz, was mit dem Namen passiert.
+    (function welcome() {
+      const dlg = $("#welcome");
+      const nudge = $("#name-nudge");
+      if (!dlg || !dlg.showModal) return;   // sehr alter Browser: einfach nichts
+
+      const LS = "bb_onboard_v1";
+      const readState = () => { try { return JSON.parse(localStorage.getItem(LS) || "null"); } catch { return null; } };
+      const writeState = o => { try { localStorage.setItem(LS, JSON.stringify(o)); } catch {} };
+
+      // Wer schon einen Namen hat (auch alle Bestandsspieler), hat das hier
+      // hinter sich — nur vermerken, nichts zeigen.
+      if (myName) {
+        if (!readState()) writeState({ v: 1, done: Date.now(), bestand: true });
+        return;
+      }
+
+      const form = $("#welc-form"), inp = $("#welc-name"), hint = $("#welc-hint"), go = $("#welc-go");
+
+      // Vorschläge: nur ein Anstoß, damit niemand am leeren Feld hängen bleibt.
+      const SUGGEST = ["Würfelhase", "Bergfex", "Schmankerl", "Semmerl", "Powidl",
+        "Marillenkönig", "Zwutschkerl", "Erdäpfelkönig", "Palatschinke", "Almkönig",
+        "Wuzzler", "Gipfelstürmer", "Krapfen", "Sackerl"];
+      const drei = SUGGEST.slice().sort(() => Math.random() - 0.5).slice(0, 3);
+      $("#welc-sug").innerHTML = drei.map(n => `<button type="button" data-n="${esc(n)}">${esc(n)}</button>`).join("");
+      $("#welc-sug").onclick = e => {
+        const b = e.target.closest("button[data-n]");
+        if (!b) return;
+        inp.value = b.dataset.n;
+        pruefeSpaeter(0);
+        inp.focus();
+      };
+
+      // ---- Prüfung: die REGELN stehen am Server (/api/name), nicht hier ----
+      // Sonst gäbe es zwei Regelwerke, die auseinanderlaufen. Hier steht nur
+      // die Mindestlänge, damit man beim Tippen sofort etwas sieht.
+      const dev = (window.GS && GS.deviceId) ? GS.deviceId() : "";
+      let letzte = { name: null, res: null }, timer = 0;
+
+      const zeige = (cls, text) => {
+        hint.className = "welc-hint" + (cls ? " " + cls : "");
+        hint.textContent = text;
+        if (cls === "bad") inp.setAttribute("aria-invalid", "true");
+        else inp.removeAttribute("aria-invalid");
+      };
+      const deuten = (v, d) => {
+        if (!d) return zeige("", "2 bis 16 Zeichen");
+        if (d.problem) return zeige("bad", d.problem);
+        if (d.taken) return zeige("bad", `„${v}" gehört schon jemand anderem — nimm eine Variante.`);
+        if (d.unknown) return zeige("", "Passt. (Frei-Prüfung gerade nicht möglich.)");
+        if (d.mine) return zeige("good", "Das ist dein eigener Name — passt.");
+        return zeige("good", "✓ frei");
+      };
+
+      async function pruefe(v) {
+        try {
+          const r = await fetch(`/api/name?name=${encodeURIComponent(v)}&device=${encodeURIComponent(dev)}`);
+          const d = await r.json();
+          if (inp.value.trim() !== v) return null;   // inzwischen weitergetippt
+          letzte = { name: v, res: d };
+          deuten(v, d);
+          return d;
+        } catch {
+          // Netz weg? Dann eben ohne Prüfung weiter — niemand soll deswegen
+          // am Anfangen gehindert werden. Beim Einsenden wird ohnehin geprüft.
+          const d = { free: true, unknown: true };
+          letzte = { name: v, res: d };
+          deuten(v, d);
+          return d;
+        }
+      }
+      function pruefeSpaeter(ms) {
+        clearTimeout(timer);
+        const v = inp.value.trim().replace(/\s+/g, " ");
+        letzte = { name: null, res: null };
+        if (v.length < 2) { zeige("", "2 bis 16 Zeichen"); return; }
+        timer = setTimeout(() => pruefe(v), ms == null ? 450 : ms);
+      }
+      inp.addEventListener("input", () => pruefeSpaeter());
+
+      form.addEventListener("submit", async e => {
+        e.preventDefault();
+        const v = inp.value.trim().replace(/\s+/g, " ");
+        if (v.length < 2) { zeige("bad", "Bitte mindestens 2 Zeichen."); inp.focus(); return; }
+        let res = letzte.name === v ? letzte.res : null;
+        if (!res) {
+          go.disabled = true; zeige("", "prüfe …");
+          res = await pruefe(v);
+          go.disabled = false;
+        }
+        if (res && (res.problem || res.taken)) { inp.focus(); inp.select(); return; }
+        speichern(v);
+      });
+
+      function speichern(v) {
+        try { if (window.GS) GS.setName(v); else localStorage.setItem("bb_name", v.slice(0, 16)); } catch {}
+        writeState({ v: 1, done: Date.now() });
+        try { dlg.close(); } catch {}
+        // Der Name hängt auf dieser Seite an vielen Stellen (Begrüßung, Profil-
+        // Karte, Werkzeuge, Ranglisten-Abfragen). Neu laden ist ehrlicher und
+        // billiger, als all das nachträglich nachzuziehen.
+        location.reload();
+      }
+
+      function spaeter() {
+        writeState({ v: 1, skipped: Date.now() });
+        try { dlg.close(); } catch {}
+        if (nudge) nudge.hidden = false;
+      }
+      $("#welc-skip").onclick = spaeter;
+      // Esc und Klick auf den Hintergrund gelten als „später".
+      dlg.addEventListener("cancel", e => { e.preventDefault(); spaeter(); });
+      dlg.addEventListener("click", e => { if (e.target === dlg) spaeter(); });
+
+      // Hintergrund nicht mitscrollen lassen (macht nicht jeder Browser selbst).
+      dlg.addEventListener("close", () => document.body.classList.remove("has-modal"));
+
+      function oeffnen() {
+        if (dlg.open) return;
+        document.body.classList.add("has-modal");
+        dlg.showModal();
+        // Auf Touch-Geräten NICHT ins Feld springen: die Tastatur würde die
+        // Datenschutz-Info sofort verdecken, bevor sie jemand liest.
+        const zeiger = matchMedia("(hover: hover) and (pointer: fine)").matches;
+        try { (zeiger ? inp : dlg).focus(); } catch {}
+      }
+
+      if (nudge) $("#nudge-open").onclick = oeffnen;
+
+      const state = readState();
+      if (!state) oeffnen();                       // erster Besuch
+      else if (state.skipped && nudge) nudge.hidden = false;   // hat weggeklickt
+    })();
 
     // --- Install-Hinweis (nicht in der installierten App, abschaltbar) ---
     const standalone = matchMedia("(display-mode: standalone)").matches || navigator.standalone;

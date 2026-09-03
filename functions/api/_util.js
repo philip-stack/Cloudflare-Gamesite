@@ -53,6 +53,41 @@ export function dayMatch(col = "created_at", mod = "") { return `date(${col}) = 
 export const DEVICE_RE = /^[A-Za-z0-9_-]{8,40}$/;
 export function isDevice(s) { return typeof s === "string" && DEVICE_RE.test(s); }
 
+// ---------- Spielername ----------
+// Ein Name gilt für alle Spiele und erscheint in den Bestenlisten. Die Regeln
+// stehen hier, damit Begrüßung (/api/name) und Einsendung (/api/scores/*)
+// nicht auseinanderlaufen.
+export const NAME_MAX = 16;
+// Buchstaben aller Sprachen (also auch Umlaute), Zahlen, Leerzeichen und
+// . _ - ' — bewusst OHNE Emoji: die sehen in Bestenlisten je Gerät anders aus
+// und lassen sich nicht vorlesen.
+const NAME_ALLOWED = /^[\p{L}\p{N} ._'-]+$/u;
+const NAME_RESERVED = new Set([
+  "anonym", "admin", "administrator", "betreiber", "system", "server",
+  "gast", "guest", "null", "undefined", "spieleabend",
+]);
+
+// → null wenn in Ordnung, sonst ein Satz, der dem Menschen sagt was fehlt.
+export function nameProblem(raw) {
+  const n = String(raw == null ? "" : raw).trim();
+  if (n.length < 2) return "Mindestens 2 Zeichen.";
+  if (n.length > NAME_MAX) return `Höchstens ${NAME_MAX} Zeichen.`;
+  if (!NAME_ALLOWED.test(n)) return "Erlaubt sind Buchstaben, Zahlen, Leerzeichen und . _ - '";
+  if (!/\p{L}/u.test(n)) return "Mindestens ein Buchstabe muss dabei sein.";
+  if (/ {2}/.test(n)) return "Keine doppelten Leerzeichen.";
+  if (NAME_RESERVED.has(n.toLowerCase())) return "Dieser Name ist reserviert — nimm einen anderen.";
+  return null;
+}
+
+// Wem gehört ein Name? Regel (unverändert): dem Gerät, das ihn zuerst in eine
+// Bestenliste eingetragen hat. → Geräte-Kennung oder null (= frei).
+export async function nameOwner(env, name) {
+  const row = await env.DB.prepare(
+    "SELECT device FROM scores WHERE LOWER(name) = LOWER(?) AND device IS NOT NULL ORDER BY id LIMIT 1"
+  ).bind(String(name == null ? "" : name).trim()).first();
+  return (row && row.device) || null;
+}
+
 // Server-seitiges Fehler-Logging in die bestehende D1-Tabelle `error_log`.
 // Best-effort: darf den Aufrufer NIE stören (leerer catch). Ersetzt stumme
 // `catch (_) {}`, damit man Störungen im Betrieb überhaupt sehen kann.

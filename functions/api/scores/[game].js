@@ -1,4 +1,4 @@
-import { json, rateLimit, clientIp, logError, weekMatch, dayMatch, DEVICE_RE } from "../_util.js";
+import { json, rateLimit, clientIp, logError, weekMatch, dayMatch, DEVICE_RE, nameOwner } from "../_util.js";
 import { sendToName } from "../push.js";
 import { SCORED_GAMES } from "../_gamemeta.js";
 
@@ -312,10 +312,10 @@ export async function onRequestPost(context) {
   if (recent >= 8) return json({ error: "Zu viele Einsendungen — kurz warten" }, 429);
 
   // Namensschutz: Der Name gehört dem Gerät, das ihn zuerst benutzt hat.
-  const owner = await env.DB.prepare(
-    "SELECT device FROM scores WHERE LOWER(name) = LOWER(?) AND device IS NOT NULL ORDER BY id LIMIT 1"
-  ).bind(name).first();
-  if (owner && owner.device !== device) {
+  // Dieselbe Abfrage benutzt /api/name schon bei der Begrüßung — damit dort
+  // nicht „frei" steht, was hier abgelehnt wird, liegt sie in _util.js.
+  const owner = await nameOwner(env, name);
+  if (owner && owner !== device) {
     return json({ error: "Dieser Name gehört schon jemand anderem — wähle einen anderen" }, 409);
   }
 
