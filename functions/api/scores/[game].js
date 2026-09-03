@@ -106,7 +106,7 @@ const GAMES = {
       const risk = m.koerndlRisk === undefined ? 0 : m.koerndlRisk;
       return Number.isFinite(m.tore) && Number.isFinite(m.koerndl) && Number.isFinite(risk) &&
         m.tore >= 0 && m.tore <= 3_000 &&
-        m.koerndl >= 0 && m.koerndl <= m.tore + 5 &&
+        m.koerndl >= 0 && m.koerndl <= m.tore * 3 + 5 &&   // Ketten: bis zu 3 Körndl je Hecke
         risk >= 0 && risk <= m.koerndl &&
         score === m.tore * 10 + (m.koerndl - risk) * 5 + risk * 12;
     },

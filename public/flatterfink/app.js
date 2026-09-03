@@ -34,7 +34,7 @@ window.addEventListener("resize", () => {
   birdY *= k;
   for (const o of obst) {
     o.gapY *= k; o.gap *= k; o.amp *= k;
-    if (o.korndl) o.korndl.dy *= k;
+    for (const s of o.korns || []) s.dy *= k;   // dx bleibt: waagrechte Abstände sind fix
   }
 });
 resize();
@@ -46,6 +46,14 @@ const MAX_FALL = 720;        // maximale Fallgeschwindigkeit
 const OBST_W = 62;           // Heckenbreite
 const SPACING = 215;         // Abstand der Hecken (px)
 const BIRD_R = 15;           // Trefferradius des Finken
+
+// Bewegungsreduktion gilt auch fürs Canvas: das CSS erreicht nur die Overlays,
+// Bildschirmwackeln und Partikelwolken laufen sonst trotzdem.
+const RMQ = window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;
+let REDUCED = !!(RMQ && RMQ.matches);
+if (RMQ && RMQ.addEventListener) RMQ.addEventListener("change", e => { REDUCED = e.matches; });
+const pcount = n => (REDUCED ? Math.max(2, Math.round(n * 0.4)) : n);
+function shake(v) { if (!REDUCED) shakeT = Math.max(shakeT, v); }
 
 // ---------- Zustand ----------
 let mode = "ready";          // ready | run | dead
@@ -63,6 +71,8 @@ let pops = [];                     // aufsteigende Punkte-Texte
 let stars = [];                    // Sterne, blenden zur Nacht ein
 let hintTimer = null;
 let gameT = 0;                     // Spiel-Uhr (s) — treibt wandernde Hecken
+let spawned = 0;                   // Zahl erzeugter Hecken (für einen fairen Start)
+let recordBeaten = false;          // Rekord im laufenden Flug schon überholt?
 let best = Number(localStorage.getItem("ff_best") || 0);
 
 // ---------- Skins (über Meilensteine freispielbar) ----------
@@ -121,47 +131,74 @@ function gapCenter(o) {
   return o.amp ? o.gapY + Math.sin(gameT * o.freq + o.mph) * o.amp : o.gapY;
 }
 
-function spawnObstacle(x) {
+// nearY: Zwillings-Hecke — Lücke fast auf Höhe der Vorgängerin (Doppelhecke).
+function spawnObstacle(x, nearY) {
   const g = gapH();
   const margin = 24;
   const lo = g / 2 + margin;
   const hi = H - groundH - g / 2 - margin;
-  const gapY = lo + Math.random() * Math.max(10, hi - lo);
+  let gapY = lo + Math.random() * Math.max(10, hi - lo);
+
+  // Die ersten zwei Lücken zur Startlinie des Finken ziehen. Sonst kann der
+  // erste Flug gleich mit einer Lücke am Bildrand beginnen und ohne eigenen
+  // Fehler enden — der schlechteste denkbare erste Eindruck.
+  if (spawned < 2) gapY += (birdY - gapY) * (spawned === 0 ? 0.8 : 0.45);
+  if (nearY != null) gapY = nearY + (Math.random() - 0.5) * g * 0.35;
+  gapY = Math.max(lo, Math.min(hi, gapY));
+  spawned++;
 
   // Wandernde Hecke — Abwechslung gegen die Säulen-Monotonie, erst ab ein paar
   // Toren. Die Amplitude wird auf den vorhandenen Platz begrenzt, damit die
   // Lücke NIE aus dem Spielfeld wandert.
   let amp = 0, freq = 0, mph = 0;
-  if (tore >= 12 && Math.random() < 0.3) {
+  if (nearY == null && tore >= 12 && Math.random() < 0.3) {
     const room = Math.max(0, Math.min(gapY - lo, hi - gapY));
     amp = Math.min(H * 0.06, room);
     freq = 0.6 + Math.random() * 0.5;
     mph = Math.random() * Math.PI * 2;
   }
 
-  // Körndl (~45 % der Lücken). Ein Teil sitzt bewusst NICHT auf der Ideallinie,
-  // sondern knapp am Heckenrand → Einsammeln wird eine echte Risiko-gegen-
-  // Belohnung-Entscheidung statt Gratis-Punkte. dy = Abstand zur Lückenmitte,
-  // damit das Korn bei einer wandernden Hecke mitgeht.
-  let korndl = null;
-  if (Math.random() < 0.45) {
-    let dy = 0;
-    const off = g / 2 - 22;                                   // knapp innerhalb der Lücke
-    if (off > 12 && Math.random() < 0.55) dy = (Math.random() < 0.5 ? -off : off);
-    korndl = { dy, got: false, ph: Math.random() * Math.PI * 2 };
+  // Körndl (~45 % der Lücken), als Liste je Hecke. dx/dy sind Abstände zur
+  // Lückenmitte, damit die Körner bei einer wandernden Hecke mitgehen.
+  // Ein Teil sitzt bewusst NICHT auf der Ideallinie, sondern knapp am
+  // Heckenrand → Einsammeln wird eine Risiko-gegen-Belohnung-Entscheidung.
+  // Später im Lauf kommen Ketten dazu: drei Körner quer durch die Lücke, die
+  // man nur mit gehaltener Linie mitnimmt (davor/in/hinter der Hecke).
+  const korns = [];
+  const ph = () => Math.random() * Math.PI * 2;
+  if (nearY == null && Math.random() < 0.45) {
+    if (tore >= 18 && Math.random() < 0.3) {
+      for (const dx of [-42, 0, 42]) korns.push({ dx, dy: 0, got: false, ph: ph() });
+    } else {
+      let dy = 0;
+      const off = g / 2 - 22;                                 // knapp innerhalb der Lücke
+      if (off > 12 && Math.random() < 0.55) dy = (Math.random() < 0.5 ? -off : off);
+      korns.push({ dx: 0, dy, got: false, ph: ph() });
+    }
   }
 
   // Lückenhöhe HIER einfrieren: Hecken entstehen weit rechts außerhalb des
   // Bildes, darum bleibt die Schwierigkeits-Steigerung für Spieler:innen
   // unsichtbar. Eine bereits sichtbare Hecke ändert ihre Höhe nie mehr.
-  obst.push({ x, gapY, gap: g, amp, freq, mph, tex: Math.random() * 16, passed: false, minClear: null, korndl });
+  obst.push({ x, gapY, gap: g, amp, freq, mph, tex: Math.random() * 16, passed: false, minClear: null, korns });
 }
 
 function topUpObstacles() {
   let rightmost = -Infinity;
   for (const o of obst) rightmost = Math.max(rightmost, o.x);
   if (obst.length === 0) rightmost = W + 40;
-  while (rightmost < W + SPACING) { rightmost += SPACING; spawnObstacle(rightmost); }
+  while (rightmost < W + SPACING) {
+    rightmost += SPACING;
+    spawnObstacle(rightmost);
+    // Doppelhecke: ein Zwilling knapp dahinter mit fast gleicher Lücke. Man
+    // muss die Linie halten statt einmal zu treffen — Abwechslung ohne neue
+    // Regeln, erst wenn das Grundspiel sitzt.
+    if (tore >= 24 && Math.random() < 0.18) {
+      const prev = obst[obst.length - 1];
+      rightmost += SPACING * 0.52;
+      spawnObstacle(rightmost, prev.gapY);
+    }
+  }
 }
 
 // ---------- Spielsteuerung ----------
@@ -176,6 +213,9 @@ function reset() {
   clearTimeout(overTimer); overShown = false;
   obst = []; parts = []; pops = [];
   tore = 0; korn = 0; kornRisk = 0;
+  spawned = 0;
+  recordBeaten = false;
+  $("#hud-best").classList.remove("beaten");
   scrollT = 0;
   gameT = 0;
   clouds = Array.from({ length: 5 }, () => ({
@@ -217,12 +257,21 @@ function pauseGame() {
   if (mode !== "run" || paused) return;
   paused = true;
   showHint("PAUSE — tippen zum Weiterspielen", 0);
+  syncPauseBtn();
 }
 function resumeGame() {
   if (!paused) return;
   paused = false;
   hideHint();
   last = performance.now();   // verhindert ein Riesen-dt nach der Pause
+  syncPauseBtn();
+}
+// Auf dem Handy kann man nicht bewusst anhalten: Tippen auf die Bühne flattert.
+// Darum ein eigener Knopf außerhalb der Bühne.
+function syncPauseBtn() {
+  const b = $("#btn-pause"); if (!b) return;
+  b.textContent = paused ? "▶" : "⏸";
+  b.setAttribute("aria-label", paused ? "Weiterspielen" : "Pause");
 }
 document.addEventListener("visibilitychange", () => { if (document.hidden) pauseGame(); });
 
@@ -277,19 +326,19 @@ function step(dt) {
       popText(birdX + 26, birdY - 12, "+10", "#ffd23f");
       if (o.minClear != null && o.minClear < 12) nearMiss();   // knapp vorbei → spürbar
     }
-    // Körndl einsammeln (folgt der Lücke, auch bei wandernder Hecke)
-    if (o.korndl && !o.korndl.got) {
-      const kx = o.x + OBST_W / 2, ky = cy + o.korndl.dy;
-      if (Math.hypot(kx - birdX, ky - birdY) < BIRD_R + 12) {
-        o.korndl.got = true;
-        korn++;
-        const risky = o.korndl.dy !== 0;          // am Heckenrand platziert
-        if (risky) kornRisk++;
-        sound.korn(Math.min(korn % 8, 7));
-        burst(kx, ky, risky ? "#ffd23f" : "#ffe08a", risky ? 14 : 9, risky ? 210 : 150);
-        popText(kx, ky - 14, risky ? "+12" : "+5", risky ? "#ffd23f" : "#ffe08a");
-        if (navigator.vibrate) navigator.vibrate(risky ? 9 : 5);
-      }
+    // Körndl einsammeln (folgen der Lücke, auch bei wandernder Hecke)
+    for (const s of o.korns) {
+      if (s.got) continue;
+      const kx = o.x + OBST_W / 2 + s.dx, ky = cy + s.dy;
+      if (Math.hypot(kx - birdX, ky - birdY) >= BIRD_R + 12) continue;
+      s.got = true;
+      korn++;
+      const risky = s.dy !== 0;                   // am Heckenrand platziert
+      if (risky) kornRisk++;
+      sound.korn(Math.min(korn % 8, 7));
+      burst(kx, ky, risky ? "#ffd23f" : "#ffe08a", risky ? 14 : 9, risky ? 210 : 150);
+      popText(kx, ky - 14, risky ? "+12" : "+5", risky ? "#ffd23f" : "#ffe08a");
+      if (navigator.vibrate) navigator.vibrate(risky ? 9 : 5);
     }
     // Kollision mit oberer/unterer Hecke — feste Lückenhöhe DIESER Hecke
     if (mode === "run" &&
@@ -311,7 +360,21 @@ function step(dt) {
   // Boden berührt = Aus
   if (birdY > H - groundH - BIRD_R) { birdY = H - groundH - BIRD_R; die(); return; }
 
+  checkRecord();
   updateHud();
+}
+
+// Der eigene Rekord fällt MITTEN im Flug — bisher passierte das lautlos und man
+// erfuhr es erst im Game-Over. Genau dieser Moment trägt das "nochmal".
+function checkRecord() {
+  if (recordBeaten || best <= 0 || finalScore() <= best) return;
+  recordBeaten = true;
+  popText(birdX + 12, birdY - 42, "👑 REKORD", "#fff3c4");
+  burst(birdX, birdY, "#fff3c4", 18, 240);
+  sound.record();
+  shake(0.25);
+  if (navigator.vibrate) navigator.vibrate([18, 30, 18]);
+  $("#hud-best").classList.add("beaten");
 }
 
 function die() {
@@ -325,7 +388,7 @@ function die() {
   deadSpin = tilt;
   deadSpinV = (6.5 + Math.random() * 3) * (Math.random() < 0.5 ? -1 : 1);
   burst(birdX, birdY, "#ffd23f", 26, 260);
-  shakeT = 0.5;
+  shake(0.5);
   sound.dead();
   if (navigator.vibrate) navigator.vibrate([60, 40, 80]);
   deadLanded = false;
@@ -354,18 +417,18 @@ function splat() {
   deadLanded = true;
   const gy = H - groundH;
   const cols = [SKIN.body, SKIN.belly, SKIN.wing];
-  for (let i = 0; i < 26; i++) {                       // Federn nach oben/außen
+  for (let i = 0; i < pcount(26); i++) {               // Federn nach oben/außen
     const a = -Math.PI / 2 + (Math.random() - 0.5) * 2.3;
     const v = 90 + Math.random() * 260;
     parts.push({ x: birdX, y: gy - 6, vx: Math.cos(a) * v, vy: Math.sin(a) * v,
       life: 0.6 + Math.random() * 0.6, t: 0, color: cols[i % cols.length] });
   }
-  for (let i = 0; i < 14; i++) {                       // Staub flach am Boden
+  for (let i = 0; i < pcount(14); i++) {               // Staub flach am Boden
     const dir = Math.random() < 0.5 ? -1 : 1;
     parts.push({ x: birdX, y: gy - 3, vx: dir * (60 + Math.random() * 190), vy: -20 - Math.random() * 50,
       life: 0.4 + Math.random() * 0.4, t: 0, color: "rgba(214,204,172,0.9)" });
   }
-  shakeT = 0.55;
+  shake(0.55);
   sound.splat();
   if (navigator.vibrate) navigator.vibrate([40, 30, 90]);
 }
@@ -378,7 +441,7 @@ function updateHud() {
 
 // ---------- Partikel ----------
 function burst(x, y, color, n, spread) {
-  for (let i = 0; i < n; i++) {
+  for (let i = 0, m = pcount(n); i < m; i++) {
     const a = Math.random() * Math.PI * 2;
     const v = 40 + Math.random() * (spread || 200);
     parts.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 40, life: 0.4 + Math.random() * 0.5, t: 0, color });
@@ -388,7 +451,7 @@ function burst(x, y, color, n, spread) {
 // Knapper Durchflug: kurze weiße Funken + Zischen. Macht genau die Momente
 // spürbar, die man weitererzählt — ohne den Ablauf zu stören.
 function nearMiss() {
-  for (let i = 0; i < 7; i++) {
+  for (let i = 0, m = pcount(7); i < m; i++) {
     const a = Math.random() * Math.PI * 2;
     const v = 60 + Math.random() * 130;
     parts.push({ x: birdX + 6, y: birdY, vx: Math.cos(a) * v, vy: Math.sin(a) * v,
@@ -407,7 +470,7 @@ function popText(x, y, text, color) {
 function draw(now) {
   ctx.clearRect(0, 0, W, H);
   let ox = 0, oy = 0;
-  if (shakeT > 0) { ox = (Math.random() - 0.5) * 12 * shakeT; oy = (Math.random() - 0.5) * 12 * shakeT; }
+  if (shakeT > 0 && !REDUCED) { ox = (Math.random() - 0.5) * 12 * shakeT; oy = (Math.random() - 0.5) * 12 * shakeT; }
   ctx.save();
   ctx.translate(ox, oy);
 
@@ -468,9 +531,9 @@ function draw(now) {
     drawHedge(o.x, 0, OBST_W, cy - g / 2, true, o.tex);
     drawHedge(o.x, cy + g / 2, OBST_W, H - (cy + g / 2), false, o.tex);
     // Körndl (gezeichnet statt Emoji → auf allen Geräten klar sichtbar)
-    if (o.korndl && !o.korndl.got) {
-      const s = o.korndl;
-      drawKorndl(o.x + OBST_W / 2, cy + s.dy + Math.sin(now / 300 + s.ph) * 3, s.dy !== 0);
+    for (const s of o.korns) {
+      if (s.got) continue;
+      drawKorndl(o.x + OBST_W / 2 + s.dx, cy + s.dy + Math.sin(now / 300 + s.ph) * 3, s.dy !== 0);
     }
   }
 
@@ -702,6 +765,7 @@ const sound = (() => {
     dead() { tone(240, 0.3, "sawtooth", 0.07); tone(160, 0.4, "sawtooth", 0.07, 0.12); },
     whoosh() { tone(1500, 0.07, "sine", 0.045); tone(950, 0.09, "sine", 0.035, 0.03); },
     splat() { tone(140, 0.16, "sawtooth", 0.1); tone(90, 0.24, "square", 0.07, 0.02); },
+    record() { [784, 988, 1319].forEach((f, i) => tone(f, 0.16, "triangle", 0.09, i * 0.06)); },
     fanfare() { [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.22, "sine", 0.11, i * 0.09)); },
     toggle() { return !GS.sound.toggle(); },
   };
@@ -712,11 +776,20 @@ const sound = (() => {
 // es rational, sie einfach zu ignorieren. Serverseitig identisch geprüft.
 function finalScore() { return tore * 10 + (korn - kornRisk) * 5 + kornRisk * 12; }
 
+// Die Federkleider hängen an der Zahl der Meilensteine — ohne diesen Hinweis
+// sieht man im Game-Over nie, wie nah das nächste ist.
+function skinProgressHtml() {
+  const next = GS.skins.list("flatterfink").find(d => !d.unlocked && typeof d.req === "number");
+  if (!next) return "";
+  const left = Math.max(1, next.req - GS.badges.earnedCount("flatterfink"));
+  return `<div class="sub" style="margin-bottom:10px">🎨 Noch ${left} Meilenstein${left === 1 ? "" : "e"} bis <b>${next.name}</b></div>`;
+}
+
 async function gameOver() {
   if (overShown) return;      // Aufprall- und Notbremse-Timer dürfen sich überholen
   overShown = true;
   const score = finalScore();
-  const newBadges = GS.badges.record("flatterfink", { tore, korn, score });
+  const newBadges = GS.badges.record("flatterfink", { tore, korn, kornRisk, score });
   const isRecord = score > best && score > 0;
   if (isRecord) { best = score; try { localStorage.setItem("ff_best", best); } catch (_) {} sound.fanfare(); }
 
@@ -732,6 +805,7 @@ async function gameOver() {
         <span>🌾 ${korn} Körndl${kornRisk ? " (" + kornRisk + "× riskant)" : ""}</span>
       </div>
       ${GS.badges.chipsHtml(newBadges)}
+      ${skinProgressHtml()}
       <div class="go-rank" id="go-rank"></div>
       <div id="go-name-area"></div>
       <button class="btn-primary" id="go-again">🐦 Nochmal flattern</button>
@@ -797,6 +871,8 @@ function showStart() {
 
 // ---------- UI ----------
 $("#btn-top").onclick = () => showLeaderboard();
+$("#btn-pause").onclick = () => { if (paused) resumeGame(); else pauseGame(); };
+
 const soundBtn = $("#btn-sound");
 soundBtn.textContent = !GS.sound.on() ? "🔇" : "🔊";
 soundBtn.onclick = () => { soundBtn.textContent = sound.toggle() ? "🔇" : "🔊"; };
@@ -822,6 +898,7 @@ GS.badges.define("flatterfink", [
   { id: "t30", icon: "🐦", name: "Kunstflieger", desc: "30 Tore in einem Flug", test: s => s.tore >= 30 },
   { id: "t60", icon: "🦅", name: "Lüfte-König", desc: "60 Tore in einem Flug", test: s => s.tore >= 60 },
   { id: "k20", icon: "🌾", name: "Körndl-Sammler", desc: "20 Körndl in einem Flug", test: s => s.korn >= 20 },
+  { id: "risk10", icon: "🤠", name: "Draufgänger", desc: "10 riskante Körndl in einem Flug", test: s => s.kornRisk >= 10 },
   { id: "sumt500", icon: "🪶", name: "Vielflieger", desc: "500 Tore insgesamt", test: (s, t) => t.sum_tore >= 500 },
   { id: "runs25", icon: "🎖️", name: "Stammgast", desc: "25 Flüge absolviert", test: (s, t) => t.runs >= 25 },
 ]);
