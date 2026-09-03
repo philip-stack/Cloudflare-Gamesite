@@ -60,7 +60,6 @@ let deadLanded = false;            // am Boden zerplatzt → keine Physik/Zeichn
 let overTimer = null, overShown = false;
 let paused = false;                // Pause bei App-Wechsel (visibilitychange)
 let pops = [];                     // aufsteigende Punkte-Texte
-let trail = [];                    // Federflaum-Spur hinter dem Finken
 let stars = [];                    // Sterne, blenden zur Nacht ein
 let hintTimer = null;
 let gameT = 0;                     // Spiel-Uhr (s) — treibt wandernde Hecken
@@ -98,11 +97,6 @@ const lerp = (a, b, t) => a + (b - a) * t;
 const mixArr = (a, b, t) => [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)];
 function rgba(c, a) {
   return "rgba(" + Math.round(c[0]) + "," + Math.round(c[1]) + "," + Math.round(c[2]) + "," + a + ")";
-}
-function hexToRgb(h) {
-  const t = String(h).replace("#", "");
-  const v = t.length === 3 ? t.split("").map(c => c + c).join("") : t;
-  return [parseInt(v.slice(0, 2), 16) || 0, parseInt(v.slice(2, 4), 16) || 0, parseInt(v.slice(4, 6), 16) || 0];
 }
 // Volle Nacht ist nach 70 Toren erreicht.
 function sky() {
@@ -180,7 +174,7 @@ function reset() {
   wingT = 0; tilt = 0;
   deadSpin = 0; deadSpinV = 0; deadLanded = false; paused = false;
   clearTimeout(overTimer); overShown = false;
-  obst = []; parts = []; pops = []; trail = [];
+  obst = []; parts = []; pops = [];
   tore = 0; korn = 0; kornRisk = 0;
   scrollT = 0;
   gameT = 0;
@@ -257,12 +251,6 @@ function step(dt) {
   birdY += birdVY * dt;
   tilt = Math.max(-0.5, Math.min(1.1, birdVY / 620));
   wingT = Math.max(0, wingT - dt * 6);
-
-  // Feder-Spur: Punkte wandern mit der Welt nach links, vorne kommt neu dazu
-  const tdx = speed() * dt;
-  for (const t of trail) t.x -= tdx;
-  trail.push({ x: birdX - 10, y: birdY + 4 });
-  if (trail.length > 12) trail.shift();
 
   // Decke: sanft abprallen
   if (birdY < BIRD_R) { birdY = BIRD_R; if (birdVY < 0) birdVY *= -0.3; }
@@ -497,16 +485,6 @@ function draw(now) {
   for (let x = -go; x < W; x += 26) ctx.fillRect(x, H - groundH + 6, 12, 3);
 
   // Fink
-  // Feder-Spur hinter dem Finken (mehr Tempo-Gefühl)
-  if (trail.length) {
-    const tc = hexToRgb(SKIN.body);
-    for (let i = 0; i < trail.length; i++) {
-      const f = (i + 1) / trail.length;
-      ctx.fillStyle = rgba(tc, (f * 0.3).toFixed(3));
-      ctx.beginPath(); ctx.arc(trail[i].x, trail[i].y, 1.5 + f * 3.5, 0, Math.PI * 2); ctx.fill();
-    }
-  }
-
   if (mode !== "ready" && !deadLanded) drawBird(now);   // beim Taumeln sichtbar, nach dem Zerplatzen weg
 
   // Partikel
