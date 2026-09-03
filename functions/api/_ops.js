@@ -41,6 +41,26 @@ export function opsEvaluate(f) {
   return { status: warns.length ? "warn" : "ok", warns };
 }
 
+// Statuswechsel festhalten: eine Zeile in ops_log, aber NUR wenn sich der
+// Zustand wirklich geändert hat. Rückgabe true = Wechsel (dann lohnt eine
+// Benachrichtigung). Der Verlauf wird unabhängig davon geschrieben, ob ein
+// Alarm-Name konfiguriert ist — sonst fehlt gerade die Geschichte, die man
+// im Nachhinein braucht.
+// Der Zustandsschlüssel heißt weiterhin alert_state, damit ein bestehender
+// „bad"-Zustand nicht als frischer Wechsel gemeldet wird.
+export async function opsTransition(env, status, reasons) {
+  try {
+    const prev = (await env.DB.prepare("SELECT v FROM app_config WHERE k='alert_state'").first())?.v || "ok";
+    if (prev === status) return false;
+    const txt = reasons && reasons.length ? reasons.join(" · ").slice(0, 500) : null;
+    await env.DB.prepare("INSERT INTO ops_log (status, reasons) VALUES (?, ?)").bind(status, txt).run();
+    await env.DB.prepare(
+      "INSERT INTO app_config (k, v) VALUES ('alert_state', ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v"
+    ).bind(status).run();
+    return true;
+  } catch { return false; }   // Protokoll darf den Cron nie stoppen
+}
+
 // Rohwerte für den Alarm-Pfad. Bewusst nur DB + env — kein Sub-Fetch auf
 // /api/health, das würde im Cron nur denselben Zustand nochmal herleiten.
 // „Fire-Cron hängt" kann sich hier naturgemäß nicht selbst melden (dann liefe

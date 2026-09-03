@@ -79,9 +79,16 @@ const answer = {
   errors: {
     total: 12, last24h: 3, upstream522: 1,
     top: [{ msg: "boom", n: 2, total: 9, last: "2026-09-03 08:00:00", page: "komet", firstSeen: "2026-09-03 07:00:00" }],
-    latest: [{ created_at: "2026-09-03 08:00:00", page: "komet", msg: "boom", ua: "Chrome" }],
+    latest: [{ created_at: "2026-09-03 08:00:00", page: "komet", msg: "boom", ua: "Chrome/142", extra: "score=99" }],
   },
-  clientErrors: { total: 4, last24h: 1, latest: [{ created_at: "2026-09-03 08:00:00", page: "/", msg: "oops", ua: "Safari" }] },
+  clientErrors: { total: 4, last24h: 1, latest: [{ created_at: "2026-09-03 08:00:00", page: "/", msg: "oops", ua: "Safari", extra: "canvas=0" }] },
+  ops: {
+    since: "2026-09-01 12:00:00", sinceStatus: "ok",
+    log: [
+      { at: "2026-09-01 12:12:00", status: "ok", reasons: null },
+      { at: "2026-09-01 12:00:00", status: "warn", reasons: "Push-Queue: 900" },
+    ],
+  },
   push: { subscriptions: 2, queued: 0, oldestAgeSec: null },
   fire: { lastRun: "2026-09-03 07:00:00", ageSec: 3600, active: 0, detailFetched: 1, note: "ok", openOps: 0, keptOps: 120 },
   sprit: { lastRun: null, ageSec: 300, alerts: 1, subscribers: 1, priceLog: 500 },
@@ -129,7 +136,29 @@ sandbox.ANSWER = answer;
   assert("Moderation: Aktionen als Text statt Emoji", h.includes(">löschen<") && h.includes(">sperren<"));
 }
 {
+  // Der Zeitraum-Umschalter MUSS die Kurve treffen: vorher stand im Etikett
+  // immer "30 Tage" und gezeichnet wurden immer 30 Punkte, egal was der
+  // Server geliefert hat.
+  const sieben = JSON.parse(JSON.stringify(answer));
+  sieben.trends.days = 7;
+  sandbox.ANSWER = sieben;
+  vm.runInContext(`view = "ueberblick"; lastData = ANSWER; render(ANSWER);`, ctx);
+  const h7 = content.innerHTML;
+  assert("Kurve: Etikett folgt dem Zeitraum", h7.includes("7 Tage ·") && !h7.includes("30 Tage ·"));
+  const punkte = (JSON.parse(h7.match(/data-series='(\[.*?\])'/)[1]) || []).length;
+  assert("Kurve: 7 Tage = 7 Punkte", punkte === 7);
+  sandbox.ANSWER = answer;
+}
+{
+  const h = renderAs("fehler");
+  assert("Fehler: Kontext (extra) aufklappbar", h.includes("class=\"mini\"") && h.includes("score=99"));
+  assert("Fehler: volles UA im Kontext", h.includes("Chrome/142"));
+  assert("Client-Fehler: extra sichtbar", h.includes("canvas=0"));
+}
+{
   const h = renderAs("system");
+  assert("System: Vorfall-Verlauf mit Grund", h.includes("Vorfall-Verlauf") && h.includes("Push-Queue: 900"));
+  assert("System: Vorfall-Dauer berechnet", h.includes(">12 min<"));
   assert("System: Crons + Push + Tabellen", h.includes("Fire-Cron") && h.includes("Sprit-Cron") && h.includes("Tabellen"));
   assert("System: Alarm-Feld", h.includes("alert-name"));
   assert("System: Admin-Protokoll als Klappblock", h.includes("Admin-Protokoll") && h.includes("auth:fail"));
@@ -143,6 +172,13 @@ sandbox.ANSWER = answer;
   assert("Reiter: Zähler zeigt Fehler aus anderer Ansicht", tabs.innerHTML.includes('class="badge">3<'));
   assert("Statuszeile trägt die Signalklasse", ampel.className === "ampel warn");
   assert("Statuszeile nennt den Grund", ampel.innerHTML.includes("Fire-Cron verzögert"));
+  // Bei „ok" tritt an die Stelle der Gründe die Ruhe-Angabe.
+  const gut = JSON.parse(JSON.stringify(answer));
+  gut.status = "ok"; gut.warns = [];
+  sandbox.ANSWER = gut;
+  vm.runInContext(`lastData = ANSWER; render(ANSWER);`, ctx);
+  assert("Statuszeile: seit … ohne Vorfall", /seit .* ohne Vorfall/.test(ampel.innerHTML));
+  sandbox.ANSWER = answer;
 }
 
 // ---------- Leere Abschnitte schrumpfen ----------

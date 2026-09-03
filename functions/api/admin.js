@@ -5,8 +5,12 @@ import { opsEvaluate } from "./_ops.js";
 // Betreiber-Dashboard (privat) — bündelt die ohnehin gesammelten
 // Betriebsdaten an einem Ort und erlaubt ein paar geschützte Aktionen.
 //
-//   GET  /api/admin              (Header x-admin-key ODER ?key=)
-//     → { status, scores, errors, push, fire, db, trends, recent, banned }
+//   GET  /api/admin[?view=…]      (Header x-admin-key ODER ?key=)
+//     → { status, scores, errors, push, fire, db, trends, recent, banned, ops }
+//     view = ueberblick | fehler | moderation | system (Standard: alles).
+//     Das Panel hat vier Ansichten; ohne view lädt es für jede davon auch die
+//     Daten der anderen drei. Die Antwort enthält IMMER alle Schlüssel — nur
+//     eben leer für die Gruppen, die diese Ansicht nicht braucht.
 //   POST /api/admin              (Header x-admin-key, JSON { action, … })
 //     → clearErrors | clear522 | flushQueue | deleteScore{id}
 //       | banDevice{device} | unbanDevice{device} | triggerCron
@@ -89,6 +93,10 @@ export async function onRequestGet({ request, env }) {
     return json({ q, rows });
   }
 
+  // Welche Ansicht fragt? Unbekanntes → alles (auch für Aufrufe per curl).
+  const VIEWS = ["ueberblick", "fehler", "moderation", "system"];
+  const view = String(url.searchParams.get("view") || "");
+
   // Trend-Zeitraum (validiert → sichere Zahl für die Interpolation unten)
   const days = [7, 30, 90].includes(+url.searchParams.get("days")) ? +url.searchParams.get("days") : 30;
 
@@ -98,13 +106,18 @@ export async function onRequestGet({ request, env }) {
   const NOREP = "page IS NOT 'quiz-report'";
   const cnt = (sql, ...a) => one(env, sql, ...a).then(r => r?.n ?? 0);
 
-  // Tote Live-Room-Zeilen wegräumen (falls ein DO abstürzte, ohne zu löschen).
-  // Muss VOR der Abfrage laufen, darum nicht im Parallel-Block.
-  try { await env.DB.prepare("DELETE FROM live_room WHERE updated_at < datetime('now','-10 minutes')").run(); } catch (_) {}
+  // Nur laden, was die aufrufende Ansicht zeigt. `q(bedingung, fn, ersatz)`
+  // nimmt die Abfrage als Funktion, damit sie bei false gar nicht erst
+  // losgeschickt wird.
+  const q = (cond, fn, fallback) => (cond ? fn() : Promise.resolve(fallback));
+  const vAll = !VIEWS.includes(view);
+  const vU = vAll || view === "ueberblick";
+  const vF = vAll || view === "fehler";
+  const vM = vAll || view === "moderation";
+  const vS = vAll || view === "system";
 
-  // Ab hier ALLES parallel. Vorher lief jede der gut 40 Abfragen einzeln
-  // hintereinander — bei 45-Sekunden-Auto-Refresh war dieses Dashboard damit
-  // der teuerste Endpunkt der ganzen Plattform, für genau einen Nutzer.
+  // Immer dabei: alles, was Statuszeile und Reiter-Zähler brauchen — die
+  // stehen in JEDER Ansicht.
   const [
     sTotal, s24, perRaw,
     reachTotal, reachNew7, reachActive7, reachReturning,
@@ -119,91 +132,96 @@ export async function onRequestGet({ request, env }) {
     liveRooms, adminLog,
     tScores, tErrors, tDevices, alertRow, usage,
     recent, banned, tableRows, health,
+    opsLastRow, opsLog,
   ] = await Promise.all([
     // ---- Scores ----
-    cnt("SELECT COUNT(*) n FROM scores"),
-    cnt("SELECT COUNT(*) n FROM scores WHERE created_at > datetime('now','-1 day')"),
-    many(env, "SELECT game, name, MAX(score) top, COUNT(*) subs, COUNT(DISTINCT lower(name)) players FROM scores GROUP BY game"),
+    q(vU, () => cnt("SELECT COUNT(*) n FROM scores"), 0),
+    q(vU, () => cnt("SELECT COUNT(*) n FROM scores WHERE created_at > datetime('now','-1 day')"), 0),
+    q(vU, () => many(env, "SELECT game, name, MAX(score) top, COUNT(*) subs, COUNT(DISTINCT lower(name)) players FROM scores GROUP BY game"), []),
 
     // ---- Reichweite: die Zahl, an der alles andere hängt ----
     // Namen sind frei gewählt und nicht eindeutig — das ist die beste
     // verfügbare Näherung für „Menschen", ohne irgendwas mitzuschneiden.
-    cnt("SELECT COUNT(DISTINCT lower(name)) n FROM scores"),
-    cnt("SELECT COUNT(*) n FROM (SELECT lower(name) nm, MIN(created_at) f FROM scores GROUP BY lower(name)) WHERE f > datetime('now','-7 days')"),
-    cnt("SELECT COUNT(DISTINCT lower(name)) n FROM scores WHERE created_at > datetime('now','-7 days')"),
-    cnt("SELECT COUNT(*) n FROM (SELECT lower(name) nm, COUNT(DISTINCT date(created_at)) dd FROM scores GROUP BY lower(name)) WHERE dd >= 2"),
+    q(vU, () => cnt("SELECT COUNT(DISTINCT lower(name)) n FROM scores"), 0),
+    q(vU, () => cnt("SELECT COUNT(*) n FROM (SELECT lower(name) nm, MIN(created_at) f FROM scores GROUP BY lower(name)) WHERE f > datetime('now','-7 days')"), 0),
+    q(vU, () => cnt("SELECT COUNT(DISTINCT lower(name)) n FROM scores WHERE created_at > datetime('now','-7 days')"), 0),
+    q(vU, () => cnt("SELECT COUNT(*) n FROM (SELECT lower(name) nm, COUNT(DISTINCT date(created_at)) dd FROM scores GROUP BY lower(name)) WHERE dd >= 2"), 0),
 
     // ---- Fehler-Log ----
-    cnt(`SELECT COUNT(*) n FROM error_log WHERE ${NOREP}`),
-    cnt(`SELECT COUNT(*) n FROM error_log WHERE created_at > datetime('now','-1 day') AND ${NOREP}`),
+    q(vF, () => cnt(`SELECT COUNT(*) n FROM error_log WHERE ${NOREP}`), 0),
+    cnt(`SELECT COUNT(*) n FROM error_log WHERE created_at > datetime('now','-1 day') AND ${NOREP}`),   // Ampel + Reiter
     cnt("SELECT COUNT(*) n FROM error_log WHERE created_at > datetime('now','-1 day') AND msg LIKE '%HTTP 522%'"),
     // Gruppiert über die GANZE Tabelle, gefiltert auf 24 h per HAVING: so
     // kommt firstSeen (erstes Auftreten überhaupt) in EINEM Durchlauf mit —
     // damit lässt sich „neue Fehlerart" von „altem Bekannten" unterscheiden.
-    many(env,
+    q(vF, () => many(env,
       `SELECT msg, MAX(created_at) last, MAX(page) page, MIN(created_at) firstSeen, COUNT(*) total,` +
       ` SUM(CASE WHEN created_at > datetime('now','-1 day') THEN 1 ELSE 0 END) n` +
-      ` FROM error_log WHERE ${NOREP} GROUP BY msg HAVING n > 0 ORDER BY n DESC LIMIT 20`),
-    many(env, `SELECT created_at, page, msg, ua FROM error_log WHERE ${NOREP} ORDER BY id DESC LIMIT 25`),
+      ` FROM error_log WHERE ${NOREP} GROUP BY msg HAVING n > 0 ORDER BY n DESC LIMIT 20`), []),
+    // extra = Zusatzkontext aus logError(env, msg, page, extra). Wurde bisher
+    // geschrieben, aber nie gelesen.
+    q(vF, () => many(env, `SELECT created_at, page, msg, ua, extra FROM error_log WHERE ${NOREP} ORDER BY id DESC LIMIT 25`), []),
 
     // ---- Client-Fehler (Geräte, /api/log) ----
-    cnt("SELECT COUNT(*) n FROM client_log"),
-    cnt("SELECT COUNT(*) n FROM client_log WHERE created_at > datetime('now','-1 day')"),
-    many(env, "SELECT created_at, page, msg, ua FROM client_log ORDER BY id DESC LIMIT 25"),
+    q(vF, () => cnt("SELECT COUNT(*) n FROM client_log"), 0),
+    cnt("SELECT COUNT(*) n FROM client_log WHERE created_at > datetime('now','-1 day')"),                // Reiter-Zähler
+    q(vF, () => many(env, "SELECT created_at, page, msg, ua, extra FROM client_log ORDER BY id DESC LIMIT 25"), []),
 
     // ---- Push ----
-    cnt("SELECT COUNT(*) n FROM push_sub"),
-    cnt("SELECT COUNT(*) n FROM push_queue"),
-    one(env, "SELECT MIN(created_at) t FROM push_queue"),
+    q(vS, () => cnt("SELECT COUNT(*) n FROM push_sub"), 0),
+    cnt("SELECT COUNT(*) n FROM push_queue"),                                                            // Ampel
+    q(vS, () => one(env, "SELECT MIN(created_at) t FROM push_queue"), null),
 
-    // ---- Fire ----
+    // ---- Fire (Ampel braucht die Zeile immer) ----
     one(env, "SELECT last_run, active, detail_fetched, note FROM fire_health WHERE k='cron'"),
-    cnt("SELECT COUNT(*) n FROM fire_op WHERE ended=0"),
-    cnt("SELECT COUNT(*) n FROM fire_op"),
+    q(vS, () => cnt("SELECT COUNT(*) n FROM fire_op WHERE ended=0"), 0),
+    q(vS, () => cnt("SELECT COUNT(*) n FROM fire_op"), 0),
 
-    // ---- Sprit (Preis-Alarm) ----
+    // ---- Sprit (Preis-Alarm; Alter geht in die Ampel) ----
     one(env, "SELECT v FROM app_config WHERE k='sprit_cron_at'"),
-    cnt("SELECT COUNT(*) n FROM sprit_alert"),
-    cnt("SELECT COUNT(DISTINCT endpoint) n FROM sprit_alert"),
-    cnt("SELECT COUNT(*) n FROM sprit_price_log"),
+    q(vS, () => cnt("SELECT COUNT(*) n FROM sprit_alert"), 0),
+    q(vS, () => cnt("SELECT COUNT(DISTINCT endpoint) n FROM sprit_alert"), 0),
+    q(vS, () => cnt("SELECT COUNT(*) n FROM sprit_price_log"), 0),
 
     // ---- DB-Hilfstabellen ----
-    cnt("SELECT COUNT(*) n FROM rate"),
-    cnt("SELECT COUNT(*) n FROM used_token"),
+    q(vS, () => cnt("SELECT COUNT(*) n FROM rate"), 0),
+    q(vS, () => cnt("SELECT COUNT(*) n FROM used_token"), 0),
 
     // ---- Kritzeln & Raten ----
-    cnt("SELECT COUNT(*) n FROM draw_score"),
-    cnt("SELECT COALESCE(SUM(wins),0) n FROM draw_score"),   // je Spiel genau 1 Sieg
-    one(env, "SELECT name, points FROM draw_score ORDER BY points DESC LIMIT 1"),
-    many(env, "SELECT name, points, games, wins, best FROM draw_score ORDER BY points DESC LIMIT 50"),
+    q(vU || vM, () => cnt("SELECT COUNT(*) n FROM draw_score"), 0),
+    q(vU, () => cnt("SELECT COALESCE(SUM(wins),0) n FROM draw_score"), 0),   // je Spiel genau 1 Sieg
+    q(vU, () => one(env, "SELECT name, points FROM draw_score ORDER BY points DESC LIMIT 1"), null),
+    q(vM, () => many(env, "SELECT name, points, games, wins, best FROM draw_score ORDER BY points DESC LIMIT 50"), []),
 
     // ---- Wer weiß's? (Quiz) ----
-    cnt("SELECT COUNT(*) n FROM quiz_score"),
-    cnt("SELECT COALESCE(SUM(wins),0) n FROM quiz_score"),    // je Spiel genau 1 Sieg
-    one(env, "SELECT name, points FROM quiz_score ORDER BY points DESC LIMIT 1"),
-    many(env, "SELECT name, points, games, wins, best FROM quiz_score ORDER BY points DESC LIMIT 50"),
-    cnt("SELECT COUNT(*) n FROM error_log WHERE page = 'quiz-report'"),
-    many(env, "SELECT id, created_at, msg, extra FROM error_log WHERE page = 'quiz-report' ORDER BY id DESC LIMIT 40"),
+    q(vU || vM, () => cnt("SELECT COUNT(*) n FROM quiz_score"), 0),
+    q(vU, () => cnt("SELECT COALESCE(SUM(wins),0) n FROM quiz_score"), 0),    // je Spiel genau 1 Sieg
+    q(vU, () => one(env, "SELECT name, points FROM quiz_score ORDER BY points DESC LIMIT 1"), null),
+    q(vM, () => many(env, "SELECT name, points, games, wins, best FROM quiz_score ORDER BY points DESC LIMIT 50"), []),
+    cnt("SELECT COUNT(*) n FROM error_log WHERE page = 'quiz-report'"),                                  // Reiter-Zähler
+    q(vF, () => many(env, "SELECT id, created_at, msg, extra FROM error_log WHERE page = 'quiz-report' ORDER BY id DESC LIMIT 40"), []),
 
     // ---- Live-Räume + Audit-Log ----
-    many(env, "SELECT code, game, players, state, updated_at FROM live_room WHERE updated_at > datetime('now','-2 minutes') AND players > 0 ORDER BY updated_at DESC LIMIT 50"),
-    many(env, "SELECT action, detail, created_at FROM admin_log ORDER BY id DESC LIMIT 40"),
+    // Nur frische Zeilen; das Wegräumen alter macht der Cron (sweepStale),
+    // nicht diese Anzeige.
+    q(vU, () => many(env, "SELECT code, game, players, state, updated_at FROM live_room WHERE updated_at > datetime('now','-2 minutes') AND players > 0 ORDER BY updated_at DESC LIMIT 50"), []),
+    q(vS, () => many(env, "SELECT action, detail, created_at FROM admin_log ORDER BY id DESC LIMIT 40"), []),
 
     // ---- Trends (Zeitraum 7/30/90 Tage, roh je Tag; Client füllt Lücken) ----
-    many(env, `SELECT date(created_at) d, COUNT(*) n FROM scores WHERE created_at > datetime('now','-${days} days') GROUP BY d`),
-    many(env, `SELECT date(created_at) d, COUNT(*) n FROM error_log WHERE created_at > datetime('now','-${days} days') GROUP BY d`),
-    many(env, `SELECT date(created_at) d, COUNT(DISTINCT device) n FROM scores WHERE created_at > datetime('now','-${days} days') AND device IS NOT NULL GROUP BY d`),
-    one(env, "SELECT v FROM app_config WHERE k='alert_name'"),
+    q(vU, () => many(env, `SELECT date(created_at) d, COUNT(*) n FROM scores WHERE created_at > datetime('now','-${days} days') GROUP BY d`), []),
+    q(vU, () => many(env, `SELECT date(created_at) d, COUNT(*) n FROM error_log WHERE created_at > datetime('now','-${days} days') GROUP BY d`), []),
+    q(vU, () => many(env, `SELECT date(created_at) d, COUNT(DISTINCT device) n FROM scores WHERE created_at > datetime('now','-${days} days') AND device IS NOT NULL GROUP BY d`), []),
+    q(vS, () => one(env, "SELECT v FROM app_config WHERE k='alert_name'"), null),
 
     // ---- Nutzungszähler (anonym, aggregiert): play/duel/share je Spiel ----
-    many(env, `SELECT k, SUM(n) n FROM stat_daily WHERE day > date('now','-${days} days') GROUP BY k ORDER BY n DESC`),
+    q(vU, () => many(env, `SELECT k, SUM(n) n FROM stat_daily WHERE day > date('now','-${days} days') GROUP BY k ORDER BY n DESC`), []),
 
     // ---- Moderation ----
-    many(env, "SELECT id, game, name, device, score, substr(meta,1,140) meta, created_at FROM scores ORDER BY id DESC LIMIT 40"),
-    many(env, "SELECT device, at FROM banned_device ORDER BY at DESC LIMIT 100"),
+    q(vM, () => many(env, "SELECT id, game, name, device, score, substr(meta,1,140) meta, created_at FROM scores ORDER BY id DESC LIMIT 40"), []),
+    q(vM || vS, () => many(env, "SELECT device, at FROM banned_device ORDER BY at DESC LIMIT 100"), []),
 
     // ---- Tabellengrößen: was wächst unbemerkt? (eine Abfrage) ----
-    one(env,
+    q(vS, () => one(env,
       "SELECT (SELECT COUNT(*) FROM scores) scores," +
       " (SELECT COUNT(*) FROM error_log) error_log," +
       " (SELECT COUNT(*) FROM client_log) client_log," +
@@ -215,11 +233,16 @@ export async function onRequestGet({ request, env }) {
       " (SELECT COUNT(*) FROM push_queue) push_queue," +
       " (SELECT COUNT(*) FROM push_sub) push_sub," +
       " (SELECT COUNT(*) FROM fire_op) fire_op," +
-      " (SELECT COUNT(*) FROM admin_log) admin_log"),
+      " (SELECT COUNT(*) FROM ops_log) ops_log," +
+      " (SELECT COUNT(*) FROM admin_log) admin_log"), null),
 
-    // ---- Health (Cron-Totmann + VAPID) ----
+    // ---- Health (Cron-Totmann + VAPID) — geht in die Ampel ----
     fetch(new URL("/api/health", request.url).toString(), { headers: { "User-Agent": "admin/health" } })
       .then(r => r.json()).catch(() => null),
+
+    // ---- Vorfall-Verlauf: letzter Wechsel (für „seit … ok") + Liste ----
+    one(env, "SELECT at, status FROM ops_log ORDER BY id DESC LIMIT 1").catch(() => null),
+    q(vS, () => many(env, "SELECT at, status, reasons FROM ops_log ORDER BY id DESC LIMIT 20"), []),
   ]);
 
   // Einsendungen je Spiel: :daily/:weekly auf das Basisspiel zusammenfassen
@@ -252,6 +275,7 @@ export async function onRequestGet({ request, env }) {
 
   return json({
     generatedAt: new Date().toISOString(),
+    view: vAll ? "all" : view,
     status, warns,
     scores: { total: sTotal, last24h: s24, games: Object.values(games).sort((a, b) => b.subs - a.subs) },
     errors: { total: eTotal, last24h: e24, upstream522: e522, top: eTop, latest: eLatest },
@@ -264,6 +288,7 @@ export async function onRequestGet({ request, env }) {
     sprit: { lastRun: sh, ageSec: sAge, alerts: sAlerts, subscribers: sSubs, priceLog: sLog },
     db: { rateRows: rate, usedTokens: usedTok, bannedDevices: banned.length, tables: tableRows || {} },
     reach: { players: reachTotal, new7: reachNew7, active7: reachActive7, returning: reachReturning },
+    ops: { since: opsLastRow?.at || null, sinceStatus: opsLastRow?.status || null, log: opsLog },
     kritzeln: { players: kPlayers, games: kGames, topName: kTop?.name || null, topPoints: kTop?.points ?? 0, entries: kEntries },
     quiz: { players: qPlayers, games: qGames, topName: qTop?.name || null, topPoints: qTop?.points ?? 0, entries: qEntries, reportCount: qReportCount, reports: qReports },
     live: { rooms: liveRooms },

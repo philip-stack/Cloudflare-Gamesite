@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const modUrl = "file://" + path.join(__dirname, "..", "functions", "api", "_ops.js").replace(/\\/g, "/");
-const { opsEvaluate, opsFacts, OPS_LIMITS } = await import(modUrl);
+const { opsEvaluate, opsFacts, opsTransition, OPS_LIMITS } = await import(modUrl);
 
 let ok = true;
 const assert = (name, cond) => { if (cond) console.log("OK  ", name); else { console.log("FAIL", name); ok = false; } };
@@ -82,6 +82,41 @@ for (const [name, patch, re] of faelle) {
   assert("errWindowMin landet in der Abfrage", sqls.some(q => q.includes("-42 minutes")));
   assert("522-Meldungen (externe Quelle) sind ausgenommen", sqls.some(q => q.includes("HTTP 522")));
   assert("Quiz-Meldungen sind keine Fehler", sqls.some(q => q.includes("quiz-report")));
+}
+
+// opsTransition: schreibt NUR bei echtem Wechsel — sonst wäre der Verlauf
+// alle zwei Minuten eine Zeile länger und der Push-Alarm Dauerbeschallung.
+{
+  const mk = (prev) => {
+    const runs = [];
+    const env = { DB: { prepare(sql) { return { sql, args: [], bind(...a) { this.args = a; return this; },
+      async first() { return sql.includes("alert_state") ? { v: prev } : {}; },
+      async run() { runs.push({ sql, args: this.args }); return {}; } }; } } };
+    return { env, runs };
+  };
+  {
+    const { env, runs } = mk("ok");
+    const changed = await opsTransition(env, "warn", ["Push-Queue: 900"]);
+    assert("Wechsel ok→warn → true", changed === true);
+    const row = runs.find(r => /INSERT INTO ops_log/.test(r.sql));
+    assert("Wechsel schreibt ops_log mit Grund", !!row && row.args[0] === "warn" && row.args[1] === "Push-Queue: 900");
+    assert("Wechsel merkt den neuen Zustand", runs.some(r => /alert_state/.test(r.sql) && r.args[0] === "warn"));
+  }
+  {
+    const { env, runs } = mk("warn");
+    const changed = await opsTransition(env, "warn", ["egal"]);
+    assert("gleicher Zustand → false, kein Schreiben", changed === false && runs.length === 0);
+  }
+  {
+    const { env, runs } = mk("warn");
+    await opsTransition(env, "ok", []);
+    const row = runs.find(r => /INSERT INTO ops_log/.test(r.sql));
+    assert("Entwarnung schreibt ohne Grund (NULL)", !!row && row.args[0] === "ok" && row.args[1] === null);
+  }
+  {
+    const env = { DB: { prepare() { throw new Error("DB weg"); } } };
+    assert("DB-Fehler → false statt Ausnahme", (await opsTransition(env, "warn", [])) === false);
+  }
 }
 
 console.log(ok ? "\n✅ ops: alle Tests grün" : "\n❌ ops: Tests fehlgeschlagen");

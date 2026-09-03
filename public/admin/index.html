@@ -161,6 +161,16 @@
     .fold-body { padding:0 14px 14px; overflow-x:auto; }
     .fold-body .toolbar { margin-bottom:9px; }
 
+    /* Kontext einer Log-Zeile (extra / UA) — direkt in der Tabellenzelle. */
+    .mini { margin-top:4px; }
+    .mini > summary { cursor:pointer; list-style:none; font:500 9.5px var(--mono); text-transform:uppercase; letter-spacing:.14em; color:var(--ink-3); }
+    .mini > summary::-webkit-details-marker { display:none; }
+    .mini > summary::before { content:"+ "; }
+    .mini[open] > summary::before { content:"– "; }
+    .mini > summary:hover { color:var(--ink-2); }
+    .mini-body { margin-top:5px; padding:7px 9px; border-left:2px solid var(--line-2); font:400 11px/1.5 var(--mono); color:var(--ink-2); word-break:break-word; }
+    .mini-body .muted { display:inline-block; min-width:44px; color:var(--ink-3); }
+
     /* ---------- Verlaufskurven ---------- */
     .spark { width:100%; height:40px; display:block; cursor:crosshair; }
     .spark polyline { fill:none; stroke:var(--ink-2); stroke-width:1.25; stroke-linejoin:round; stroke-linecap:round; }
@@ -249,8 +259,21 @@
     const LS = "admin_key";
     const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
     const nf = n => (n == null ? "–" : Number(n).toLocaleString("de-AT"));
+    // Aufklappbarer Kontext einer Log-Zeile: volles UA + das extra-Feld, das
+    // logError() und /api/log seit immer schreiben und das bisher nirgends
+    // sichtbar war. Nur zeichnen, wenn es auch etwas zu zeigen gibt.
+    function detail(x) {
+      const bits = [];
+      if (x.extra) bits.push(`<div><span class="muted">extra</span> ${esc(x.extra)}</div>`);
+      if (x.ua) bits.push(`<div><span class="muted">ua</span> ${esc(x.ua)}</div>`);
+      if (x.page) bits.push(`<div><span class="muted">seite</span> ${esc(x.page)}</div>`);
+      if (!bits.length) return "";
+      return `<details class="mini"><summary>Kontext</summary><div class="mini-body">${bits.join("")}</div></details>`;
+    }
+
     // "YYYY-MM-DD HH:MM:SS" (UTC, wie SQLite es schreibt) → Alter in ms.
-    function ageMs(s) { const t = Date.parse(String(s || "").replace(" ", "T") + "Z"); return Number.isFinite(t) ? Date.now() - t : Infinity; }
+    function tsMs(s) { return Date.parse(String(s || "").replace(" ", "T") + "Z"); }
+    function ageMs(s) { const t = tsMs(s); return Number.isFinite(t) ? Date.now() - t : Infinity; }
     function fmtAge(s) { if (s == null) return "–"; if (s < 90) return s + " s"; if (s < 5400) return Math.round(s / 60) + " min"; if (s < 172800) return Math.round(s / 3600) + " h"; return Math.round(s / 86400) + " d"; }
     const key = () => localStorage.getItem(LS);
 
@@ -272,6 +295,7 @@
 
     let timer = null, lastData = null, errView = "top", pageFilter = "";
     let trendDays = 30, boardGame = "", boardRows = null, searchQ = "", searchRows = null;
+    let lastBadges = { fehler: 0, moderation: 0 };   // Reiter-Zähler über einen Ansichtswechsel hinweg
 
     // Ansichten. Vorher stand alles (14 Abschnitte) untereinander auf einer
     // Seite — gerendert wird jetzt nur die aktive, das spart beim
@@ -292,7 +316,10 @@
       // replaceState statt location.hash: ein Hash-Sprung würde die Seite
       // an ein gleichnamiges Element scrollen.
       history.replaceState(null, "", "#" + v);
-      if (lastData) render(lastData);
+      // Seit der Endpunkt nach Ansicht lädt (?view=), enthält lastData nur die
+      // Daten der VORHERIGEN Ansicht — also nachladen statt neu zeichnen.
+      if (lastData) renderTabs(lastBadges.fehler, lastBadges.moderation);   // Reiter sofort umschalten
+      load();
       if (scroll) window.scrollTo({ top: 0 });
     }
 
@@ -307,7 +334,7 @@
       const k = key();
       if (!k) return showGate();
       let r, d;
-      try { r = await fetch("/api/admin?days=" + trendDays, { headers: { "x-admin-key": k } }); d = await r.json(); }
+      try { r = await fetch("/api/admin?days=" + trendDays + "&view=" + encodeURIComponent(view), { headers: { "x-admin-key": k } }); d = await r.json(); }
       catch { $("#gate-msg") && ($("#gate-msg").textContent = "Netzwerkfehler."); return; }
       if (r.status === 401) { localStorage.removeItem(LS); $("#gate-msg").textContent = "Falscher Schlüssel."; return showGate(); }
       if (!r.ok) return;
@@ -366,11 +393,14 @@
     }
 
     // --- Sparkline (30 Tage, Lücken gefüllt) ---
-    function spark(rows) {
-      const days = 30, map = new Map((rows || []).map(r => [r.d, r.n]));
+    // days kommt aus der ANTWORT (d.trends.days), nicht aus der Absicht des
+    // Clients: vorher stand hier fest 30, während der Umschalter 7/30/90 an
+    // den Server ging — die Kurve zeigte also verlässlich das Falsche.
+    function spark(rows, days) {
+      const map = new Map((rows || []).map(r => [r.d, r.n]));
       const today = new Date(), series = [];
       for (let i = days - 1; i >= 0; i--) { const dt = new Date(today); dt.setDate(today.getDate() - i); const d = dt.toISOString().slice(0, 10); series.push({ d, v: map.get(d) || 0 }); }
-      const max = Math.max(1, ...series.map(p => p.v)), W = 240, H = 44, step = W / (days - 1);
+      const max = Math.max(1, ...series.map(p => p.v)), W = 240, H = 44, step = W / Math.max(1, days - 1);
       series.forEach((p, i) => { p.x = +(i * step).toFixed(1); p.y = +(H - 3 - (p.v / max) * (H - 8)).toFixed(1); });
       const pts = series.map(p => `${p.x},${p.y}`);
       const area = `0,${H} ` + pts.join(" ") + ` ${W},${H}`;
@@ -380,11 +410,11 @@
         `<line class="marker" y1="0" y2="${H}" vector-effect="non-scaling-stroke" hidden/></svg>`;
       return { svg, series, last: series[series.length - 1].v, sum: series.reduce((a, b) => a + b.v, 0), max };
     }
-    function sparkCard(title, rows, unit) {
-      const s = spark(rows);
+    function sparkCard(title, rows, unit, days) {
+      const s = spark(rows, days);
       return `<div class="card sparkwrap"><h2>${title}</h2>` +
         `<div class="sparkbox" data-series='${JSON.stringify(s.series)}'>${s.svg}<div class="sptip" hidden></div></div>` +
-        `<div class="lbl"><span class="muted">30 Tage · Σ ${nf(s.sum)}</span><b class="mono">heute ${nf(s.last)}${unit || ""}</b></div></div>`;
+        `<div class="lbl"><span class="muted">${days} Tage · Σ ${nf(s.sum)}</span><b class="mono">heute ${nf(s.last)}${unit || ""}</b></div></div>`;
     }
     // Hover/Touch über einer Sparkline: Führungslinie + Tooltip mit Datum & exakter Zahl.
     function attachSparkHover(box) {
@@ -424,6 +454,7 @@
     // liegt — sonst wäre das Wegräumen von Inhalt ein Verstecken.
     function renderTabs(fehler, meldungen) {
       const badge = { fehler, moderation: meldungen };
+      lastBadges = { fehler, moderation: meldungen };
       $("#tabs").innerHTML = VIEWS.map(([id, label]) => {
         const n = badge[id] || 0;
         return `<button class="tab" data-view="${id}" aria-current="${id === view}">${label}${n ? ` <span class="badge">${nf(n)}</span>` : ""}</button>`;
@@ -432,12 +463,18 @@
     }
 
     function render(d) {
+      // „seit … ohne Vorfall" — der Zeitpunkt des letzten Statuswechsels sagt
+      // mehr als ein grüner Punkt, der immer grün ist.
+      const ops = d.ops || {};
+      const ruhe = d.status === "ok" && ops.since && ops.sinceStatus === "ok"
+        ? ` · seit ${fmtAge(Math.round(ageMs(ops.since) / 1000))} ohne Vorfall` : "";
+
       // Ampel
       const amp = $("#ampel");
       const cls = d.status === "ok" ? "ok" : d.status === "bad" ? "bad" : "warn";
       amp.className = "ampel " + cls;      // Signalfarbe sitzt am linken Rand, nicht als Leuchtpunkt
       amp.innerHTML = `<span class="dot ${cls}"></span><span class="txt">${d.status === "ok" ? "Alles ok" : "Achtung"}</span>` +
-        (d.warns && d.warns.length ? `<span class="warns">· ${d.warns.map(esc).join(" · ")}</span>` : "");
+        (d.warns && d.warns.length ? `<span class="warns">· ${d.warns.map(esc).join(" · ")}</span>` : `<span class="warns">${ruhe}</span>`);
       $("#stamp").textContent = new Date(d.generatedAt).toLocaleTimeString("de-AT");
 
       const s = d.scores, e = d.errors, p = d.push, f = d.fire, db = d.db, k = d.kritzeln || {}, q = d.quiz || {}, sp = d.sprit || {};
@@ -451,6 +488,13 @@
       // Fehler-Ansicht (gruppiert / roh)
       const pages = [...new Set((e.latest || []).map(x => x.page).filter(Boolean))].sort();
       let errBody;
+      // Kontext für die GRUPPIERTE Ansicht: die Gruppen-Abfrage kennt kein
+      // ua/extra (das hängt an der einzelnen Zeile). Statt dafür je Gruppe
+      // eine Unterabfrage über error_log laufen zu lassen, wird der jüngste
+      // Treffer aus der ohnehin geladenen Verlaufsliste genommen.
+      const errCtx = new Map();
+      (e.latest || []).forEach(x => { if (!errCtx.has(x.msg)) errCtx.set(x.msg, x); });
+
       let errEmpty = false;
       if (errView === "top") {
         const rows = (e.top || []).filter(x => !pageFilter || x.page === pageFilter);
@@ -461,13 +505,13 @@
             // damit unterscheidbar wird, was heute neu dazugekommen ist.
             const neu = ageMs(x.firstSeen) < 864e5;
             const alt = x.total > x.n ? ` · ${nf(x.total)} gesamt` : "";
-            return `<tr><td class="num"><b>${nf(x.n)}</b></td><td class="m">${neu ? '<span class="pill warn">neu</span> ' : ""}${esc(x.msg)}<br><span class="muted">${esc(x.page || "")}${alt}</span></td><td class="t">${esc((x.last || "").slice(5, 16))}</td></tr>`;
+            return `<tr><td class="num"><b>${nf(x.n)}</b></td><td class="m">${neu ? '<span class="pill warn">neu</span> ' : ""}${esc(x.msg)}<br><span class="muted">${esc(x.page || "")}${alt}</span>${detail(errCtx.get(x.msg) || {})}</td><td class="t">${esc((x.last || "").slice(5, 16))}</td></tr>`;
           }).join("") || '<tr><td colspan="3" class="muted">keine Fehler in 24 h 🎉</td></tr>') + `</tbody></table>`;
       } else {
         const rows = (e.latest || []).filter(x => !pageFilter || x.page === pageFilter);
         errEmpty = rows.length === 0;
         errBody = `<table><thead><tr><th>Zeit</th><th>Fehler</th></tr></thead><tbody>` +
-          (rows.map(x => `<tr><td class="t">${esc((x.created_at || "").slice(5, 16))}</td><td class="m"><b>${esc(x.msg)}</b><br><span class="muted">${esc(x.page || "")} · ${esc((x.ua || "").slice(0, 60))}</span></td></tr>`).join("") || '<tr><td colspan="2" class="muted">keine</td></tr>') + `</tbody></table>`;
+          (rows.map(x => `<tr><td class="t">${esc((x.created_at || "").slice(5, 16))}</td><td class="m"><b>${esc(x.msg)}</b>${detail(x)}</td></tr>`).join("") || '<tr><td colspan="2" class="muted">keine</td></tr>') + `</tbody></table>`;
       }
       const pageOpts = `<option value="">alle Seiten</option>` + pages.map(pg => `<option value="${esc(pg)}"${pg === pageFilter ? " selected" : ""}>${esc(pg)}</option>`).join("");
 
@@ -492,7 +536,7 @@
       // Client-Fehler (Geräte)
       const ce = d.clientErrors || {};
       const clRows = (ce.latest || []).map(x =>
-        `<tr><td class="t">${esc((x.created_at || "").slice(5, 16))}</td><td class="m"><b>${esc(x.msg)}</b><br><span class="muted">${esc(x.page || "")} · ${esc((x.ua || "").slice(0, 60))}</span></td></tr>`).join("");
+        `<tr><td class="t">${esc((x.created_at || "").slice(5, 16))}</td><td class="m"><b>${esc(x.msg)}</b>${detail(x)}</td></tr>`).join("");
 
       // Nutzungszähler (anonym): play/duel/share je Spiel zusammenführen
       const usageMap = {};
@@ -510,6 +554,18 @@
       const tableRows = Object.entries(d.db && d.db.tables || {}).sort((a, b) => b[1] - a[1]).map(([t, n]) =>
         `<tr><td class="mono">${esc(t)}</td><td class="num">${nf(n)}</td><td class="muted">${esc(SELBST[t] || "von Hand")}</td></tr>`).join("")
         || '<tr><td colspan="3" class="muted">keine Daten</td></tr>';
+
+      // Vorfall-Verlauf: Zeilen sind neu→alt, die Dauer eines Vorfalls ist
+      // der Abstand zur nächst-NEUEREN Zeile (dem „wieder ok").
+      const opsRows = (ops.log || []).map((x, i, arr) => {
+        const neuer = arr[i - 1];
+        const dauer = x.status !== "warn" ? "·"
+          : neuer ? fmtAge(Math.max(0, Math.round((tsMs(neuer.at) - tsMs(x.at)) / 1000)))
+            : "läuft";
+        return `<tr><td class="t">${esc((x.at || "").slice(0, 16))}</td>` +
+          `<td><span class="pill ${x.status === "warn" ? "warn" : "ok"}">${x.status === "warn" ? "Achtung" : "ok"}</span></td>` +
+          `<td class="m muted">${esc(x.reasons || "")}</td><td class="num">${dauer}</td></tr>`;
+      }).join("");
 
       // Admin-Audit-Log
       const logRows = (d.adminLog || []).map(x =>
@@ -543,9 +599,9 @@
 
         ${title("Trends", `<span class="toolbar">${[7, 30, 90].map(n => `<button class="btn sm${trendDays === n ? " p" : ""}" data-days="${n}">${n} T</button>`).join("")}</span>`)}
         <div class="grid">
-          ${sparkCard("Scores / Tag", d.trends.scores)}
-          ${sparkCard("Aktive Geräte / Tag", d.trends.devices)}
-          ${sparkCard("Fehler / Tag", d.trends.errors)}
+          ${sparkCard("Scores / Tag", d.trends.scores, "", d.trends.days)}
+          ${sparkCard("Aktive Geräte / Tag", d.trends.devices, "", d.trends.days)}
+          ${sparkCard("Fehler / Tag", d.trends.errors, "", d.trends.days)}
         </div>
 
         ${title("Nutzung", `<span class="muted">anonym · letzte ${d.trends.days} Tage</span>`)}
@@ -661,6 +717,12 @@
           <p class="note">D1 im Gratis-Tarif: 5 Mio. gelesene Zeilen pro Tag. <code>rate</code> und <code>used_token</code> räumen sich selbst ab, <code>error_log</code> und <code>client_log</code> nur über die Knöpfe in der Fehler-Ansicht, <code>sprit_price_log</code> und <code>fire_op</code> wachsen dauerhaft mit.</p>
         </div>
 
+        ${fold("Vorfall-Verlauf",
+          opsRows
+            ? `<table><thead><tr><th>Zeitpunkt (UTC)</th><th>Status</th><th>Grund</th><th class="num">Dauer</th></tr></thead><tbody>${opsRows}</tbody></table>
+               <p class="note">Eine Zeile je Statuswechsel, geschrieben vom Cron — unabhängig davon, ob ein Alarm-Name gesetzt ist.</p>`
+            : '<p class="quiet">noch kein Statuswechsel aufgezeichnet</p>',
+          ops.since ? `letzter Wechsel vor ${fmtAge(Math.round(ageMs(ops.since) / 1000))}` : "")}
         ${fold("Admin-Protokoll",
           `<table><thead><tr><th>Zeit</th><th>Aktion</th></tr></thead><tbody>${logRows}</tbody></table>`,
           "letzte 40 Aktionen · inkl. auth:fail")}`;

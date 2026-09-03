@@ -3,7 +3,7 @@ import { pushToEndpoint, sendToName } from "../push.js";
 import { BEZIRK, bezName } from "./_bezirk.js";
 import { kindOf, shouldEscalate, kindAllows, withinRadius } from "./_parse.js";
 import { geocode } from "./geo.js";
-import { opsFacts, opsEvaluate } from "../_ops.js";
+import { opsFacts, opsEvaluate, opsTransition } from "../_ops.js";
 
 // ====================================================================
 // Zeitgesteuerte Prüfung neuer Feuerwehr-Einsätze (NÖ) und Bezirks-Alarm.
@@ -320,6 +320,7 @@ export async function onRequestGet({ request, env }) {
 
   await writeHealth(env, list.length, detailFetched, "ok");
   await checkAdminAlert(env);
+  await sweepStale(env);
   // Gelegentliche plattformweite Aufräum-Runde (der Cron läuft alle 2 Min →
   // ~2 %/Lauf ≈ alle ~1,5 h). Verhindert unbegrenztes Wachstum der Tabellen.
   if (Math.random() < 0.02) await maintenance(env);
@@ -375,34 +376,33 @@ async function maintenance(env) {
 // ------------------------------------------------------------------
 async function checkAdminAlert(env) {
   try {
-    const cfg = await env.DB.prepare("SELECT v FROM app_config WHERE k='alert_name'").first();
-    const name = cfg && cfg.v;
-    if (!name) return;   // Alarm aus
-
     // 15-Minuten-Fenster für Fehler: ein Alarm soll auf Spitzen reagieren,
     // nicht auf das Tagesmittel.
     const facts = await opsFacts(env, { errWindowMin: 15 });
-    const { warns } = opsEvaluate(facts);
-    const reasons = warns;
-    const bad = reasons.length > 0;
+    const { status, warns } = opsEvaluate(facts);
 
-    const prev = (await env.DB.prepare("SELECT v FROM app_config WHERE k='alert_state'").first())?.v || "ok";
-    const setState = s => env.DB.prepare(
-      "INSERT INTO app_config (k, v) VALUES ('alert_state', ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v"
-    ).bind(s).run();
+    // Erst den Verlauf schreiben (immer), dann benachrichtigen (nur wenn ein
+    // Name konfiguriert ist). Vorher hing beides am Namen — ohne Alarm gab es
+    // auch keine Aufzeichnung.
+    const changed = await opsTransition(env, status, warns);
+    if (!changed) return;
 
-    if (bad && prev !== "bad") {
-      await sendToName(env, name, {
-        title: "⚠️ Spieleabend: Achtung",
-        body: reasons.join(" · "),
-        url: "/admin/",
-      });
-      await setState("bad");
-    } else if (!bad && prev === "bad") {
-      await sendToName(env, name, { title: "✅ Spieleabend: wieder ok", body: "Alle Werte normal.", url: "/admin/" });
-      await setState("ok");
-    }
+    const cfg = await env.DB.prepare("SELECT v FROM app_config WHERE k='alert_name'").first();
+    const name = cfg && cfg.v;
+    if (!name) return;
+
+    await sendToName(env, name, status === "warn"
+      ? { title: "⚠️ Spieleabend: Achtung", body: warns.join(" · "), url: "/admin/" }
+      : { title: "✅ Spieleabend: wieder ok", body: "Alle Werte normal.", url: "/admin/" });
   } catch (e) {
     await logError(env, "fire-cron: admin-alert " + e.message, "fire/cron");
   }
+}
+
+// Aufräumen gehört in den Cron, nicht in die Anzeige: tote Live-Room-Zeilen
+// (ein DO ist abgestürzt, ohne sich abzumelden) wurden vorher bei JEDEM
+// Admin-GET gelöscht — alle 45 Sekunden ein Schreibvorgang für ein Panel,
+// das nur anzeigen soll.
+async function sweepStale(env) {
+  try { await env.DB.prepare("DELETE FROM live_room WHERE updated_at < datetime('now','-10 minutes')").run(); } catch (_) {}
 }
