@@ -64,10 +64,50 @@
       }</ul></div>` : ""}`;
   }
 
-  fetch("/api/briefing")
-    .then(r => r.json())
-    .then(render)
-    .catch(() => {
-      out.innerHTML = `<div class="card"><p class="empty">Konnte nicht geladen werden. Später nochmal probieren.</p></div>`;
-    });
+  // Der Schlüssel ist derselbe wie im Betriebs-Panel und liegt unter dem
+  // gleichen Ursprung — wer dort angemeldet ist, kommt hier ohne Eingabe rein.
+  const LS = "admin_key";
+  // Aus der Adresse übernehmen (einmalig, dann aus der History entfernen).
+  try {
+    const u = new URL(location.href);
+    const k = u.searchParams.get("key");
+    if (k) {
+      localStorage.setItem(LS, k);
+      u.searchParams.delete("key");
+      history.replaceState(null, "", u.pathname + u.search + u.hash);
+    }
+  } catch (_) {}
+
+  function frageSchluessel(msg) {
+    out.innerHTML = `<div class="card">
+      <p class="empty">${msg}</p>
+      <p style="margin-top:12px"><input id="k" type="password" placeholder="Betriebsschlüssel" autocomplete="off"
+        style="width:100%;padding:11px 13px;border-radius:12px;border:1px solid var(--edge);background:var(--card);color:var(--ink);font:inherit"></p>
+      <p style="margin-top:10px"><button id="go" style="width:100%;padding:12px;border:0;border-radius:12px;background:var(--gold);color:#1a1508;font:inherit;font-weight:700;cursor:pointer">Anmelden</button></p>
+    </div>`;
+    const go = () => {
+      const v = document.getElementById("k").value.trim();
+      if (!v) return;
+      localStorage.setItem(LS, v);
+      laden();
+    };
+    document.getElementById("go").onclick = go;
+    document.getElementById("k").onkeydown = e => { if (e.key === "Enter") go(); };
+  }
+
+  function laden() {
+    const key = localStorage.getItem(LS);
+    if (!key) return frageSchluessel("Das Briefing ist persönlich — es nennt Bezirk und Tankstelle in Wohnortnähe. Bitte den Betriebsschlüssel eingeben.");
+    out.innerHTML = `<div class="card"><p class="empty">lädt…</p></div>`;
+    fetch("/api/briefing", { headers: { "x-admin-key": key } })
+      .then(async r => {
+        if (r.status === 401) { localStorage.removeItem(LS); frageSchluessel("Schlüssel passt nicht."); return null; }
+        return r.json();
+      })
+      .then(d => { if (d) render(d); })
+      .catch(() => {
+        out.innerHTML = `<div class="card"><p class="empty">Konnte nicht geladen werden. Später nochmal probieren.</p></div>`;
+      });
+  }
+  laden();
 })();

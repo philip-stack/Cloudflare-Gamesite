@@ -17,6 +17,21 @@ import { json, clientIp, rateLimit } from "./_util.js";
 const EVENTS = new Set(["play", "duel", "share"]);
 const GAME_RE = /^[a-z0-9_-]{1,24}$/;
 
+// Serverseitiger Zähler für dieselbe Tabelle — für Dinge, die KEIN Client
+// meldet. Gebraucht für die KI-Aufrufe: Cloudflare liefert die Neuronen,
+// weiß aber nicht, WOFÜR sie verbraucht wurden (Kochstudio und Briefing
+// laufen auf demselben Modell). Kein Personenbezug, wie beim Rest: nur
+// (Tag, Schlüssel, Anzahl).
+export async function bumpStat(env, key) {
+  try {
+    const day = new Date().toISOString().slice(0, 10);
+    await env.DB.prepare(
+      "INSERT INTO stat_daily (day, k, n) VALUES (?, ?, 1) " +
+      "ON CONFLICT(day, k) DO UPDATE SET n = n + 1"
+    ).bind(day, String(key).slice(0, 40)).run();
+  } catch (_) { /* Zähler dürfen nie den Ablauf stören */ }
+}
+
 export async function onRequestPost({ request, env }) {
   // Großzügige Drossel gegen versehentliche Schleifen/Missbrauch (IP nur flüchtig).
   if (!(await rateLimit(env, "stat:" + clientIp(request), 300, 60))) {

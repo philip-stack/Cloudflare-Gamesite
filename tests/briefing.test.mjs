@@ -233,5 +233,39 @@ globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({}) 
   assert("Koordinaten werden als Zahl gelesen", c.lat === 48.31 && c.lng === 16.36);
 }
 
+// ---------- Die Lese-API ist NICHT öffentlich ----------
+// Der Text nennt Bezirk und Tankstelle in Wohnortnähe.
+{
+  const apiUrl = "file://" + path.join(__dirname, "..", "functions", "api", "briefing", "index.js").replace(/\\/g, "/");
+  const api = await import(apiUrl);
+  const TOKEN = "test-admin-token-1234567890";
+  const DB = {
+    prepare() {
+      return {
+        bind() { return this; },
+        async all() { return { results: [{ day: "2026-09-03", text: "Guten Morgen", data: "null", via: "ai", at: "2026-09-03 04:10:00" }] }; },
+        async first() { return null; },
+        async run() { return {}; },
+      };
+    },
+  };
+  const env = { DB, ADMIN_TOKEN: TOKEN };
+  const req = (h) => new Request("https://x/api/briefing", h ? { headers: h } : undefined);
+
+  const r1 = await api.onRequestGet({ request: req(), env });
+  assert("ohne Schlüssel → 401", r1.status === 401);
+
+  const r2 = await api.onRequestGet({ request: req({ "x-admin-key": "falsch-aber-gleich-lang" }), env });
+  assert("falscher Schlüssel → 401", r2.status === 401);
+
+  const r3 = await api.onRequestGet({ request: req({ "x-admin-key": TOKEN }), env });
+  const b3 = await r3.json();
+  assert("richtiger Schlüssel → 200 mit Text", r3.status === 200 && b3.today.text === "Guten Morgen");
+  assert("Antwort wird nicht öffentlich zwischengespeichert", /private/.test(r3.headers.get("Cache-Control") || ""));
+
+  const r4 = await api.onRequestGet({ request: req({ "x-admin-key": TOKEN }), env: { DB } });   // kein ADMIN_TOKEN
+  assert("ohne gesetztes ADMIN_TOKEN → gesperrt", r4.status === 401);
+}
+
 console.log(ok ? "\n✅ briefing: alle Tests grün" : "\n❌ briefing: Tests fehlgeschlagen");
 process.exit(ok ? 0 : 1);

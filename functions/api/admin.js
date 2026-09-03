@@ -136,7 +136,7 @@ export async function onRequestGet({ request, env }) {
     liveRooms, adminLog,
     tScores, tErrors, tDevices, alertRow, usage,
     recent, banned, tableRows, health,
-    opsLastRow, opsLog, cf, briefingCfg, briefingLast,
+    opsLastRow, opsLog, cf, aiToday, briefingCfg, briefingLast,
   ] = await Promise.all([
     // ---- Scores ----
     q(vU, () => cnt("SELECT COUNT(*) n FROM scores"), 0),
@@ -218,7 +218,8 @@ export async function onRequestGet({ request, env }) {
     q(vS, () => one(env, "SELECT v FROM app_config WHERE k='alert_name'"), null),
 
     // ---- Nutzungszähler (anonym, aggregiert): play/duel/share je Spiel ----
-    q(vU, () => many(env, `SELECT k, SUM(n) n FROM stat_daily WHERE day > date('now','-${days} days') GROUP BY k ORDER BY n DESC`), []),
+    // ai:*-Schlüssel gehören nicht in die Spiele-Tabelle (eigene Karte).
+    q(vU, () => many(env, `SELECT k, SUM(n) n FROM stat_daily WHERE day > date('now','-${days} days') AND k NOT LIKE 'ai:%' GROUP BY k ORDER BY n DESC`), []),
 
     // ---- Moderation ----
     q(vM, () => many(env, "SELECT id, game, name, device, score, substr(meta,1,140) meta, created_at FROM scores ORDER BY id DESC LIMIT 40"), []),
@@ -250,6 +251,10 @@ export async function onRequestGet({ request, env }) {
 
     // ---- Cloudflare-Kontingente (10 min zwischengespeichert) ----
     q(vS, () => cfStats(env), null),
+
+    // ---- KI-Aufrufe HEUTE je Anlass (eigener Zähler; Cloudflare kennt nur
+    // die Summe, weil beide Anlässe dasselbe Modell benutzen) ----
+    q(vS, () => many(env, "SELECT k, n FROM stat_daily WHERE day = date('now') AND k LIKE 'ai:%' ORDER BY n DESC"), []),
 
     // ---- Tages-Briefing: Einstellungen + letzter Text ----
     q(vS, () => loadCfg(env), null),
@@ -301,6 +306,7 @@ export async function onRequestGet({ request, env }) {
     reach: { players: reachTotal, new7: reachNew7, active7: reachActive7, returning: reachReturning },
     ops: { since: opsLastRow?.at || null, sinceStatus: opsLastRow?.status || null, log: opsLog },
     cf,
+    aiToday,
     briefing: { cfg: briefingCfg, last: briefingLast, bezirke: BEZIRK },
     kritzeln: { players: kPlayers, games: kGames, topName: kTop?.name || null, topPoints: kTop?.points ?? 0, entries: kEntries },
     quiz: { players: qPlayers, games: qGames, topName: qTop?.name || null, topPoints: qTop?.points ?? 0, entries: qEntries, reportCount: qReportCount, reports: qReports },

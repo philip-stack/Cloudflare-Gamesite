@@ -112,6 +112,9 @@
       key: "briefing", name: "Tages-Briefing", icon: "☀️", accent: "#e8c15a", href: "/briefing/",
       desc: "Der Morgen in drei Sätzen.",
       long: "Spritpreis, Wetter und Einsätze der Nacht — jeden Morgen zusammengefasst, kommt auch als Push.",
+      // Persönliches Werkzeug: enthält Wohnort und Bezirk, taucht darum nur
+      // beim Betreiber in der Werkzeug-Liste auf (siehe onlyFor in index.html).
+      onlyFor: "flip",
     },
     {
       key: "fire", name: "Feuerwehr NÖ", icon: "🚒", accent: "#e2685a", href: "/fire/noe/",

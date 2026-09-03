@@ -98,6 +98,8 @@ const answer = {
   quiz: { players: 2, games: 3, topName: "B", topPoints: 7, entries: [{ name: "B", points: 7, games: 1, wins: 1, best: 4 }], reportCount: 2, reports: [{ id: 1, created_at: "2026-09-03 08:00:00", msg: "FRAGE GEMELDET: x", extra: "y" }] },
   live: { rooms: [{ code: "AB12", game: "quiz", players: 3, state: "play", updated_at: "2026-09-03 08:30:00" }] },
   adminLog: [{ action: "auth:fail", detail: "GET · Schlüssel: ohne", created_at: "2026-09-03 08:00:00" }],
+  // Eigener Zähler: Cloudflare kennt nur die Summe der KI-Aufrufe.
+  aiToday: [{ k: "ai:koch", n: 2 }, { k: "ai:briefing", n: 2 }],
   trends: { days: 30, scores: [{ d: "2026-09-02", n: 5 }], errors: [], devices: [] },
   usage: [{ k: "play:flatterfink", n: 21 }],
   alert: { name: "Philip" },
@@ -175,11 +177,15 @@ sandbox.ANSWER = answer;
   // 4,6 Mio. von 5 Mio. = 92 % → der Balken MUSS rot sein, das ist der
   // eigentliche Zweck der Anzeige.
   assert("System: Auslastungsbalken schlägt bei 92 % auf rot", h.includes('class="bar bad"') && h.includes("92 %"));
-  assert("System: KI-Widget für das Kochstudio", h.includes("Workers AI") && h.includes("Rezepte heute"));
+  assert("System: KI-Widget", h.includes("Workers AI (heute)") && h.includes("Aufrufe heute"));
+  // Kochstudio und Briefing laufen auf demselben Modell — die Aufteilung darf
+  // NICHT aus Cloudflare stammen, sondern aus dem eigenen Zähler (stat_daily).
+  assert("System: KI-Aufrufe je Anlass aufgeschlüsselt", h.includes("Kochstudio") && h.includes("· Briefing"));
   assert("System: Cloudflare-Zahlen von Hand neu holbar", h.includes('id="cf-refresh"'));
-  // 8 Aufrufe auf 1000 Neuronen im Fenster = 125 je Rezept; heute sind 500
+  // 8 Aufrufe auf 1000 Neuronen im Fenster = 125 je Aufruf; heute sind 500
   // verbraucht, also (10000-500)/125 = 76 weitere möglich.
-  assert("System: Restschätzung aus dem Mittelwert", h.includes("125 Neuronen je Rezept") && h.includes(">76<"));
+  assert("System: Restschätzung je AUFRUF (nicht je Rezept)",
+    h.includes("125 Neuronen je Aufruf") && h.includes(">76<") && !h.includes("je Rezept →"));
   assert("System: KI-Modelle aufgeschlüsselt", h.includes("KI-Modelle") && h.includes("llama-3.1-8b-instruct"));
   assert("System: Tagestabelle mit DO-Fehlern", h.includes("DO-Fehler") && h.includes("2026-09-02"));
   assert("System: Hinweis dass Anfragen keine Seitenaufrufe sind", h.includes("NICHT Seitenaufrufe"));

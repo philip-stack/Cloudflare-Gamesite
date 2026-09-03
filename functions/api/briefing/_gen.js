@@ -16,6 +16,7 @@
 import { ecByAddress, normFuel, FUELS } from "../sprit/_ec.js";
 import { bezName } from "../fire/_bezirk.js";
 import { sendToName } from "../push.js";
+import { bumpStat } from "../stat.js";
 
 const MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
 
@@ -178,6 +179,7 @@ export async function compose(env, raw) {
     + "Daten (JSON):\n" + JSON.stringify(raw);
 
   try {
+    await bumpStat(env, "ai:briefing");
     const res = await env.AI.run(MODEL, {
       messages: [{ role: "user", content: prompt }],
       max_tokens: 220,

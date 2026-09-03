@@ -1,3 +1,4 @@
+import { bumpStat } from "./stat.js";
 import { json, rateLimit, clientIp } from "./_util.js";
 
 // ====================================================================
@@ -106,6 +107,7 @@ Sei konkret, keine Floskeln. Erfinde keine Zutaten, die nicht genannt oder Grund
 
   let answer = null;
   try {
+    await bumpStat(env, "ai:koch");
     const res = await env.AI.run(MODEL, { messages, max_tokens: 1400 });
     answer = res.response;
   } catch {

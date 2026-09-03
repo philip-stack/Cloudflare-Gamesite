@@ -467,7 +467,7 @@
   </main>
 
   <script src="/shared.js?v=c53599e3"></script>
-  <script src="/games.js?v=d176002f"></script>
+  <script src="/games.js?v=7edf6458"></script>
   <script>
   // ================= Landing-Dynamik =================
   (function () {
@@ -503,7 +503,10 @@
     });
 
     // --- Werkzeuge (Neben-Apps) in eigener Sektion ---
-    const TOOLS = window.TOOLS || [];
+    // Werkzeuge mit onlyFor sind persönlich (z. B. das Tages-Briefing mit
+    // Wohnort und Bezirk) und erscheinen nur unter diesem Namen. Das ist
+    // Aufräumen, kein Schutz — die Seite selbst verlangt den Betriebsschlüssel.
+    const TOOLS = (window.TOOLS || []).filter(t => !t.onlyFor || t.onlyFor === myName.toLowerCase());
     const toolsNav = document.querySelector("#tools-nav");
     if (TOOLS.length && toolsNav) {
       document.querySelector("#tools-h").hidden = false;

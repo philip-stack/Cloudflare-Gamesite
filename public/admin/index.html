@@ -632,19 +632,30 @@
             ${meter("Anfragen", heute.pagesReq || 0, L.pagesRequests)}
             <div class="kv"><span>Fehler heute</span><b class="${heute.pagesErr ? "err" : ""}">${nf(heute.pagesErr || 0)}</b></div>
           </div>
-          <div class="card"><h2>Workers AI · Kochstudio (heute)</h2>
+          <div class="card"><h2>Workers AI (heute)</h2>
             ${meter("Neuronen", Math.round(heute.aiNeurons || 0), L.aiNeurons)}
-            <div class="kv"><span>Rezepte heute</span><b>${nf(heute.aiReq || 0)}</b></div>
+            <div class="kv"><span>Aufrufe heute</span><b>${nf(heute.aiReq || 0)}</b></div>
+            ${(() => {
+              // Cloudflare kennt nur die Summe — Kochstudio und Briefing laufen
+              // auf demselben Modell. Die Aufteilung kommt aus dem eigenen
+              // Zähler (stat_daily, ai:*).
+              const LABEL = { "ai:koch": "Kochstudio", "ai:briefing": "Briefing" };
+              const rows = (d.aiToday || []).map(x =>
+                `<div class="kv"><span>· ${esc(LABEL[x.k] || x.k)}</span><b>${nf(x.n)}</b></div>`).join("");
+              return rows || '<div class="kv"><span>· noch kein Aufruf gezählt</span><b>0</b></div>';
+            })()}
             <div class="kv"><span>Tokens ein / aus</span><b>${nf(heute.aiTokIn || 0)} / ${nf(heute.aiTokOut || 0)}</b></div>
             ${(() => {
-              // Was kostet ein Rezept? Aus dem ganzen Fenster gemittelt, damit
-              // ein einzelner Ausreißer die Schätzung nicht verreißt.
+              // Schnitt über das ganze Fenster — bewusst „je Aufruf" und nicht
+              // „je Rezept": ein Rezept (1400 Tokens) kostet ein Mehrfaches
+              // eines Briefings (220 Tokens), der Schnitt liegt dazwischen.
               const rq = days.reduce((s, x) => s + (x.aiReq || 0), 0);
               const nu = days.reduce((s, x) => s + (x.aiNeurons || 0), 0);
               if (!rq) return `<p class="note">Heute noch keine Anfrage. Kontingent: ${nf(L.aiNeurons)} Neuronen/Tag.</p>`;
               const je = nu / rq;
               const rest = Math.max(0, L.aiNeurons - (heute.aiNeurons || 0));
-              return `<p class="note">≈ ${je.toFixed(0)} Neuronen je Rezept → heute noch etwa <b>${nf(Math.floor(rest / je))}</b> möglich.</p>`;
+              return `<p class="note">≈ ${je.toFixed(0)} Neuronen je Aufruf im Schnitt (14 Tage) → heute noch etwa
+                <b>${nf(Math.floor(rest / je))}</b> Aufrufe. Ein Rezept kostet deutlich mehr als ein Briefing.</p>`;
             })()}
           </div>
           <div class="card"><h2>Datenbank &amp; Worker</h2>
