@@ -3,8 +3,9 @@
 // Gratis-Kontingent ist weg?" nicht ins Cloudflare-Dashboard wechseln muss.
 //
 // Eine GraphQL-Abfrage holt Pages-Functions-Anfragen, D1-Verbrauch,
-// Worker-Aufrufe und Durable-Object-Aufrufe in einem Rutsch; die Dateigröße
-// der D1 kommt aus der REST-API (die kennt GraphQL nicht).
+// Worker-Aufrufe, Durable-Object-Aufrufe und den Workers-AI-Verbrauch
+// (Kochstudio) in einem Rutsch; die Dateigröße der D1 kommt aus der
+// REST-API (die kennt GraphQL nicht).
 //
 // Voraussetzungen (Pages-Secrets):
 //   CF_API_TOKEN    API-Token mit  Account → Account Analytics → Read
@@ -32,6 +33,7 @@ export const CF_LIMITS = {
   d1RowsWritten: 100_000,
   pagesRequests: 100_000,
   workerRequests: 100_000,
+  aiNeurons: 10_000,        // Workers AI: 10.000 Neuronen/Tag im Gratis-Tarif
 };
 
 const QUERY = `query Ops($acc: String!, $since: Date!, $sinceT: Time!) {
@@ -49,6 +51,11 @@ const QUERY = `query Ops($acc: String!, $since: Date!, $sinceT: Time!) {
       dos: durableObjectsInvocationsAdaptiveGroups(limit: 14, filter: { date_geq: $since }, orderBy: [date_DESC]) {
         dimensions { date } sum { requests errors }
       }
+      ai: aiInferenceAdaptiveGroups(limit: 50, filter: { date_geq: $since }, orderBy: [date_DESC]) {
+        count
+        dimensions { date modelId }
+        sum { totalNeurons totalInputTokens totalOutputTokens }
+      }
     }
   }
 }`;
@@ -60,7 +67,7 @@ const dayKey = (o) => (o && o.dimensions && o.dimensions.date) || "";
 function mergeDays(a) {
   const byDay = new Map();
   const row = (d) => {
-    if (!byDay.has(d)) byDay.set(d, { d, pagesReq: 0, pagesErr: 0, rowsRead: 0, rowsWritten: 0, readQ: 0, writeQ: 0, doReq: 0, doErr: 0 });
+    if (!byDay.has(d)) byDay.set(d, { d, pagesReq: 0, pagesErr: 0, rowsRead: 0, rowsWritten: 0, readQ: 0, writeQ: 0, doReq: 0, doErr: 0, aiReq: 0, aiNeurons: 0, aiTokIn: 0, aiTokOut: 0 });
     return byDay.get(d);
   };
   for (const x of a.pages || []) { const r = row(dayKey(x)); r.pagesReq += x.sum.requests || 0; r.pagesErr += x.sum.errors || 0; }
@@ -70,6 +77,15 @@ function mergeDays(a) {
     r.readQ += x.sum.readQueries || 0; r.writeQ += x.sum.writeQueries || 0;
   }
   for (const x of a.dos || []) { const r = row(dayKey(x)); r.doReq += x.sum.requests || 0; r.doErr += x.sum.errors || 0; }
+  // Der AI-Datensatz ist nach Tag UND Modell gruppiert → mehrere Zeilen je Tag.
+  // count ist die Zahl der Aufrufe, totalNeurons die verrechnete Einheit.
+  for (const x of a.ai || []) {
+    const r = row(dayKey(x));
+    r.aiReq += x.count || 0;
+    r.aiNeurons += x.sum.totalNeurons || 0;
+    r.aiTokIn += x.sum.totalInputTokens || 0;
+    r.aiTokOut += x.sum.totalOutputTokens || 0;
+  }
   return [...byDay.values()].filter(r => r.d).sort((x, y) => (x.d < y.d ? 1 : -1));
 }
 
@@ -108,9 +124,23 @@ async function fetchFresh(env) {
     } catch (_) { /* optional */ }
   }
 
+  // Aufschlüsselung je Modell über das ganze Fenster — zeigt, wie oft der
+  // Fallback (das kleinere Modell) einspringt.
+  const models = new Map();
+  for (const x of a.ai || []) {
+    const id = (x.dimensions && x.dimensions.modelId) || "?";
+    const m = models.get(id) || { model: id, requests: 0, neurons: 0, tokIn: 0, tokOut: 0 };
+    m.requests += x.count || 0;
+    m.neurons += x.sum.totalNeurons || 0;
+    m.tokIn += x.sum.totalInputTokens || 0;
+    m.tokOut += x.sum.totalOutputTokens || 0;
+    models.set(id, m);
+  }
+
   return {
     at: new Date().toISOString(),
     days: mergeDays(a),
+    aiModels: [...models.values()].sort((x, y) => y.requests - x.requests),
     workers: (a.workers || []).map(w => ({
       script: w.dimensions.scriptName, status: w.dimensions.status,
       requests: w.sum.requests || 0, errors: w.sum.errors || 0,

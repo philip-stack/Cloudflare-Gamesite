@@ -601,6 +601,7 @@
           `<tr><td class="t">${esc(x.d)}</td><td class="num">${nf(x.pagesReq)}</td>
            <td class="num ${x.pagesErr ? "err" : ""}">${nf(x.pagesErr)}</td>
            <td class="num">${nf(x.rowsRead)}</td><td class="num">${nf(x.rowsWritten)}</td>
+           <td class="num">${x.aiReq ? nf(x.aiReq) + " · " + nf(Math.round(x.aiNeurons)) : "·"}</td>
            <td class="num">${nf(x.doReq)}</td><td class="num ${x.doErr ? "err" : ""}">${nf(x.doErr)}</td></tr>`).join("");
 
         cfBlock = `${title("Cloudflare", `<span class="muted">${cf.stale ? "veraltet · " : ""}Stand vor ${fmtAge(cf.ageSec || 0)}${cf.cached ? " (zwischengespeichert)" : ""}</span>`)}
@@ -617,6 +618,21 @@
             ${meter("Anfragen", heute.pagesReq || 0, L.pagesRequests)}
             <div class="kv"><span>Fehler heute</span><b class="${heute.pagesErr ? "err" : ""}">${nf(heute.pagesErr || 0)}</b></div>
           </div>
+          <div class="card"><h2>Workers AI · Kochstudio (heute)</h2>
+            ${meter("Neuronen", Math.round(heute.aiNeurons || 0), L.aiNeurons)}
+            <div class="kv"><span>Rezepte heute</span><b>${nf(heute.aiReq || 0)}</b></div>
+            <div class="kv"><span>Tokens ein / aus</span><b>${nf(heute.aiTokIn || 0)} / ${nf(heute.aiTokOut || 0)}</b></div>
+            ${(() => {
+              // Was kostet ein Rezept? Aus dem ganzen Fenster gemittelt, damit
+              // ein einzelner Ausreißer die Schätzung nicht verreißt.
+              const rq = days.reduce((s, x) => s + (x.aiReq || 0), 0);
+              const nu = days.reduce((s, x) => s + (x.aiNeurons || 0), 0);
+              if (!rq) return `<p class="note">Heute noch keine Anfrage. Kontingent: ${nf(L.aiNeurons)} Neuronen/Tag.</p>`;
+              const je = nu / rq;
+              const rest = Math.max(0, L.aiNeurons - (heute.aiNeurons || 0));
+              return `<p class="note">≈ ${je.toFixed(0)} Neuronen je Rezept → heute noch etwa <b>${nf(Math.floor(rest / je))}</b> möglich.</p>`;
+            })()}
+          </div>
           <div class="card"><h2>Datenbank &amp; Worker</h2>
             <div class="kv"><span>D1-Größe</span><b>${bytes(cf.d1 && cf.d1.fileSize)}</b></div>
             <div class="kv"><span>Tabellen</span><b>${cf.d1 && cf.d1.tables != null ? nf(cf.d1.tables) : "–"}</b></div>
@@ -625,9 +641,15 @@
             <div class="kv"><span>davon Fehler</span><b class="${wErr ? "err" : ""}">${nf(wErr)}</b></div>
           </div>
         </div>
+        ${(cf.aiModels || []).length ? fold("KI-Modelle · 14 Tage",
+          `<table><thead><tr><th>Modell</th><th class="num">Aufrufe</th><th class="num">Neuronen</th><th class="num">Tokens ein</th><th class="num">Tokens aus</th></tr></thead><tbody>` +
+          cf.aiModels.map(m => `<tr><td class="mono">${esc(m.model)}</td><td class="num">${nf(m.requests)}</td><td class="num">${nf(Math.round(m.neurons))}</td><td class="num">${nf(m.tokIn)}</td><td class="num">${nf(m.tokOut)}</td></tr>`).join("") +
+          `</tbody></table><p class="note">Das Kochstudio versucht zuerst Llama 3.3 70B und fällt bei Fehlern auf 3.1 8B zurück — hier sieht man, wie oft das passiert.</p>`,
+          `${nf((cf.aiModels || []).length)} Modelle`) : ""}
+
         ${cfRows ? `<div class="card full" style="margin-top:12px">
           <table><thead><tr><th>Tag (UTC)</th><th class="num">Anfragen</th><th class="num">Fehler</th>
-            <th class="num">D1 gelesen</th><th class="num">D1 geschr.</th><th class="num">DO</th><th class="num">DO-Fehler</th></tr></thead>
+            <th class="num">D1 gelesen</th><th class="num">D1 geschr.</th><th class="num">KI: Anfr. · Neuronen</th><th class="num">DO</th><th class="num">DO-Fehler</th></tr></thead>
           <tbody>${cfRows}</tbody></table>
           <p class="note">Direkt von der Cloudflare-Analytics-API, alle 10 Minuten neu geholt. „Anfragen" sind Aufrufe der Pages Functions (also API-Aufrufe), NICHT Seitenaufrufe — statische Dateien tauchen hier nicht auf. ${cf.error ? "Letzter Abruf schlug fehl: " + esc(cf.error) : ""}</p>
         </div>` : ""}`;

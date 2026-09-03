@@ -107,12 +107,16 @@ const answer = {
   cf: {
     at: new Date().toISOString(), cached: true, ageSec: 120,
     days: [
-      { d: "2026-09-03", pagesReq: 900, pagesErr: 2, rowsRead: 4_600_000, rowsWritten: 10_000, readQ: 10, writeQ: 4, doReq: 6, doErr: 4 },
-      { d: "2026-09-02", pagesReq: 2351, pagesErr: 0, rowsRead: 2_658_085, rowsWritten: 20_629, readQ: 19, writeQ: 8, doReq: 0, doErr: 0 },
+      { d: "2026-09-03", pagesReq: 900, pagesErr: 2, rowsRead: 4_600_000, rowsWritten: 10_000, readQ: 10, writeQ: 4, doReq: 6, doErr: 4, aiReq: 4, aiNeurons: 500, aiTokIn: 1300, aiTokOut: 2100 },
+      { d: "2026-09-02", pagesReq: 2351, pagesErr: 0, rowsRead: 2_658_085, rowsWritten: 20_629, readQ: 19, writeQ: 8, doReq: 0, doErr: 0, aiReq: 4, aiNeurons: 500, aiTokIn: 700, aiTokOut: 1100 },
     ],
     workers: [{ script: "philip-stack-rt", status: "success", requests: 4639, errors: 0 }],
-    d1: { name: "wuerfelpoker", fileSize: 1470464, region: "EEUR" },
-    limits: { d1RowsRead: 5_000_000, d1RowsWritten: 100_000, pagesRequests: 100_000, workerRequests: 100_000 },
+    d1: { name: "wuerfelpoker", fileSize: 1470464, region: "EEUR", tables: 40 },
+    aiModels: [
+      { model: "@cf/meta/llama-3.3-70b-instruct-fp8-fast", requests: 6, neurons: 900, tokIn: 1700, tokOut: 2800 },
+      { model: "@cf/meta/llama-3.1-8b-instruct", requests: 2, neurons: 100, tokIn: 300, tokOut: 400 },
+    ],
+    limits: { d1RowsRead: 5_000_000, d1RowsWritten: 100_000, pagesRequests: 100_000, workerRequests: 100_000, aiNeurons: 10_000 },
   },
 };
 
@@ -171,6 +175,11 @@ sandbox.ANSWER = answer;
   // 4,6 Mio. von 5 Mio. = 92 % → der Balken MUSS rot sein, das ist der
   // eigentliche Zweck der Anzeige.
   assert("System: Auslastungsbalken schlägt bei 92 % auf rot", h.includes('class="bar bad"') && h.includes("92 %"));
+  assert("System: KI-Widget für das Kochstudio", h.includes("Workers AI") && h.includes("Rezepte heute"));
+  // 8 Aufrufe auf 1000 Neuronen im Fenster = 125 je Rezept; heute sind 500
+  // verbraucht, also (10000-500)/125 = 76 weitere möglich.
+  assert("System: Restschätzung aus dem Mittelwert", h.includes("125 Neuronen je Rezept") && h.includes(">76<"));
+  assert("System: KI-Modelle aufgeschlüsselt", h.includes("KI-Modelle") && h.includes("llama-3.1-8b-instruct"));
   assert("System: Tagestabelle mit DO-Fehlern", h.includes("DO-Fehler") && h.includes("2026-09-02"));
   assert("System: Hinweis dass Anfragen keine Seitenaufrufe sind", h.includes("NICHT Seitenaufrufe"));
   assert("System: Vorfall-Verlauf mit Grund", h.includes("Vorfall-Verlauf") && h.includes("Push-Queue: 900"));

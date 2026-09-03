@@ -43,6 +43,13 @@ const ANTWORT = {
       { dimensions: { scriptName: "philip-stack-rt", status: "clientDisconnected" }, sum: { requests: 5, errors: 1 } },
     ],
     dos: [{ dimensions: { date: "2026-09-03" }, sum: { requests: 6, errors: 4 } }],
+    // Nach Tag UND Modell gruppiert: zwei Zeilen für denselben Tag, plus der
+    // Fallback an einem anderen Tag.
+    ai: [
+      { count: 3, dimensions: { date: "2026-09-03", modelId: "@cf/meta/llama-3.3-70b-instruct-fp8-fast" }, sum: { totalNeurons: 372.5, totalInputTokens: 1000, totalOutputTokens: 1700 } },
+      { count: 1, dimensions: { date: "2026-09-03", modelId: "@cf/meta/llama-3.1-8b-instruct" }, sum: { totalNeurons: 20.5, totalInputTokens: 300, totalOutputTokens: 400 } },
+      { count: 2, dimensions: { date: "2026-09-02", modelId: "@cf/meta/llama-3.3-70b-instruct-fp8-fast" }, sum: { totalNeurons: 250, totalInputTokens: 700, totalOutputTokens: 1100 } },
+    ],
   }] } },
 };
 const D1LISTE = { result: [{ name: "wuerfelpoker", file_size: 1470464, running_in_region: "EEUR" }] };
@@ -82,6 +89,12 @@ const antwortAuf = (url) => (url.includes("/graphql") ? ANTWORT : D1LISTE);
     heute.pagesReq === 900 && heute.pagesErr === 2 && heute.rowsRead === 1_900_000 && heute.doErr === 4);
   assert("D1-Größe aus der REST-Antwort", r.d1 && r.d1.fileSize === 1470464 && r.d1.region === "EEUR");
   assert("Worker-Zeilen übernommen", r.workers.length === 2 && r.workers[0].requests === 4639);
+  // Zwei Modell-Zeilen desselben Tages müssen in EINER Tageszeile landen.
+  assert("KI je Tag zusammengefasst (beide Modelle)",
+    heute.aiReq === 4 && Math.round(heute.aiNeurons) === 393 && heute.aiTokIn === 1300 && heute.aiTokOut === 2100);
+  assert("KI-Modelle über das Fenster aufgeschlüsselt", r.aiModels.length === 2);
+  assert("KI-Modelle nach Aufrufen sortiert", r.aiModels[0].requests === 5 && /70b/.test(r.aiModels[0].model));
+  assert("KI-Neuronen je Modell über Tage summiert", Math.round(r.aiModels[0].neurons) === 623);
   assert("Ergebnis wird zwischengespeichert", typeof db.store.cf_stats === "string" && db.store.cf_stats.includes("2026-09-03"));
 }
 
@@ -134,6 +147,7 @@ const antwortAuf = (url) => (url.includes("/graphql") ? ANTWORT : D1LISTE);
 {
   assert("D1-Leselimit 5 Mio./Tag", CF_LIMITS.d1RowsRead === 5_000_000);
   assert("D1-Schreiblimit 100k/Tag", CF_LIMITS.d1RowsWritten === 100_000);
+  assert("Workers-AI-Limit 10.000 Neuronen/Tag", CF_LIMITS.aiNeurons === 10_000);
 }
 
 console.log(ok ? "\n✅ cf: alle Tests grün" : "\n❌ cf: Tests fehlgeschlagen");
