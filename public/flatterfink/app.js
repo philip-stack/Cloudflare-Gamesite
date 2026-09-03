@@ -108,7 +108,7 @@ function spawnObstacle(x) {
   // Lückenhöhe HIER einfrieren: Hecken entstehen weit rechts außerhalb des
   // Bildes, darum bleibt die Schwierigkeits-Steigerung für Spieler:innen
   // unsichtbar. Eine bereits sichtbare Hecke ändert ihre Höhe nie mehr.
-  obst.push({ x, gapY, gap: g, amp, freq, mph, passed: false, minClear: null, korndl });
+  obst.push({ x, gapY, gap: g, amp, freq, mph, tex: Math.random() * 16, passed: false, minClear: null, korndl });
 }
 
 function topUpObstacles() {
@@ -387,8 +387,8 @@ function draw(now) {
     if (o.x > W + 4 || o.x < -OBST_W - 4) continue;
     const g = o.gap;
     const cy = gapCenter(o);
-    drawHedge(o.x, 0, OBST_W, cy - g / 2, true);
-    drawHedge(o.x, cy + g / 2, OBST_W, H - (cy + g / 2), false);
+    drawHedge(o.x, 0, OBST_W, cy - g / 2, true, o.tex);
+    drawHedge(o.x, cy + g / 2, OBST_W, H - (cy + g / 2), false, o.tex);
     // Körndl (gezeichnet statt Emoji → auf allen Geräten klar sichtbar)
     if (o.korndl && !o.korndl.got) {
       const s = o.korndl;
@@ -450,7 +450,7 @@ function drawKorndl(x, y) {
   ctx.restore();
 }
 
-function drawHedge(x, y, w, h, top) {
+function drawHedge(x, y, w, h, top, phase) {
   if (h <= 0) return;
   const r = 10;
   ctx.save();
@@ -484,12 +484,17 @@ function drawHedge(x, y, w, h, top) {
   ctx.fillStyle = grad;
   ctx.fillRect(x, y, w, h);
 
-  // Blätter-Textur (dezente Tupfen)
+  // Blätter-Textur (dezente Tupfen). An der LÜCKEN-KANTE verankert, nicht am
+  // Bildschirm: sonst steht das Muster bei wandernden Hecken still und am Ende
+  // blitzt bloß ein weiterer Tupfen auf. So wandert es mit der Hecke mit; was
+  // ein-/ausblendet, passiert am bildschirmfernen Ende (oben bzw. am Boden).
   ctx.fillStyle = "rgba(255,255,255,0.08)";
-  for (let ty = y + 8; ty < y + h - 6; ty += 16) {
+  const base = top ? y + h : y;        // Kante zur Lücke
+  const dir = top ? -1 : 1;            // von der Lücke weg
+  for (let d = 10 + (phase || 0); d < h - 4; d += 16) {
     ctx.beginPath();
-    ctx.arc(x + w * 0.32, ty, 3, 0, Math.PI * 2);
-    ctx.arc(x + w * 0.68, ty + 8, 2.4, 0, Math.PI * 2);
+    ctx.arc(x + w * 0.32, base + dir * d, 3, 0, Math.PI * 2);
+    ctx.arc(x + w * 0.68, base + dir * (d + 8), 2.4, 0, Math.PI * 2);
     ctx.fill();
   }
   // Kappe am Lücken-Rand — folgt jetzt der Rundung, weil beschnitten.

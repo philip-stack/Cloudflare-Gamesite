@@ -6,7 +6,7 @@
 // der Hub auch beim allerersten Offline-Aufruf erscheint.
 // API-Anfragen (/api/…) werden nie gecacht.
 // ====================================================================
-const CACHE = "gamesite-v81";
+const CACHE = "gamesite-v82";
 // CacheStorage ist pro Origin (nicht pro Scope) — die drei PWAs (Hub, /fire/noe/,
 // /tanken/) teilen sich denselben Speicher. Beim Aufräumen NUR eigene Cache-Namen
 // (gleicher Präfix) löschen, sonst wischt der zuletzt aktivierte SW die Shells der
