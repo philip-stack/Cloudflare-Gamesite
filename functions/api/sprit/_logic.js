@@ -70,6 +70,11 @@ export function parseFrei(raw) {
   if (km) o.km = Math.round(parseFloat(km[1].replace(",", ".")) * 10) / 10;
 
   const hier = /\b(?:in der n(?:ä|ae)he|in meiner n(?:ä|ae)he|um mich|bei mir|mein standort|umgebung|hier)\b/.test(t);
+  // Zuerst pruefen: „nach hause" wuerde sonst als Route mit dem Ziel „hause"
+  // enden. Der Heimatort liegt im Geraet, die App loest ihn auf.
+  if (/\b(?:nach hause|nachhause|zu hause|zuhause|daheim|heim|heimat)\b/.test(t)) {
+    o.mode = "near"; o.home = true; return o;
+  }
 
   let m = t.match(/\bvon (.+?) (?:nach|richtung|bis) (.+)$/);
   if (m) {
@@ -100,7 +105,7 @@ export function parseFrei(raw) {
 
 // Hat parseFrei genug gefunden, um das Modell zu sparen?
 export function freiSicher(o) {
-  return !!(o && (o.q || o.to || o.here));
+  return !!(o && (o.q || o.to || o.here || o.home));
 }
 
 const FUELS_OK = ["DIE", "SUP", "GAS"];
@@ -131,9 +136,11 @@ export function validateIntent(o) {
     if (Number.isFinite(km) && km > 0) r.off = Math.min(8, Math.max(0.5, Math.round(km * 10) / 10));
   } else if (mode === "near") {
     const q = txt(o.q);
-    if (!q && o.here !== true) return null;
+    if (!q && o.here !== true && o.home !== true) return null;
     r.mode = "near";
-    if (o.here === true) r.here = true; else r.q = q;
+    if (o.home === true) r.home = true;
+    else if (o.here === true) r.here = true;
+    else r.q = q;
     const km = Number(o.km);
     if (Number.isFinite(km) && km > 0) {
       // Auf die Werte des Auswahlfeldes runden — andere kann die App nicht.

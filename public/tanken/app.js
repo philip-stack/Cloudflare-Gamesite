@@ -114,7 +114,14 @@
     else st.sort((a, b) => a.price - b.price);
 
     if (!st.length) {
-      setMsg((d.stations && d.stations.length) ? "Keine Tankstelle mit den aktuellen Filtern (Radius / nur offene)." : "Keine Tankstellen mit " + d.fuelLabel + " in der Nähe gefunden.", "warn");
+      // Drei verschiedene Gruende, drei verschiedene Saetze — vorher hiess es
+      // immer „keine Tankstellen gefunden", auch wenn die Preisquelle stockte.
+      let grund;
+      if (d.stations && d.stations.length) grund = "Keine Tankstelle mit den aktuellen Filtern (Radius / nur offene).";
+      else if (d.quelle === "keine-preise") grund = "Die Preisquelle (E-Control) liefert gerade keine Preise — meist rund um 12:00, wenn die Preise umgestellt werden. Gleich nochmal probieren.";
+      else if (d.quelle === "quelle-down") grund = "Die Preisquelle (E-Control) antwortet gerade nicht. Später nochmal probieren.";
+      else grund = "Keine Tankstellen mit " + d.fuelLabel + " in der Nähe gefunden.";
+      setMsg(grund, "warn");
       $("#results").innerHTML = "";
     } else {
       setMsg("");
@@ -122,7 +129,8 @@
       // „nur offene" gesetzt hat, waere ja auch nicht zur geschlossenen gefahren.
       const bezug = st.reduce((b, x) => (x.dist != null && (!b || x.dist < b.dist) ? x : b), null);
       $("#results").innerHTML = st.map(s => {
-        const teile = [s.dist != null ? "📍 " + km(s.dist) : "", umwegTxt(s, bezug, true)].filter(Boolean);
+        const uw = s === bezug ? "nächste Station" : umwegTxt(s, bezug);
+        const teile = [s.dist != null ? "📍 " + km(s.dist) : "", uw].filter(Boolean);
         return stationCard(s, s.price === minPrice, teile.join(" · "));
       }).join("");
     }
@@ -135,17 +143,26 @@
     });
     fit(pts);
   }
-  const detourTxt = s => (s.detourMin != null ? "↩ Umweg +" + s.detourMin + " min" : "↩ Umweg ca. " + km(s.offKm));
+  const detourTxt = s => {
+    if (s.detourMin != null) {
+      // Minuten UND echte Kilometer, wenn die Routenabfrage beides lieferte.
+      return "↩ Umweg +" + s.detourMin + " min" + (typeof s.detourKm === "number" ? " · " + km(s.detourKm) : "");
+    }
+    return "↩ Umweg ca. " + km(s.offKm);
+  };
 
   // „lohnt sich der Umweg?" als kurzer Zusatz in der Kartenzeile.
   // bezug = Station, zu der man ohnehin fahren wuerde (naechste bzw. kleinster
   // Umweg). Fuer sie selbst steht dort nur, DASS sie der Bezugspunkt ist.
   const euroKurz = n => (n >= 0 ? "+" : "−") + Math.abs(n).toFixed(2).replace(".", ",") + " €";
-  function umwegTxt(st, bezug, hinUndZurueck) {
+  // Unter einem halben Euro ist die Aussage im Rauschen der Schaetzung —
+  // dann lieber schweigen, als Genauigkeit vorzutaeuschen.
+  const UW_SCHWELLE = 0.5;
+  function umwegTxt(st, bezug, extra) {
     if (!window.Umweg || !bezug) return "";
-    if (st === bezug) return hinUndZurueck === false ? "kleinster Umweg" : "nächste Station";
-    const r = window.Umweg.netto(st, bezug, Object.assign({ hinUndZurueck }, umwegOpt()));
+    const r = window.Umweg.netto(st, bezug, Object.assign({}, umwegOpt(), extra || {}));
     if (!r || r.mehrKm <= 0) return "";
+    if (Math.abs(r.netto) < UW_SCHWELLE) return "";
     return r.netto >= 0
       ? `<span class="uw good">${euroKurz(r.netto)} gespart</span>`
       : `<span class="uw bad">lohnt nicht: ${euroKurz(r.netto)}</span>`;
@@ -167,11 +184,20 @@
     else {
       setMsg("");
       // An der Route zaehlt der Umweg einfach (man faehrt ohnehin vorbei).
-      // offKm ist der Umweg in km — fuer die Rechnung ist das die „Entfernung".
-      const mitDist = s => ({ price: s.price, dist: typeof s.offKm === "number" ? s.offKm : null });
-      const bezugI = st.reduce((b, x, i) => (typeof x.offKm === "number" && (b < 0 || x.offKm < st[b].offKm) ? i : b), -1);
+      // detourKm sind ECHTE Strassenkilometer aus der Routenabfrage — dann
+      // braucht es keinen Luftlinien-Faktor. Nur wenn die fehlen (OSRM hat
+      // nicht geantwortet), wird auf offKm mit Faktor zurueckgefallen.
+      const echt = st.every(s => typeof s.detourKm === "number");
+      const mitDist = s => ({
+        price: s.price,
+        dist: echt ? s.detourKm : (typeof s.offKm === "number" ? s.offKm : null),
+      });
+      const uwOpt = { hinUndZurueck: false };
+      if (echt) uwOpt.faktor = 1;
+      const wert = s => (echt ? s.detourKm : s.offKm);
+      const bezugI = st.reduce((b, x, i) => (typeof wert(x) === "number" && (b < 0 || wert(x) < wert(st[b])) ? i : b), -1);
       $("#results").innerHTML = head + st.map((s, i) => {
-        const uw = bezugI < 0 ? "" : (i === bezugI ? "kleinster Umweg" : umwegTxt(mitDist(s), mitDist(st[bezugI]), false));
+        const uw = bezugI < 0 ? "" : (i === bezugI ? "kleinster Umweg" : umwegTxt(mitDist(s), mitDist(st[bezugI]), uwOpt));
         return stationCard(s, i === 0, [detourTxt(s), uw].filter(Boolean).join(" · "));
       }).join("");
     }
@@ -377,6 +403,7 @@
     const t = [];
     if (v.fuel) t.push(FUEL_LABEL[v.fuel] || v.fuel);
     if (v.mode === "route") t.push("Route " + (v.from ? v.from + " → " : "→ ") + v.to);
+    else if (v.home) t.push("Umkreis: Heimatort");
     else t.push(v.here ? "Umkreis: mein Standort" : "Umkreis: " + v.q);
     if (v.off) t.push("max " + String(v.off).replace(".", ",") + " km Umweg");
     if (v.radius) t.push("Umkreis " + v.radius + " km");
@@ -401,6 +428,12 @@
     } else {
       if (v.radius) { LS.set("sprit_radius", String(v.radius)); $("#opt-radius").value = String(v.radius); }
       switchTab("near"); renderQuickNear();
+      if (v.home) {
+        const h = home();
+        if (h) { fetchNear({ lat: h.lat, lng: h.lng }); return; }
+        setMsg("Kein Heimatort gespeichert — unten auf „Heim setzen“ tippen.", "warn");
+        return;
+      }
       if (v.here) { locate((lat, lng) => fetchNear({ lat, lng })); return; }
       const el = $("#near-q");
       el.value = v.q; delete el.dataset.lat; delete el.dataset.lng;

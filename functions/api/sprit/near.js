@@ -1,5 +1,5 @@
 import { json, clientIp, rateLimit } from "../_util.js";
-import { ecByAddress, normFuel, FUELS } from "./_ec.js";
+import { ecAbfrage, normFuel, FUELS } from "./_ec.js";
 import { geocode } from "./_geo.js";
 
 // ====================================================================
@@ -28,9 +28,8 @@ export async function onRequestGet({ request, env }) {
     center = { lat: g.lat, lng: g.lng }; label = g.label || "";
   }
 
-  const stations = (await ecByAddress(env, center.lat, center.lng, fuel))
-    .slice()
-    .sort((a, b) => a.price - b.price);
+  const ec = await ecAbfrage(env, center.lat, center.lng, fuel);
+  const stations = ec.stations.slice().sort((a, b) => a.price - b.price);
   const avgPrice = stations.length
     ? Math.round(stations.reduce((s, x) => s + x.price, 0) / stations.length * 1000) / 1000 : null;
 
@@ -39,6 +38,10 @@ export async function onRequestGet({ request, env }) {
     fuel, fuelLabel: FUELS[fuel],
     avgPrice,
     stations,
+    // Leer ist nicht gleich leer: „hier gibt es keine" unterscheidet sich von
+    // „die Quelle liefert gerade keine Preise". Ohne das erzaehlt die App bei
+    // einer Stoerung die falsche Geschichte.
+    quelle: ec.status,
     stand: new Date().toISOString(),
   }), 120);
 }

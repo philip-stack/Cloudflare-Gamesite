@@ -1,3 +1,4 @@
+import { logError } from "../_util.js";
 // ====================================================================
 // E-Control Spritpreisrechner (offizielle, kostenlose Pflicht-Meldedaten).
 //   GET https://api.e-control.at/sprit/1.0/search/gas-stations/by-address
@@ -70,6 +71,17 @@ function slim(list, fuel) {
 }
 
 // E-Control-Abfrage mit ~10-min-D1-Cache (gerundete Koordinate + Treibstoff).
+// Warum der letzte Aufruf leer war — die App soll „gerade keine Preise" nicht
+// als „hier gibt es nichts" ausgeben. Bewusst als Rueckgabewert von
+// ecAbfrage(), nicht als Modul-Variable: in einem Worker teilen sich mehrere
+// Anfragen denselben Isolate.
+export async function ecAbfrage(env, lat, lng, fuel) {
+  const stations = await ecByAddress(env, lat, lng, fuel);
+  // ecByAddress haengt den Grund an das Array (siehe unten) — so bleiben die
+  // drei Aufrufer, die ihn nicht brauchen (Cron, Route, Briefing), unveraendert.
+  return { stations, status: stations.status || "ok" };
+}
+
 export async function ecByAddress(env, lat, lng, fuel) {
   fuel = normFuel(fuel);
   const key = `${lat.toFixed(2)},${lng.toFixed(2)},${fuel}`;
@@ -84,13 +96,44 @@ export async function ecByAddress(env, lat, lng, fuel) {
 
   const url = `${BASE}?latitude=${lat}&longitude=${lng}&fuelType=${fuel}&includeClosed=false`;
   let slimmed = [];
+  let geantwortet = false;          // hat die Quelle ueberhaupt geantwortet?
+  let grund = "", rohLen = 0;
   for (let i = 0; i < 2; i++) {
     try {
       const res = await fetch(url, { headers: { "User-Agent": UA, "Accept": "application/json" } });
       if (!res.ok) throw new Error("HTTP " + res.status);
-      slimmed = slim(await res.json(), fuel);
+      const roh = await res.json();
+      rohLen = Array.isArray(roh) ? roh.length : 0;
+      slimmed = slim(roh, fuel);
+      geantwortet = true;
       break;
-    } catch (e) { if (i === 0) await new Promise(r => setTimeout(r, 350)); }
+    } catch (e) {
+      grund = (e && e.message) || String(e);
+      if (i === 0) await new Promise(r => setTimeout(r, 350));
+    }
+  }
+
+  // Ein Fehlschlag ist KEIN Ergebnis. Frueher landete das leere Array trotzdem
+  // im Zwischenspeicher — damit sah die App 10 Minuten lang so aus, als gaebe
+  // es dort keine Tankstellen, und der eigentliche Fehler war nirgends zu
+  // sehen (leeres catch). Beides war dieselbe Wurzel: ein stiller Ausfall,
+  // der wie ein gueltiges Ergebnis aussah.
+  // Zweiter Fall, live beobachtet: die Quelle ANTWORTET, liefert aber zu jeder
+  // Station eine leere Preisliste (beobachtet kurz nach 12:00 Wiener Zeit —
+  // dem Zeitpunkt, zu dem Preise steigen duerfen und offenbar umgestellt
+  // werden). Das ist kein „hier gibt es keine Tankstellen", sondern „gerade
+  // keine Preise" — und darf genauso wenig als Ergebnis zementiert werden.
+  const ohnePreise = geantwortet && rohLen > 0 && slimmed.length === 0;
+  if (!geantwortet || ohnePreise) {
+    await logError(
+      env,
+      geantwortet ? "E-Control liefert gerade keine Preise" : "E-Control antwortet nicht",
+      "sprit/ec",
+      `${grund || rohLen + " Stationen ohne Preis"} · ${key}`);
+    // Grund am Array vermerken: die Aufrufer, die ihn nicht lesen, merken
+    // nichts davon; near.js macht daraus eine ehrliche Meldung.
+    slimmed.status = geantwortet ? "keine-preise" : "quelle-down";
+    return slimmed;                 // leer, aber NICHT gecacht
   }
 
   try {

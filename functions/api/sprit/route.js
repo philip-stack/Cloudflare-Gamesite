@@ -90,7 +90,15 @@ export async function onRequestGet({ request, env }) {
       const u = `${OSRM}/${from.lng},${from.lat};${s.lng},${s.lat};${to.lng},${to.lat}?overview=false`;
       const r = await fetch(u, { headers: { "User-Agent": UA, "Accept": "application/json" } });
       const rt = ((await r.json()).routes || [])[0];
-      if (rt) s.detourMin = Math.max(0, Math.round(rt.duration / 60 - durationMin));
+      if (rt) {
+        s.detourMin = Math.max(0, Math.round(rt.duration / 60 - durationMin));
+        // Dieselbe Antwort enthaelt auch die Strecke — ECHTE Strassenkilometer
+        // statt Luftlinie mal Daumenfaktor. Kostet nichts extra und macht die
+        // Frage „lohnt sich der Umweg?" erst belastbar.
+        if (typeof rt.distance === "number") {
+          s.detourKm = Math.max(0, Math.round((rt.distance / 1000 - distanceKm) * 10) / 10);
+        }
+      }
     } catch (_) { /* Umweg-Zeit optional */ }
   }));
 

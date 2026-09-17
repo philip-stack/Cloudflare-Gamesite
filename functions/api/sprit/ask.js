@@ -86,7 +86,7 @@ export async function onRequestGet({ request, env }) {
   const lokal = parseFrei(q);
   if (freiSicher(lokal)) {
     const v = validateIntent(lokal);
-    if (v) return json(Object.assign({ via: "regel" }, v));
+    if (v) { await bumpStat(env, "ask:regel"); return json(Object.assign({ via: "regel" }, v)); }
   }
 
   // 2) Ab hier kostet es Neuronen.
@@ -99,11 +99,11 @@ export async function onRequestGet({ request, env }) {
   if (env && env.DB) {
     const hit = await ausCache(env, key);
     const v = validateIntent(hit);
-    if (v) return json(Object.assign({ via: "cache" }, v));
+    if (v) { await bumpStat(env, "ask:cache"); return json(Object.assign({ via: "cache" }, v)); }
   }
 
   // 4) Modell.
-  if (!env || !env.AI) return json({ via: "form" });
+  if (!env || !env.AI) { await bumpStat(env, "ask:form"); return json({ via: "form" }); }
   try {
     await bumpStat(env, "ai:sprit");
     const res = await env.AI.run(MODEL, {
@@ -123,11 +123,14 @@ export async function onRequestGet({ request, env }) {
       // Formular, und niemand erfaehrt je, WARUM das Modell nichts taugte.
       // Bewusst nur die Modell-AUSGABE, nicht die Eingabe der Person.
       await logError(env, "ask: Modell-Antwort unbrauchbar", "sprit/ask", (typeof roh === "string" ? roh : JSON.stringify(roh)).slice(0, 200));
+      await bumpStat(env, "ask:form");
       return json({ via: "form" });
     }
     if (env.DB) await inCache(env, key, v);
+    await bumpStat(env, "ask:ki");
     return json(Object.assign({ via: "ki" }, v));
   } catch (_) {
+    await bumpStat(env, "ask:form");
     return json({ via: "form" });
   }
 }

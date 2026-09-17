@@ -368,15 +368,30 @@ Route** — komplett gratis und ohne API-Schlüssel:
   danach derselbe Weg wie bei Eingabe von Hand, ein Modell kann also keinen
   Preis anfassen. Alles laeuft durch `validateIntent()` — dieselbe Weissliste
   fuer Regeln und Modell. Die App zeigt darunter **„verstanden: …"**, damit
-  eine falsche Deutung sichtbar und korrigierbar ist, und faellt bei
-  Ausfall/leerem Kontingent auf das normale Formular zurueck.
+  eine falsche Deutung sichtbar und korrigierbar ist (mit `aria-live`, damit
+  sie auch ohne Blick auf den Schirm ankommt), und faellt bei Ausfall/leerem
+  Kontingent auf das normale Formular zurueck. `„nach hause"` loest den
+  gespeicherten Heimatort auf — dafuer braucht es kein Modell, nur eine Regel.
+  Gezaehlt wird jeder Weg getrennt (`ask:regel` / `ask:ki` / `ask:cache` /
+  `ask:form`), sonst laesst sich nicht beantworten, ob die Regeln reichen oder
+  wo sie nachzuschaerfen waeren.
+- **Preisquelle ehrlich melden**: E-Control liefert gelegentlich Stationen mit
+  **leeren Preislisten** (live beobachtet kurz nach 12:00 Wiener Zeit, wenn die
+  Preise umgestellt werden). Das sah vorher aus wie „hier gibt es keine
+  Tankstellen" — und wurde als Ergebnis **10 Minuten zwischengespeichert**, ein
+  stiller Ausfall also, der wie eine Tatsache aussah. Jetzt wird ein Fehlschlag
+  nie gecacht, landet im `error_log` und die App nennt den Grund.
 - **„Lohnt sich der Umweg?"** (`public/tanken/umweg.js`): je Station die
   Gegenrechnung aus Ersparnis (Preisdifferenz x Tankmenge) und Fahrtkosten
   (Mehrkilometer x Verbrauch x Preis) — gegen die Station, zu der man ohnehin
   fahren wuerde. **Ohne KI**, weil das Arithmetik ist. Im Umkreis zaehlt die
   Fahrt hin und zurueck, an der Route der Umweg einfach. E-Control liefert
-  Luftlinie, daher ein Umweg-Faktor und der Hinweis, dass es eine Schaetzung
-  bleibt. Tankmenge und Verbrauch stehen in den Optionen.
+  Luftlinie — im Umkreis daher ein Umweg-Faktor und der sichtbare Hinweis, dass
+  es eine Schaetzung bleibt. **Auf der Route zaehlen echte Strassenkilometer**:
+  route.js fragt fuer jede Trefferstation ohnehin eine Route ab und liest aus
+  derselben Antwort jetzt auch `rt.distance` mit. Der Unterschied ist kein
+  Feinschliff — gemessen: Luftlinie 2 km, tatsaechlicher Umweg 8,7 km. Tankmenge
+  und Verbrauch stehen in den Optionen.
 - Eigener **Cron** auf `/api/sprit/cron` (ebenfalls per `CRON_TOKEN` geschützt,
   vom `philip-stack-rt`-Worker angepingt): prüft die abonnierten Alarme und
   protokolliert den Preisverlauf (`sprit_price_log`).

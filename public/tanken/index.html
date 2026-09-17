@@ -53,7 +53,8 @@
                aria-label="Frag einfach, zum Beispiel: billig diesel richtung graz">
         <button id="ask-go" class="btn-ghost" type="submit">Los</button>
       </form>
-      <div class="ask-echo" id="ask-echo" hidden></div>
+      <!-- aria-live: die Deutung MUSS ankommen, auch ohne Blick auf den Schirm. -->
+      <div class="ask-echo" id="ask-echo" role="status" aria-live="polite" hidden></div>
 
       <div class="tabs" role="tablist" aria-label="Modus">
         <button id="tab-near" class="tab on" role="tab" aria-selected="true">📍 Umkreis</button>
@@ -80,8 +81,9 @@
             <input id="opt-verbrauch" type="number" min="2" max="30" step="0.5" inputmode="decimal"></label>
         </div>
         <p class="opt-note">Tankmenge und Verbrauch bestimmen, ob sich ein Umweg
-          rechnet. Die Entfernung von E-Control ist Luftlinie — der Umweg wird
-          daher grob auf Strassenkilometer hochgerechnet und bleibt eine Schaetzung.</p>
+          rechnet. Auf der Route zählen echte Straßenkilometer aus der
+          Routenberechnung; im Umkreis liefert E-Control nur Luftlinie — dort
+          wird hochgerechnet und der Wert bleibt eine Schätzung.</p>
       </details>
 
       <!-- Modus 1: Umkreis / Ortssuche -->
@@ -146,7 +148,7 @@
 
   <script src="vendor/leaflet.js?v=5a640ff8"></script>
   <script src="umweg.js?v=d1fed038"></script>
-  <script src="app.js?v=6e2f6e74"></script>
+  <script src="app.js?v=7b00f11d"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
