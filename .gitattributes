@@ -1,0 +1,9 @@
+* text=auto eol=lf
+
+# Binaerdateien nie anfassen
+*.woff2 binary
+*.png binary
+*.ico binary
+*.jpg binary
+*.webp binary
+*.bundle binary

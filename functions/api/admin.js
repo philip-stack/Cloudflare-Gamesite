@@ -29,6 +29,29 @@ import { generate, loadCfg } from "./briefing/_gen.js";
 // senden den Header nicht cross-origin, das macht sie CSRF-resistent.
 // ====================================================================
 
+// Trend-Kurven kurz zwischenspeichern (app_config, 5 Minuten). Faellt bei
+// jedem Problem auf die direkte Abfrage zurueck — ein kaputter
+// Zwischenspeicher darf das Panel nie leer aussehen lassen.
+const TREND_CACHE_SEC = 300;
+async function trendCached(env, name, days, sql) {
+  const k = `trend_${name}_${days}`;
+  try {
+    const row = await one(env, "SELECT v FROM app_config WHERE k = ?", k);
+    if (row && row.v) {
+      const c = JSON.parse(row.v);
+      if (c && Array.isArray(c.rows) && (Date.now() - (c.at || 0)) / 1000 < TREND_CACHE_SEC) return c.rows;
+    }
+  } catch (_) {}
+
+  const rows = await many(env, sql);
+  try {
+    await env.DB.prepare(
+      "INSERT INTO app_config (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v"
+    ).bind(k, JSON.stringify({ at: Date.now(), rows })).run();
+  } catch (_) {}
+  return rows;
+}
+
 function keyOk(env, request) {
   const want = env && env.ADMIN_TOKEN;
   if (!want) return false;                       // ohne gesetztes Secret gesperrt
@@ -217,9 +240,17 @@ export async function onRequestGet({ request, env }) {
     q(vS, () => many(env, "SELECT action, detail, created_at FROM admin_log ORDER BY id DESC LIMIT 40"), []),
 
     // ---- Trends (Zeitraum 7/30/90 Tage, roh je Tag; Client füllt Lücken) ----
-    q(vU, () => many(env, `SELECT date(created_at) d, COUNT(*) n FROM scores WHERE created_at > datetime('now','-${days} days') GROUP BY d`), []),
-    q(vU, () => many(env, `SELECT date(created_at) d, COUNT(*) n FROM error_log WHERE created_at > datetime('now','-${days} days') GROUP BY d`), []),
-    q(vU, () => many(env, `SELECT date(created_at) d, COUNT(DISTINCT device) n FROM scores WHERE created_at > datetime('now','-${days} days') AND device IS NOT NULL GROUP BY d`), []),
+    // 5 Minuten zwischengespeichert: GROUP BY date(...) kann keinen Index zum
+    // Gruppieren nutzen, diese drei Abfragen lasen zusammen ~5.000 Zeilen JE
+    // Panel-Ladung. Bei Auto-Refresh war das Zuschauen der groesste
+    // D1-Verbraucher ueberhaupt — und eine 30-Tage-Kurve aendert sich nicht im
+    // Sekundentakt.
+    q(vU, () => trendCached(env, "scores", days,
+      `SELECT date(created_at) d, COUNT(*) n FROM scores WHERE created_at > datetime('now','-${days} days') GROUP BY d`), []),
+    q(vU, () => trendCached(env, "errors", days,
+      `SELECT date(created_at) d, COUNT(*) n FROM error_log WHERE created_at > datetime('now','-${days} days') GROUP BY d`), []),
+    q(vU, () => trendCached(env, "devices", days,
+      `SELECT date(created_at) d, COUNT(DISTINCT device) n FROM scores WHERE created_at > datetime('now','-${days} days') AND device IS NOT NULL GROUP BY d`), []),
     q(vS, () => one(env, "SELECT v FROM app_config WHERE k='alert_name'"), null),
 
     // ---- Nutzungszähler (anonym, aggregiert): play/duel/share je Spiel ----

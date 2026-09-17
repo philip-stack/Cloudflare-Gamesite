@@ -1,5 +1,5 @@
 import { bumpStat } from "./stat.js";
-import { json, rateLimit, clientIp } from "./_util.js";
+import { json, rateLimit, clientIp, logError } from "./_util.js";
 
 // ====================================================================
 // Kochstudio-API: KI-Rezepte aus Kühlschrank-Zutaten + echte Websuche.
@@ -12,6 +12,17 @@ import { json, rateLimit, clientIp } from "./_util.js";
 // - Links kommen aus einer echten DuckDuckGo-Suche ("Rezept <zutaten>");
 //   schlägt die fehl, gibt es konstruierte Such-Links als Fallback.
 // ====================================================================
+
+// Sieht das aus wie ein Rezept? Absichtlich grob: es soll offensichtlichen
+// Unsinn abfangen (leer, abgeschnitten, Entschuldigungstext), nicht den Stil
+// bewerten. Zwei Rezepte mit Zutaten und Zubereitung ergeben immer deutlich
+// mehr als 200 Zeichen und tragen die vorgegebenen Ueberschriften.
+function istRezept(t) {
+  if (typeof t !== "string") return false;
+  const s = t.trim();
+  if (s.length < 200) return false;
+  return /zutaten/i.test(s) && /zubereitung/i.test(s);
+}
 
 const MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
 const MODEL_FALLBACK = "@cf/meta/llama-3.1-8b-instruct-fp8";   // Vorgaenger seit 2026-05-30 abgekuendigt
@@ -105,18 +116,28 @@ Sei konkret, keine Floskeln. Erfinde keine Zutaten, die nicht genannt oder Grund
     { role: "user", content: userMsg },
   ];
 
-  let answer = null;
-  try {
-    await bumpStat(env, "ai:koch");
-    const res = await env.AI.run(MODEL, { messages, max_tokens: 1400 });
-    answer = res.response;
-  } catch {
+  // Die Antwort wird GEPRUEFT, nicht geglaubt — wie beim Briefing und bei der
+  // Freitext-Suche. Zwei Gruende, beide real:
+  //  • env.AI.run liefert je nach Modell/Laufzeit auch OBJEKTE statt Text.
+  //    Der Client ruft answer.match(...) auf — bei einem Objekt bricht die
+  //    Seite ab, statt sauber "hat nicht geklappt" zu zeigen.
+  //  • Ein halber oder leerer Text ist kein Rezept. Lieber ehrlich melden.
+  let answer = null, letzte = null;
+  for (const modell of [MODEL, MODEL_FALLBACK]) {
     try {
-      const res = await env.AI.run(MODEL_FALLBACK, { messages, max_tokens: 1200 });
-      answer = res.response;
-    } catch {
-      return json({ error: "Die Küchen-KI ist gerade überlastet (Tageskontingent) — probier es später nochmal", links }, 503);
+      await bumpStat(env, "ai:koch");
+      const res = await env.AI.run(modell, { messages, max_tokens: modell === MODEL ? 1400 : 1200 });
+      const roh = res && res.response;
+      letzte = roh;
+      if (typeof roh === "string" && istRezept(roh)) { answer = roh; break; }
+      await logError(env, "koch: Antwort taugt nicht", "koch",
+        (typeof roh === "string" ? roh.slice(0, 160) : "kein Text: " + typeof roh));
+    } catch (e) {
+      await logError(env, "koch: Modell wirft", "koch", String((e && e.message) || e).slice(0, 160));
     }
+  }
+  if (!answer) {
+    return json({ error: "Die Küchen-KI liefert gerade nichts Brauchbares — probier es gleich nochmal", links }, 503);
   }
 
   return json({ answer, links });

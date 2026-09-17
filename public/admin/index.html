@@ -366,7 +366,7 @@
         if (a && (a.tagName === "INPUT" || a.tagName === "SELECT" || a.tagName === "TEXTAREA")) return;
         if (Date.now() - lastEdit < 90000) return;   // frisch geändert und noch nicht gespeichert
         load();
-      }, 45000);
+      }, 150000);   // 2,5 min — 45 s war fuer Zahlen, die sich stuendlich aendern, reine D1-Last
     }
     function stopAuto() { if (timer) { clearInterval(timer); timer = null; } }
 

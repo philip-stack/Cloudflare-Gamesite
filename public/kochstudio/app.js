@@ -69,7 +69,9 @@ function fmtWhen(ts) {
 
 // Titel der Rezepte aus der Antwort ziehen (## Zeilen), sonst Zutaten
 function histTitle(e) {
-  const titles = (e.answer.match(/^#{2,3}\s+(.+)$/gm) || [])
+  // String() als Guertel zum Hosenträger: der Server prueft die Antwort
+  // inzwischen, aber ein Nicht-Text darf hier trotzdem nie die Seite kippen.
+  const titles = (String(e.answer || "").match(/^#{2,3}\s+(.+)$/gm) || [])
     .map(l => l.replace(/^#{2,3}\s+/, "").trim());
   return titles.length ? titles.join(" · ") : e.ingredients;
 }
