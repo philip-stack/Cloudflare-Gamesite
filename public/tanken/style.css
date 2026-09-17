@@ -184,3 +184,31 @@ input[type="search"]:focus { outline: 2px solid var(--accent2); outline-offset: 
   .price { min-width: 78px; font-size: 1.25rem; }
   .nav { padding: 18px 11px; }
 }
+
+/* ---- Freitext-Suche (steht ueber den Reitern) ---- */
+.ask { display: flex; gap: 8px; margin-bottom: 10px; }
+.ask input[type="search"] { flex: 1; min-width: 0; }
+.ask-echo {
+  display: flex; align-items: center; gap: 8px; margin: -4px 0 10px;
+  padding: 7px 10px; border-radius: 10px; font-size: 0.84rem;
+  background: rgba(47, 212, 138, 0.1); border: 1px solid rgba(47, 212, 138, 0.28);
+  color: var(--ink);
+}
+.ask-echo span { flex: 1; min-width: 0; }
+.ask-echo .ask-ki { color: var(--muted); font-size: 0.78rem; }
+.ask-echo button {
+  background: none; border: 0; color: var(--muted); cursor: pointer;
+  font-size: 0.9rem; padding: 2px 4px; line-height: 1;
+}
+
+/* ---- „lohnt sich der Umweg?" in der Kartenzeile ---- */
+.uw { font-weight: 700; }
+.uw.good { color: var(--accent2); }
+.uw.bad { color: var(--danger); font-weight: 600; }
+
+/* ---- Hinweis unter den Optionen ---- */
+.opt-note { margin: 8px 0 10px; font-size: 0.78rem; line-height: 1.45; color: var(--faint); }
+.opt-grid input[type="number"] {
+  width: 100%; padding: 8px 10px; border-radius: 10px; font: inherit;
+  background: var(--panel); border: 1px solid var(--panel-line); color: var(--ink);
+}

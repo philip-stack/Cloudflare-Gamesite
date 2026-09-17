@@ -359,6 +359,24 @@ Route** — komplett gratis und ohne API-Schlüssel:
   Fehltreffer werden gemerkt — fair use gegenüber einem gratis Dienst.
 - **Favoriten**, **Preis-Alarm** per Web-Push (Ziel-Preis je Kraftstoff),
   **Preisverlauf-Sparkline** und Filter **„nur offene"**.
+- **Freitext-Suche** (`/api/sprit/ask`): „billig diesel richtung graz, max 3 km
+  umweg" stellt Modus, Treibstoff, Ziel und Umweg selbst ein. Vier Stufen, die
+  erste kostet nichts: **Regeln** (`parseFrei`) decken den Normalfall mit
+  **null Neuronen** ab; erst ein Satz, den sie nicht fassen, geht ans Modell —
+  gedrosselt, mit `max_tokens: 120` und einer Stunde Zwischenspeicher. Der
+  Endpunkt gibt **nur die verstandene Anfrage** zurueck, nie Preise: die holt
+  danach derselbe Weg wie bei Eingabe von Hand, ein Modell kann also keinen
+  Preis anfassen. Alles laeuft durch `validateIntent()` — dieselbe Weissliste
+  fuer Regeln und Modell. Die App zeigt darunter **„verstanden: …"**, damit
+  eine falsche Deutung sichtbar und korrigierbar ist, und faellt bei
+  Ausfall/leerem Kontingent auf das normale Formular zurueck.
+- **„Lohnt sich der Umweg?"** (`public/tanken/umweg.js`): je Station die
+  Gegenrechnung aus Ersparnis (Preisdifferenz x Tankmenge) und Fahrtkosten
+  (Mehrkilometer x Verbrauch x Preis) — gegen die Station, zu der man ohnehin
+  fahren wuerde. **Ohne KI**, weil das Arithmetik ist. Im Umkreis zaehlt die
+  Fahrt hin und zurueck, an der Route der Umweg einfach. E-Control liefert
+  Luftlinie, daher ein Umweg-Faktor und der Hinweis, dass es eine Schaetzung
+  bleibt. Tankmenge und Verbrauch stehen in den Optionen.
 - Eigener **Cron** auf `/api/sprit/cron` (ebenfalls per `CRON_TOKEN` geschützt,
   vom `philip-stack-rt`-Worker angepingt): prüft die abonnierten Alarme und
   protokolliert den Preisverlauf (`sprit_price_log`).
@@ -503,7 +521,8 @@ wuerfelpoker/
 │   ├── briefing/              Tages-Briefing: _gen.js (erzeugen+prüfen), cron.js, index.js (lesen)
 │   ├── fire/                  Feuerwehr-NÖ: noe.js (Quelle), geo/_bezirk (Geocoding), alert.js (Abos), cron.js, stats.js
 │   └── sprit/                 Sprit-Radar: near/route/suggest (Preise+Routing), _ec.js (E-Control),
-│                              _geo.js (Nominatim+Cache), alert.js, cron.js, _logic.js
+│                              _geo.js (Nominatim+Cache), alert.js, cron.js,
+│                              ask.js (Freitext-Suche), _logic.js (Regeln + Weissliste)
 ├── functions/sprit/tiles/     Same-Origin-Proxy für OSM-Kacheln (außerhalb /api/, 1 Tag Cache)
 ├── tests/                     Node-Tests: Syntax (inkl. worker-rt), Qualität/A11y, QR,
 │                              Scores/Cloud/Party/Saison/Push/Stat/Name-API, Flow-E2E,

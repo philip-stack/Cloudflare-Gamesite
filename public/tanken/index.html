@@ -25,7 +25,7 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="Sprit-Radar" />
   <link rel="stylesheet" href="vendor/leaflet.css?v=340720ef" />
-  <link rel="stylesheet" href="style.css?v=0840f8b6" />
+  <link rel="stylesheet" href="style.css?v=363ffc24" />
 </head>
 <body>
   <div id="app">
@@ -44,6 +44,17 @@
     </header>
 
     <section class="controls">
+      <!-- Freitext: steht ueber den Reitern, weil es die Wahl Umkreis/Route
+           selbst trifft. Was verstanden wurde, zeigt #ask-echo darunter --
+           die App handelt nie still auf einer Vermutung. -->
+      <form class="ask" id="ask-form">
+        <input id="ask-q" type="search" autocomplete="off" enterkeyhint="search"
+               placeholder="Frag einfach: billig diesel richtung graz"
+               aria-label="Frag einfach, zum Beispiel: billig diesel richtung graz">
+        <button id="ask-go" class="btn-ghost" type="submit">Los</button>
+      </form>
+      <div class="ask-echo" id="ask-echo" hidden></div>
+
       <div class="tabs" role="tablist" aria-label="Modus">
         <button id="tab-near" class="tab on" role="tab" aria-selected="true">📍 Umkreis</button>
         <button id="tab-route" class="tab" role="tab" aria-selected="false">🧭 Route A→B</button>
@@ -63,7 +74,14 @@
           <label>Sortierung
             <select id="opt-sort"><option value="price">Preis</option><option value="dist">Entfernung</option></select></label>
           <label class="chk"><input type="checkbox" id="opt-open" /> nur offene</label>
+          <label>Tankmenge
+            <input id="opt-liter" type="number" min="5" max="120" step="5" inputmode="numeric"> </label>
+          <label>Verbrauch (l/100&nbsp;km)
+            <input id="opt-verbrauch" type="number" min="2" max="30" step="0.5" inputmode="decimal"></label>
         </div>
+        <p class="opt-note">Tankmenge und Verbrauch bestimmen, ob sich ein Umweg
+          rechnet. Die Entfernung von E-Control ist Luftlinie — der Umweg wird
+          daher grob auf Strassenkilometer hochgerechnet und bleibt eine Schaetzung.</p>
       </details>
 
       <!-- Modus 1: Umkreis / Ortssuche -->
@@ -127,7 +145,8 @@
   </div>
 
   <script src="vendor/leaflet.js?v=5a640ff8"></script>
-  <script src="app.js?v=cc17cf02"></script>
+  <script src="umweg.js?v=d1fed038"></script>
+  <script src="app.js?v=6e2f6e74"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));

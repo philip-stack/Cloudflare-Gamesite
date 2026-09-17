@@ -17,6 +17,12 @@
   const jget = (k, d) => { try { const v = JSON.parse(LS.get(k, "")); return v == null ? d : v; } catch (_) { return d; } };
   const jset = (k, v) => LS.set(k, JSON.stringify(v));
   const openOnly = () => LS.get("sprit_open", "0") === "1";   // Filter „nur offene"
+  // Vorgaben fuer „lohnt sich der Umweg?" — die Formel steht in umweg.js.
+  const VG = (window.Umweg && window.Umweg.VORGABE) || { liter: 40, verbrauch: 7 };
+  const umwegOpt = () => ({
+    liter: +LS.get("sprit_liter", String(VG.liter)),
+    verbrauch: +LS.get("sprit_verbrauch", String(VG.verbrauch)),
+  });
   const favs = () => jget("sprit_favs", []);
   const isFav = id => favs().some(f => String(f.id) === String(id));
   function toggleFav(f) {
@@ -112,7 +118,13 @@
       $("#results").innerHTML = "";
     } else {
       setMsg("");
-      $("#results").innerHTML = st.map(s => stationCard(s, s.price === minPrice, s.dist != null ? "📍 " + km(s.dist) : "")).join("");
+      // Bezugspunkt ist die naechstgelegene Station NACH den Filtern — wer
+      // „nur offene" gesetzt hat, waere ja auch nicht zur geschlossenen gefahren.
+      const bezug = st.reduce((b, x) => (x.dist != null && (!b || x.dist < b.dist) ? x : b), null);
+      $("#results").innerHTML = st.map(s => {
+        const teile = [s.dist != null ? "📍 " + km(s.dist) : "", umwegTxt(s, bezug, true)].filter(Boolean);
+        return stationCard(s, s.price === minPrice, teile.join(" · "));
+      }).join("");
     }
     const pts = [];
     if (d.center) { L.marker([d.center.lat, d.center.lng], { icon: dot("#2f7bff") }).addTo(layer); pts.push([d.center.lat, d.center.lng]); }
@@ -124,6 +136,20 @@
     fit(pts);
   }
   const detourTxt = s => (s.detourMin != null ? "↩ Umweg +" + s.detourMin + " min" : "↩ Umweg ca. " + km(s.offKm));
+
+  // „lohnt sich der Umweg?" als kurzer Zusatz in der Kartenzeile.
+  // bezug = Station, zu der man ohnehin fahren wuerde (naechste bzw. kleinster
+  // Umweg). Fuer sie selbst steht dort nur, DASS sie der Bezugspunkt ist.
+  const euroKurz = n => (n >= 0 ? "+" : "−") + Math.abs(n).toFixed(2).replace(".", ",") + " €";
+  function umwegTxt(st, bezug, hinUndZurueck) {
+    if (!window.Umweg || !bezug) return "";
+    if (st === bezug) return hinUndZurueck === false ? "kleinster Umweg" : "nächste Station";
+    const r = window.Umweg.netto(st, bezug, Object.assign({ hinUndZurueck }, umwegOpt()));
+    if (!r || r.mehrKm <= 0) return "";
+    return r.netto >= 0
+      ? `<span class="uw good">${euroKurz(r.netto)} gespart</span>`
+      : `<span class="uw bad">lohnt nicht: ${euroKurz(r.netto)}</span>`;
+  }
   function renderRoute(d) {
     routeData = d;
     let st = d.stations || [];
@@ -140,7 +166,14 @@
     }
     else {
       setMsg("");
-      $("#results").innerHTML = head + st.map((s, i) => stationCard(s, i === 0, detourTxt(s))).join("");
+      // An der Route zaehlt der Umweg einfach (man faehrt ohnehin vorbei).
+      // offKm ist der Umweg in km — fuer die Rechnung ist das die „Entfernung".
+      const mitDist = s => ({ price: s.price, dist: typeof s.offKm === "number" ? s.offKm : null });
+      const bezugI = st.reduce((b, x, i) => (typeof x.offKm === "number" && (b < 0 || x.offKm < st[b].offKm) ? i : b), -1);
+      $("#results").innerHTML = head + st.map((s, i) => {
+        const uw = bezugI < 0 ? "" : (i === bezugI ? "kleinster Umweg" : umwegTxt(mitDist(s), mitDist(st[bezugI]), false));
+        return stationCard(s, i === 0, [detourTxt(s), uw].filter(Boolean).join(" · "));
+      }).join("");
     }
     const pts = (d.route && d.route.geometry ? d.route.geometry.slice() : []);
     st.forEach((s, i) => {
@@ -186,10 +219,11 @@
       renderQuickNear();
     } catch (_) { setMsg("Abfrage fehlgeschlagen. Nochmal versuchen.", "warn"); }
   }
-  async function fetchRoute(from, to) {
+  async function fetchRoute(from, to, off) {
     if (!$("#results").children.length) setMsg("Route und Preise werden berechnet…", "load");
+    const offQ = (typeof off === "number" && off > 0) ? `&off=${off}` : "";
     try {
-      const d = await (await fetch(`/api/sprit/route?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&fuel=${fuel}`)).json();
+      const d = await (await fetch(`/api/sprit/route?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&fuel=${fuel}${offQ}`)).json();
       if (d.error && !(d.stations && d.stations.length)) {
         if (d.route) renderRoute(d); else setMsg(d.error, "warn");
         return;
@@ -273,7 +307,10 @@
   }
 
   // ---- UI-Events ----
-  function setMode(m) {
+  // Nur den Reiter umstellen (Anzeige, Panels, Karte leeren). Die
+  // Freitext-Suche braucht genau das — ohne das automatische Wiederherstellen
+  // unten, sonst lädt sie zweimal.
+  function switchTab(m) {
     mode = m; LS.set("sprit_mode", m);
     $("#tab-near").classList.toggle("on", m === "near"); $("#tab-near").setAttribute("aria-selected", String(m === "near"));
     $("#tab-route").classList.toggle("on", m === "route"); $("#tab-route").setAttribute("aria-selected", String(m === "route"));
@@ -282,6 +319,9 @@
     ac.hide(); setMsg(""); $("#results").innerHTML = "";
     if (m === "near") renderQuickNear(); else renderQuickRoute();
     if (map && layer) layer.clearLayers();
+  }
+  function setMode(m) {
+    switchTab(m);
     if (m === "near") {
       if (nearData) renderNear(nearData);
       else if (lastNear) fetchNear(lastNear);
@@ -295,9 +335,17 @@
   $("#tab-near").addEventListener("click", () => setMode("near"));
   $("#tab-route").addEventListener("click", () => setMode("route"));
 
+  // Nur Zustand + Anzeige, ohne Abfrage — die Freitext-Suche setzt den
+  // Treibstoff und laedt danach GENAU EINMAL selbst.
+  function setFuelUI(f) {
+    fuel = f; LS.set("sprit_fuel", f);
+    document.querySelectorAll(".fuel").forEach(x => {
+      const on = x.dataset.fuel === f;
+      x.classList.toggle("on", on); x.setAttribute("aria-selected", String(on));
+    });
+  }
   document.querySelectorAll(".fuel").forEach(b => b.addEventListener("click", () => {
-    fuel = b.dataset.fuel; LS.set("sprit_fuel", fuel);
-    document.querySelectorAll(".fuel").forEach(x => { const on = x === b; x.classList.toggle("on", on); x.setAttribute("aria-selected", String(on)); });
+    setFuelUI(b.dataset.fuel);
     // Treibstoff geändert → beide zwischengespeicherten Ergebnisse sind veraltet;
     // aktuellen Modus sofort neu laden, den anderen beim nächsten Umschalten.
     nearData = null; routeData = null;
@@ -313,6 +361,71 @@
   $("#rt-go").addEventListener("click", doRoute);
   ac.attach($("#rt-from"), () => {}, null);
   ac.attach($("#rt-to"), () => {}, doRoute);
+
+  // ---- Freitext-Suche ----------------------------------------------------
+  // /api/sprit/ask liefert NUR die verstandene Anfrage, nie Preise. Geladen
+  // wird danach über denselben Weg wie bei Eingabe von Hand — ein Pfad für
+  // Ergebnisse, und das Modell kann keinen Preis anfassen.
+  const askEcho = $("#ask-echo");
+  function zeigeEcho(text, ki) {
+    if (!askEcho) return;
+    askEcho.innerHTML = `<span>verstanden: ${esc(text)}${ki ? ' <span class="ask-ki">per KI gedeutet</span>' : ""}</span><button type="button" id="ask-x" aria-label="Ausblenden">✕</button>`;
+    askEcho.hidden = false;
+    $("#ask-x").addEventListener("click", () => { askEcho.hidden = true; });
+  }
+  function echoText(v) {
+    const t = [];
+    if (v.fuel) t.push(FUEL_LABEL[v.fuel] || v.fuel);
+    if (v.mode === "route") t.push("Route " + (v.from ? v.from + " → " : "→ ") + v.to);
+    else t.push(v.here ? "Umkreis: mein Standort" : "Umkreis: " + v.q);
+    if (v.off) t.push("max " + String(v.off).replace(".", ",") + " km Umweg");
+    if (v.radius) t.push("Umkreis " + v.radius + " km");
+    if (v.open) t.push("nur offene");
+    return t.join(" · ");
+  }
+  function applyIntent(v) {
+    if (v.fuel && v.fuel !== fuel) setFuelUI(v.fuel);
+    if (v.open) { LS.set("sprit_open", "1"); $("#opt-open").checked = true; }
+    // Zwischengespeicherte Ergebnisse passen nach einer neuen Anfrage nicht mehr.
+    nearData = null; routeData = null;
+
+    if (v.mode === "route") {
+      const toEl = $("#rt-to"), fromEl = $("#rt-from");
+      toEl.value = v.to; delete toEl.dataset.lat; delete toEl.dataset.lng;
+      if (v.from) { fromEl.value = v.from; delete fromEl.dataset.lat; delete fromEl.dataset.lng; }
+      switchTab("route"); renderQuickRoute();
+      const from = valOf(fromEl);
+      if (!from) { setMsg("Start fehlt — bitte eintragen oder auf „Start“ tippen.", "warn"); return; }
+      LS.set("sprit_from", fromEl.value); LS.set("sprit_to", toEl.value);
+      fetchRoute(from, valOf(toEl), v.off);
+    } else {
+      if (v.radius) { LS.set("sprit_radius", String(v.radius)); $("#opt-radius").value = String(v.radius); }
+      switchTab("near"); renderQuickNear();
+      if (v.here) { locate((lat, lng) => fetchNear({ lat, lng })); return; }
+      const el = $("#near-q");
+      el.value = v.q; delete el.dataset.lat; delete el.dataset.lng;
+      fetchNear({ q: v.q });
+    }
+  }
+  $("#ask-form").addEventListener("submit", async e => {
+    e.preventDefault();
+    const q = $("#ask-q").value.trim();
+    if (q.length < 2) return;
+    ac.hide();
+    setMsg("Frage wird verstanden…", "load");
+    let d = null;
+    try { d = await (await fetch("/api/sprit/ask?q=" + encodeURIComponent(q))).json(); } catch (_) {}
+    if (!d || !d.mode) {
+      // Nicht verstanden, Modell aus oder Kontingent leer: die App bleibt
+      // vollständig bedienbar, nur eben über die Felder darunter.
+      setMsg("Nicht verstanden — bitte die Felder darunter nutzen.", "warn");
+      if (askEcho) askEcho.hidden = true;
+      $("#opts").open = false;
+      return;
+    }
+    zeigeEcho(echoText(d), d.via === "ki");
+    applyIntent(d);
+  });
 
   // Aktionen in den Ergebniskarten: Favorit-Stern + Teilen
   $("#results").addEventListener("click", e => {
@@ -366,6 +479,18 @@
   $("#opt-radius").addEventListener("change", e => { LS.set("sprit_radius", e.target.value); rerender(); });
   $("#opt-sort").addEventListener("change", e => { LS.set("sprit_sort", e.target.value); rerender(); });
   $("#opt-open").addEventListener("change", e => { LS.set("sprit_open", e.target.checked ? "1" : "0"); rerender(); });
+  // Tankmenge/Verbrauch ändern nur die Umweg-Rechnung — neu zeichnen genügt,
+  // keine neue Abfrage.
+  $("#opt-liter").value = LS.get("sprit_liter", String(VG.liter));
+  $("#opt-verbrauch").value = LS.get("sprit_verbrauch", String(VG.verbrauch));
+  $("#opt-liter").addEventListener("change", e => {
+    const v = Math.min(120, Math.max(5, +e.target.value || VG.liter));
+    e.target.value = v; LS.set("sprit_liter", String(v)); rerender();
+  });
+  $("#opt-verbrauch").addEventListener("change", e => {
+    const v = Math.min(30, Math.max(2, +String(e.target.value).replace(",", ".") || VG.verbrauch));
+    e.target.value = v; LS.set("sprit_verbrauch", String(v)); rerender();
+  });
 
   // Tank-Timing: In Österreich dürfen Spritpreise nur um 12:00 steigen, sonst
   // nur fallen → tageszeitabhängige Empfehlung (lokale Uhrzeit).

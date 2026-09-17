@@ -12,6 +12,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const html = fs.readFileSync(path.join(__dirname, "..", "public", "admin", "index.html"), "utf8");
 const script = html.slice(html.lastIndexOf("<script>") + 8, html.lastIndexOf("</script>"));
 
+// Zeitstempel im SQLite-Format (UTC, "YYYY-MM-DD HH:MM:SS") RELATIV zu jetzt.
+// Fest verdrahtete Daten waren hier eine Zeitbombe: das „neu“-Abzeichen hängt an
+// „juenger als 24 h“, also schlug der Test zu, sobald die Vorgabe alt genug war.
+const vorStunden = h => new Date(Date.now() - h * 3600e3).toISOString().slice(0, 19).replace("T", " ");
+
 let ok = true;
 const assert = (name, cond) => { if (cond) console.log("OK  ", name); else { console.log("FAIL", name); ok = false; } };
 
@@ -78,7 +83,7 @@ const answer = {
   scores: { total: 998, last24h: 38, games: [{ game: "komet", subs: 802, players: 4, top: 51234, topName: "Philip" }] },
   errors: {
     total: 12, last24h: 3, upstream522: 1,
-    top: [{ msg: "boom", n: 2, total: 9, last: "2026-09-03 08:00:00", page: "komet", firstSeen: "2026-09-03 07:00:00" }],
+    top: [{ msg: "boom", n: 2, total: 9, last: "2026-09-03 08:00:00", page: "komet", firstSeen: vorStunden(1) }],
     latest: [{ created_at: "2026-09-03 08:00:00", page: "komet", msg: "boom", ua: "Chrome/142", extra: "score=99" }],
   },
   clientErrors: { total: 4, last24h: 1, latest: [{ created_at: "2026-09-03 08:00:00", page: "/", msg: "oops", ua: "Safari", extra: "canvas=0" }] },

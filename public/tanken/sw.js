@@ -1,13 +1,13 @@
 // Service Worker der Sprit-Radar-PWA. Scope /tanken/. Netz zuerst, Cache als
 // Fallback. /api/… (Preise/Route) und /sprit/tiles/… (Kacheln) werden NICHT
 // vom SW gecacht — Preise sollen frisch sein, Kacheln cachen Edge/Browser selbst.
-const CACHE = "sprit-v13";
+const CACHE = "sprit-v14";
 // CacheStorage ist pro Origin, nicht pro Scope — Hub/Fire/Tanken teilen sich einen
 // Speicher. Beim Aufräumen nur eigene Caches (gleicher Präfix) löschen, sonst wischt
 // dieser SW die Shells der anderen Apps weg. Präfix = alles vor dem "-vNN"-Suffix.
 const PREFIX = CACHE.replace(/-v\d+$/, "-");
 const SHELL = [
-  "./", "./index.html", "./app.js?v=8", "./style.css?v=4",
+  "./", "./index.html", "./app.js", "./umweg.js", "./style.css",
   "./vendor/leaflet.js", "./vendor/leaflet.css",
   "./manifest.webmanifest", "./icons/icon-192.png", "./icons/icon-512.png",
 ];
