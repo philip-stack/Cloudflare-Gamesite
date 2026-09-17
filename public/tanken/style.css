@@ -212,3 +212,16 @@ input[type="search"]:focus { outline: 2px solid var(--accent2); outline-offset: 
   width: 100%; padding: 8px 10px; border-radius: 10px; font: inherit;
   background: var(--panel); border: 1px solid var(--panel-line); color: var(--ink);
 }
+
+/* ---- Heimatort in den Optionen (sichtbar, aenderbar, loeschbar) ---- */
+.opt-home {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px;
+  margin: 10px 0 2px; padding: 10px 12px; border-radius: 12px;
+  background: var(--panel); box-shadow: 0 0 0 1px var(--panel-line) inset;
+  font-size: 0.88rem;
+}
+.opt-home .oh-lab { color: var(--muted); font-weight: 700; }
+.opt-home b { flex: 1; min-width: 8ch; }
+.opt-home .oh-btns { display: flex; gap: 6px; margin-left: auto; }
+.opt-home .btn-ghost.small { padding: 7px 10px; font-size: 0.8rem; }
+.opt-home button[disabled] { opacity: 0.45; cursor: not-allowed; }

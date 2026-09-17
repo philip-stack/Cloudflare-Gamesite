@@ -25,7 +25,7 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="Sprit-Radar" />
   <link rel="stylesheet" href="vendor/leaflet.css?v=340720ef" />
-  <link rel="stylesheet" href="style.css?v=363ffc24" />
+  <link rel="stylesheet" href="style.css?v=58d1d004" />
 </head>
 <body>
   <div id="app">
@@ -79,6 +79,14 @@
             <input id="opt-liter" type="number" min="5" max="120" step="5" inputmode="numeric"> </label>
           <label>Verbrauch (l/100&nbsp;km)
             <input id="opt-verbrauch" type="number" min="2" max="30" step="0.5" inputmode="decimal"></label>
+        </div>
+        <div class="opt-home">
+          <span class="oh-lab">Heimatort</span>
+          <b id="home-txt">—</b>
+          <span class="oh-btns">
+            <button type="button" id="home-set" class="btn-ghost small">Aktuellen Ort übernehmen</button>
+            <button type="button" id="home-clear" class="btn-ghost small">Löschen</button>
+          </span>
         </div>
         <p class="opt-note">Tankmenge und Verbrauch bestimmen, ob sich ein Umweg
           rechnet. Auf der Route zählen echte Straßenkilometer aus der
@@ -148,7 +156,7 @@
 
   <script src="vendor/leaflet.js?v=5a640ff8"></script>
   <script src="umweg.js?v=d1fed038"></script>
-  <script src="app.js?v=7b00f11d"></script>
+  <script src="app.js?v=dbc53b8b"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));

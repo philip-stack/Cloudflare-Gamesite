@@ -213,7 +213,12 @@
   function renderQuickNear() {
     const el = $("#q-near"); if (!el) return;
     const parts = [];
-    parts.push(home() ? `<button class="chip home" data-act="home">🏠 Heim</button>` : `<button class="chip" data-act="sethome">🏠 Heim setzen</button>`);
+    // Mit Namen: ein versehentlich falscher Heimatort faellt so sofort auf,
+    // statt still in jeder „nach hause"-Suche weiterzuwirken.
+    const hl = homeLabel();
+    parts.push(hl
+      ? `<button class="chip home" data-act="home" title="Heimatort — ändern unter ⚙ Optionen">🏠 ${esc(hl)}</button>`
+      : `<button class="chip" data-act="sethome">🏠 Heim setzen</button>`);
     jget("sprit_rn", []).forEach((r, i) => parts.push(`<button class="chip" data-act="rn" data-i="${i}">🕘 ${esc(r.label)}</button>`));
     favs().forEach((f, i) => parts.push(`<button class="chip fav" data-act="fav" data-i="${i}">★ ${esc(f.name)}</button>`));
     el.innerHTML = parts.join("");
@@ -482,16 +487,50 @@
     catch (_) { window.open("https://wa.me/?text=" + encodeURIComponent(line + "\n" + url), "_blank", "noopener"); }
   }
 
+  // ---- Heimatort: setzen, sehen, aendern, loeschen ----------------------
+  // Vorher eine Einbahnstrasse: war er einmal gesetzt, verschwand der Knopf
+  // „Heim setzen" und es gab keinen Weg zurueck — ein Vertipper war endgueltig.
+  // Gespeichert wird jetzt auch der NAME, sonst sieht man gar nicht, welche
+  // Adresse drinsteht.
+  function homeLabel() {
+    const h = home();
+    if (!h) return null;
+    if (h.label) return h.label;
+    // Aeltere Eintraege haben nur Koordinaten — dann wenigstens die zeigen.
+    return (typeof h.lat === "number" && typeof h.lng === "number")
+      ? h.lat.toFixed(4) + ", " + h.lng.toFixed(4) : null;
+  }
+  function renderHome() {
+    const el = $("#home-txt"); if (!el) return;
+    const l = homeLabel();
+    el.textContent = l || "noch nicht gesetzt";
+    const clr = $("#home-clear"); if (clr) clr.disabled = !l;
+  }
+  function saveHome(lat, lng, label) {
+    jset("sprit_home", { lat, lng, label: label || "" });
+    renderHome(); renderQuickNear();
+    setMsg("Heimatort gespeichert: " + (label || "aktueller Standort"), "");
+  }
+  // „Aktueller Ort" = Mittelpunkt der letzten Umkreis-Suche, sonst GPS.
+  function setHome() {
+    const c = nearData && nearData.center;
+    if (c) { saveHome(c.lat, c.lng, shortLabel(c.label || "") || ($("#near-q").value.trim() || "")); return; }
+    locate((lat, lng) => { saveHome(lat, lng, "Mein Standort"); fetchNear({ lat, lng }); });
+  }
+  if ($("#home-set")) $("#home-set").addEventListener("click", setHome);
+  if ($("#home-clear")) $("#home-clear").addEventListener("click", () => {
+    try { localStorage.removeItem("sprit_home"); } catch (_) {}
+    renderHome(); renderQuickNear();
+    setMsg("Heimatort gelöscht.", "");
+  });
+  renderHome();
+
   // Schnellzugriff-Chips (Umkreis)
   $("#q-near").addEventListener("click", e => {
     const b = e.target.closest(".chip"); if (!b) return;
     const act = b.dataset.act;
     if (act === "home") { const h = home(); if (h) fetchNear({ lat: h.lat, lng: h.lng }); }
-    else if (act === "sethome") {
-      const c = nearData && nearData.center;
-      if (c) { jset("sprit_home", { lat: c.lat, lng: c.lng }); renderQuickNear(); setMsg("Heimatort gespeichert.", ""); }
-      else locate((lat, lng) => { jset("sprit_home", { lat, lng }); renderQuickNear(); fetchNear({ lat, lng }); });
-    }
+    else if (act === "sethome") setHome();
     else if (act === "rn") { const r = jget("sprit_rn", [])[+b.dataset.i]; if (r) fetchNear(r.lat != null ? { lat: r.lat, lng: r.lng } : { q: r.q || r.label }); }
     else if (act === "fav") { const f = favs()[+b.dataset.i]; if (f) fetchNear({ lat: f.lat, lng: f.lng }); }
   });
