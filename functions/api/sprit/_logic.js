@@ -59,8 +59,37 @@ function ortsname(s) {
   return t.slice(0, 60);
 }
 
+// Wie viel vom Satz haben die Regeln NICHT angefasst?
+//
+// Warum das noetig ist: freiSicher() fragte nur „haben wir einen Ort?" — nicht
+// „haben wir den Satz verstanden?". Bei „ich brauch was Gruenes zum Volltanken,
+// am liebsten in meiner Umgebung" lieferten die Regeln zufrieden {near, here}
+// und liessen „was Gruenes" (CNG) fallen. Ausgerechnet dort, wo das Modell
+// ueberlegen ist, haben die Regeln es blockiert.
+function restWorte(t, o) {
+  let r = " " + t + " ";
+  // Alles abziehen, was die Regeln tatsaechlich verstanden haben.
+  for (const v of [o.q, o.to, o.from]) {
+    if (v) r = r.split(v).join(" ");
+  }
+  r = r
+    .replace(new RegExp("\\b(?:" + FUELLER + ")\\b", "g"), " ")
+    .replace(/\b(?:in der n(?:ä|ae)he|in meiner n(?:ä|ae)he|um mich|bei mir|mein standort|umgebung|hier)\b/g, " ")
+    .replace(/\b(?:nach hause|nachhause|zu hause|zuhause|daheim|heim|heimat)\b/g, " ")
+    .replace(/\d{1,2}(?:[.,]\d)?\s*(?:km|kilometer)?/g, " ")
+    .replace(/[^\p{L}\p{N} ]+/gu, " ")
+    .replace(/\s+/g, " ").trim();
+  return r ? r.split(" ").filter(w => w.length > 2).length : 0;
+}
+
 export function parseFrei(raw) {
   const t = " " + String(raw == null ? "" : raw).toLowerCase().replace(/\s+/g, " ").trim() + " ";
+  const o = parseKern(t);
+  o.restWorte = restWorte(t, o);
+  return o;
+}
+
+function parseKern(t) {
   const o = {};
 
   for (const [re, f] of TREIBSTOFF) if (re.test(t)) { o.fuel = f; break; }
@@ -104,8 +133,15 @@ export function parseFrei(raw) {
 }
 
 // Hat parseFrei genug gefunden, um das Modell zu sparen?
+//
+// Zwei Bedingungen, nicht eine: ein Ziel MUSS da sein — und es darf nicht zu
+// viel Unverstandenes danebenstehen. Drei Woerter Toleranz, damit „billig
+// diesel richtung graz bitte" gratis bleibt, ganze Saetze aber ans Modell
+// gehen. Lieber ein paar Neuronen ausgeben als den halben Satz verschlucken.
+export const REST_TOLERANZ = 3;
 export function freiSicher(o) {
-  return !!(o && (o.q || o.to || o.here || o.home));
+  if (!o || !(o.q || o.to || o.here || o.home)) return false;
+  return (o.restWorte || 0) < REST_TOLERANZ;
 }
 
 const FUELS_OK = ["DIE", "SUP", "GAS"];

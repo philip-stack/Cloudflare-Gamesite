@@ -25,7 +25,7 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="Sprit-Radar" />
   <link rel="stylesheet" href="vendor/leaflet.css?v=340720ef" />
-  <link rel="stylesheet" href="style.css?v=58d1d004" />
+  <link rel="stylesheet" href="style.css?v=833d8c02" />
 </head>
 <body>
   <div id="app">
@@ -54,7 +54,11 @@
         <button id="ask-go" class="btn-ghost" type="submit">Los</button>
       </form>
       <!-- aria-live: die Deutung MUSS ankommen, auch ohne Blick auf den Schirm. -->
+      <!-- aria-live: die Deutung MUSS ankommen, auch ohne Blick auf den Schirm. -->
       <div class="ask-echo" id="ask-echo" role="status" aria-live="polite" hidden></div>
+      <!-- Ohne Beispiele ahnt niemand, dass hier ganze Saetze erlaubt sind.
+           Verschwindet nach der ersten eigenen Suche. -->
+      <div class="ask-bsp" id="ask-bsp" hidden></div>
 
       <div class="tabs" role="tablist" aria-label="Modus">
         <button id="tab-near" class="tab on" role="tab" aria-selected="true">📍 Umkreis</button>
@@ -156,7 +160,7 @@
 
   <script src="vendor/leaflet.js?v=5a640ff8"></script>
   <script src="umweg.js?v=d1fed038"></script>
-  <script src="app.js?v=dbc53b8b"></script>
+  <script src="app.js?v=bdef25c5"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));

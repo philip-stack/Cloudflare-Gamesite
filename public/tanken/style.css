@@ -225,3 +225,7 @@ input[type="search"]:focus { outline: 2px solid var(--accent2); outline-offset: 
 .opt-home .oh-btns { display: flex; gap: 6px; margin-left: auto; }
 .opt-home .btn-ghost.small { padding: 7px 10px; font-size: 0.8rem; }
 .opt-home button[disabled] { opacity: 0.45; cursor: not-allowed; }
+
+/* ---- Beispiele unter der Freitext-Suche (bis zur ersten eigenen Suche) ---- */
+.ask-bsp { display: flex; flex-wrap: wrap; gap: 6px; margin: -4px 0 12px; }
+.ask-bsp .chip { font-size: 0.8rem; opacity: 0.9; }

@@ -445,14 +445,62 @@
       fetchNear({ q: v.q });
     }
   }
+  // Namen der eigenen Orte — damit das Modell „zur Shell in Stammersdorf"
+  // zuordnen kann. Nur Namen, keine Koordinaten: aufloesen tut die App.
+  function bekannteOrte() {
+    const l = [];
+    const hl = homeLabel(); if (hl && !/^\d/.test(hl)) l.push(hl);
+    favs().forEach(f => { if (f && f.name) l.push(f.name); });
+    jget("sprit_rn", []).forEach(r => { if (r && r.label) l.push(String(r.label).replace(/^📍\s*/, "")); });
+    return [...new Set(l)].slice(0, 8);
+  }
+
+  // Wer direkt nach einer Deutung von Hand nachbessert, sagt uns damit: falsch
+  // verstanden. Genau einmal je Deutung zaehlen, nicht bei jedem Tastendruck.
+  let deutungAb = 0, korrekturGemeldet = false;
+  function meldeKorrektur() {
+    if (!deutungAb || korrekturGemeldet) return;
+    if (Date.now() - deutungAb > 90000) return;
+    korrekturGemeldet = true;
+    try {
+      navigator.sendBeacon("/api/stat", new Blob(
+        [JSON.stringify({ ev: "ask", game: "korrigiert" })], { type: "application/json" }));
+    } catch (_) {}
+  }
+  ["#near-q", "#rt-from", "#rt-to", "#opt-radius", "#opt-open"].forEach(sel => {
+    const el = $(sel); if (el) el.addEventListener("change", meldeKorrektur);
+  });
+  document.querySelectorAll(".fuel").forEach(b => b.addEventListener("click", meldeKorrektur));
+
+  const BEISPIELE = ["billig diesel richtung graz", "super in der nähe", "nur offene in linz"];
+  function renderBeispiele() {
+    const el = $("#ask-bsp"); if (!el) return;
+    if (LS.get("sprit_ask_benutzt", "") === "1") { el.hidden = true; return; }
+    el.innerHTML = BEISPIELE.map(b => `<button type="button" class="chip" data-b="${esc(b)}">${esc(b)}</button>`).join("");
+    el.hidden = false;
+  }
+  $("#ask-bsp").addEventListener("click", e => {
+    const b = e.target.closest("button[data-b]"); if (!b) return;
+    $("#ask-q").value = b.dataset.b;
+    $("#ask-form").dispatchEvent(new Event("submit", { cancelable: true }));
+  });
+  renderBeispiele();
+
   $("#ask-form").addEventListener("submit", async e => {
     e.preventDefault();
     const q = $("#ask-q").value.trim();
     if (q.length < 2) return;
     ac.hide();
+    LS.set("sprit_ask_benutzt", "1"); renderBeispiele();
     setMsg("Frage wird verstanden…", "load");
     let d = null;
-    try { d = await (await fetch("/api/sprit/ask?q=" + encodeURIComponent(q))).json(); } catch (_) {}
+    try {
+      d = await (await fetch("/api/sprit/ask", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ q, orte: bekannteOrte() }),
+      })).json();
+    } catch (_) {}
     if (!d || !d.mode) {
       // Nicht verstanden, Modell aus oder Kontingent leer: die App bleibt
       // vollständig bedienbar, nur eben über die Felder darunter.
@@ -461,6 +509,7 @@
       $("#opts").open = false;
       return;
     }
+    deutungAb = Date.now(); korrekturGemeldet = false;
     zeigeEcho(echoText(d), d.via === "ki");
     applyIntent(d);
   });

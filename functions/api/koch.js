@@ -14,7 +14,7 @@ import { json, rateLimit, clientIp } from "./_util.js";
 // ====================================================================
 
 const MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
-const MODEL_FALLBACK = "@cf/meta/llama-3.1-8b-instruct";
+const MODEL_FALLBACK = "@cf/meta/llama-3.1-8b-instruct-fp8";   // Vorgaenger seit 2026-05-30 abgekuendigt
 
 function decodeEntities(s) {
   return s

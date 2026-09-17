@@ -363,7 +363,17 @@ Route** — komplett gratis und ohne API-Schlüssel:
   umweg" stellt Modus, Treibstoff, Ziel und Umweg selbst ein. Vier Stufen, die
   erste kostet nichts: **Regeln** (`parseFrei`) decken den Normalfall mit
   **null Neuronen** ab; erst ein Satz, den sie nicht fassen, geht ans Modell —
-  gedrosselt, mit `max_tokens: 120` und einer Stunde Zwischenspeicher. Der
+  gedrosselt, mit `max_tokens: 120` und einer Stunde Zwischenspeicher.
+  Die Regeln muessen dabei **ihre Grenzen kennen**: `freiSicher()` fragt nicht
+  nur „haben wir ein Ziel?", sondern auch, wie viel vom Satz unverstanden
+  blieb (`restWorte`). Ohne das lieferten sie bei ganzen Saetzen zufrieden ein
+  halbes Ergebnis — beobachtet: „was Gruenes" (CNG) fiel stillschweigend weg,
+  ausgerechnet dort, wo das Modell ueberlegen ist.
+  Gefragt wird **erst das kleine Modell** (8B), das grosse nur, wenn die
+  Pruefung durchfaellt — bei Slot-Filling reicht das kleine, und weil
+  `validateIntent()` ohnehin jede Antwort prueft, ist ein Fehlgriff abgefangen
+  statt bloss unwahrscheinlich. Zaehler je Weg zeigen, ob sich das lohnt
+  (`ask:ki8` / `ask:ki70` / `ask:ki8err`). Der
   Endpunkt gibt **nur die verstandene Anfrage** zurueck, nie Preise: die holt
   danach derselbe Weg wie bei Eingabe von Hand, ein Modell kann also keinen
   Preis anfassen. Alles laeuft durch `validateIntent()` — dieselbe Weissliste
@@ -372,9 +382,15 @@ Route** — komplett gratis und ohne API-Schlüssel:
   sie auch ohne Blick auf den Schirm ankommt), und faellt bei Ausfall/leerem
   Kontingent auf das normale Formular zurueck. `„nach hause"` loest den
   gespeicherten Heimatort auf — dafuer braucht es kein Modell, nur eine Regel.
-  Gezaehlt wird jeder Weg getrennt (`ask:regel` / `ask:ki` / `ask:cache` /
-  `ask:form`), sonst laesst sich nicht beantworten, ob die Regeln reichen oder
-  wo sie nachzuschaerfen waeren.
+  Gezaehlt wird jeder Weg getrennt (`ask:regel` / `ask:ki8` / `ask:ki70` /
+  `ask:cache` / `ask:form`), sonst laesst sich nicht beantworten, ob die Regeln
+  reichen oder wo sie nachzuschaerfen waeren; `ask:korrigiert` zaehlt, wie oft
+  jemand direkt nach einer Deutung doch von Hand nachbessert — der billigste
+  Qualitaets-Hinweis, den es gibt.
+  Die App schickt **per POST** auch die **Namen** ihrer gespeicherten Orte
+  (Heimatort, Favoriten, letzte Suchen) mit: damit versteht das Modell „zur
+  Shell in Stammersdorf". Nur Namen, keine Koordinaten — aufloesen tut die App.
+  POST statt GET, weil eine URL in Zugriffsprotokollen landet, ein Body nicht.
 - **Preisquelle ehrlich melden**: E-Control liefert gelegentlich Stationen mit
   **leeren Preislisten** (live beobachtet kurz nach 12:00 Wiener Zeit, wenn die
   Preise umgestellt werden). Das sah vorher aus wie „hier gibt es keine

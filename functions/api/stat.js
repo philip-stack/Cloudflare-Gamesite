@@ -14,7 +14,10 @@ import { json, clientIp, rateLimit } from "./_util.js";
 //   POST /api/stat  { ev:"play"|"duel"|"share", game:"galopp" }  → 204
 // ====================================================================
 
-const EVENTS = new Set(["play", "duel", "share"]);
+// "ask" kommt aus der Freitext-Suche: "ask:korrigiert" zaehlt, wie oft jemand
+// direkt nach einer Deutung doch von Hand nachbessert — der billigste
+// Qualitaets-Hinweis, den es gibt.
+const EVENTS = new Set(["play", "duel", "share", "ask"]);
 const GAME_RE = /^[a-z0-9_-]{1,24}$/;
 
 // Serverseitiger Zähler für dieselbe Tabelle — für Dinge, die KEIN Client
