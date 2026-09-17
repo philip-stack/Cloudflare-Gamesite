@@ -120,6 +120,39 @@ for (const [name, patch, re] of faelle) {
   }
 }
 
+// ---------- Kanarienvogel fuer die KI ----------
+// Ein abgekuendigtes oder gestoertes Modell faellt NICHT auf: das Briefing
+// nimmt dann den Ersatztext, und der liest sich sauber. Genau so blieb eine
+// Abkuendigung monatelang unbemerkt. Das taegliche Briefing ist der einzige
+// verlaessliche Puls fuer alle KI-Funktionen.
+{
+  const mitPlain = n => opsEvaluate({ fireAgeSec: 10, pushQueue: 0, errCount: 0, aiPlainInFolge: n });
+  assert("KI: ein Ausfall ist noch kein Alarm", mitPlain(1).status === "ok");
+  assert("KI: zwei Tage ohne Modell -> Achtung", mitPlain(2).status === "warn");
+  assert("KI: Grund steht dabei", mitPlain(2).warns.some(w => /KI/.test(w)));
+  assert("KI: ohne Signal kein Fehlalarm", opsEvaluate({ fireAgeSec: 10, pushQueue: 0, errCount: 0 }).status === "ok");
+  assert("Grenzwert dokumentiert", OPS_LIMITS.aiPlainTage === 2);
+}
+
+// ---------- opsFacts liest den Puls ----------
+{
+  const dbMit = (reihen) => ({
+    prepare(sql) {
+      return {
+        bind() { return this; },
+        async first() { return null; },
+        async all() { return /FROM briefing/i.test(sql) ? { results: reihen } : { results: [] }; },
+      };
+    },
+  });
+  const f1 = await opsFacts({ DB: dbMit([{ via: "ai" }, { via: "plain" }]) });
+  assert("frisches KI-Briefing -> 0", f1.aiPlainInFolge === 0);
+  const f2 = await opsFacts({ DB: dbMit([{ via: "plain" }, { via: "plain" }, { via: "ai" }]) });
+  assert("zwei Ersatztexte in Folge -> 2", f2.aiPlainInFolge === 2);
+  const f3 = await opsFacts({ DB: { prepare() { throw new Error("weg"); } } });
+  assert("ohne Tabelle kein Absturz", f3.aiPlainInFolge === 0);
+}
+
 // ---------- Taktung: was muss NICHT alle 2 Minuten laufen ----------
 // Hintergrund: der Fire-Cron läuft 720× am Tag. Jede Abfrage darin zählt 720×
 // aufs D1-Leselimit — auch die, die Zeilen löscht, die Tage alt sind.

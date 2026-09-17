@@ -119,6 +119,9 @@ export async function onRequestGet({ request, env }) {
   // (Migration 0014) — vorher war das ein voller Scan pro Lauf.
   if (houseDue()) {
     try { await env.DB.prepare("DELETE FROM sprit_price_log WHERE day < date('now','-30 days')").run(); } catch (_) {}
+    // Unverstandene Sucheingaben nach 7 Tagen loeschen — sie sollen beim
+    // Nachschaerfen der Muster helfen, nicht zum Archiv werden.
+    try { await env.DB.prepare("DELETE FROM ask_log WHERE at < datetime('now','-7 days')").run(); } catch (_) {}
   }
   return json({ ok: true, alerts: alerts.length, checked, sent });
 }

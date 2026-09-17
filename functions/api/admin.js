@@ -126,7 +126,7 @@ export async function onRequestGet({ request, env }) {
     sTotal, s24, perRaw,
     reachTotal, reachNew7, reachActive7, reachReturning,
     eTotal, e24, e522, eTop, eLatest,
-    clTotal, cl24, clLatest,
+    clTotal, cl24, clLatest, askLog,
     pSubs, pQueue, pOldestRow,
     fh, fOpen, fKept,
     shRow, sAlerts, sSubs, sLog,
@@ -170,6 +170,11 @@ export async function onRequestGet({ request, env }) {
     q(vF, () => cnt("SELECT COUNT(*) n FROM client_log"), 0),
     cnt("SELECT COUNT(*) n FROM client_log WHERE created_at > datetime('now','-1 day')"),                // Reiter-Zähler
     q(vF, () => many(env, "SELECT created_at, page, msg, ua, extra FROM client_log ORDER BY id DESC LIMIT 25"), []),
+
+    // ---- Unverstandene Sucheingaben (Freitext-Suche der Tank-App) ----
+    // Nur Saetze, an denen Regeln UND Modell gescheitert sind; nach 7 Tagen
+    // geloescht (Sprit-Cron). Genau daraus lassen sich die Muster verbessern.
+    q(vF, () => many(env, "SELECT q, at FROM ask_log ORDER BY id DESC LIMIT 20"), []),
 
     // ---- Push ----
     q(vS, () => cnt("SELECT COUNT(*) n FROM push_sub"), 0),
@@ -312,6 +317,7 @@ export async function onRequestGet({ request, env }) {
     quiz: { players: qPlayers, games: qGames, topName: qTop?.name || null, topPoints: qTop?.points ?? 0, entries: qEntries, reportCount: qReportCount, reports: qReports },
     live: { rooms: liveRooms },
     clientErrors: { total: clTotal, last24h: cl24, latest: clLatest },
+    askLog,
     health,
     adminLog,
     trends: { days, scores: tScores, errors: tErrors, devices: tDevices },

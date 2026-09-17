@@ -243,7 +243,9 @@ sandbox.ANSWER = answer;
   vm.runInContext(`view = "fehler"; lastData = ANSWER; render(ANSWER);`, ctx);
   const h = content.innerHTML;
   assert("leer: kein Tabellengerüst in der Fehler-Ansicht", !h.includes("<table"));
-  assert("leer: eine Zeile statt Tabelle", (h.match(/class="quiet"/g) || []).length === 3);
+  // Vier Abschnitte im Fehler-Reiter: Fehler-Log, Client-Fehler, nicht
+  // verstandene Suchen, gemeldete Fragen — leer je eine Zeile statt Tabelle.
+  assert("leer: eine Zeile statt Tabelle", (h.match(/class="quiet"/g) || []).length === 4);
   vm.runInContext(`view = "ueberblick"; render(ANSWER);`, ctx);
   assert("leer: aktive Räume als Zeile", content.innerHTML.includes("gerade keine aktiven Räume"));
   vm.runInContext(`view = "moderation"; render(ANSWER);`, ctx);

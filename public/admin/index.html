@@ -566,6 +566,12 @@
       const clRows = (ce.latest || []).map(x =>
         `<tr><td class="t">${esc((x.created_at || "").slice(5, 16))}</td><td class="m"><b>${esc(x.msg)}</b>${detail(x)}</td></tr>`).join("");
 
+      // Unverstandene Sucheingaben (Freitext-Suche der Tank-App). Nur Fälle,
+      // in denen Regeln UND Modell gescheitert sind — genau daraus lassen sich
+      // die Muster verbessern. Wird nach 7 Tagen automatisch gelöscht.
+      const askRows = (d.askLog || []).map(x =>
+        `<tr><td class="t">${esc((x.at || "").slice(5, 16))}</td><td class="m">${esc(x.q)}</td></tr>`).join("");
+
       // Nutzungszähler (anonym): play/duel/share je Spiel zusammenführen
       const usageMap = {};
       (d.usage || []).forEach(r => {
@@ -760,6 +766,12 @@
 
         ${title("Client-Fehler", `<span class="muted">Geräte · ${nf(ce.last24h)} in 24 h / ${nf(ce.total)} gesamt</span>`)}
         ${or(clRows, `<table><thead><tr><th>Zeit</th><th>Fehler (Gerät)</th></tr></thead><tbody>${clRows}</tbody></table>`, "keine Client-Fehler")}
+
+        ${title("Nicht verstandene Suchen", `<span class="muted">Freitext-Suche · 7 Tage</span>`)}
+        ${or(askRows,
+          `<table><thead><tr><th>Zeit</th><th>Eingabe</th></tr></thead><tbody>${askRows}</tbody></table>
+           <p class="quiet">Nur Eingaben, an denen Regeln und Modell gescheitert sind — ohne Gerät, IP oder Namen. Automatisch nach 7 Tagen gelöscht.</p>`,
+          "alle Suchen wurden verstanden")}
 
         ${title("Gemeldete Fragen", `<button class="btn sm bad" id="quiz-reports-clear">Meldungen leeren</button>`)}
         ${or(quizReportRows, `<table><thead><tr><th>Zeit</th><th>Frage &amp; Kontext</th><th class="num">Aktion</th></tr></thead><tbody>${quizReportRows}</tbody></table>`, "keine gemeldeten Fragen")}`;

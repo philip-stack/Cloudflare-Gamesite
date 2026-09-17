@@ -17,7 +17,11 @@ import { json, clientIp, rateLimit } from "./_util.js";
 // "ask" kommt aus der Freitext-Suche: "ask:korrigiert" zaehlt, wie oft jemand
 // direkt nach einer Deutung doch von Hand nachbessert — der billigste
 // Qualitaets-Hinweis, den es gibt.
-const EVENTS = new Set(["play", "duel", "share", "ask"]);
+// "visit" beantwortet die Frage, die bisher offen war: kommt ueberhaupt
+// jemand? Ohne sie ist "niemand spielt" nicht von "niemand kommt" zu
+// unterscheiden — zwei voellig verschiedene Probleme.
+// "onboard" zeigt, was die Begruessung bewirkt (gesehen/Name/weggeklickt).
+const EVENTS = new Set(["play", "duel", "share", "ask", "visit", "onboard"]);
 const GAME_RE = /^[a-z0-9_-]{1,24}$/;
 
 // Serverseitiger Zähler für dieselbe Tabelle — für Dinge, die KEIN Client

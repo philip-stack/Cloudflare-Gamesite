@@ -16,6 +16,7 @@ export const OPS_LIMITS = {
   pushQueue: 200,       // Queue staut → Zustellung kaputt
   errPerDay: 20,        // Dashboard-Fenster (24 h)
   errPerWindow: 15,     // Alarm-Fenster (15 min) — Spitze, nicht Grundrauschen
+  aiPlainTage: 2,       // so viele Briefings ohne KI in Folge = das Modell hakt
 };
 
 // Wie oft muss der Betriebsstatus geprüft werden? Der Cron läuft alle 2
@@ -55,6 +56,14 @@ export function opsEvaluate(f) {
 
   if ((f.pushQueue || 0) > OPS_LIMITS.pushQueue) warns.push(`Push-Queue: ${f.pushQueue}`);
   if (f.spritAgeSec != null && f.spritAgeSec > OPS_LIMITS.spritAgeSec) warns.push("Sprit-Cron verzögert");
+  // Stiller Ausfall mit Ansage: ein abgekuendigtes oder gestoertes Modell faellt
+  // NICHT auf, weil das Briefing dann einfach den Ersatztext nimmt und der sich
+  // sauber liest. Genau so wurde eine Abkuendigung monatelang nicht bemerkt.
+  // Das taegliche Briefing ist der Kanarienvogel fuer ALLE KI-Funktionen
+  // (Kochstudio, Briefing, Freitext-Suche haengen am selben Modell).
+  if ((f.aiPlainInFolge || 0) >= OPS_LIMITS.aiPlainTage) {
+    warns.push(`KI: ${f.aiPlainInFolge} Briefings in Folge ohne Modell`);
+  }
   if (f.healthCronOk === false) warns.push("Health: Cron-Totmann rot");
   if (f.vapid === false) warns.push("Health: VAPID nicht konfiguriert");
 
@@ -95,6 +104,18 @@ export async function opsFacts(env, { errWindowMin = 15 } = {}) {
   const pq = await q("SELECT COUNT(*) n FROM push_queue");
   const sp = await q("SELECT v FROM app_config WHERE k='sprit_cron_at'");
 
+  // Wie viele der letzten Briefings kamen OHNE Modell zustande? Nur die
+  // juengsten drei — mehr braucht die Frage nicht, und der Schluessel ist der
+  // Primaerschluessel (day), die Abfrage also billig.
+  let aiPlainInFolge = 0;
+  try {
+    const r = await env.DB.prepare("SELECT via FROM briefing ORDER BY day DESC LIMIT 3").all();
+    for (const row of (r.results || [])) {
+      if (row.via === "ai") break;
+      aiPlainInFolge++;
+    }
+  } catch (_) { /* ohne Tabelle einfach kein Signal */ }
+
   const age = (s, utcSpaceFormat) => {
     if (!s) return null;
     const t = Date.parse(utcSpaceFormat ? String(s).replace(" ", "T") + "Z" : String(s));
@@ -108,6 +129,7 @@ export async function opsFacts(env, { errWindowMin = 15 } = {}) {
     errWindowMin,
     pushQueue: pq?.n ?? 0,
     spritAgeSec: age(sp?.v, false),
+    aiPlainInFolge,
     healthCronOk: null,
     vapid: env && env.VAPID_PRIVATE_JWK ? true : false,
   };

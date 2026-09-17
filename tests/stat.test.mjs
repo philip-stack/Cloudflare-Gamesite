@@ -77,5 +77,25 @@ const post = (db, body) => mod.onRequestPost({
   assert("GET → ok:true ohne Daten", j.ok === true && !("usage" in j));
 }
 
+
+// Neue Ereignisse: ohne "visit" laesst sich "niemand kommt" nicht von
+// "Leute kommen und fangen nichts an" unterscheiden.
+{
+  const mk = () => { const z = { keys: [] }; let b = []; return { z, env: { DB: { prepare(sql) { return {
+    bind(...a) { b = a; return this; },
+    async first() { return { n: 0 }; },
+    async run() { if (/stat_daily/i.test(sql)) z.keys.push(String(b[1] || "")); return {}; },
+  }; } } } }; };
+  for (const [ev, game, erwartet] of [["visit", "hub", "visit:hub"], ["visit", "tanken", "visit:tanken"],
+                                      ["onboard", "name", "onboard:name"], ["ask", "korrigiert", "ask:korrigiert"]]) {
+    const { z, env } = mk();
+    await mod.onRequestPost({ request: new Request("https://x/api/stat", { method: "POST", body: JSON.stringify({ ev, game }) }), env });
+    assert("stat akzeptiert " + erwartet, z.keys.includes(erwartet));
+  }
+  const { z, env } = mk();
+  await mod.onRequestPost({ request: new Request("https://x/api/stat", { method: "POST", body: JSON.stringify({ ev: "erfunden", game: "hub" }) }), env });
+  assert("stat lehnt unbekannte Ereignisse ab", z.keys.length === 0);
+}
+
 console.log("\n" + (ok ? "STAT-TESTS OK" : "STAT-TESTS FEHLGESCHLAGEN"));
 process.exit(ok ? 0 : 1);

@@ -978,6 +978,17 @@
       if (pc) nav.insertBefore(pc, nav.firstElementChild);
     } catch {}
 
+    // Einmal je Sitzung zählen, dass jemand da war. Anonym wie alles in
+    // stat_daily: nur (Tag, "visit:hub", Anzahl) — kein Gerät, keine IP, keine
+    // Uhrzeit. Ohne diese Zahl lässt sich "niemand kommt" nicht von "Leute
+    // kommen und fangen nichts an" unterscheiden.
+    try {
+      if (!sessionStorage.getItem("gs_visit")) {
+        sessionStorage.setItem("gs_visit", "1");
+        if (window.GS && GS.stat) GS.stat("visit", "hub");
+      }
+    } catch (_) {}
+
     // ================= Begrüßung beim ersten Besuch =================
     // Wer neu kommt, wird nach einem Namen gefragt — ohne Namen zählt kein
     // Punktestand (siehe GS.submitScore) und die halbe Seite bleibt leer.
@@ -1077,6 +1088,7 @@
 
       function speichern(v) {
         try { if (window.GS) GS.setName(v); else localStorage.setItem("bb_name", v.slice(0, 16)); } catch {}
+        try { if (window.GS && GS.stat) GS.stat("onboard", "name"); } catch (_) {}
         writeState({ v: 1, done: Date.now() });
         try { dlg.close(); } catch {}
         // Der Name hängt auf dieser Seite an vielen Stellen (Begrüßung, Profil-
@@ -1086,6 +1098,7 @@
       }
 
       function spaeter() {
+        try { if (window.GS && GS.stat) GS.stat("onboard", "spaeter"); } catch (_) {}
         writeState({ v: 1, skipped: Date.now() });
         try { dlg.close(); } catch {}
         if (nudge) nudge.hidden = false;
@@ -1100,6 +1113,7 @@
 
       function oeffnen() {
         if (dlg.open) return;
+        try { if (window.GS && GS.stat) GS.stat("onboard", "gezeigt"); } catch (_) {}
         document.body.classList.add("has-modal");
         dlg.showModal();
         // Auf Touch-Geräten NICHT ins Feld springen: die Tastatur würde die

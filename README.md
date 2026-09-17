@@ -463,6 +463,23 @@ weiter **jeder** Lauf, ein hängender Cron fällt also unverändert schnell auf.
 - **Betriebszustand an einer Stelle** (`_ops.js`): Ampel im Panel und der
   Push-Alarm werten dieselben Bedingungen aus. Statuswechsel landen in
   `ops_log` — nur der Wechsel, nicht jeder Cron-Lauf.
+- **Kanarienvogel fuer die KI**: Ein abgekuendigtes oder gestoertes Modell
+  faellt von selbst NICHT auf — das Briefing nimmt dann den Ersatztext, und der
+  liest sich sauber. Genau so blieb eine Modell-Abkuendigung monatelang
+  unbemerkt (und haette im Ernstfall auch das Kochstudio getroffen). Die Ampel
+  wertet darum die Spalte `via` der letzten Briefings aus: zwei Ersatztexte in
+  Folge = „Achtung". Das taegliche Briefing ist der einzige verlaessliche Puls
+  fuer alle drei KI-Funktionen.
+- **Reichweite messen** (`visit:hub`, `visit:tanken`, `onboard:*`): ohne diese
+  Zaehler laesst sich „niemand kommt" nicht von „Leute kommen und fangen nichts
+  an" unterscheiden — zwei Probleme mit voellig verschiedenen Antworten.
+  Einmal je Sitzung, anonym wie alles in `stat_daily`.
+- **Nicht verstandene Sucheingaben** (`ask_log`, Migration 0015): nur Saetze, an
+  denen Regeln UND Modell gescheitert sind — genau daraus lassen sich die Muster
+  verbessern. Bewusst eng gehalten, weil es Eingaben von Menschen sind: kein
+  Geraet, keine IP, kein Name, sichtbar nur im Betriebs-Panel, automatisch nach
+  7 Tagen geloescht (Sprit-Cron). Abschaltbar durch Entfernen des einen Inserts
+  in `ask.js` — die Suche haengt nicht daran.
 
 ## Leistung & Akku
 

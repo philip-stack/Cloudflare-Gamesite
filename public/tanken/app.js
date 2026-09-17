@@ -46,6 +46,15 @@
     if (map) setTimeout(() => map.invalidateSize(), 60);
   });
 
+  // Einmal je Sitzung: war jemand da? Anonym (nur Tag + Schluessel + Anzahl).
+  try {
+    if (!sessionStorage.getItem("sprit_visit")) {
+      sessionStorage.setItem("sprit_visit", "1");
+      navigator.sendBeacon("/api/stat", new Blob(
+        [JSON.stringify({ ev: "visit", game: "tanken" })], { type: "application/json" }));
+    }
+  } catch (_) {}
+
   // ---- Preis/Format ----
   const eur = p => (typeof p === "number" ? p.toFixed(3).replace(".", ",") + " €" : "—");
   const km = d => d == null ? "" : (d < 1 ? Math.round(d * 1000) + " m" : (d < 10 ? d.toFixed(1) : Math.round(d)) + " km");

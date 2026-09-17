@@ -177,5 +177,14 @@ async function deuten(request, env, roheEingabe, orte) {
   await logError(env, "ask: kein Modell lieferte Brauchbares", "sprit/ask",
     (typeof letzteAusgabe === "string" ? letzteAusgabe : JSON.stringify(letzteAusgabe || null)).slice(0, 200));
   await bumpStat(env, "ask:form");
+  // Nur die Saetze, an denen ALLES gescheitert ist — genau die, aus denen sich
+  // die Regeln verbessern lassen. Eine erfolgreiche Deutung wird nie
+  // gespeichert. Ohne Geraet, ohne IP, ohne Namen; Loeschung nach 7 Tagen
+  // (Sprit-Cron). Die Suche haengt nicht daran: Fehler werden geschluckt.
+  try {
+    if (env && env.DB) {
+      await env.DB.prepare("INSERT INTO ask_log (q) VALUES (?)").bind(q.slice(0, 140)).run();
+    }
+  } catch (_) {}
   return json({ via: "form" });
 }
