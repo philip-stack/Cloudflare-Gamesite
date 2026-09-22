@@ -24,7 +24,7 @@ body {
 #app { max-width: 860px; margin: 0 auto; padding: 16px 14px calc(28px + var(--safe-b)); }
 .vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 
-.top { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+header.top { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
 .brand { display: flex; align-items: center; gap: 12px; }
 .logo { font-size: 1.9rem; filter: drop-shadow(0 3px 8px rgba(0,0,0,0.4)); }
 .brand-txt h1 { margin: 0; font-size: 1.3rem; font-weight: 800; letter-spacing: -0.02em; }
@@ -56,11 +56,20 @@ input[type="search"]:focus { outline: 2px solid var(--accent2); outline-offset: 
 }
 .btn-primary { background: linear-gradient(160deg, var(--accent2), var(--accent)); color: #06130d; flex: 1; }
 .btn-ghost { background: var(--panel); border: 1px solid var(--panel-line); color: var(--ink); }
+.btn-primary.loc { flex: none; padding: 12px 15px; font-size: 1.05rem; }
+
+/* ---- Sorten + Optionen in einer Zeile ---- */
+.fuel-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.fuel-row .opts:not([open]) { padding: 0; border-radius: 999px; }
+.fuel-row .opts:not([open]) summary { padding: 11px 15px; }
+.fuel-row .opts[open] { flex-basis: 100%; }
 .btn-ghost.small { flex: none; }
 
 .msg { padding: 11px 14px; border-radius: 12px; font-weight: 600; font-size: 0.88rem; margin-bottom: 12px; }
 .msg.load { background: rgba(47,212,138,0.12); color: var(--accent2); border: 1px solid rgba(47,212,138,0.3); }
 .msg.warn { background: rgba(255,91,77,0.12); color: var(--danger); border: 1px solid rgba(255,91,77,0.35); }
+/* Info statt Fehler: z. B. „letzter Stand von 11:52" — die Preise sind ja da */
+.msg.info { background: rgba(232,177,0,0.12); color: var(--ink); border: 1px solid rgba(232,177,0,0.4); font-weight: 500; }
 
 .results { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
 .rinfo { color: var(--muted); font-size: 0.85rem; font-weight: 600; padding: 2px 2px 4px; }
@@ -112,7 +121,11 @@ input[type="search"]:focus { outline: 2px solid var(--accent2); outline-offset: 
   color: var(--ink); border-radius: 12px; padding: 10px 14px; font-size: 0.86rem; line-height: 1.45; margin-bottom: 12px; }
 .tip.good { background: rgba(47,212,138,0.12); border-color: rgba(47,212,138,0.35); }
 .tip-t { flex: 1; min-width: 0; }
-.tip-sub { display: block; margin-top: 3px; color: var(--muted); font-size: 0.78rem; font-weight: 500; }
+.tip-t { cursor: pointer; }
+.tip-more { color: var(--muted); font-size: 0.8rem; }
+.tip-sub { display: none; margin-top: 3px; color: var(--muted); font-size: 0.78rem; font-weight: 500; }
+.tip.open .tip-sub { display: block; }
+.tip.open .tip-more { display: none; }
 .tip-x { flex: none; border: 0; background: transparent; color: var(--muted); cursor: pointer; font-size: 0.95rem; padding: 0 2px; line-height: 1.4; }
 
 #map { height: min(52vh, 460px); border-radius: var(--radius); overflow: hidden; border: 1px solid var(--panel-line); box-shadow: var(--shadow); background: var(--bg2); z-index: 0; }
@@ -183,8 +196,24 @@ input[type="search"]:focus { outline: 2px solid var(--accent2); outline-offset: 
 .al-note { color: var(--faint); font-size: 0.76rem; line-height: 1.5; margin: 14px 0 0; }
 
 @media (max-width: 560px) {
-  .price { min-width: 78px; font-size: 1.25rem; }
-  .nav { padding: 18px 11px; }
+  .brand-txt .sub { white-space: nowrap; letter-spacing: 0.06em; font-size: 0.7rem; }
+  .controls { gap: 10px; }
+  .fuel-row .opt-lab { display: none; }   /* zugeklappt reicht das Zahnrad */
+  .fuel-row .opts[open] .opt-lab { display: inline; }
+  /* Karten: drei Zeilen statt drei Spalten. Nebeneinander blieben für Name,
+     Adresse und Infozeile ~100 px — alles brach in 8–10 schmale Zeilen um. */
+  .card {
+    display: grid; grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas: "price name" "price addr" "meta meta" "act act";
+    column-gap: 12px; row-gap: 2px; align-items: start; padding: 12px 14px;
+  }
+  .card .price { grid-area: price; min-width: 0; font-size: 1.3rem; align-self: center; }
+  .card .mid { display: contents; }
+  .card .name { grid-area: name; }
+  .card .addr { grid-area: addr; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 0; }
+  .card .meta { grid-area: meta; margin-top: 6px; }
+  .card .actions { grid-area: act; flex-direction: row; align-items: stretch; gap: 8px; margin-top: 10px; }
+  .card .nav { flex: 1; padding: 10px 14px; }
 }
 
 /* ---- Freitext-Suche (steht ueber den Reitern) ---- */

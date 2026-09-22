@@ -25,7 +25,7 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="Sprit-Radar" />
   <link rel="stylesheet" href="vendor/leaflet.css?v=340720ef" />
-  <link rel="stylesheet" href="style.css?v=2729a239" />
+  <link rel="stylesheet" href="style.css?v=ca5970c0" />
 </head>
 <body>
   <div id="app">
@@ -65,6 +65,9 @@
         <button id="tab-route" class="tab" role="tab" aria-selected="false">🧭 Route A→B</button>
       </div>
 
+      <!-- Sorten und Optionen teilen sich eine Zeile: zugeklappt ist „Optionen"
+           nur ein kleiner Knopf daneben, aufgeklappt nimmt es die volle Breite. -->
+      <div class="fuel-row">
       <div class="fuels" role="tablist" aria-label="Treibstoff">
         <button class="fuel on" data-fuel="DIE" role="tab" aria-selected="true">Diesel</button>
         <button class="fuel" data-fuel="SUP" role="tab" aria-selected="false">Super 95</button>
@@ -72,7 +75,7 @@
       </div>
 
       <details class="opts" id="opts">
-        <summary>⚙︎ Optionen</summary>
+        <summary aria-label="Optionen">⚙︎ <span class="opt-lab">Optionen</span></summary>
         <div class="opt-grid">
           <label>Umkreis-Radius
             <select id="opt-radius"><option value="0">alle</option><option value="5">5 km</option><option value="10">10 km</option><option value="20">20 km</option></select></label>
@@ -97,14 +100,15 @@
           Routenberechnung; im Umkreis liefert E-Control nur Luftlinie — dort
           wird hochgerechnet und der Wert bleibt eine Schätzung.</p>
       </details>
+      </div>
 
       <!-- Modus 1: Umkreis / Ortssuche -->
       <div id="panel-near" class="panel">
+        <!-- Eine Zeile statt zwei: der Standort wird beim Öffnen ohnehin geholt,
+             der Knopf ist nur zum Neu-Orten da. -->
         <div class="row">
-          <button id="loc-btn" class="btn-primary">📍 Mein Standort</button>
-        </div>
-        <div class="row">
-          <input id="near-q" type="search" placeholder="…oder Ort / Adresse suchen" autocomplete="off" />
+          <button id="loc-btn" class="btn-primary loc" title="Mein Standort" aria-label="Mein Standort">📍</button>
+          <input id="near-q" type="search" placeholder="Ort / Adresse suchen" aria-label="Ort oder Adresse suchen" autocomplete="off" />
           <button id="near-go" class="btn-ghost">Suchen</button>
         </div>
         <div class="quick" id="q-near"></div>
@@ -160,7 +164,7 @@
 
   <script src="vendor/leaflet.js?v=5a640ff8"></script>
   <script src="umweg.js?v=d1fed038"></script>
-  <script src="app.js?v=4fdf99a9"></script>
+  <script src="app.js?v=022b5c9f"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));

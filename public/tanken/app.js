@@ -50,6 +50,7 @@
   try {
     if (!sessionStorage.getItem("sprit_visit")) {
       sessionStorage.setItem("sprit_visit", "1");
+      LS.set("sprit_besuche", String(+LS.get("sprit_besuche", "0") + 1));   // nur lokal (Beispiel-Chips)
       navigator.sendBeacon("/api/stat", new Blob(
         [JSON.stringify({ ev: "visit", game: "tanken" })], { type: "application/json" }));
     }
@@ -153,7 +154,7 @@
       setMsg(grund, "warn");
       $("#results").innerHTML = "";
     } else {
-      setMsg(staleMsg(d), "warn");
+      setMsg(staleMsg(d), "info");
       // Bezugspunkt ist die naechstgelegene Station NACH den Filtern — wer
       // „nur offene" gesetzt hat, waere ja auch nicht zur geschlossenen gefahren.
       const bezug = st.reduce((b, x) => (x.dist != null && (!b || x.dist < b.dist) ? x : b), null);
@@ -190,6 +191,9 @@
   const UW_SCHWELLE = 0.5;
   function umwegTxt(st, bezug, extra) {
     if (!window.Umweg || !bezug) return "";
+    // Teurer UND weiter weg lohnt nie — das zu sagen ist selbstverständlich und
+    // machte fast jede Karte rot. Die Frage stellt sich nur, wenn es billiger ist.
+    if (!(st.price < bezug.price)) return "";
     const r = window.Umweg.netto(st, bezug, Object.assign({}, umwegOpt(), extra || {}));
     if (!r || r.mehrKm <= 0) return "";
     if (Math.abs(r.netto) < UW_SCHWELLE) return "";
@@ -217,7 +221,7 @@
       $("#results").innerHTML = head;
     }
     else {
-      setMsg(staleMsg(d), "warn");
+      setMsg(staleMsg(d), "info");
       // An der Route zaehlt der Umweg einfach (man faehrt ohnehin vorbei).
       // detourKm sind ECHTE Strassenkilometer aus der Routenabfrage — dann
       // braucht es keinen Luftlinien-Faktor. Nur wenn die fehlen (OSRM hat
@@ -510,7 +514,9 @@
   const BEISPIELE = ["billig diesel richtung graz", "super in der nähe", "nur offene in linz"];
   function renderBeispiele() {
     const el = $("#ask-bsp"); if (!el) return;
-    if (LS.get("sprit_ask_benutzt", "") === "1") { el.hidden = true; return; }
+    // Weg nach der ersten Freitext-Suche — oder spätestens ab dem 4. Besuch:
+    // wer sie bis dahin nicht wollte, braucht die zwei Zeilen vor den Ergebnissen nicht.
+    if (LS.get("sprit_ask_benutzt", "") === "1" || +LS.get("sprit_besuche", "0") > 3) { el.hidden = true; return; }
     el.innerHTML = BEISPIELE.map(b => `<button type="button" class="chip" data-b="${esc(b)}">${esc(b)}</button>`).join("");
     el.hidden = false;
   }
@@ -669,7 +675,13 @@
     if (LS.get("sprit_tip2", "") === "x") { el.hidden = true; return; }
     const a = timingAdvice(best);
     el.className = "tip " + a.cls;
-    el.innerHTML = `<span class="tip-t"><b>${esc(a.t)}</b><br><span class="tip-sub">In Österreich dürfen Spritpreise nur um 12:00 Uhr steigen, sonst nur fallen.</span></span><button id="tip-x" class="tip-x" aria-label="Ausblenden">✕</button>`;
+    // Die Begründung ist beim zweiten Besuch bekannt — sie kostet am Handy eine
+    // Zeile vor den Ergebnissen. Darum zugeklappt; Antippen zeigt sie.
+    el.innerHTML = `<span class="tip-t" role="button" tabindex="0" aria-expanded="false"><b>${esc(a.t)}</b> <span class="tip-more" aria-hidden="true">ⓘ</span><span class="tip-sub">In Österreich dürfen Spritpreise nur um 12:00 Uhr steigen, sonst nur fallen.</span></span><button id="tip-x" class="tip-x" aria-label="Ausblenden">✕</button>`;
+    const tt = el.querySelector(".tip-t");
+    const toggle = () => { const o = el.classList.toggle("open"); tt.setAttribute("aria-expanded", String(o)); };
+    tt.addEventListener("click", toggle);
+    tt.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } });
     el.hidden = false;
     $("#tip-x").addEventListener("click", () => { LS.set("sprit_tip2", "x"); el.hidden = true; });
   }
