@@ -1182,19 +1182,27 @@ function render(now) {
     ctx.globalAlpha = 1;
   }
 
+  // Nahe Schnittebene = Bildunterkante (+ Rand für Kamera-Neigung und Abbiege-
+  // Schwenk). Früher endete alles Flache bei z = 0,7 — weit unter dem Bild — und
+  // die y-Koordinate wurde an den Rand geklemmt, x aber nicht: die unterste
+  // Reihe (Fugen, Spurstriche, Mauerkante) knickte dadurch nach außen weg und
+  // „sprang" beim Verschwinden. Jetzt endet alles genau am Rand, ohne Klemmen.
+  const tBot = (H + 70 - hY) / (H * 1.08 - hY);
+  const ZN = Math.max(NEAR * 0.7, NEAR / tBot);
+
   // --- Boden: Streifen scrollen auf die Kamera zu ---
   const STRIPE = 3.4;
   ctx.fillStyle = pal.ground[1];
   ctx.fillRect(0, hY, W, H - hY);
-  const kMin = Math.floor((o + NEAR * 0.7) / STRIPE);
+  const kMin = Math.floor((o + ZN) / STRIPE);
   const kMax = Math.ceil((o + SPAWN_Z) / STRIPE);
   for (let k = kMin; k <= kMax; k++) {
     if (k % 2) continue;
     const zFar = Math.min(SPAWN_Z, (k + 1) * STRIPE - o);
-    const zNear = Math.max(NEAR * 0.7, k * STRIPE - o);
+    const zNear = Math.max(ZN, k * STRIPE - o);
     if (zFar <= zNear) continue;
     const yFar = groundY(tOf(zFar));
-    const yNear = Math.min(H, groundY(tOf(zNear)));
+    const yNear = groundY(tOf(zNear));
     ctx.fillStyle = pal.ground[0];
     ctx.fillRect(0, yFar, W, yNear - yFar);
   }
@@ -1220,7 +1228,7 @@ function render(now) {
   }
 
   // --- Weg ---
-  const tN = tOf(NEAR * 0.7), tF = tOf(SPAWN_Z);
+  const tN = tOf(ZN), tF = tOf(SPAWN_Z);
   const roadGrad = ctx.createLinearGradient(0, groundY(tF), 0, H);
   roadGrad.addColorStop(0, pal.road[1]);
   roadGrad.addColorStop(1, pal.road[0]);
@@ -1230,9 +1238,9 @@ function render(now) {
   const steps = 14;
   const edge = [];
   for (let i = 0; i <= steps; i++) {
-    const z = NEAR * 0.7 + (SPAWN_Z - NEAR * 0.7) * Math.pow(i / steps, 2.2);
+    const z = ZN + (SPAWN_Z - ZN) * Math.pow(i / steps, 2.2);
     const t = tOf(z);
-    edge.push([centerX(t) - roadHalf(t), centerX(t) + roadHalf(t), Math.min(H + 4, groundY(t)), t]);
+    edge.push([centerX(t) - roadHalf(t), centerX(t) + roadHalf(t), groundY(t), t]);
   }
   ctx.moveTo(edge[0][0], edge[0][2]);
   for (let i = 1; i <= steps; i++) ctx.lineTo(edge[i][0], edge[i][2]);
@@ -1244,17 +1252,17 @@ function render(now) {
   // Das ist das Haupt-Signal für Tempo und Tiefe — vorher war der Weg eine
   // glatte Fläche mit kaum sichtbaren Fugen.
   const SLAB = 1.7;
-  const sMin = Math.floor((o + NEAR * 0.7) / SLAB);
+  const sMin = Math.floor((o + ZN) / SLAB);
   const sMax = Math.ceil((o + SPAWN_Z) / SLAB);
   // Pflaster: 6 Platten je Reihe, jede zweite Reihe um eine halbe Platte versetzt
   // (Verband wie echtes Steinpflaster), mit senkrechten Fugen.
   const NC = 6, PW = 2 / NC;
   ctx.lineWidth = 1;
   for (let k = sMin; k <= sMax; k++) {
-    const z0 = Math.max(NEAR * 0.7, k * SLAB - o), z1 = Math.min(SPAWN_Z, (k + 1) * SLAB - o);
+    const z0 = Math.max(ZN, k * SLAB - o), z1 = Math.min(SPAWN_Z, (k + 1) * SLAB - o);
     if (z1 <= z0) continue;
     const t0 = tOf(z0), t1 = tOf(z1);
-    const y0 = Math.min(H + 4, groundY(t0)), y1 = groundY(t1);
+    const y0 = groundY(t0), y1 = groundY(t1);
     if (y1 > H + 4) continue;
     const off = (k & 1) ? 0.5 : 0;
     const X = (t, u) => centerX(t) + u * roadHalf(t);
@@ -1296,7 +1304,7 @@ function render(now) {
   ctx.strokeStyle = "rgba(10, 5, 20, 0.3)";
   for (let k = sMin; k <= sMax; k++) {
     const z = k * SLAB - o;
-    if (z < NEAR * 0.7 || z > SPAWN_Z) continue;
+    if (z < ZN || z > SPAWN_Z) continue;
     const t = tOf(z);
     const y = groundY(t);
     if (y > H + 4) continue;
@@ -1353,7 +1361,7 @@ function render(now) {
   for (let k = sMin; k <= sMax; k++) {
     if (k % 2) continue;
     const z = k * SLAB - o;
-    if (z < NEAR * 0.7 || z > SPAWN_Z) continue;
+    if (z < ZN || z > SPAWN_Z) continue;
     const t = tOf(z), y = groundY(t);
     if (y > H + 4) continue;
     ctx.lineWidth = Math.max(1, 2 * t);
@@ -1386,18 +1394,18 @@ function render(now) {
   ctx.strokeStyle = "rgba(255, 252, 240, 0.55)";
   ctx.lineCap = "round";
   const DASH = 2.6;
-  const dMin = Math.floor((o + NEAR * 0.7) / DASH);
+  const dMin = Math.floor((o + ZN) / DASH);
   const dMax = Math.ceil((o + SPAWN_Z) / DASH);
   for (let k = dMin; k <= dMax; k++) {
     if (k % 2) continue;
-    const z0 = Math.max(NEAR * 0.7, k * DASH - o);
+    const z0 = Math.max(ZN, k * DASH - o);
     const z1 = Math.min(SPAWN_Z, (k + 0.55) * DASH - o);
     if (z1 <= z0) continue;
     const t0 = tOf(z0), t1 = tOf(z1);
     for (const b of [-0.5, 0.5]) {
       ctx.lineWidth = Math.max(1, 3.4 * t0);
       ctx.beginPath();
-      ctx.moveTo(centerX(t0) + b * laneW() * t0, Math.min(H, groundY(t0)));
+      ctx.moveTo(centerX(t0) + b * laneW() * t0, groundY(t0));
       ctx.lineTo(centerX(t1) + b * laneW() * t1, groundY(t1));
       ctx.stroke();
     }
