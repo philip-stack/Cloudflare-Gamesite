@@ -97,7 +97,7 @@ const NEAR = 1, SPAWN_Z = 26, PLAYER_T = 0.8;
 const PLAYER_Z = NEAR / PLAYER_T;
 // Größenfaktoren: Kamera dicht hinter der Läuferin wie bei Temple Run —
 // die Figur ist groß im unteren Bilddrittel, der Weg füllt die Bühne.
-const RS = 2.0, OBS = 1.55, ITEMS = 1.45;
+const RS = 2.2, OBS = 1.55, ITEMS = 1.45;
 let sway = 0;
 
 function horizonY() { return H * 0.34; }
@@ -890,6 +890,9 @@ function update(dt) {
     if (catchT > 1.15) { mode = "over"; gameOver(); }
     return;
   }
+  // Im Menü läuft die Welt gemächlich weiter und die Figur trabt auf der
+  // Stelle — das Menü liegt jetzt halb durchsichtig über dem Spiel.
+  if (mode === "menu") { o += dt * 3.2; runPhase += dt * 7; }
   if (mode !== "run") { updateParticles(dt); return; }
 
   const d = difficulty();
@@ -1518,7 +1521,7 @@ function render(now) {
   ctx.globalAlpha = 1;
 
   // --- Läufer:in ---
-  if (mode !== "menu") drawRunner(now);
+  drawRunner(now);
 
   // --- Einhorn ---
   if (mode !== "menu") drawUnicorn(now);
@@ -1700,6 +1703,11 @@ function drawTurnWall(e, t, alpha, now, pal) {
 }
 
 // --- Die Diebin: kleine Kobold-Läuferin mit dem Zuckerkristall ---
+// Cartoon-Umriss + Streiflicht: vorher war die Figur Lila auf lila Pflaster
+// ohne Kontur — von hinten nur ein dunkler Fleck mit einer Kugel darauf.
+const R_OUT = "rgba(18, 8, 32, 0.82)";
+const R_RIM = "rgba(255, 238, 200, 0.6)";   // Sonne steht rechts oben
+let lastStep = 0;
 function drawRunner(now) {
   const t = PLAYER_T;
   const x = laneX(laneCur, t);
@@ -1713,12 +1721,19 @@ function drawRunner(now) {
   if (blink) return;
 
   // Schatten
-  ctx.globalAlpha = Math.max(0.12, 0.4 - jumpH * 0.002);
+  ctx.globalAlpha = Math.max(0.12, 0.42 - jumpH * 0.002);
   ctx.fillStyle = "#0a0512";
   ctx.beginPath();
   ctx.ellipse(x, yG + 2, (26 - jumpH * 0.06) * RS, 7 * RS, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.globalAlpha = 1;
+
+  // Staubwölkchen bei jedem Auftritt
+  const step = Math.sin(ph) > 0 ? 1 : -1;
+  if (mode === "run" && !inAir && !duck && step !== lastStep && !LOWP()) {
+    puff(x + step * 9 * RS, yG - 2, "rgba(236, 226, 246, 0.55)", 3, 55, 18);
+  }
+  lastStep = step;
 
   ctx.save();
   ctx.translate(x, y);
@@ -1728,60 +1743,72 @@ function drawRunner(now) {
 
   const bob = inAir ? 0 : Math.abs(Math.sin(ph)) * 4;
   ctx.translate(0, -bob);
+  ctx.lineCap = "round"; ctx.lineJoin = "round";
 
   // ---- RÜCKENANSICHT wie bei Temple Run: wir laufen ihr hinterher ----
   const flut = Math.sin(ph * 2) * 5;
   const legA = inAir ? 0.35 : Math.sin(ph);
+  // Linie mit Umriss: erst dick dunkel, dann farbig darüber
+  const line = (w, col, path) => {
+    ctx.strokeStyle = R_OUT; ctx.lineWidth = w + 3; ctx.beginPath(); path(); ctx.stroke();
+    ctx.strokeStyle = col; ctx.lineWidth = w; ctx.beginPath(); path(); ctx.stroke();
+  };
+  // Fläche mit Umriss: Kontur streichen, dann füllen (Füllung deckt die Innenhälfte)
+  const shape = (fill, path, ow = 3) => {
+    ctx.beginPath(); path();
+    ctx.strokeStyle = R_OUT; ctx.lineWidth = ow; ctx.stroke();
+    ctx.fillStyle = fill; ctx.fill();
+  };
 
   // Beine: von hinten sieht man abwechselnd die hochschnellende Sohle
   const foot = (side, phase) => {
-    const kick = inAir ? 10 : Math.max(0, phase) * 16; // Ferse schnellt hoch
+    const kick = inAir ? 10 : Math.max(0, phase) * 16;
     const fx = side * 5 + side * (inAir ? 0 : Math.abs(phase)) * 2;
     const fy = -6 - kick;
-    ctx.strokeStyle = SKIN.leg;
-    ctx.lineWidth = 8;
-    ctx.lineCap = "round";
-    ctx.beginPath();
-    ctx.moveTo(side * 5, -26);
-    ctx.quadraticCurveTo(side * 6, -16, fx, fy);
-    ctx.stroke();
-    // Stiefel — bei hochgeschnellter Ferse sieht man die Sohle
-    ctx.fillStyle = SKIN.boot;
-    ctx.beginPath();
-    ctx.ellipse(fx, fy, 5, 3.5 + kick * 0.12, 0, 0, Math.PI * 2);
-    ctx.fill();
+    line(7.5, SKIN.leg, () => { ctx.moveTo(side * 5, -27); ctx.quadraticCurveTo(side * 6.5, -16, fx, fy); });
+    // Stiefel: Schaft + Sohle, die beim Hochschnellen sichtbar wird
+    const bh = 4 + kick * 0.13;
+    shape(SKIN.boot, () => ctx.ellipse(fx, fy, 5.6, bh, 0, 0, Math.PI * 2), 2.5);
+    ctx.fillStyle = "rgba(40, 20, 12, 0.55)";
+    ctx.beginPath(); ctx.ellipse(fx, fy + bh * 0.35, 4.4, bh * 0.5, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "rgba(255,255,255,0.35)";
+    ctx.beginPath(); ctx.ellipse(fx - 1.5, fy - bh * 0.45, 2.2, 1.2, 0, 0, Math.PI * 2); ctx.fill();
   };
   foot(-1, legA);
   foot(1, -legA);
 
-  // Rumpf (Rücken): Tunika mit Kapuzenumhang darüber
+  // Rumpf (Rücken)
   const bg = ctx.createLinearGradient(0, -58, 0, -22);
   bg.addColorStop(0, SKIN.tunic[0]); bg.addColorStop(1, SKIN.tunic[1]);
-  ctx.fillStyle = bg;
-  ctx.beginPath();
-  ctx.roundRect(-13, -58, 26, 36, 11);
-  ctx.fill();
-  // Sanftes Oberlicht + feine Cartoon-Kontur (Subway-Surfers-Pop)
-  ctx.fillStyle = "rgba(255,255,255,0.16)";
-  ctx.beginPath(); ctx.roundRect(-13, -58, 26, 13, 11); ctx.fill();
-  ctx.strokeStyle = "rgba(14,8,26,0.32)"; ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.roundRect(-13, -58, 26, 36, 11); ctx.stroke();
+  shape(bg, () => ctx.roundRect(-13, -58, 26, 36, 11));
+  // Gürtel
+  ctx.fillStyle = "rgba(20, 10, 34, 0.45)";
+  ctx.fillRect(-12.5, -30, 25, 3.5);
 
   // Umhang liegt auf dem Rücken und flattert nach unten aus
-  const cg2 = ctx.createLinearGradient(0, -56, 0, -14);
-  cg2.addColorStop(0, SKIN.cloak[0]); cg2.addColorStop(1, SKIN.cloak[1]);
-  ctx.fillStyle = cg2;
+  const cloakPath = () => {
+    ctx.moveTo(-12, -56);
+    ctx.lineTo(12, -56);
+    ctx.quadraticCurveTo(15 + flut, -36, 10 - flut, -14 + Math.abs(flut));
+    ctx.quadraticCurveTo(0, -20 - flut * 0.6, -10 + flut, -16 - Math.abs(flut) * 0.5);
+    ctx.quadraticCurveTo(-15 - flut, -36, -12, -56);
+    ctx.closePath();
+  };
+  const cg2 = ctx.createLinearGradient(-14, -56, 14, -14);
+  cg2.addColorStop(0, SKIN.cloak[1]); cg2.addColorStop(0.55, SKIN.cloak[0]); cg2.addColorStop(1, SKIN.cloak[1]);
+  shape(cg2, cloakPath);
+  // Faltenwurf
+  ctx.strokeStyle = "rgba(14, 6, 26, 0.3)"; ctx.lineWidth = 1.6;
   ctx.beginPath();
-  ctx.moveTo(-12, -56);
-  ctx.lineTo(12, -56);
-  ctx.quadraticCurveTo(15 + flut, -36, 10 - flut, -14 + Math.abs(flut));
-  ctx.quadraticCurveTo(0, -20 - flut * 0.6, -10 + flut, -16 - Math.abs(flut) * 0.5);
-  ctx.quadraticCurveTo(-15 - flut, -36, -12, -56);
-  ctx.closePath();
-  ctx.fill();
+  ctx.moveTo(-4, -52); ctx.quadraticCurveTo(-6 + flut * 0.5, -36, -5 + flut, -19);
+  ctx.moveTo(5, -52); ctx.quadraticCurveTo(7 + flut * 0.5, -36, 5 - flut * 0.5, -18);
+  ctx.stroke();
+  // Streiflicht rechts
+  ctx.strokeStyle = R_RIM; ctx.lineWidth = 1.6;
+  ctx.beginPath(); ctx.moveTo(11.5, -54); ctx.quadraticCurveTo(14.5 + flut, -36, 10 - flut, -15 + Math.abs(flut)); ctx.stroke();
   // Goldsaum
-  ctx.strokeStyle = "rgba(232, 193, 90, 0.7)";
-  ctx.lineWidth = 2;
+  ctx.strokeStyle = "rgba(242, 205, 110, 0.95)";
+  ctx.lineWidth = 2.2;
   ctx.beginPath();
   ctx.moveTo(10 - flut, -14 + Math.abs(flut));
   ctx.quadraticCurveTo(0, -20 - flut * 0.6, -10 + flut, -16 - Math.abs(flut) * 0.5);
@@ -1789,71 +1816,64 @@ function drawRunner(now) {
 
   // DER Zuckerkristall — geschultert, lugt über die Schulter (Glow!)
   const crysGlow = 0.7 + 0.3 * Math.sin(now * 0.006);
+  line(3, "#8a6a1c", () => { ctx.moveTo(11, -56); ctx.lineTo(-9, -30); });   // Gurt
   ctx.shadowColor = PINK; ctx.shadowBlur = 18 * crysGlow;
-  const cg = ctx.createLinearGradient(13, -76, 13, -52);
+  const cg = ctx.createLinearGradient(13, -78, 13, -52);
   cg.addColorStop(0, "#ffe0f0"); cg.addColorStop(0.5, PINK); cg.addColorStop(1, "#b03a78");
-  ctx.fillStyle = cg;
-  ctx.beginPath();
-  ctx.moveTo(13, -78); ctx.lineTo(20, -66); ctx.lineTo(13, -52); ctx.lineTo(6, -66);
-  ctx.closePath(); ctx.fill();
+  shape(cg, () => { ctx.moveTo(13, -79); ctx.lineTo(20.5, -66); ctx.lineTo(13, -51); ctx.lineTo(5.5, -66); ctx.closePath(); }, 2.2);
   ctx.shadowBlur = 0;
-  // Gurt, der den Kristall hält
-  ctx.strokeStyle = "#8a6a1c";
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.moveTo(11, -56); ctx.lineTo(-9, -30);
-  ctx.stroke();
+  ctx.fillStyle = "rgba(255,255,255,0.7)";
+  ctx.beginPath(); ctx.moveTo(13, -76); ctx.lineTo(16, -67); ctx.lineTo(13, -66); ctx.closePath(); ctx.fill();
 
   // Arme pumpen seitlich (von hinten sichtbar)
   const armA = inAir ? -0.6 : Math.sin(ph + Math.PI);
-  ctx.strokeStyle = SKIN.cloak[0];
-  ctx.lineWidth = 6.5;
-  ctx.lineCap = "round";
   for (const side of [-1, 1]) {
     const sw = side === -1 ? armA : -armA;
-    ctx.beginPath();
-    ctx.moveTo(side * 12, -52);
-    ctx.quadraticCurveTo(side * 17, -44, side * 15, -36 + sw * 7);
-    ctx.stroke();
-    // Faust
-    ctx.fillStyle = "#f2d9c4";
-    ctx.beginPath();
-    ctx.arc(side * 15, -35 + sw * 7, 3.2, 0, Math.PI * 2);
-    ctx.fill();
+    line(6.5, SKIN.cloak[0], () => { ctx.moveTo(side * 12, -52); ctx.quadraticCurveTo(side * 17.5, -44, side * 15, -36 + sw * 7); });
+    shape("#f2d9c4", () => ctx.arc(side * 15, -35 + sw * 7, 3.4, 0, Math.PI * 2), 2);
   }
 
-  // Kopf von hinten: nur die Kapuze mit wehendem Zipfel
-  ctx.fillStyle = SKIN.hood;
-  ctx.beginPath();
-  ctx.arc(0, -66, 11, 0, Math.PI * 2);
-  ctx.fill();
-  // Glanzlicht + Kontur auf der Kapuze (Verlauf gecacht)
+  // Schal im Fahrtwind — Farbakzent, der die Figur vom Weg abhebt
+  const sw1 = Math.sin(now * 0.012) * 4, sw2 = Math.sin(now * 0.012 + 1.3) * 5;
+  // Die Enden wehen seitlich weg (nicht über den Rücken — dort liegt der Gurt)
+  const scarf = (ex, ey, wv) => shape(SKIN.boot, () => {
+    ctx.moveTo(-8, -58);
+    ctx.quadraticCurveTo(-18, -60 + wv * 0.4, ex, ey + wv);
+    ctx.lineTo(ex + 1, ey + wv + 3.5);
+    ctx.quadraticCurveTo(-17, -55 + wv * 0.4, -8, -55);
+    ctx.closePath();
+  }, 2);
+  scarf(-31, -61, sw1);
+  scarf(-28, -53, sw2);
+  shape(SKIN.boot, () => ctx.roundRect(-10, -60, 20, 6, 3), 2.2);   // Schlaufe am Hals
+
+  // Kopf von hinten: Kapuze mit Zipfel (eine Silhouette statt Kugel + Anhängsel)
+  const tip = flut * 0.6;
+  const hoodPath = () => {
+    ctx.moveTo(-10.5, -57);
+    ctx.bezierCurveTo(-14, -66, -11, -76, -3, -78.5);
+    ctx.quadraticCurveTo(0 + tip, -83, -5 + tip * 1.6, -86);   // Zipfel, hängt nach hinten
+    ctx.quadraticCurveTo(6 + tip, -84, 7, -77);
+    ctx.bezierCurveTo(12.5, -74, 13.5, -64, 10.5, -57);
+    ctx.quadraticCurveTo(0, -54, -10.5, -57);
+    ctx.closePath();
+  };
+  shape(SKIN.hood, hoodPath);
   if (!HOOD_GLOSS) {
-    HOOD_GLOSS = ctx.createRadialGradient(-3.5, -70, 1, 0, -66, 11);
-    HOOD_GLOSS.addColorStop(0, "rgba(255,255,255,0.4)"); HOOD_GLOSS.addColorStop(1, "rgba(255,255,255,0)");
+    HOOD_GLOSS = ctx.createRadialGradient(4, -74, 1, 0, -68, 14);
+    HOOD_GLOSS.addColorStop(0, "rgba(255,255,255,0.35)"); HOOD_GLOSS.addColorStop(1, "rgba(255,255,255,0)");
   }
   ctx.fillStyle = HOOD_GLOSS;
-  ctx.beginPath(); ctx.arc(0, -66, 11, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = "rgba(14,8,26,0.28)"; ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.arc(0, -66, 11, 0, Math.PI * 2); ctx.stroke();
-  // Kapuzen-Falte
-  ctx.strokeStyle = "rgba(20, 10, 34, 0.35)";
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.arc(0, -66, 7.5, Math.PI * 0.25, Math.PI * 0.75);
-  ctx.stroke();
-  // Zipfel weht im Fahrtwind Richtung Kamera
-  ctx.fillStyle = SKIN.hood;
-  ctx.beginPath();
-  ctx.moveTo(-3, -75);
-  ctx.quadraticCurveTo(-6 - flut, -62, -4 - flut * 1.6, -50);
-  ctx.quadraticCurveTo(1, -58, 3, -72);
-  ctx.closePath();
-  ctx.fill();
+  ctx.beginPath(); hoodPath(); ctx.fill();
+  // Naht in der Mitte + Streiflicht rechts
+  ctx.strokeStyle = "rgba(14, 6, 26, 0.35)"; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(1, -78); ctx.quadraticCurveTo(2, -67, 0.5, -57); ctx.stroke();
+  ctx.strokeStyle = R_RIM; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(8, -75); ctx.bezierCurveTo(12, -71, 12.5, -64, 10, -59); ctx.stroke();
   // Ein Büschel Haar lugt unter der Kapuze hervor
   ctx.fillStyle = SKIN.hair;
   ctx.beginPath();
-  ctx.ellipse(0, -56, 6, 3, 0, 0, Math.PI);
+  ctx.ellipse(0, -56.5, 6, 2.6, 0, 0, Math.PI);
   ctx.fill();
 
   ctx.restore();
@@ -1878,7 +1898,10 @@ function drawUnicorn(now) {
   const gallopF = 6 + p * 5;
   const bob = Math.abs(Math.sin(now * 0.001 * gallopF)) * 14 * s;
   // Folgt der Spur mit Verzögerung
-  const ux = laneX(laneCur, PLAYER_T) * 0.35 + (W / 2) * 0.65;
+  // Seitlich hinter der Figur statt mittig: vorher ragte der Kopf samt Horn
+  // mitten durch sie hindurch. Beim Fangen rückt es in die Mitte.
+  const side = W * 0.3 * (1 - Math.min(1, Math.max(0, p - 1) * 2));
+  const ux = laneX(laneCur, PLAYER_T) * 0.35 + (W / 2) * 0.65 - side;
   const baseY = H + 150 * s * (0.62 - p * 0.5);
   const uy = baseY - bob;
 
@@ -2081,7 +2104,7 @@ function escHtml(s) {
 
 function showMenu() {
   const overlay = document.createElement("div");
-  overlay.className = "overlay";
+  overlay.className = "overlay menu";
   overlay.innerHTML = `
     <div class="panel">
       <h2><span class="foil">Galopp</span></h2>
@@ -2099,14 +2122,16 @@ function showMenu() {
       ${DAILY ? `<p class="sub" style="margin-top:-6px"><b>🗓️ Tages-Challenge:</b> Heute läuft jede:r dieselbe Strecke!</p>` : ""}
       ${WEEKLY ? `<p class="sub" style="margin-top:-6px"><b>📅 Wochen-Challenge:</b> Diese Woche läuft jede:r dieselbe Strecke!</p>` : ""}
       <button class="btn-primary" id="m-go">🏃 Lauf los!</button>
-      <button class="btn-secondary" id="m-top">🏆 Bestenliste</button>
-      ${CHALLENGE
-        ? `<button class="btn-secondary" id="m-normal" style="margin-top:10px">🎲 Normaler Modus</button>`
-        : `<button class="btn-secondary" id="m-daily" style="margin-top:10px">🗓️ Tages-Challenge</button>
-           <button class="btn-secondary" id="m-weekly" style="margin-top:10px">📅 Wochen-Challenge</button>`}
-      <button class="btn-secondary" id="m-badges" style="margin-top:10px">🏅 Meilensteine</button>
-      <button class="btn-secondary" id="m-skins" style="margin-top:10px">🎨 Läufer-Skins</button>
-      <button class="btn-secondary" id="m-uskins" style="margin-top:10px">🦄 Einhorn-Skins</button>
+      <div class="menu-grid">
+        <button class="btn-secondary" id="m-top">🏆 Bestenliste</button>
+        ${CHALLENGE
+          ? `<button class="btn-secondary" id="m-normal">🎲 Normaler Modus</button>`
+          : `<button class="btn-secondary" id="m-daily">🗓️ Tages-Challenge</button>
+             <button class="btn-secondary" id="m-weekly">📅 Wochen-Challenge</button>`}
+        <button class="btn-secondary" id="m-badges">🏅 Meilensteine</button>
+        <button class="btn-secondary" id="m-skins">🎨 Läufer-Skins</button>
+        <button class="btn-secondary" id="m-uskins">🦄 Einhorn-Skins</button>
+      </div>
     </div>`;
   document.body.appendChild(overlay);
   overlay.querySelector("#m-go").onclick = () => {

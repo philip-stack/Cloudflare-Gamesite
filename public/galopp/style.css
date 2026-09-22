@@ -264,6 +264,13 @@ button:active { transform: scale(0.94); }
   animation: overlay-in 0.25s ease;
 }
 @keyframes overlay-in { from { opacity: 0; } to { opacity: 1; } }
+/* Startmenü: das Spiel läuft dahinter sichtbar weiter */
+.overlay.menu { background: rgba(8, 4, 14, 0.32); backdrop-filter: blur(2px); }
+.overlay.menu .panel { background: linear-gradient(180deg, rgba(36, 18, 56, 0.94), rgba(20, 10, 32, 0.94)); }
+/* Nebenknöpfe als 2er-Raster: alles passt ohne Scrollen auf den Schirm */
+.menu-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.menu-grid .btn-secondary { font-size: 0.9rem; padding: 12px 8px; line-height: 1.25; }
+.menu-grid .btn-secondary:last-child:nth-child(odd) { grid-column: 1 / -1; }
 .panel {
   background: linear-gradient(180deg, #241238, #140a20);
   border-radius: 22px;
@@ -442,4 +449,6 @@ button:active { transform: scale(0.94); }
   background-clip: text;
 }
 [data-theme="light"] .overlay { background: rgba(100, 92, 112, 0.4); }
+[data-theme="light"] .overlay.menu { background: rgba(100, 92, 112, 0.18); }
+[data-theme="light"] .overlay.menu .panel { background: linear-gradient(180deg, rgba(251, 249, 248, 0.95), rgba(240, 236, 242, 0.95)); }
 [data-theme="light"] .panel { background: linear-gradient(180deg, #fbf9f8, #f0ecf2) }
