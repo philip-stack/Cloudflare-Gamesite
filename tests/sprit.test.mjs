@@ -336,5 +336,96 @@ assert("FUELS-Labels vorhanden", FUELS.DIE && FUELS.SUP && FUELS.GAS);
   assert("Umweg: Vorgaben plausibel", U.VORGABE.liter === 40 && U.VORGABE.verbrauch === 7 && U.VORGABE.faktor === 1.3);
 }
 
+// ====================================================================
+// Preisverlauf, Rückfall bei Ausfall, „Vor 12 tanken"
+// ====================================================================
+{
+  const { priceVerdict, noonDue } = await import(f("sprit", "_logic.js"));
+  const { ecByAddress, attachTrend } = await import(f("sprit", "_ec.js"));
+
+  // ---- priceVerdict ----
+  assert("Verdikt: unter 3 Tagen Verlauf → schweigen", priceVerdict(1.50, [1.55, 1.56]) === null);
+  assert("Verdikt: gleich dem Tiefstwert → tief", (priceVerdict(1.50, [1.55, 1.50, 1.58]) || {}).kind === "tief");
+  assert("Verdikt: tief nennt die Tage", (priceVerdict(1.49, [1.55, 1.52, 1.58, 1.54]) || {}).days === 4);
+  const hoch = priceVerdict(1.60, [1.55, 1.56, 1.57]);
+  assert("Verdikt: 4 ¢ über Schnitt → hoch", hoch && hoch.kind === "hoch" && hoch.cent === 4);
+  const gut = priceVerdict(1.53, [1.55, 1.52, 1.58, 1.57]);
+  assert("Verdikt: 2,5 ¢ unter Schnitt → gut", gut && gut.kind === "gut" && gut.cent === 3);
+  assert("Verdikt: Alltagspreis → kein Etikett", priceVerdict(1.555, [1.55, 1.54, 1.57]) === null);
+  assert("Verdikt: kaputte Werte werden ignoriert", priceVerdict(1.50, [null, "x", NaN, 1.6, 1.6]) === null);
+  assert("Verdikt: ungültiger Preis → null", priceVerdict(null, [1.5, 1.5, 1.5]) === null);
+
+  // ---- noonDue ----
+  assert("Mittagsfenster: 11:30 ja", noonDue(11 * 60 + 30));
+  assert("Mittagsfenster: 11:00 nein, 12:00 nein", !noonDue(11 * 60) && !noonDue(12 * 60));
+
+  // ---- Mock-D1 für ecByAddress/attachTrend ----
+  const utc = ms => new Date(ms).toISOString().slice(0, 19).replace("T", " ");
+  function db({ cache = [], log = [] } = {}) {
+    const writes = [];
+    const stmt = (sql, args = []) => ({
+      sql, args,
+      bind(...a) { return stmt(sql, a); },
+      async first() { return null; },   // kein frischer Cache-Treffer
+      async all() {
+        if (/FROM sprit_cache/.test(sql)) return { results: cache };
+        if (/FROM sprit_price_log/.test(sql)) return { results: log.filter(r => args.slice(1).includes(r.station_id)) };
+        return { results: [] };
+      },
+      async run() { writes.push({ sql, args }); return {}; },
+    });
+    return { writes, prepare: sql => stmt(sql), async batch(list) { for (const x of list) writes.push({ sql: x.sql, args: x.args }); return []; } };
+  }
+  const realFetch = globalThis.fetch;
+  const station = (id, price, lat, lng) => ({ id, name: "T" + id, open: true, location: { latitude: lat, longitude: lng, address: "", postalCode: "", city: "" },
+    prices: [{ fuelType: "DIE", amount: price }], openingHours: [], distance: 1 });
+
+  // Quelle fällt aus → letzter guter Stand vom Nachbarpunkt (≈1,1 km), gekennzeichnet
+  globalThis.fetch = async () => { throw new Error("down"); };
+  {
+    const cached = [{ id: 7, name: "Alt", price: 1.499, lat: 48.21, lng: 16.37, open: true, openText: "offen", oh: { f: "00:00", t: "00:00" }, dist: 9 }];
+    const env = { DB: db({ cache: [{ k: "48.21,16.37,DIE", data: JSON.stringify(cached), at: utc(Date.now() - 3600e3) }] }) };
+    const r = await ecByAddress(env, 48.2, 16.37, "DIE");
+    assert("Ausfall: Rückfall liefert den alten Stand", r.length === 1 && r[0].price === 1.499);
+    assert("Ausfall: als veraltet markiert, mit Zeitstempel", r.status === "veraltet" && /Z$/.test(r.stand));
+    assert("Ausfall: Entfernung zum gefragten Punkt neu gerechnet", r[0].dist > 0.9 && r[0].dist < 1.3);
+    assert("Ausfall: Öffnungszeit für jetzt neu gerechnet", r[0].openText === "durchgehend geöffnet");
+    assert("Ausfall: nichts wird ins Verlaufs-Log geschrieben", !env.DB.writes.some(w => /sprit_price_log/.test(w.sql)));
+  }
+  {
+    // Zu weit weg (≈ 11 km) → kein Rückfall, ehrliche Meldung wie bisher
+    const env = { DB: db({ cache: [{ k: "48.30,16.37,DIE", data: JSON.stringify([{ id: 1, price: 1.4, lat: 48.3, lng: 16.37 }]), at: utc(Date.now()) }] }) };
+    const r = await ecByAddress(env, 48.2, 16.37, "DIE");
+    assert("Ausfall ohne nahen Stand → leer + quelle-down", r.length === 0 && r.status === "quelle-down");
+  }
+  // Quelle liefert → jeder Preis landet als Tages-Tiefstwert im Log
+  globalThis.fetch = async () => new Response(JSON.stringify([station(1, 1.519, 48.2, 16.37), station(2, 1.539, 48.21, 16.38)]), { status: 200 });
+  {
+    const env = { DB: db() };
+    const r = await ecByAddress(env, 48.2, 16.37, "DIE");
+    const logs = env.DB.writes.filter(w => /INSERT INTO sprit_price_log/.test(w.sql));
+    assert("Erfolg: beide Preise geloggt", r.length === 2 && logs.length === 2 && logs[0].args[0] === "1" && logs[0].args[2] === 1.519);
+    assert("Erfolg: Log behält den Tages-Tiefstwert", /MIN\(price, excluded\.price\)/.test(logs[0].sql));
+    assert("Erfolg: Öffnungszeiten für später mitgespeichert", "oh" in r[0]);
+  }
+  globalThis.fetch = realFetch;
+
+  // ---- attachTrend ----
+  {
+    const today = new Date().toISOString().slice(0, 10);
+    const day = n => new Date(Date.now() - n * 864e5).toISOString().slice(0, 10);
+    const log = [
+      { station_id: "1", day: day(3), price: 1.56 }, { station_id: "1", day: day(2), price: 1.55 },
+      { station_id: "1", day: day(1), price: 1.57 }, { station_id: "1", day: today, price: 1.52 },
+      { station_id: "2", day: day(1), price: 1.60 },
+    ];
+    const st = [{ id: 1, price: 1.53 }, { id: 2, price: 1.61 }];
+    await attachTrend({ DB: db({ log }) }, "DIE", st, priceVerdict);
+    assert("Verlauf: Kurve = Vortage + heutiger Tiefstwert", JSON.stringify(st[0].hist) === JSON.stringify([1.56, 1.55, 1.57, 1.52]));
+    assert("Verlauf: Einschätzung aus den Vortagen", st[0].trend && st[0].trend.kind === "tief");
+    assert("Verlauf: zu wenig Tage → weder Kurve noch Etikett", !st[1].hist && !st[1].trend);
+  }
+}
+
 console.log("\n" + (ok ? "SPRIT-TESTS OK" : "SPRIT-TESTS FEHLGESCHLAGEN"));
 process.exit(ok ? 0 : 1);

@@ -16,7 +16,7 @@ export const FUELS = { DIE: "Diesel", SUP: "Super 95", GAS: "CNG" };
 export const normFuel = f => (f === "SUP" || f === "GAS") ? f : "DIE";   // Default Diesel
 
 // Aktueller Wochentag (E-Control-Code) + Minuten seit Mitternacht in AT-Zeit.
-function viennaNow() {
+export function viennaNow() {
   const now = new Date();
   const wd = new Intl.DateTimeFormat("en-US", { timeZone: "Europe/Vienna", weekday: "short" }).format(now);
   const hm = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Vienna", hour: "2-digit", minute: "2-digit", hour12: false }).format(now);
@@ -24,6 +24,31 @@ function viennaNow() {
   return { day: map[wd] || "", mins: (+hm.slice(0, 2)) * 60 + (+hm.slice(3, 5)) };
 }
 const toMin = t => { const m = /^(\d{2}):(\d{2})/.exec(String(t || "")); return m ? +m[1] * 60 + +m[2] : null; };
+
+// Heutige Öffnungszeit → „offen bis" / „durchgehend" / offen-jetzt.
+// oh = { f, t } (heutige Zeiten laut E-Control) oder null; fallbackOpen = was
+// E-Control beim Abruf als „offen" meldete (gilt, wenn es keine Zeiten gibt).
+function openInfo(oh, fallbackOpen, tn) {
+  let till = null, openNow = fallbackOpen, is24 = false;
+  if (oh) {
+    if (oh.f === oh.t) {
+      is24 = true;   // 00:00–00:00 = durchgehend geöffnet (24 h)
+    } else {
+      const f = toMin(oh.f), t = toMin(oh.t);
+      if (f != null && t != null) {
+        const within = t > f ? (tn.mins >= f && tn.mins < t) : (tn.mins >= f || tn.mins < t);
+        openNow = within;
+        if (within && oh.t !== "00:00") till = oh.t;
+      }
+    }
+  }
+  let openText;
+  if (!openNow) openText = "geschlossen";
+  else if (till) openText = "offen bis " + till;
+  else if (is24) openText = "durchgehend geöffnet";
+  else openText = "offen";
+  return { open: openNow, till, openText };
+}
 
 // Rohantwort → schlanke, einheitliche Tankstellen-Objekte (inkl. „offen bis").
 function slim(list, fuel) {
@@ -33,26 +58,9 @@ function slim(list, fuel) {
     const pr = (s.prices || []).find(p => p.fuelType === fuel);
     if (!pr || typeof pr.amount !== "number") continue;
     const loc = s.location || {};
-    // Heutige Öffnungszeit → „offen bis" / „durchgehend" / offen-jetzt.
     const today = (s.openingHours || []).find(o => o.day === tn.day);
-    let till = null, openNow = s.open !== false, is24 = false;
-    if (today) {
-      if (today.from === today.to) {
-        is24 = true;   // 00:00–00:00 = durchgehend geöffnet (24 h)
-      } else {
-        const f = toMin(today.from), t = toMin(today.to);
-        if (f != null && t != null) {
-          const within = t > f ? (tn.mins >= f && tn.mins < t) : (tn.mins >= f || tn.mins < t);
-          openNow = within;
-          if (within && today.to !== "00:00") till = today.to;
-        }
-      }
-    }
-    let openText;
-    if (!openNow) openText = "geschlossen";
-    else if (till) openText = "offen bis " + till;
-    else if (is24) openText = "durchgehend geöffnet";
-    else openText = "offen";
+    const oh = today ? { f: today.from, t: today.to } : null;
+    const { open: openNow, till, openText } = openInfo(oh, s.open !== false, tn);
 
     out.push({
       id: s.id,
@@ -64,6 +72,7 @@ function slim(list, fuel) {
       price: pr.amount,
       open: openNow,
       till, openText,
+      oh,   // für die Neuberechnung, falls dieser Stand später als Rückfall dient
       dist: typeof s.distance === "number" ? s.distance : null,
     });
   }
@@ -79,7 +88,7 @@ export async function ecAbfrage(env, lat, lng, fuel) {
   const stations = await ecByAddress(env, lat, lng, fuel);
   // ecByAddress haengt den Grund an das Array (siehe unten) — so bleiben die
   // drei Aufrufer, die ihn nicht brauchen (Cron, Route, Briefing), unveraendert.
-  return { stations, status: stations.status || "ok" };
+  return { stations, status: stations.status || "ok", stand: stations.stand || null };
 }
 
 export async function ecByAddress(env, lat, lng, fuel) {
@@ -132,9 +141,20 @@ export async function ecByAddress(env, lat, lng, fuel) {
       `${grund || rohLen + " Stationen ohne Preis"} · ${key}`);
     // Grund am Array vermerken: die Aufrufer, die ihn nicht lesen, merken
     // nichts davon; near.js macht daraus eine ehrliche Meldung.
+    // Rückfall: der letzte gute Stand aus dem Zwischenspeicher (bis 6 h alt,
+    // Nachbarpunkt bis 3 km) — ehrlich als „veraltet" markiert. Die tägliche
+    // Lücke um 12:00 und die Ausfall-Schübe der Quelle trafen genau die
+    // Momente, in denen man nachschaut; vorher gab es dann gar nichts.
+    const alt = await staleFallback(env, lat, lng, fuel);
+    if (alt) return alt;
     slimmed.status = geantwortet ? "keine-preise" : "quelle-down";
     return slimmed;                 // leer, aber NICHT gecacht
   }
+
+  // Jeden frisch gelieferten Preis als Tages-Tiefstwert festhalten — nur
+  // Tankstelle, Tag, Preis (kein Personenbezug). Daraus entsteht der
+  // Preisverlauf für ALLE Tankstellen, nicht nur für die mit Alarm.
+  await logPrices(env, fuel, slimmed);
 
   try {
     if (env && env.DB) {
@@ -146,4 +166,78 @@ export async function ecByAddress(env, lat, lng, fuel) {
     }
   } catch (_) {}
   return slimmed;
+}
+
+// ---- Rückfall auf den letzten guten Stand ----
+const STALE_H = 6, STALE_KM = 3;
+function kmBetween(a1, o1, a2, o2) {
+  const r = Math.PI / 180, x = (o2 - o1) * r * Math.cos((a1 + a2) / 2 * r), y = (a2 - a1) * r;
+  return Math.sqrt(x * x + y * y) * 6371;
+}
+export async function staleFallback(env, lat, lng, fuel) {
+  try {
+    if (!env || !env.DB) return null;
+    const rows = (await env.DB.prepare(
+      `SELECT k, data, at FROM sprit_cache WHERE k LIKE ? AND at > datetime('now','-${STALE_H} hours')`
+    ).bind("%," + fuel).all()).results || [];
+    let best = null, bestD = Infinity;
+    for (const r of rows) {
+      const m = /^(-?\d+\.\d+),(-?\d+\.\d+),/.exec(r.k || "");
+      if (!m) continue;
+      const d = kmBetween(lat, lng, +m[1], +m[2]);
+      if (d <= STALE_KM && d < bestD) { best = r; bestD = d; }
+    }
+    if (!best) return null;
+    const list = JSON.parse(best.data);
+    if (!Array.isArray(list) || !list.length) return null;
+    const tn = viennaNow();
+    for (const st of list) {
+      // Öffnungszeiten für JETZT neu rechnen (der Stand kann Stunden alt sein)
+      if (st.oh !== undefined) Object.assign(st, openInfo(st.oh, st.open, tn));
+      // Entfernung zum tatsächlich gefragten Punkt (der Stand kann vom Nachbarpunkt sein)
+      if (typeof st.lat === "number" && typeof st.lng === "number") st.dist = Math.round(kmBetween(lat, lng, st.lat, st.lng) * 100) / 100;
+    }
+    list.status = "veraltet";
+    list.stand = String(best.at).replace(" ", "T") + "Z";   // CURRENT_TIMESTAMP ist UTC
+    return list;
+  } catch (_) { return null; }
+}
+
+// ---- Preisverlauf (Tages-Tiefstwert je Tankstelle & Sorte) ----
+async function logPrices(env, fuel, list) {
+  try {
+    if (!env || !env.DB || !list.length) return;
+    const sql = "INSERT INTO sprit_price_log (station_id, fuel, day, price) VALUES (?, ?, date('now'), ?) " +
+      "ON CONFLICT(station_id, fuel, day) DO UPDATE SET price = MIN(price, excluded.price)";
+    const stmts = list.filter(x => x.id != null && typeof x.price === "number")
+      .map(x => env.DB.prepare(sql).bind(String(x.id), fuel, x.price));
+    if (!stmts.length) return;
+    if (env.DB.batch) await env.DB.batch(stmts);   // ein Roundtrip statt zehn
+    else for (const st of stmts) await st.run();
+  } catch (_) { /* Verlauf ist Beiwerk — die Suche darf daran nie scheitern */ }
+}
+
+// Verlauf + Einschätzung an Tankstellen hängen (für near/route):
+//   hist  = Tages-Tiefstwerte der letzten 14 Tage inkl. heute (für die Kurve)
+//   trend = priceVerdict(aktueller Preis, Vortage) — „Tiefstwert", „x ¢ über üblich"
+export async function attachTrend(env, fuel, stations, verdict) {
+  try {
+    const ids = [...new Set(stations.map(s => s.id).filter(x => x != null).map(String))].slice(0, 40);
+    if (!env || !env.DB || !ids.length) return;
+    const rows = (await env.DB.prepare(
+      `SELECT station_id, day, price FROM sprit_price_log WHERE fuel = ? AND station_id IN (${ids.map(() => "?").join(",")}) AND day >= date('now','-14 days') ORDER BY day ASC`
+    ).bind(fuel, ...ids).all()).results || [];
+    const today = new Date().toISOString().slice(0, 10);
+    const by = new Map();
+    for (const r of rows) { let a = by.get(String(r.station_id)); if (!a) by.set(String(r.station_id), a = []); a.push(r); }
+    for (const s of stations) {
+      const a = by.get(String(s.id)) || [];
+      const past = a.filter(r => r.day < today).map(r => r.price);
+      const hist = past.slice();
+      hist.push(Math.min(s.price, ...a.filter(r => r.day === today).map(r => r.price)));
+      if (hist.length >= 3) s.hist = hist;
+      const t = verdict(s.price, past);
+      if (t) s.trend = t;
+    }
+  } catch (_) { /* optional */ }
 }

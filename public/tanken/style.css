@@ -173,6 +173,8 @@ input[type="search"]:focus { outline: 2px solid var(--accent2); outline-offset: 
 .al-empty { color: var(--faint); font-size: 0.86rem; padding: 6px 2px; }
 .al-item { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: var(--panel); border: 1px solid var(--panel-line); border-radius: 10px; }
 .spark { flex: none; }
+/* Mini-Preisverlauf unter dem Preis auf jeder Karte (14 Tage, Tages-Tiefstwerte) */
+.price .spark { display: block; margin-top: 4px; opacity: 0.9; }
 .al-i-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .al-i-txt b { font-weight: 800; font-size: 0.9rem; }
 .al-i-txt span { color: var(--muted); font-size: 0.8rem; }
@@ -205,6 +207,7 @@ input[type="search"]:focus { outline: 2px solid var(--accent2); outline-offset: 
 .uw { font-weight: 700; }
 .uw.good { color: var(--accent2); }
 .uw.bad { color: var(--danger); font-weight: 600; }
+.tr { white-space: nowrap; }   /* Etikett nie mitten im Satz umbrechen */
 
 /* ---- Hinweis unter den Optionen ---- */
 .opt-note { margin: 8px 0 10px; font-size: 0.78rem; line-height: 1.45; color: var(--faint); }

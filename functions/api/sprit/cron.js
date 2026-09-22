@@ -1,7 +1,7 @@
 import { json, logError } from "../_util.js";
 import { pushToEndpoint } from "../push.js";
-import { ecByAddress, FUELS } from "./_ec.js";
-import { alertTransition, groupKey } from "./_logic.js";
+import { ecByAddress, FUELS, viennaNow } from "./_ec.js";
+import { alertTransition, groupKey, priceVerdict, noonDue } from "./_logic.js";
 import { houseDue } from "../_ops.js";
 
 // ====================================================================
@@ -45,7 +45,7 @@ export async function onRequestGet({ request, env }) {
   let alerts = [];
   try {
     alerts = (await env.DB.prepare(
-      "SELECT endpoint, station_id, fuel, target, name, lat, lng, armed FROM sprit_alert"
+      "SELECT endpoint, station_id, fuel, target, name, lat, lng, armed, noon_day FROM sprit_alert"
     ).all()).results || [];
   } catch (e) { await logError(env, "sprit-cron: load " + e.message, "sprit/cron"); return json({ ok: false }); }
   if (!alerts.length) return json({ ok: true, alerts: 0 });
@@ -60,7 +60,22 @@ export async function onRequestGet({ request, env }) {
     g.items.push(a);
   }
 
-  let sent = 0, checked = 0;
+  let sent = 0, checked = 0, noonSent = 0;
+
+  // „Vor 12 tanken": nur im Fenster kurz vor Mittag. Verlauf der Alarm-Stationen
+  // (Tages-Tiefstwerte der letzten 7 Vortage) EINMAL für alle laden.
+  const today = new Date().toISOString().slice(0, 10);
+  const noon = noonDue(viennaNow().mins);
+  const pastBy = new Map();
+  if (noon) {
+    try {
+      const rows = (await env.DB.prepare(
+        "SELECT l.station_id, l.fuel, l.price FROM sprit_price_log l JOIN (SELECT DISTINCT station_id, fuel FROM sprit_alert) a " +
+        "ON a.station_id = l.station_id AND a.fuel = l.fuel WHERE l.day >= date('now','-7 days') AND l.day < date('now')"
+      ).all()).results || [];
+      for (const r of rows) { const k = r.station_id + "|" + r.fuel; if (!pastBy.has(k)) pastBy.set(k, []); pastBy.get(k).push(r.price); }
+    } catch (e) { await logError(env, "sprit-cron: noon-verlauf " + e.message, "sprit/cron"); }
+  }
   const dropEndpoint = async ep => {
     try { await env.DB.prepare("DELETE FROM sprit_alert WHERE endpoint = ?").bind(ep).run(); } catch (_) {}
     try { await env.DB.prepare("DELETE FROM push_queue WHERE endpoint = ?").bind(ep).run(); } catch (_) {}
@@ -110,6 +125,24 @@ export async function onRequestGet({ request, env }) {
         // Preis wieder über dem Ziel → für die nächste Unterschreitung neu scharf.
         try { await env.DB.prepare("UPDATE sprit_alert SET armed=1 WHERE endpoint=? AND station_id=? AND fuel=?").bind(a.endpoint, a.station_id, a.fuel).run(); } catch (_) {}
       }
+
+      // Vor 12: Wochentief? Dann EIN Hinweis am Tag — ab Mittag darf der Preis
+      // steigen. Nicht zusätzlich, wenn eben schon der Ziel-Alarm ging.
+      if (noon && move !== "fire" && a.noon_day !== today) {
+        const v = priceVerdict(price, pastBy.get(a.station_id + "|" + a.fuel));
+        if (v && v.kind === "tief") {
+          const pr = await pushToEndpoint(env, a.endpoint, {
+            title: "⏰ Vor 12 tanken: " + (FUELS[a.fuel] || a.fuel) + " " + eur(price),
+            body: (a.name || "Tankstelle") + " hat gerade den Tiefstwert der letzten " + v.days + " Tage. Ab 12:00 darf der Preis steigen.",
+            url: "/tanken/",
+          });
+          if (pr.ok) {
+            noonSent++;
+            try { await env.DB.prepare("UPDATE sprit_alert SET noon_day=? WHERE endpoint=? AND station_id=? AND fuel=?").bind(today, a.endpoint, a.station_id, a.fuel).run(); } catch (_) {}
+          }
+          if (pr.gone) await dropEndpoint(a.endpoint);
+        }
+      }
     }
   }
 
@@ -123,5 +156,5 @@ export async function onRequestGet({ request, env }) {
     // Nachschaerfen der Muster helfen, nicht zum Archiv werden.
     try { await env.DB.prepare("DELETE FROM ask_log WHERE at < datetime('now','-7 days')").run(); } catch (_) {}
   }
-  return json({ ok: true, alerts: alerts.length, checked, sent });
+  return json({ ok: true, alerts: alerts.length, checked, sent, noonSent });
 }

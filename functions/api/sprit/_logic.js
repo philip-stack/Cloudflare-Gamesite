@@ -23,6 +23,32 @@ export function groupKey(fuel, lat, lng) {
 }
 
 // ====================================================================
+// Preisverlauf: ist der aktuelle Preis für DIESE Tankstelle gerade günstig?
+// past = Tages-Tiefstpreise der Vortage (ohne heute). Unter 3 Tagen Verlauf
+// wird geschwiegen — sonst wäre anfangs jede Tankstelle „Tiefstwert". Und nur
+// deutliche Aussagen (≥ 2 ¢ unter / ≥ 3 ¢ über dem Üblichen): alles dazwischen
+// ist Alltag und bekommt kein Etikett.
+//   → { kind:"tief", days } | { kind:"gut"|"hoch", cent, days } | null
+// ====================================================================
+export function priceVerdict(price, past) {
+  if (typeof price !== "number" || !Number.isFinite(price)) return null;
+  const v = (Array.isArray(past) ? past : []).filter(x => typeof x === "number" && Number.isFinite(x));
+  if (v.length < 3) return null;
+  const low = Math.min(...v), avg = v.reduce((a, x) => a + x, 0) / v.length;
+  if (price <= low + 0.0005) return { kind: "tief", days: v.length };
+  const cent = Math.round((price - avg) * 100);
+  if (cent >= 3) return { kind: "hoch", cent, days: v.length };
+  if (cent <= -2) return { kind: "gut", cent: -cent, days: v.length };
+  return null;
+}
+
+// Fenster für den „Vor 12 tanken"-Push (Wiener Minuten seit Mitternacht). In
+// Österreich dürfen Preise nur um 12:00 steigen. Der Cron prüft alle ~12 min,
+// in 11:15–11:58 kommt er also sicher mehrmals vorbei — ein Push pro Tag.
+export const NOON_FROM = 11 * 60 + 15, NOON_TO = 11 * 60 + 58;
+export const noonDue = mins => mins >= NOON_FROM && mins <= NOON_TO;
+
+// ====================================================================
 // Freitext-Suche: „billig diesel richtung graz, max 3 km umweg"
 //
 // parseFrei() erkennt den Normalfall OHNE Modell — das ist der eigentliche

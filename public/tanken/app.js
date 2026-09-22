@@ -85,13 +85,22 @@
     if (!text) { el.hidden = true; return; }
     el.className = "msg" + (kind ? " " + kind : ""); el.textContent = text; el.hidden = false;
   }
+  // Einschätzung aus dem Preisverlauf DIESER Tankstelle (Server: priceVerdict).
+  // Schweigt bei unter 3 Tagen Verlauf und bei Alltagspreisen.
+  function trendTxt(s) {
+    const t = s.trend; if (!t) return "";
+    if (t.kind === "tief") return `<span class="uw good tr">📉 Tiefstwert seit ${t.days} Tagen</span>`;
+    if (t.kind === "gut") return `<span class="uw good tr">${t.cent} ¢ unter üblich</span>`;
+    if (t.kind === "hoch") return `<span class="uw bad tr">${t.cent} ¢ über üblich</span>`;
+    return "";
+  }
   function stationCard(s, best, extra) {
     const addr = [s.addr, (s.plz + " " + s.city).trim()].filter(Boolean).join(", ");
     const oh = `<span class="oh ${s.open ? "open" : "closed"}">${esc(s.openText || (s.open ? "offen" : "geschlossen"))}</span>`;
-    const meta = [extra, oh].filter(Boolean).join(" · ");
+    const meta = [extra, trendTxt(s), oh].filter(Boolean).join(" · ");
     const fav = isFav(s.id);
     return `<div class="card${best ? " top" : ""}">
-      <div class="price">${esc(eur(s.price))}</div>
+      <div class="price">${esc(eur(s.price))}${sparkline(s.hist, 64, 18)}</div>
       <div class="mid">
         <div class="name">${esc(s.name)}${best ? ' <span class="tag best">günstigste</span>' : ""}</div>
         <div class="addr">${esc(addr)}</div>
@@ -111,6 +120,17 @@
     </div>`;
   }
   const shortLabel = l => String(l || "").split(",").slice(0, 2).join(",").trim();
+  // Rückfall-Stand (Server: quelle="veraltet") ehrlich kennzeichnen.
+  function staleMsg(d) {
+    if (!d || d.quelle !== "veraltet" || !d.stand) return "";
+    const t = new Date(d.stand);
+    if (isNaN(t)) return "";
+    const tz = { timeZone: "Europe/Vienna" };
+    const heute = new Date().toLocaleDateString("de-AT", tz) === t.toLocaleDateString("de-AT", tz);
+    const wann = (heute ? "" : t.toLocaleDateString("de-AT", Object.assign({ day: "numeric", month: "numeric" }, tz)) + " ") +
+      t.toLocaleTimeString("de-AT", Object.assign({ hour: "2-digit", minute: "2-digit" }, tz));
+    return "E-Control liefert gerade keine aktuellen Preise — angezeigt wird der letzte Stand von " + wann + " Uhr. Kann sich inzwischen geändert haben.";
+  }
   function renderNear(d) {
     nearData = d;
     ensureMap(); layer.clearLayers(); renderQuickNear();
@@ -133,7 +153,7 @@
       setMsg(grund, "warn");
       $("#results").innerHTML = "";
     } else {
-      setMsg("");
+      setMsg(staleMsg(d), "warn");
       // Bezugspunkt ist die naechstgelegene Station NACH den Filtern — wer
       // „nur offene" gesetzt hat, waere ja auch nicht zur geschlossenen gefahren.
       const bezug = st.reduce((b, x) => (x.dist != null && (!b || x.dist < b.dist) ? x : b), null);
@@ -151,6 +171,7 @@
       pts.push([s.lat, s.lng]);
     });
     fit(pts);
+    showTip(st.find(s => s.price === minPrice));
   }
   const detourTxt = s => {
     if (s.detourMin != null) {
@@ -187,11 +208,16 @@
     if (d.to) L.marker([d.to.lat, d.to.lng], { icon: dot("#ff3b30") }).addTo(layer).bindPopup("Ziel");
     const head = d.route ? `<div class="rinfo">Strecke ${d.route.distanceKm} km · ${d.route.durationMin} min · ${d.checked} Tankstellen am Weg geprüft</div>` : "";
     if (!st.length) {
-      setMsg(hadStations ? "Keine offene Tankstelle am Weg — Filter „nur offene“ ist aktiv." : "Keine Tankstelle mit " + d.fuelLabel + " nah genug an der Route (Umweg ≤ " + d.off + " km).", "warn");
+      let grund;
+      if (hadStations) grund = "Keine offene Tankstelle am Weg — Filter „nur offene“ ist aktiv.";
+      else if (d.quelle === "quelle-down") grund = "Die Preisquelle (E-Control) antwortet gerade nicht. Später nochmal probieren.";
+      else if (d.quelle === "keine-preise") grund = "Die Preisquelle (E-Control) liefert gerade keine Preise — meist rund um 12:00. Gleich nochmal probieren.";
+      else grund = "Keine Tankstelle mit " + d.fuelLabel + " nah genug an der Route (Umweg ≤ " + d.off + " km).";
+      setMsg(grund, "warn");
       $("#results").innerHTML = head;
     }
     else {
-      setMsg("");
+      setMsg(staleMsg(d), "warn");
       // An der Route zaehlt der Umweg einfach (man faehrt ohnehin vorbei).
       // detourKm sind ECHTE Strassenkilometer aus der Routenabfrage — dann
       // braucht es keinen Luftlinien-Faktor. Nur wenn die fehlen (OSRM hat
@@ -624,17 +650,24 @@
 
   // Tank-Timing: In Österreich dürfen Spritpreise nur um 12:00 steigen, sonst
   // nur fallen → tageszeitabhängige Empfehlung (lokale Uhrzeit).
-  function timingAdvice() {
-    const h = new Date().getHours();
+  // Wiener Zeit statt Geräte-Uhr (die Regel gilt in Österreich, egal wo das Handy steht).
+  const viennaHour = () => +new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Vienna", hour: "2-digit", hour12: false }).format(new Date()) % 24;
+  // best = günstigste Station der aktuellen Suche (mit Verlauf, falls vorhanden):
+  // dann wird aus der Faustregel eine Aussage über DIESE Tankstelle.
+  function timingAdvice(best) {
+    const h = viennaHour();
+    const t = best && best.trend;
+    if (t && t.kind === "tief" && h < 12) return { cls: "good", t: "⏰ Guter Moment: " + best.name + " hat gerade den Tiefstwert der letzten " + t.days + " Tage – ab 12:00 darf der Preis steigen." };
+    if (t && t.kind === "hoch") return { cls: "warn", t: "⏰ Gerade eher teuer: " + best.name + " liegt " + t.cent + " ¢ über ihrem üblichen Preis." + (h < 12 ? "" : " Bis morgen 12:00 darf er nur fallen.") };
     if (h < 11) return { cls: "good", t: "⏰ Gute Zeit zum Tanken – bis 12:00 dürfen die Preise nur fallen." };
     if (h < 12) return { cls: "good", t: "⏰ Kurz vor 12:00 ist es oft am günstigsten – jetzt tanken, ab Mittag darf der Preis steigen." };
     if (h < 17) return { cls: "warn", t: "⏰ Rund um Mittag steigen die Preise oft – im Lauf des Nachmittags/Abends fallen sie meist wieder." };
     return { cls: "good", t: "⏰ Abends ist es häufig günstig – bis morgen 12:00 dürfen die Preise nur fallen." };
   }
-  function showTip() {
+  function showTip(best) {
     const el = $("#tip"); if (!el) return;
     if (LS.get("sprit_tip2", "") === "x") { el.hidden = true; return; }
-    const a = timingAdvice();
+    const a = timingAdvice(best);
     el.className = "tip " + a.cls;
     el.innerHTML = `<span class="tip-t"><b>${esc(a.t)}</b><br><span class="tip-sub">In Österreich dürfen Spritpreise nur um 12:00 Uhr steigen, sonst nur fallen.</span></span><button id="tip-x" class="tip-x" aria-label="Ausblenden">✕</button>`;
     el.hidden = false;
@@ -670,9 +703,9 @@
     el.className = "msg" + (kind ? " " + kind : ""); el.textContent = msg; el.hidden = false;
   }
   // Mini-Preisverlauf (fallend = grün, steigend = rot) aus den Tages-Tiefstpreisen.
-  function sparkline(vals) {
+  function sparkline(vals, w = 88, h = 26) {
     if (!Array.isArray(vals) || vals.length < 2) return "";
-    const w = 88, h = 26, min = Math.min(...vals), max = Math.max(...vals), rng = (max - min) || 1;
+    const min = Math.min(...vals), max = Math.max(...vals), rng = (max - min) || 1;
     const pts = vals.map((v, i) => `${(i / (vals.length - 1) * (w - 4) + 2).toFixed(1)},${(h - 3 - (v - min) / rng * (h - 6)).toFixed(1)}`).join(" ");
     const col = vals[vals.length - 1] <= vals[0] ? "var(--accent2)" : "var(--danger)";
     return `<svg class="spark" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true"><polyline points="${pts}" fill="none" stroke="${col}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;

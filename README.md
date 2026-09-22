@@ -357,8 +357,19 @@ Route** — komplett gratis und ohne API-Schlüssel:
   cacht die Kacheln einen Tag lang. Adress-Suche über **Nominatim** mit
   dauerhaftem D1-Cache (`geo_cache`, geteilt mit der Feuerwehr-App), auch
   Fehltreffer werden gemerkt — fair use gegenüber einem gratis Dienst.
-- **Favoriten**, **Preis-Alarm** per Web-Push (Ziel-Preis je Kraftstoff),
-  **Preisverlauf-Sparkline** und Filter **„nur offene"**.
+- **Favoriten**, **Preis-Alarm** per Web-Push (Ziel-Preis je Kraftstoff) und
+  Filter **„nur offene"**.
+- **Preisverlauf für jede Tankstelle**: jeder Preis, den E-Control liefert, wird
+  als Tages-Tiefstwert in `sprit_price_log` festgehalten (nur Station, Tag, Preis
+  — kein Personenbezug, 30 Tage). Jede Karte zeigt die Kurve der letzten 14 Tage
+  und ab 3 Tagen Verlauf eine Einschätzung (`priceVerdict`): „Tiefstwert seit
+  X Tagen", „x ¢ unter/über üblich" — Alltagspreise bleiben ohne Etikett. Der
+  Spar-Tipp rechnet in Wiener Zeit und nennt die günstigste Station, wenn sie
+  vor 12:00 gerade ihr Tief hat.
+- **Letzter guter Stand statt Leere**: fällt E-Control aus (Schübe) oder liefert
+  keine Preise (täglich um 12:00), springt der Zwischenspeicher ein — bis 6 h alt,
+  Nachbarpunkt bis 3 km, Öffnungszeiten für jetzt neu gerechnet — und die App
+  sagt dazu, von wann der Stand ist. Gilt auch für den Routen-Modus.
 - **Freitext-Suche** (`/api/sprit/ask`): „billig diesel richtung graz, max 3 km
   umweg" stellt Modus, Treibstoff, Ziel und Umweg selbst ein. Vier Stufen, die
   erste kostet nichts: **Regeln** (`parseFrei`) decken den Normalfall mit
@@ -410,7 +421,10 @@ Route** — komplett gratis und ohne API-Schlüssel:
   und Verbrauch stehen in den Optionen.
 - Eigener **Cron** auf `/api/sprit/cron` (ebenfalls per `CRON_TOKEN` geschützt,
   vom `philip-stack-rt`-Worker angepingt): prüft die abonnierten Alarme und
-  protokolliert den Preisverlauf (`sprit_price_log`).
+  protokolliert den Preisverlauf (`sprit_price_log`). Zwischen 11:15 und 11:58
+  (Wiener Zeit) zusätzlich **„Vor 12 tanken"**: hat die Alarm-Tankstelle gerade
+  den Tiefstwert der letzten 7 Tage, kommt ein Push — höchstens einer pro Tag
+  (`sprit_alert.noon_day`, Migration 0017), nicht zusätzlich zum Ziel-Alarm.
 
 Beide Apps teilen den zentralen **Web-Push-Mechanismus** (`/api/push`, VAPID-
 „Tickle"), haben aber ihren eigenen Service Worker und ihr eigenes Manifest.
@@ -499,11 +513,12 @@ wuerfelpoker/
 ├── wrangler.toml              Pages-Config + D1-Binding (DB) + AI-Binding (Kochstudio)
 ├── migrations/                D1-Schema als versionierte, idempotente Migrationen
 │   ├── 0001_init.sql          Baseline (Würfelpoker, scores, used_token, banned_device, cloud_saves, party*, push_*, error_log, rate, draw_score, fire_*)
-│   └── 0002…0016_*.sql        additive Änderungen: draw_score-Gerät, fire_alert-Arten/Geo,
+│   └── 0002…0017_*.sql        additive Änderungen: draw_score-Gerät, fire_alert-Arten/Geo,
 │                              sprit_alert/-price_log, quiz_score, live_room+admin_log (0009),
 │                              client_log getrennt (0010), stat_daily (0011), ops_log (0012),
 │                              briefing (0013), Aufräum-Indizes (0014), ask_log (0015),
-│                              rate(at) + scores(game, created_at) (0016).
+│                              rate(at) + scores(game, created_at) (0016),
+│                              sprit_alert.noon_day (0017).
 │                              Anwenden: wrangler d1 migrations apply wuerfelpoker --remote
 ├── reset-dev.sql              ⚠️ nur lokal: setzt Würfelpoker-Tabellen zurück (enthält DROPs)
 ├── schema.sql                 nur noch Hinweis-Datei (zeigt auf migrations/)

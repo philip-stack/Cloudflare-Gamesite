@@ -25,7 +25,7 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="Sprit-Radar" />
   <link rel="stylesheet" href="vendor/leaflet.css?v=340720ef" />
-  <link rel="stylesheet" href="style.css?v=833d8c02" />
+  <link rel="stylesheet" href="style.css?v=2729a239" />
 </head>
 <body>
   <div id="app">
@@ -154,13 +154,13 @@
       </div>
       <h3 class="al-h">Aktive Alarme</h3>
       <div id="al-list" class="al-list"></div>
-      <p class="al-note">Gespeichert wird nur dein anonymer Push-Endpunkt + Station und Zielpreis. Läuft auch bei geschlossener App; jederzeit hier wieder löschbar. Preisprüfung ca. alle 15&nbsp;min.</p>
+      <p class="al-note">Gespeichert wird nur dein anonymer Push-Endpunkt + Station und Zielpreis. Läuft auch bei geschlossener App; jederzeit hier wieder löschbar. Preisprüfung ca. alle 15&nbsp;min. Hat die Tankstelle kurz vor 12:00 den Tiefstwert der letzten Tage, kommt zusätzlich ein „Vor 12 tanken“-Hinweis (höchstens einer am Tag).</p>
     </div>
   </div>
 
   <script src="vendor/leaflet.js?v=5a640ff8"></script>
   <script src="umweg.js?v=d1fed038"></script>
-  <script src="app.js?v=321fec49"></script>
+  <script src="app.js?v=4fdf99a9"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));

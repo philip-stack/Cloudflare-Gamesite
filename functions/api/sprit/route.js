@@ -1,5 +1,6 @@
 import { json, clientIp, rateLimit } from "../_util.js";
-import { ecByAddress, normFuel, FUELS } from "./_ec.js";
+import { ecByAddress, normFuel, FUELS, attachTrend } from "./_ec.js";
+import { priceVerdict } from "./_logic.js";
 import { geocode } from "./_geo.js";
 import { haversineKm } from "../fire/_parse.js";
 
@@ -64,6 +65,16 @@ export async function onRequestGet({ request, env }) {
   const byId = new Map();
   const results = await Promise.all(samples.map(s => ecByAddress(env, s[0], s[1], fuel)));
   for (const list of results) for (const st of list) if (!byId.has(st.id)) byId.set(st.id, st);
+  // Wie steht es um die Quelle? Vorher fielen Ausfälle hier still unter den
+  // Tisch: weniger oder keine Treffer, ohne Hinweis. Jetzt: „veraltet" (mind.
+  // ein Stützpunkt kam aus dem Rückfall, mit dem ältesten Stand) bzw. „quelle-down",
+  // wenn gar nichts kam.
+  let quelle = "ok", stand = null;
+  for (const list of results) {
+    if (list.status === "veraltet") { quelle = "veraltet"; if (!stand || list.stand < stand) stand = list.stand; }
+    else if (list.status && quelle === "ok" && !list.length) quelle = list.status;
+  }
+  if (quelle !== "veraltet" && byId.size) quelle = "ok";   // einzelne leere Punkte sind normal
 
   // ---- Für jede Tankstelle Luftlinie zur Route (dezimiert) ----
   const step = Math.max(1, Math.floor(coords.length / 600));   // Perf-Deckel
@@ -102,6 +113,8 @@ export async function onRequestGet({ request, env }) {
     } catch (_) { /* Umweg-Zeit optional */ }
   }));
 
+  await attachTrend(env, fuel, stations, priceVerdict);
+
   // Geometrie für die Karte verschlanken (~300 Punkte reichen).
   const gstep = Math.max(1, Math.floor(coords.length / 300));
   const geometry = [];
@@ -116,8 +129,9 @@ export async function onRequestGet({ request, env }) {
     avgPrice,
     stations,
     checked: byId.size,
-    stand: new Date().toISOString(),
-  }), 120);
+    quelle,
+    stand: stand || new Date().toISOString(),
+  }), quelle === "ok" ? 120 : 20);
 }
 
 function withCache(res, seconds) {

@@ -1,5 +1,6 @@
 import { json, clientIp, rateLimit } from "../_util.js";
-import { ecAbfrage, normFuel, FUELS } from "./_ec.js";
+import { ecAbfrage, normFuel, FUELS, attachTrend } from "./_ec.js";
+import { priceVerdict } from "./_logic.js";
 import { geocode } from "./_geo.js";
 
 // ====================================================================
@@ -32,6 +33,8 @@ export async function onRequestGet({ request, env }) {
   const stations = ec.stations.slice().sort((a, b) => a.price - b.price);
   const avgPrice = stations.length
     ? Math.round(stations.reduce((s, x) => s + x.price, 0) / stations.length * 1000) / 1000 : null;
+  await attachTrend(env, fuel, stations, priceVerdict);
+  const veraltet = ec.status === "veraltet";
 
   return withCache(json({
     center: { lat: center.lat, lng: center.lng, label },
@@ -42,8 +45,9 @@ export async function onRequestGet({ request, env }) {
     // „die Quelle liefert gerade keine Preise". Ohne das erzaehlt die App bei
     // einer Stoerung die falsche Geschichte.
     quelle: ec.status,
-    stand: new Date().toISOString(),
-  }), 120);
+    // „veraltet" = letzter guter Stand aus dem Zwischenspeicher; stand sagt, von wann.
+    stand: (veraltet && ec.stand) || new Date().toISOString(),
+  }), veraltet ? 20 : 120);   // Rückfall nur kurz cachen — gleich wieder frisch versuchen
 }
 
 function withCache(res, seconds) {
