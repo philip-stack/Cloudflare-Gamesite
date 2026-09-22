@@ -389,6 +389,28 @@ SPR.edgeB = makeSprite(26, 24, g => {
 });
 
 // --- Weiche, fluffige Wolke (heller Kern + weiche Unterschattierung) ---
+// --- Grasbüschel & Blumen am Wegrand ---
+// Halme aus Schatten + Licht statt fester Farbe: so passen sie auf Wiese, Eis
+// und Glutfeld gleichermaßen.
+SPR.tuft = makeSprite(34, 24, g => {
+  const blade = (x, dx, h, col, w) => {
+    g.strokeStyle = col; g.lineWidth = w; g.lineCap = "round";
+    g.beginPath(); g.moveTo(x, 0); g.quadraticCurveTo(x + dx * 0.3, -h * 0.6, x + dx, -h); g.stroke();
+  };
+  [[-10, -6, 15], [-5, -3, 20], [0, 1, 23], [5, 4, 19], [10, 7, 14], [-2, -8, 13], [3, 9, 12]]
+    .forEach(([x, dx, h]) => blade(x, dx, h, "rgba(10,30,10,0.34)", 3));
+  [[-5, -3, 20], [0, 1, 23], [5, 4, 19]].forEach(([x, dx, h]) => blade(x + 0.8, dx, h - 3, "rgba(255,255,230,0.3)", 1.3));
+});
+const flower = (col) => makeSprite(18, 26, g => {
+  g.strokeStyle = "rgba(10,40,10,0.45)"; g.lineWidth = 2;
+  g.beginPath(); g.moveTo(0, 0); g.quadraticCurveTo(2, -10, 0, -17); g.stroke();
+  g.fillStyle = col;
+  for (let i = 0; i < 5; i++) { const a = i / 5 * Math.PI * 2; g.beginPath(); g.arc(Math.cos(a) * 4, -19 + Math.sin(a) * 4, 3.4, 0, Math.PI * 2); g.fill(); }
+  g.fillStyle = "#fff3b0"; g.beginPath(); g.arc(0, -19, 2.6, 0, Math.PI * 2); g.fill();
+});
+SPR.flowerA = flower("#ff8ac8");
+SPR.flowerB = flower("#fff6e8");
+
 SPR.cloud = makeSprite(180, 90, g => {
   g.translate(0, -48);
   const puffs = [[-52, 8, 22], [-18, -6, 30], [22, 0, 26], [54, 10, 18], [0, 12, 34]];
@@ -485,16 +507,28 @@ const ZONES = [
 ];
 const ZONE_LEN = 450; // Meter pro Zone
 
-function hexRgb(hex) {
-  return [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)];
+// Versteht #rrggbb UND rgb(r,g,b): palette() liefert rgb-Strings, und die wurden
+// hier früher als Hex gelesen → rgb(NaN,…) → der Canvas ignorierte die Farbe still.
+function hexRgb(c) {
+  if (c[0] !== "#") { const m = String(c).match(/\d+(\.\d+)?/g) || []; return [+m[0] || 0, +m[1] || 0, +m[2] || 0]; }
+  return [parseInt(c.slice(1, 3), 16), parseInt(c.slice(3, 5), 16), parseInt(c.slice(5, 7), 16)];
 }
+function rgbaOf(c, a) { const A = hexRgb(c); return `rgba(${A[0]},${A[1]},${A[2]},${a})`; }
+// Deterministischer Zufall je (Reihe, Spalte) — Platten & Gräser „wandern" nicht.
+function hash2(a, b) {
+  let h = (a * 374761393 + b * 668265263) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+// Energiesparen (Profil → Einstellungen): Deko-Extras weglassen
+const LOWP = () => document.documentElement.hasAttribute("data-lowpower");
 function mixHex(a, b, u) {
   const A = hexRgb(a), B = hexRgb(b);
   return `rgb(${Math.round(A[0] + (B[0] - A[0]) * u)},${Math.round(A[1] + (B[1] - A[1]) * u)},${Math.round(A[2] + (B[2] - A[2]) * u)})`;
 }
 // Aktuelle Palette (weich zwischen Zonen überblendet)
 function palette(meters) {
-  const zi = Math.floor(meters / ZONE_LEN);
+  const zi = Math.max(0, Math.floor(meters / ZONE_LEN));
   const a = ZONES[zi % ZONES.length];
   const b = ZONES[(zi + 1) % ZONES.length];
   const into = meters - zi * ZONE_LEN;
@@ -571,10 +605,10 @@ function buildStars() {
 }
 buildStars();
 
-// Bergrücken-Silhouetten (2 Parallax-Ebenen)
+// Bergrücken-Silhouetten (3 Parallax-Ebenen: fern & dunstig → nah & satt)
 let ridges = [];
 function buildRidges() {
-  ridges = [0.35, 0.7].map((amp, li) => {
+  ridges = [0.3, 0.42, 0.7].map((amp, li) => {
     const pts = [];
     const n = 24;
     for (let i = 0; i <= n; i++) {
@@ -870,7 +904,7 @@ function update(dt) {
   if (whip) { whip.t += dt; if (whip.t > 0.55) whip = null; }
 
   // Zonen-Banner
-  const zi = Math.floor(meters / ZONE_LEN);
+  const zi = Math.max(0, Math.floor(meters / ZONE_LEN));
   if (zi !== zoneShown) {
     zoneShown = zi;
     const z = ZONES[zi % ZONES.length];
@@ -1119,12 +1153,20 @@ function render(now) {
   ctx.fillRect(0, hY - W * 0.3, W, W * 0.6);
 
   // --- Bergrücken (Parallax) ---
+  // Luftperspektive: je ferner, desto heller und blasser; Gipfel im Licht
+  // (bei der fernsten Kette wie Schnee), am Fuß Dunst in Horizontfarbe.
+  const RL = [{ sp: 0.18, h: 0.68, haze: 0.62, lit: 0.5 }, { sp: 0.4, h: 0.5, haze: 0.4, lit: 0.2 }, { sp: 0.9, h: 0.32, haze: 0.15, lit: 0.1 }];
   for (const ridge of ridges) {
-    const speedF = ridge.li === 0 ? 0.4 : 0.9;
-    const shift = (o * speedF * 14) % W;
-    const baseH = hY * (ridge.li === 0 ? 0.55 : 0.32);
-    ctx.fillStyle = ridge.li === 0 ? pal.ridge : mixHex(pal.road[1], "#000000", 0.25);
-    ctx.globalAlpha = ridge.li === 0 ? 0.85 : 1;
+    const L = RL[ridge.li];
+    const shift = (o * L.sp * 14) % W;
+    const baseH = hY * L.h;
+    const base = ridge.li === 0 ? mixHex(pal.ridge, pal.sky[1], 0.4)
+      : ridge.li === 1 ? pal.ridge : mixHex(pal.ridge, "#000000", 0.3);
+    const rg = ctx.createLinearGradient(0, hY - baseH * 1.05, 0, hY);
+    rg.addColorStop(0, mixHex(base, "#ffffff", L.lit));
+    rg.addColorStop(0.4, base);
+    rg.addColorStop(1, mixHex(base, pal.sky[2], L.haze));
+    ctx.fillStyle = rg;
     ctx.beginPath();
     ctx.moveTo(0, hY + 2);
     const n = ridge.pts.length - 1;
@@ -1157,6 +1199,26 @@ function render(now) {
     ctx.fillRect(0, yFar, W, yNear - yFar);
   }
 
+  // Grasbüschel & Blumen am Wegrand — laufen perspektivisch mit, fern → nah
+  if (!LOWP()) {
+    const TB = 1.1;
+    const bMin = Math.floor((o + NEAR * 0.8) / TB), bMax = Math.ceil((o + SPAWN_Z * 0.8) / TB);
+    for (let k = bMax; k >= bMin; k--) {
+      const z = k * TB - o;
+      if (z < NEAR * 0.8 || z > SPAWN_Z * 0.8) continue;
+      const t = tOf(z), y = groundY(t);
+      if (y > H + 30) continue;
+      const alpha = Math.min(1, t * 5);
+      for (const sgn of [-1, 1]) for (let j = 0; j < 2; j++) {
+        const h = hash2(k * 2 + j, sgn);
+        const x = centerX(t) + sgn * roadHalf(t) * (1.22 + h * 1.9 + j * 0.35);
+        if (x < -30 || x > W + 30) continue;
+        const sp = h > 0.86 ? SPR.flowerA : h > 0.76 ? SPR.flowerB : SPR.tuft;
+        blitFoot(sp, x, y, t / PLAYER_T * (1 + h * 0.4), alpha);
+      }
+    }
+  }
+
   // --- Weg ---
   const tN = tOf(NEAR * 0.7), tF = tOf(SPAWN_Z);
   const roadGrad = ctx.createLinearGradient(0, groundY(tF), 0, H);
@@ -1178,11 +1240,60 @@ function render(now) {
   ctx.closePath();
   ctx.fill();
 
-  // Steinplatten-Fugen quer über den Weg
-  ctx.strokeStyle = "rgba(10, 5, 20, 0.22)";
+  // Steinplatten: Reihen hell/dunkel im Wechsel, je Spur leicht anders getönt.
+  // Das ist das Haupt-Signal für Tempo und Tiefe — vorher war der Weg eine
+  // glatte Fläche mit kaum sichtbaren Fugen.
   const SLAB = 1.7;
   const sMin = Math.floor((o + NEAR * 0.7) / SLAB);
   const sMax = Math.ceil((o + SPAWN_Z) / SLAB);
+  // Pflaster: 6 Platten je Reihe, jede zweite Reihe um eine halbe Platte versetzt
+  // (Verband wie echtes Steinpflaster), mit senkrechten Fugen.
+  const NC = 6, PW = 2 / NC;
+  ctx.lineWidth = 1;
+  for (let k = sMin; k <= sMax; k++) {
+    const z0 = Math.max(NEAR * 0.7, k * SLAB - o), z1 = Math.min(SPAWN_Z, (k + 1) * SLAB - o);
+    if (z1 <= z0) continue;
+    const t0 = tOf(z0), t1 = tOf(z1);
+    const y0 = Math.min(H + 4, groundY(t0)), y1 = groundY(t1);
+    if (y1 > H + 4) continue;
+    const off = (k & 1) ? 0.5 : 0;
+    const X = (t, u) => centerX(t) + u * roadHalf(t);
+    for (let c = -1; c < NC; c++) {
+      const u0 = Math.max(-1, -1 + (c + off) * PW), u1 = Math.min(1, -1 + (c + 1 + off) * PW);
+      if (u1 <= u0) continue;
+      const v = ((k & 1) ? 0.06 : -0.04) + (hash2(k, c + 10) - 0.5) * 0.13;
+      ctx.fillStyle = v > 0 ? `rgba(255,250,255,${v.toFixed(3)})` : `rgba(14,4,26,${(-v).toFixed(3)})`;
+      ctx.beginPath();
+      ctx.moveTo(X(t0, u0), y0); ctx.lineTo(X(t0, u1), y0);
+      ctx.lineTo(X(t1, u1), y1); ctx.lineTo(X(t1, u0), y1);
+      ctx.closePath();
+      ctx.fill();
+    }
+    // senkrechte Fugen dieser Reihe
+    ctx.strokeStyle = "rgba(10,5,20,0.24)";
+    ctx.lineWidth = Math.max(1, 2 * t0);
+    ctx.beginPath();
+    for (let c = 0; c <= NC; c++) {
+      const u = -1 + (c + off) * PW;
+      if (u <= -0.98 || u >= 0.98) continue;
+      ctx.moveTo(X(t0, u), y0); ctx.lineTo(X(t1, u), y1);
+    }
+    ctx.stroke();
+  }
+  // Randschatten an den Mauern + heller Glanzstreifen in der Mitte
+  const band = (u0, u1, col) => {
+    ctx.fillStyle = col;
+    ctx.beginPath();
+    for (let i = 0; i <= steps; i++) { const t = edge[i][3]; const x = centerX(t) + u0 * roadHalf(t); i ? ctx.lineTo(x, edge[i][2]) : ctx.moveTo(x, edge[i][2]); }
+    for (let i = steps; i >= 0; i--) { const t = edge[i][3]; ctx.lineTo(centerX(t) + u1 * roadHalf(t), edge[i][2]); }
+    ctx.closePath();
+    ctx.fill();
+  };
+  for (const sg of [-1, 1]) { band(sg * 1, sg * 0.9, "rgba(10,4,22,0.22)"); band(sg * 0.9, sg * 0.76, "rgba(10,4,22,0.09)"); }
+  band(-0.22, 0.22, "rgba(255,255,255,0.045)");
+
+  // Steinplatten-Fugen quer über den Weg
+  ctx.strokeStyle = "rgba(10, 5, 20, 0.3)";
   for (let k = sMin; k <= sMax; k++) {
     const z = k * SLAB - o;
     if (z < NEAR * 0.7 || z > SPAWN_Z) continue;
@@ -1195,42 +1306,63 @@ function render(now) {
     ctx.lineTo(centerX(t) + roadHalf(t), y);
     ctx.stroke();
     // Lichtkante der Platte
-    ctx.strokeStyle = "rgba(255, 245, 255, 0.06)";
+    ctx.strokeStyle = "rgba(255, 245, 255, 0.11)";
     ctx.beginPath();
     ctx.moveTo(centerX(t) - roadHalf(t), y + Math.max(1, 2.6 * t));
     ctx.lineTo(centerX(t) + roadHalf(t), y + Math.max(1, 2.6 * t));
     ctx.stroke();
-    ctx.strokeStyle = "rgba(10, 5, 20, 0.22)";
+    ctx.strokeStyle = "rgba(10, 5, 20, 0.3)";
   }
 
-  // Erhöhte Bordsteine links & rechts (wie die Tempelmauern)
+  // Randmauern links & rechts (wie die Tempelmauern): Innenwand im Schatten,
+  // Oberseite im Licht, Blockfugen im Takt der Platten. Vorher eine flache,
+  // schräge Kante, die man kaum als Mauer lesen konnte.
+  const WH = 24, WT = 30;   // Mauerhöhe und Breite der Oberseite bei t = 1
+  const wallTopY = i => edge[i][2] - WH * edge[i][3];
   for (const side of [0, 1]) {
     const sgn = side === 0 ? -1 : 1;
-    const wall = ctx.createLinearGradient(0, groundY(tOf(SPAWN_Z)), 0, H);
-    wall.addColorStop(0, pal.ridge);
-    wall.addColorStop(1, pal.road[0]);
-    ctx.fillStyle = wall;
+    const face = ctx.createLinearGradient(0, groundY(tOf(SPAWN_Z)), 0, H);
+    face.addColorStop(0, mixHex(pal.ridge, "#000000", 0.3));
+    face.addColorStop(1, mixHex(pal.road[1], "#000000", 0.42));
+    ctx.fillStyle = face;
     ctx.beginPath();
-    ctx.moveTo(edge[0][side], edge[0][2]);
-    for (let i = 1; i <= steps; i++) ctx.lineTo(edge[i][side], edge[i][2]);
-    for (let i = steps; i >= 0; i--) {
-      const t = edge[i][3];
-      ctx.lineTo(edge[i][side] + sgn * 34 * t, edge[i][2] - 20 * t);
-    }
+    for (let i = 0; i <= steps; i++) i ? ctx.lineTo(edge[i][side], edge[i][2]) : ctx.moveTo(edge[i][side], edge[i][2]);
+    for (let i = steps; i >= 0; i--) ctx.lineTo(edge[i][side], wallTopY(i));
     ctx.closePath();
     ctx.fill();
-    // Goldene Glow-Kante obenauf
-    ctx.strokeStyle = "rgba(232, 193, 90, 0.5)";
+    const top = ctx.createLinearGradient(0, groundY(tOf(SPAWN_Z)), 0, H);
+    top.addColorStop(0, pal.ridge);
+    top.addColorStop(1, mixHex(pal.road[0], "#ffffff", 0.28));
+    ctx.fillStyle = top;
+    ctx.beginPath();
+    for (let i = 0; i <= steps; i++) i ? ctx.lineTo(edge[i][side], wallTopY(i)) : ctx.moveTo(edge[i][side], wallTopY(i));
+    for (let i = steps; i >= 0; i--) { const t = edge[i][3]; ctx.lineTo(edge[i][side] + sgn * WT * t, wallTopY(i) - 5 * t); }
+    ctx.closePath();
+    ctx.fill();
+    // Goldene Glow-Kante an der Innenkante oben
+    ctx.strokeStyle = "rgba(232, 193, 90, 0.55)";
     ctx.lineWidth = 2;
     ctx.shadowColor = GOLD; ctx.shadowBlur = 7;
     ctx.beginPath();
-    for (let i = 0; i <= steps; i++) {
-      const t = edge[i][3];
-      const x = edge[i][side] + sgn * 34 * t, y = edge[i][2] - 20 * t;
-      i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
-    }
+    for (let i = 0; i <= steps; i++) i ? ctx.lineTo(edge[i][side], wallTopY(i)) : ctx.moveTo(edge[i][side], wallTopY(i));
     ctx.stroke();
     ctx.shadowBlur = 0;
+  }
+  // Blockfugen: senkrecht in der Innenwand, weiter über die Oberseite
+  ctx.strokeStyle = "rgba(0,0,0,0.3)";
+  for (let k = sMin; k <= sMax; k++) {
+    if (k % 2) continue;
+    const z = k * SLAB - o;
+    if (z < NEAR * 0.7 || z > SPAWN_Z) continue;
+    const t = tOf(z), y = groundY(t);
+    if (y > H + 4) continue;
+    ctx.lineWidth = Math.max(1, 2 * t);
+    for (const sgn of [-1, 1]) {
+      const x = centerX(t) + sgn * roadHalf(t);
+      ctx.beginPath();
+      ctx.moveTo(x, y); ctx.lineTo(x, y - WH * t); ctx.lineTo(x + sgn * WT * t, y - WH * t - 5 * t);
+      ctx.stroke();
+    }
   }
 
   // Kristalle auf den Bordsteinen
@@ -1241,12 +1373,12 @@ function render(now) {
     const z = k * EDGE_STEP - o;
     if (z < NEAR * 0.75 || z > SPAWN_Z) continue;
     const t = tOf(z);
-    const y = groundY(t) - 20 * t;
+    const y = groundY(t) - WH * t - 3 * t;   // auf der Mauerkrone
     if (y > H + 10) continue;
     const sp = (k % 2 === 0) ? SPR.edgeA : SPR.edgeB;
     const alpha = Math.min(1, t * 6);
     for (const sgn of [-1, 1]) {
-      blitFoot(sp, centerX(t) + sgn * (roadHalf(t) + 17 * t), y, t / PLAYER_T * 1.25, alpha);
+      blitFoot(sp, centerX(t) + sgn * (roadHalf(t) + WT * 0.5 * t), y, t / PLAYER_T * 1.25, alpha);
     }
   }
 
@@ -1285,7 +1417,23 @@ function render(now) {
   }
   drawables.sort((a, b) => b.z - a.z);
 
+  // Luftperspektive: Boden, Weg und FERNE Objekte verblassen in der Horizont-
+  // farbe. Wird zwischen fernen und nahen Objekten gemalt — Nahes bleibt satt.
+  const FOG_Z = 10;
+  let fogged = false;
+  const drawFog = () => {
+    fogged = true;
+    const yF = groundY(tOf(FOG_Z));
+    const fg = ctx.createLinearGradient(0, hY, 0, yF);
+    fg.addColorStop(0, rgbaOf(pal.sky[2], 0.62));
+    fg.addColorStop(0.45, rgbaOf(pal.sky[2], 0.22));
+    fg.addColorStop(1, rgbaOf(pal.sky[2], 0));
+    ctx.fillStyle = fg;
+    ctx.fillRect(-W, hY - 1, W * 3, yF - hY + 1);
+  };
+
   for (const d of drawables) {
+    if (!fogged && d.z < FOG_Z) drawFog();
     const t = tOf(d.z);
     const alpha = Math.min(1, t * 6);
     const e = d.e;
@@ -1342,6 +1490,8 @@ function render(now) {
       blitFoot(SPR[e.kind], x, y + 23 * sc, sc, alpha);
     }
   }
+
+  if (!fogged) drawFog();
 
   // Glühwürmchen schweben durch die Szene
   for (const f of flies) {
@@ -2070,7 +2220,10 @@ function autoPilot() {
 // ==================== Hauptschleife ====================
 let lastT = performance.now();
 function loop(now) {
-  const dt = Math.min(0.05, (now - lastT) / 1000);
+  // Nie negativ: der erste rAF-Zeitstempel kann VOR dem Startzeitpunkt liegen —
+  // dann lief die Strecke ins Minus, palette() fand ZONES[-1] und warf ab da
+  // in jedem Frame (schwarze Bühne).
+  const dt = Math.max(0, Math.min(0.05, (now - lastT) / 1000));
   lastT = now;
   if (AUTO) autoPilot();
   update(dt);
