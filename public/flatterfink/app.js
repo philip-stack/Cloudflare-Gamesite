@@ -76,16 +76,25 @@ let recordBeaten = false;          // Rekord im laufenden Flug schon überholt?
 let best = Number(localStorage.getItem("ff_best") || 0);
 
 // ---------- Skins (über Meilensteine freispielbar) ----------
-// Färbt Körper, Bauch und Flügel des Finken.
+// Vier heimische Singvögel, jeweils mit dem echten Gefieder-Muster (pattern):
+//   goldfinch – roter Gesichtsfleck, weiße Wange, schwarze Kappe, gelbe Flügelbinde
+//   tit       – blaue Kappe, weiße Wange, dunkler Augenstreif + Kragen, gelbe Brust
+//   robin     – orange Kehle & Brust mit grauem Saum, braune Oberseite
+//   bullfinch – schwarze Kappe & Kinn, rosenrote Wange/Brust, graue Oberseite
+// body/belly/wing färben auch die Federn beim Zerplatzen (splat).
 GS.skins.define("flatterfink", [
-  { id: "stieglitz", name: "Stieglitz", req: 0, swatch: ["#ffd23f", "#ff7a4d", "#3a3a44"],
-    colors: { body: "#ffd23f", belly: "#fff3c4", wing: "#3a3a44", beak: "#ff9f45", face: "#ff5b4d" } },
-  { id: "blaumeise", name: "Blaumeise", req: 3, swatch: ["#5bb8ff", "#fff3c4", "#2a5fb0"],
-    colors: { body: "#5bb8ff", belly: "#fff8e0", wing: "#2a5fb0", beak: "#3a3a44", face: "#1a3a6a" } },
-  { id: "rotkehlchen", name: "Rotkehlchen", req: 5, swatch: ["#ff8a4d", "#c68a5a", "#7a4a2a"],
-    colors: { body: "#c68a5a", belly: "#ffd0a0", wing: "#7a4a2a", beak: "#3a3a44", face: "#ff6a3a" } },
-  { id: "gimpel", name: "Gimpel", req: 7, swatch: ["#ff5b6a", "#5a5a66", "#2a2a30"],
-    colors: { body: "#5a5a66", belly: "#ff5b6a", wing: "#2a2a30", beak: "#3a3a44", face: "#3a3a44" } },
+  { id: "stieglitz", name: "Stieglitz", req: 0, swatch: ["#e5392e", "#ffd21f", "#23232b"],
+    colors: { pattern: "goldfinch", body: "#d6ad78", belly: "#fbf1de", wing: "#23232b", bar: "#ffd21f", barW: 3.6, tip: "#ffffff",
+      tail: "#23232b", cap: "#1c1c22", cheek: "#ffffff", face: "#e5392e", beak: "#f1d2bd" } },
+  { id: "blaumeise", name: "Blaumeise", req: 3, swatch: ["#3d86e2", "#ffdc3d", "#ffffff"],
+    colors: { pattern: "tit", body: "#a3c46a", belly: "#ffdc3d", wing: "#3b7bd4", bar: "#ffffff", tip: "#dbe8ff",
+      tail: "#3b7bd4", cap: "#3d86e2", cheek: "#ffffff", face: "#1d3a74", beak: "#2a2a30" } },
+  { id: "rotkehlchen", name: "Rotkehlchen", req: 5, swatch: ["#f07033", "#8a6b4c", "#9aa4ae"],
+    colors: { pattern: "robin", body: "#8a6b4c", belly: "#f3ebe0", wing: "#6b4f36", bar: "#7d6043", tip: "#a88a68",
+      tail: "#6b4f36", cap: "#8a6b4c", cheek: "#9aa4ae", face: "#f07033", beak: "#2a2a30" } },
+  { id: "gimpel", name: "Gimpel", req: 7, swatch: ["#f25a63", "#7c8390", "#17171c"],
+    colors: { pattern: "bullfinch", body: "#7c8390", belly: "#f25a63", wing: "#1f1f26", bar: "#d9dde3", tip: "#3a3a44",
+      tail: "#1f1f26", cap: "#17171c", cheek: "#f25a63", face: "#17171c", beak: "#17171c" } },
 ]);
 let SKIN = GS.skins.get("flatterfink");
 
@@ -666,49 +675,235 @@ function drawHedge(x, y, w, h, top, phase) {
   ctx.restore();
 }
 
-function drawBird(now) {
-  const c = SKIN;
-  ctx.save();
-  ctx.translate(birdX, birdY);
-  ctx.rotate(mode === "dead" ? deadSpin : tilt);
+// ---------- Der Fink ----------
+// Seitenansicht, Blick nach rechts, gezeichnet im 15er-Raster (= BIRD_R) und
+// leicht vergrößert. Kopf + Rumpf sind zwei Formen, deren Vereinigung als Clip
+// dient: Bauch, Kappe und Gesichtsmaske bleiben so sauber in der Silhouette.
+// Umriss-Trick: erst die Kontur dick STREICHEN, dann FÜLLEN — die Füllung deckt
+// die innere Hälfte (auch die Naht zwischen Kopf und Rumpf), außen bleibt ein
+// feiner Rand, der den Vogel vor jedem Himmel lesbar hält.
+// Etwas größer als der Trefferkreis (BIRD_R): Streifen wirkt fair statt tödlich.
+const BIRD_SCALE = 1.14;
+const ease = t => t * t * (3 - 2 * t);
+const OUTLINE = "rgba(24,18,12,0.5)";
 
-  // Schatten/Glow
-  ctx.fillStyle = "rgba(255,210,63,0.18)";
-  ctx.beginPath(); ctx.arc(0, 0, BIRD_R + 7, 0, Math.PI * 2); ctx.fill();
+const shadeCache = new Map();
+function shade(hex, k) {   // k < 0 dunkler, k > 0 heller
+  const key = hex + k;
+  let v = shadeCache.get(key);
+  if (!v) {
+    const n = parseInt(hex.slice(1), 16);
+    const f = x => Math.round(k < 0 ? x * (1 + k) : x + (255 - x) * k);
+    v = `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`;
+    shadeCache.set(key, v);
+  }
+  return v;
+}
 
-  // Körper
-  ctx.fillStyle = c.body;
-  ctx.beginPath(); ctx.ellipse(0, 0, BIRD_R + 2, BIRD_R, 0, 0, Math.PI * 2); ctx.fill();
-  // Bauch
-  ctx.fillStyle = c.belly;
-  ctx.beginPath(); ctx.ellipse(-2, 4, BIRD_R * 0.7, BIRD_R * 0.66, 0, 0, Math.PI * 2); ctx.fill();
-  // Gesichtsfleck (Stieglitz-Rot)
-  ctx.fillStyle = c.face;
-  ctx.beginPath(); ctx.arc(BIRD_R * 0.55, -2, 4.5, 0, Math.PI * 2); ctx.fill();
+// Flügel-Winkel (positiv = gehoben). Ein Flatterer (wingT 1→0, ≈0,17 s): kräftiger
+// Abschlag, dann über oben zurück in die Gleitlage. Im Fallen gehen die Flügel
+// hoch (bremsen), tot hängen sie schlaff nach oben.
+function wingPose(now) {
+  if (mode === "dead") return 0.95;
+  const glide = 0.12 + Math.max(0, birdVY) / MAX_FALL * 0.6;
+  const ph = 1 - wingT;
+  let a;
+  if (wingT <= 0) a = glide;
+  else if (ph < 0.35) a = lerp(glide, -1.0, ease(ph / 0.35));
+  else if (ph < 0.7) a = lerp(-1.0, 1.05, ease((ph - 0.35) / 0.35));
+  else a = lerp(1.05, glide, ease((ph - 0.7) / 0.3));
+  if (mode === "run" && !paused) a += Math.sin(now / 95) * 0.07;   // leises Zittern im Gleiten
+  return a;
+}
 
-  // Flügel (flattert: wingT 1→0)
-  const flap = Math.sin(wingT * Math.PI) * 0.9 + (mode === "run" ? Math.sin(now / 90) * 0.12 : 0);
-  ctx.save();
-  ctx.rotate(-0.3 - flap);
-  ctx.fillStyle = c.wing;
+function bodyPath() {
   ctx.beginPath();
-  ctx.ellipse(-4, 2, BIRD_R * 0.9, BIRD_R * 0.5, 0, 0, Math.PI * 2);
+  ctx.ellipse(-2, 2, 14.5, 11.5, -0.08, 0, Math.PI * 2);
+  ctx.moveTo(17.5, -5);
+  ctx.arc(8, -5, 9.5, 0, Math.PI * 2);
+}
+
+// Feder-/Blattform entlang −x (Basis im Ursprung): spitz statt Ellipse.
+function leaf(len, w) {
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.quadraticCurveTo(-len * 0.45, -w, -len, 0);
+  ctx.quadraticCurveTo(-len * 0.55, w, 0, 0);
+}
+
+// Flügel: fünf spitze Handschwingen als Fächer (spreizt sich beim Schlag), darüber
+// die tropfenförmigen Deckfedern mit der Flügelbinde der Länge nach.
+function drawWing(c, a, far) {
+  const spread = 0.07 + Math.min(0.26, Math.abs(a - 0.12) * 0.2);
+  const dark = shade(c.wing, far ? -0.45 : -0.14);
+  const base = far ? shade(c.wing, -0.35) : c.wing;
+  ctx.save();
+  ctx.translate(far ? 3 : 1, far ? -6 : -3.5);   // Schulter oben am Rücken
+  ctx.rotate(a);
+  ctx.lineWidth = 0.9;
+  ctx.strokeStyle = OUTLINE;
+  // Handschwingen: die oberste (i=0) am längsten, nach unten kürzer
+  for (let i = 4; i >= 0; i--) {
+    const L = 19 - i * 1.6;
+    ctx.save();
+    ctx.translate(-4 + i * 0.6, 0.6 + i * 0.5);
+    ctx.rotate((i - 1.2) * -spread);
+    leaf(L, 2.9);
+    ctx.fillStyle = i % 2 ? base : dark;
+    ctx.stroke(); ctx.fill();
+    if (!far) {   // heller Federsaum an der Spitze
+      ctx.translate(-L + 4.2, 0);
+      leaf(4.2, 1.5);
+      ctx.fillStyle = c.tip;
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+  // Deckfedern: Tropfen von der Schulter nach hinten
+  ctx.beginPath();
+  ctx.moveTo(3.5, -3.8);
+  ctx.bezierCurveTo(-2, -6.4, -9.5, -4.6, -13, 0.4);
+  ctx.bezierCurveTo(-9.5, 4.2, -2, 5.2, 3.2, 3.3);
+  ctx.quadraticCurveTo(5.6, -0.2, 3.5, -3.8);
+  ctx.closePath();
+  ctx.fillStyle = far ? base : shade(c.wing, 0.12);
+  ctx.stroke(); ctx.fill();
+  // Flügelbinde entlang des Flügels
+  ctx.save();
+  ctx.translate(-0.5, 1);
+  ctx.rotate(-0.04);
+  leaf(12.5, c.barW || 2.3);   // beim Stieglitz breit: das Gelb ist sein Markenzeichen
+  ctx.fillStyle = far ? shade(c.bar, -0.35) : c.bar;
   ctx.fill();
   ctx.restore();
+  ctx.restore();
+}
 
-  // Schnabel
+function drawMarkings(c) {
+  const head = () => { ctx.beginPath(); ctx.arc(8, -5, 9.5, 0, Math.PI * 2); ctx.fill(); };
+  switch (c.pattern) {
+    case "goldfinch":
+      ctx.fillStyle = c.cheek; head();
+      ctx.fillStyle = c.cap;
+      ctx.beginPath(); ctx.ellipse(4, -12.5, 9.5, 6, -0.2, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(-0.5, -4, 3.6, 9, 0.15, 0, Math.PI * 2); ctx.fill();   // Nackenband
+      ctx.fillStyle = c.face;
+      ctx.beginPath(); ctx.ellipse(16, -5.5, 5.8, 6.5, 0, 0, Math.PI * 2); ctx.fill();
+      break;
+    case "tit":
+      ctx.fillStyle = c.cheek; head();
+      ctx.fillStyle = c.cap;
+      ctx.beginPath(); ctx.ellipse(6, -13, 9.5, 5.2, -0.15, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = c.face; ctx.lineCap = "round";
+      ctx.lineWidth = 2.4;
+      ctx.beginPath(); ctx.moveTo(17, -6.5); ctx.lineTo(-0.5, -5); ctx.stroke();           // Augenstreif
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(8, -5, 9.2, Math.PI * 0.22, Math.PI * 0.95); ctx.stroke();  // Kragen
+      break;
+    case "robin":
+      ctx.fillStyle = c.cheek;
+      ctx.beginPath(); ctx.ellipse(11, 0, 10.8, 12.3, 0, 0, Math.PI * 2); ctx.fill();      // grauer Saum
+      ctx.fillStyle = c.face;
+      ctx.beginPath(); ctx.ellipse(11.5, 0, 9.5, 11, 0, 0, Math.PI * 2); ctx.fill();
+      break;
+    case "bullfinch":
+      ctx.fillStyle = c.cheek; head();
+      ctx.fillStyle = c.cap;
+      ctx.beginPath(); ctx.ellipse(5, -12, 10.5, 6.5, -0.15, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = c.face;
+      ctx.beginPath(); ctx.ellipse(16.5, -4, 3.8, 4.6, 0, 0, Math.PI * 2); ctx.fill();     // Kinn
+      break;
+  }
+}
+
+function drawBird(now) {
+  const c = SKIN;
+  const dead = mode === "dead";
+  const wa = wingPose(now);
+  ctx.save();
+  ctx.translate(birdX, birdY);
+  ctx.rotate(dead ? deadSpin : tilt);
+  ctx.scale(BIRD_SCALE, BIRD_SCALE);
+  ctx.lineJoin = "round";
+
+  // weicher Lichthof — hält den Vogel auch vor Abendhimmel und Hecke lesbar
+  const halo = ctx.createRadialGradient(2, 0, 4, 2, 0, 28);
+  halo.addColorStop(0, "rgba(255,250,230,0.22)");
+  halo.addColorStop(1, "rgba(255,250,230,0)");
+  ctx.fillStyle = halo;
+  ctx.fillRect(-30, -30, 60, 60);
+
+  // hinterer Flügel (nur sichtbar, wenn er über den Rücken schlägt)
+  drawWing(c, wa * 0.9 + 0.12, true);
+
+  // Gabelschwanz — wippt beim Flattern mit
+  ctx.save();
+  ctx.translate(-12, 1);
+  ctx.rotate(0.14 * wingT - 0.04 + (dead ? 0.3 : 0));
+  ctx.beginPath();
+  ctx.moveTo(2, -4); ctx.lineTo(-13, -6.5); ctx.lineTo(-10.5, -1); ctx.lineTo(-13.5, 3.5); ctx.lineTo(2, 4);
+  ctx.closePath();
+  ctx.lineWidth = 2.2; ctx.strokeStyle = OUTLINE; ctx.stroke();
+  ctx.fillStyle = c.tail; ctx.fill();
+  ctx.fillStyle = c.tip;
+  ctx.beginPath(); ctx.ellipse(-10.2, -4.9, 2, 1.1, 0.15, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(-10.8, 2.3, 2, 1.1, -0.15, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+
+  // Rumpf + Kopf
+  bodyPath();
+  ctx.lineWidth = 2.6; ctx.strokeStyle = OUTLINE; ctx.stroke();
+  ctx.fillStyle = c.body; ctx.fill();
+
+  ctx.save();
+  bodyPath(); ctx.clip();
+  ctx.fillStyle = c.belly;
+  ctx.beginPath(); ctx.ellipse(3, 8, 12.5, 7.8, -0.1, 0, Math.PI * 2); ctx.fill();
+  drawMarkings(c);
+  // Licht von oben vorne, Schatten unten hinten → Volumen für jedes Federkleid
+  const sh = ctx.createRadialGradient(6, -11, 1, 2, -2, 26);
+  sh.addColorStop(0, "rgba(255,255,255,0.38)");
+  sh.addColorStop(0.35, "rgba(255,255,255,0.06)");
+  sh.addColorStop(0.7, "rgba(0,0,0,0)");
+  sh.addColorStop(1, "rgba(0,0,0,0.3)");
+  ctx.fillStyle = sh;
+  ctx.fillRect(-18, -16, 38, 32);
+  ctx.restore();
+
+  // Schnabel (kegelförmig, zweiteilig — geht beim Flattern kurz auf)
+  const open = dead ? 1.4 : wingT * 1.6;
+  ctx.lineWidth = 0.9; ctx.strokeStyle = OUTLINE;
+  ctx.fillStyle = shade(c.beak, -0.18);
+  ctx.beginPath();
+  ctx.moveTo(16, -4.4); ctx.lineTo(20.6, -4 + open); ctx.quadraticCurveTo(18.5, -1.6 + open * 0.5, 15.6, -1.8);
+  ctx.closePath(); ctx.stroke(); ctx.fill();
   ctx.fillStyle = c.beak;
   ctx.beginPath();
-  ctx.moveTo(BIRD_R + 1, -2);
-  ctx.lineTo(BIRD_R + 6, 1);   // kürzer: der Trefferkreis ist nur r=BIRD_R
-  ctx.lineTo(BIRD_R + 1, 4);
-  ctx.closePath();
-  ctx.fill();
-  // Auge
-  ctx.fillStyle = "#1a1a1f";
-  ctx.beginPath(); ctx.arc(BIRD_R * 0.5, -3, 2.4, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = "#fff";
-  ctx.beginPath(); ctx.arc(BIRD_R * 0.5 + 0.8, -3.8, 0.8, 0, Math.PI * 2); ctx.fill();
+  ctx.moveTo(15.8, -8.3); ctx.quadraticCurveTo(19.8, -7.2, 21.5, -4.5); ctx.lineTo(16, -4.2);
+  ctx.closePath(); ctx.stroke(); ctx.fill();
+
+  // Auge: Glanzpunkt, gelegentliches Blinzeln, tot ein ×
+  const ex = 11.2, ey = -7;
+  if (dead) {
+    ctx.strokeStyle = "#141418"; ctx.lineWidth = 1.5; ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(ex - 2, ey - 2); ctx.lineTo(ex + 2, ey + 2);
+    ctx.moveTo(ex + 2, ey - 2); ctx.lineTo(ex - 2, ey + 2);
+    ctx.stroke();
+  } else if (mode === "run" && now % 4200 < 130) {
+    ctx.strokeStyle = "#141418"; ctx.lineWidth = 1.4; ctx.lineCap = "round";
+    ctx.beginPath(); ctx.arc(ex, ey - 0.6, 2.3, 0.15 * Math.PI, 0.85 * Math.PI); ctx.stroke();
+  } else {
+    ctx.fillStyle = "rgba(255,255,255,0.55)";
+    ctx.beginPath(); ctx.arc(ex, ey, 3.3, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#141418";
+    ctx.beginPath(); ctx.arc(ex, ey, 2.6, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#fff";
+    ctx.beginPath(); ctx.arc(ex + 0.9, ey - 0.9, 0.95, 0, Math.PI * 2); ctx.fill();
+  }
+
+  // vorderer Flügel
+  drawWing(c, wa, false);
 
   ctx.restore();
 }
