@@ -415,6 +415,14 @@ assert("FUELS-Labels vorhanden", FUELS.DIE && FUELS.SUP && FUELS.GAS);
     const r = await ecByAddress({ DB: db() }, 48.2, 16.37, "DIE");
     assert("00:00–24:00 = durchgehend geöffnet, nicht offen bis 24:00", r[0].openText === "durchgehend geöffnet");
   }
+  {
+    // Cache-Treffer mit altem Öffnungstext → wird für jetzt neu gerechnet
+    const env = { DB: db() };
+    const alt = [{ id: 9, price: 1.5, lat: 48.2, lng: 16.37, open: true, openText: "offen bis 24:00", oh: { f: "00:00", t: "24:00" } }];
+    env.DB.prepare = (orig => sql => { const st = orig(sql); if (/SELECT data FROM sprit_cache/.test(sql)) st.bind = () => ({ first: async () => ({ data: JSON.stringify(alt) }) }); return st; })(env.DB.prepare);
+    const r = await ecByAddress(env, 48.2, 16.37, "DIE");
+    assert("Cache-Treffer: Öffnungstext frisch gerechnet", r[0].openText === "durchgehend geöffnet");
+  }
   globalThis.fetch = realFetch;
 
   // ---- attachTrend ----

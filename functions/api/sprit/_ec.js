@@ -101,7 +101,15 @@ export async function ecByAddress(env, lat, lng, fuel) {
       const hit = await env.DB.prepare(
         "SELECT data FROM sprit_cache WHERE k = ? AND at > datetime('now','-10 minutes')"
       ).bind(key).first();
-      if (hit && hit.data) { try { return JSON.parse(hit.data); } catch (_) {} }
+      if (hit && hit.data) {
+        try {
+          // Öffnungszeit für JETZT rechnen — der Stand kann 10 min alt sein, und
+          // um 22:00 soll nicht noch „offen bis 22:00" stehen.
+          const list = JSON.parse(hit.data), tn = viennaNow();
+          for (const st of list) if (st.oh !== undefined) Object.assign(st, openInfo(st.oh, st.open, tn));
+          return list;
+        } catch (_) {}
+      }
     }
   } catch (_) {}
 
