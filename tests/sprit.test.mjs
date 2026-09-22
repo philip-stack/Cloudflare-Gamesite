@@ -408,6 +408,13 @@ assert("FUELS-Labels vorhanden", FUELS.DIE && FUELS.SUP && FUELS.GAS);
     assert("Erfolg: Log behält den Tages-Tiefstwert", /MIN\(price, excluded\.price\)/.test(logs[0].sql));
     assert("Erfolg: Öffnungszeiten für später mitgespeichert", "oh" in r[0]);
   }
+  // E-Control meldet „rund um die Uhr" auch als 00:00–24:00
+  globalThis.fetch = async () => new Response(JSON.stringify([Object.assign(station(3, 1.5, 48.2, 16.37),
+    { openingHours: ["MO", "DI", "MI", "DO", "FR", "SA", "SO"].map(day => ({ day, from: "00:00", to: "24:00" })) })]), { status: 200 });
+  {
+    const r = await ecByAddress({ DB: db() }, 48.2, 16.37, "DIE");
+    assert("00:00–24:00 = durchgehend geöffnet, nicht offen bis 24:00", r[0].openText === "durchgehend geöffnet");
+  }
   globalThis.fetch = realFetch;
 
   // ---- attachTrend ----

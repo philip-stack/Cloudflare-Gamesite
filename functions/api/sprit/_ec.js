@@ -31,8 +31,10 @@ const toMin = t => { const m = /^(\d{2}):(\d{2})/.exec(String(t || "")); return 
 function openInfo(oh, fallbackOpen, tn) {
   let till = null, openNow = fallbackOpen, is24 = false;
   if (oh) {
-    if (oh.f === oh.t) {
-      is24 = true;   // 00:00–00:00 = durchgehend geöffnet (24 h)
+    // 00:00–00:00 und 00:00–24:00 (beides kommt von E-Control) = rund um die Uhr;
+    // vorher stand bei Letzterem „offen bis 24:00".
+    if (oh.f === oh.t || (toMin(oh.f) === 0 && toMin(oh.t) === 24 * 60)) {
+      is24 = true;
     } else {
       const f = toMin(oh.f), t = toMin(oh.t);
       if (f != null && t != null) {
