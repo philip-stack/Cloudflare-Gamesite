@@ -9,6 +9,9 @@ const mod = await import(modUrl);
 let ok = true;
 const assert = (name, cond) => { if (cond) console.log("OK  ", name); else { console.log("FAIL", name); ok = false; } };
 
+// Endpoints mit Feuerwehr-/Sprit-Alarm (eigene Tabellen, kein push_sub-Eintrag)
+const ALERT_EPS = new Set(["https://push.example.com/fire1"]);
+
 function mockDB() {
   const subs = [];    // {endpoint,name,p256dh,auth,device}
   const queue = [];   // {id,endpoint,title,body,url}
@@ -41,6 +44,7 @@ function mockDB() {
           if (/COUNT\(\*\) AS n FROM rate/.test(this.sql)) return { n: 0 };
           if (/SELECT 1 FROM push_sub WHERE endpoint/.test(this.sql)) return subs.some(s => s.endpoint === this.args[0]) ? { 1: 1 } : null;
           if (/SELECT auth FROM push_sub WHERE endpoint/.test(this.sql)) { const s = subs.find(x => x.endpoint === this.args[0]); return s ? { auth: s.auth } : null; }
+          if (/FROM fire_alert WHERE endpoint/.test(this.sql)) return ALERT_EPS.has(this.args[0]) ? { 1: 1 } : null;
           return null;
         },
         async all() {
@@ -85,6 +89,16 @@ assert("pending 403 leert die Warteschlange NICHT", db._queue.filter(q => q.endp
 r = await post({ action: "pending", endpoint: EP, auth: "AU" });
 assert("pending liefert Nachricht", r.status === 200 && r.data.messages.length === 1 && r.data.messages[0].title === "Hallo");
 assert("pending leert die Warteschlange", db._queue.filter(q => q.endpoint === EP).length === 0);
+
+// Feuerwehr-/Sprit-Abos stehen nicht in push_sub — ihre Nachrichten kamen früher
+// nie an (der SW zeigte nur den Platzhalter „Neuer Einsatz.").
+const FEP = "https://push.example.com/fire1";
+db._queue.push({ id: 1001, endpoint: FEP, title: "🚒 Brand", body: "Korneuburg", url: "/fire/noe/?n=1" });
+r = await post({ action: "pending", endpoint: FEP });
+assert("pending liefert Feuerwehr-Alarm ohne push_sub", r.status === 200 && r.data.messages.length === 1 && r.data.messages[0].title === "🚒 Brand");
+db._queue.push({ id: 1002, endpoint: "https://push.example.com/unbekannt", title: "x", body: "", url: "/" });
+r = await post({ action: "pending", endpoint: "https://push.example.com/unbekannt" });
+assert("pending für unbekannten Endpoint bleibt leer", r.status === 200 && r.data.messages.length === 0);
 
 // sendToName ohne VAPID-Key ist ein sicheres No-op (kein Wurf, kein Netz)
 await mod.sendToName(env, "Alice", { title: "x", body: "y", url: "/" });

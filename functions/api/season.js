@@ -32,7 +32,10 @@ async function weekTop(env, gameKey, which) {
   // Gleiche Bucket-Definition wie die Bestenliste (scores) — aus _util.
   const cond = which === "prev" ? weekMatch("created_at", ",'-7 days'") : weekMatch();
   const rows = (await env.DB.prepare(
-    `SELECT name, MAX(score) AS score FROM scores WHERE game = ? AND ${cond} GROUP BY LOWER(name) ORDER BY score DESC LIMIT 20`
+    // Der Bereichsfilter ist inhaltlich redundant (beide Wochen liegen in den
+    // letzten 15 Tagen), erlaubt aber idx_scores_game_created statt eines
+    // Scans über die gesamte Allzeit-Historie des Spiels.
+    `SELECT name, MAX(score) AS score FROM scores WHERE game = ? AND created_at >= datetime('now','-15 days') AND ${cond} GROUP BY LOWER(name) ORDER BY score DESC LIMIT 20`
   ).bind(gameKey).all()).results;
   return rows;
 }

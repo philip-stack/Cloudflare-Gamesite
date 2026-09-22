@@ -1,4 +1,5 @@
 import { json, clientIp, rateLimit, one } from "./_util.js";
+import { bumpStat, statToday } from "./stat.js";
 
 // ====================================================================
 // Cloud-Backup der Spielstände (plattformweit).
@@ -25,6 +26,7 @@ import { json, clientIp, rateLimit, one } from "./_util.js";
 // ====================================================================
 
 const MAX_BYTES = 300_000;                 // ~300 KB pro Backup
+const CLOUD_NEW_DAY_MAX = 200;             // neue Codes pro Tag, plattformweit
 const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";   // ohne 0/O/1/I/L
 const CODE_RE = /^[A-Z0-9]{8}$/;           // genau 8 (= wie newCode erzeugt)
 const WRITER_RE = /^[a-z0-9]{6,40}$/;
@@ -71,6 +73,12 @@ export async function onRequestPost({ request, env }) {
     if (!(await rateLimit(env, "cloudnew:" + clientIp(request), 6, 60))) {
       return json({ error: "Zu viele neue Backup-Codes — kurz warten" }, 429);
     }
+    // Plattformweiter Tagesdeckel: je Code bis 300 KB — ohne Deckel ließe sich die
+    // Datenbank (500 MB, von allem geteilt) über wechselnde Adressen in Stunden füllen.
+    if ((await statToday(env, "cloud:neu")) >= CLOUD_NEW_DAY_MAX) {
+      return json({ error: "Heute wurden schon sehr viele Backups angelegt — bitte morgen nochmal" }, 429);
+    }
+    await bumpStat(env, "cloud:neu");
     code = newCode();
   }
 

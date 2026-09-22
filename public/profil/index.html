@@ -12,7 +12,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <script src="/theme.js?v=47979f2b"></script>
+  <script src="/theme.js?v=89f9deb7"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
@@ -25,8 +25,8 @@
     }
     :root[data-theme="light"] {
       --bg0:#f4f1e6; --felt:#ece9db; --card:rgba(255,255,252,0.72); --card-hi:rgba(255,255,252,0.95);
-      --edge:rgba(138,106,28,0.3); --edge-soft:rgba(35,45,35,0.14); --ink:#26301f; --muted:#64705f;
-      --gold:#a5851f; --gold-glow:rgba(165,133,31,0.3);
+      --edge:rgba(138,106,28,0.3); --edge-soft:rgba(35,45,35,0.14); --ink:#26301f; --muted:#56614f;
+      --gold:#7d6414; --gold-glow:rgba(165,133,31,0.3);
       --foil:linear-gradient(115deg,#6d5416 0%,#a5851f 30%,#c9a13b 50%,#a5851f 70%,#6d5416 100%);
     }
     body {
@@ -221,8 +221,8 @@
       <div class="stat"><b id="s-badges">0</b><span>Abzeichen</span></div>
       <div class="stat"><b id="s-games">0</b><span>Spiele gespielt</span></div>
       <div class="stat"><b id="s-records">0</b><span>Rekorde</span></div>
-      <div class="stat"><b id="s-streak">0</b><span>🔥 Tage-Streak</span></div>
-      <div class="stat"><b id="s-beststreak">0</b><span>Bester Streak</span></div>
+      <div class="stat"><b id="s-streak">0</b><span>🔥 Tage in Folge</span></div>
+      <div class="stat"><b id="s-beststreak">0</b><span>Längste Serie</span></div>
       <div class="stat"><b id="s-ach">0</b><span>Erfolge</span></div>
       <div class="stat"><b id="s-worldrank">–</b><span>🌍 Bester Weltrang</span></div>
     </div>
@@ -294,7 +294,7 @@
     </footer>
   </main>
 
-  <script src="/shared.js?v=c53599e3"></script>
+  <script src="/shared.js?v=89544a77"></script>
   <script src="/games.js?v=7edf6458"></script>
   <script src="/qr.js?v=af9706e4"></script>
   <script>
@@ -393,8 +393,8 @@
       { icon: "🧭", name: "Entdecker:in", desc: "Alle Spiele", ok: allPlayed },
       { icon: "⭐", name: "Aufsteiger:in", desc: "Level 5", ok: level >= 5 },
       { icon: "🌟", name: "Hochkaräter", desc: "Level 10", ok: level >= 10 },
-      { icon: "🔥", name: "Dranbleiber", desc: "3-Tage-Streak", ok: bestStreak >= 3 },
-      { icon: "⚡", name: "Wochen-Streak", desc: "7-Tage-Streak", ok: bestStreak >= 7 },
+      { icon: "🔥", name: "Dranbleiber", desc: "3 Tage in Folge gespielt", ok: bestStreak >= 3 },
+      { icon: "⚡", name: "Wochen-Serie", desc: "7 Tage in Folge gespielt", ok: bestStreak >= 7 },
       { icon: "☁️", name: "Abgesichert", desc: "Cloud-Backup", ok: !!localStorage.getItem("gs_sync_code") },
       { icon: "🤼", name: "Gesellig", desc: "1 Freund:in", ok: friendCount >= 1 },
       { icon: "🎉", name: "Spieleabend", desc: "An Raum teilgenommen", ok: partyCount >= 1 },
@@ -637,23 +637,11 @@
 
     // Schreiber-Kennung (gerätelokal, NIE ins Backup) — für die robuste
     // "von anderem Gerät?"-Erkennung beim Auto-Sync
-    const cloudWriter = () => {
-      let w = localStorage.getItem("gs_cloud_writer");
-      if (!w) {
-        const a = new Uint8Array(12); crypto.getRandomValues(a);
-        w = [...a].map(b => "abcdefghijklmnopqrstuvwxyz0123456789"[b % 36]).join("");
-        try { localStorage.setItem("gs_cloud_writer", w); } catch {}
-      }
-      return w;
-    };
-    // Schnappschuss OHNE Sync-/Identitäts-Bookkeeping (sonst wandert die
-    // Schreiber-Kennung mit und die Geräte-Erkennung bricht)
-    const skip = k => /^(gs_sync|gs_cloud)/.test(k) || k === "__gs_test__" || k === "__meeri_test__";
-    const snapshot = () => {
-      const o = {};
-      for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (!skip(k)) o[k] = localStorage.getItem(k); }
-      return o;
-    };
+    // Dieselbe Logik wie der Auto-Sync in shared.js (vorher hier kopiert — und
+    // die Kopie hätte den Admin-Schlüssel & Heimatorte weiter mitgesichert).
+    const cloudWriter = () => GS.cloud.writerId();
+    const skip = k => GS.cloud._skip(k);
+    const snapshot = () => GS.cloud.snapshot();
 
     async function doCloudSave(force) {
       setStatus("Sichere …");

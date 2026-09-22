@@ -1,4 +1,4 @@
-import { json, clientIp, rateLimit, DEVICE_RE } from "./_util.js";
+import { json, clientIp, rateLimit, DEVICE_RE, nameOwner } from "./_util.js";
 
 // ====================================================================
 // Web-Push (VAPID). Bewusst OHNE verschlüsselte Payload: wir senden einen
@@ -60,10 +60,22 @@ async function dropSub(env, endpoint) {
 
 // Nachricht an alle Abos eines Namens: erst in die Queue, dann Tickle.
 // Vollständig fehlertolerant — darf nie den aufrufenden Pfad stören.
-export async function sendToName(env, name, msg) {
+// ownerOnly: nur an Abos des Geräts, dem der Name gehört (nameOwner). Pflicht für
+// Privates (Briefing, Betreiber-Alarm) — ein Abo mit fremdem Namen kann jeder
+// anlegen. Das Geräte-Kennzeichen wandert mit dem Cloud-Backup, eigene
+// Zweitgeräte mit wiederhergestelltem Stand bekommen es also weiter.
+// → Anzahl der Abos, an die zugestellt wurde.
+export async function sendToName(env, name, msg, { ownerOnly = false } = {}) {
   try {
-    if (!name || !env.VAPID_PRIVATE_JWK) return;
-    const subs = (await env.DB.prepare("SELECT endpoint FROM push_sub WHERE LOWER(name) = LOWER(?)").bind(name).all()).results;
+    if (!name || !env.VAPID_PRIVATE_JWK) return 0;
+    let subs;
+    if (ownerOnly) {
+      const dev = await nameOwner(env, name);
+      if (!dev) return 0;
+      subs = (await env.DB.prepare("SELECT endpoint FROM push_sub WHERE LOWER(name) = LOWER(?) AND device = ?").bind(name, dev).all()).results;
+    } else {
+      subs = (await env.DB.prepare("SELECT endpoint FROM push_sub WHERE LOWER(name) = LOWER(?)").bind(name).all()).results;
+    }
     // Parallel zustellen (mit Timeout je Tickle) — ein langsames Abo bremst die
     // übrigen nicht mehr.
     await Promise.allSettled(subs.map(async s => {
@@ -74,7 +86,8 @@ export async function sendToName(env, name, msg) {
         if (res.status === 404 || res.status === 410) await dropSub(env, s.endpoint);
       } catch { /* einzelnes Abo darf den Rest nicht stoppen */ }
     }));
-  } catch { /* nie werfen */ }
+    return subs.length;
+  } catch { /* nie werfen */ return 0; }
 }
 
 // Einzelne Nachricht an EINEN Push-Endpoint: erst in die Queue (der SW holt
@@ -153,8 +166,17 @@ export async function onRequestPost({ request, env }) {
     // Ownership: das Abo-Geheimnis (auth) muss stimmen — sonst könnte ein Fremder,
     // der nur den Endpoint kennt, die Queue eines anderen leeren.
     const owner = await env.DB.prepare("SELECT auth FROM push_sub WHERE endpoint = ?").bind(endpoint).first();
-    if (!owner) return json({ messages: [] });
-    if (owner.auth && owner.auth !== String(b.auth || "")) return json({ error: "Nicht berechtigt" }, 403);
+    if (owner) {
+      if (owner.auth && owner.auth !== String(b.auth || "")) return json({ error: "Nicht berechtigt" }, 403);
+    } else {
+      // Feuerwehr- und Sprit-Alarme haben eigene Abo-Tabellen (ohne push_sub-Eintrag
+      // und ohne auth). Vorher bekamen sie hier immer [] → der SW zeigte nur den
+      // Platzhalter („Neuer Einsatz."), die echte Nachricht verfiel in der Queue.
+      const alt = await env.DB.prepare(
+        "SELECT 1 FROM fire_alert WHERE endpoint = ? UNION ALL SELECT 1 FROM sprit_alert WHERE endpoint = ? LIMIT 1"
+      ).bind(endpoint, endpoint).first();
+      if (!alt) return json({ messages: [] });
+    }
     const msgs = (await env.DB.prepare("SELECT id, title, body, url FROM push_queue WHERE endpoint = ? ORDER BY id ASC LIMIT 10").bind(endpoint).all()).results;
     if (msgs.length) {
       const ids = msgs.map(m => m.id);

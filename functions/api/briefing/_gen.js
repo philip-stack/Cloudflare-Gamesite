@@ -228,12 +228,13 @@ export async function generate(env, { force = false, push = true } = {}) {
 
   let pushed = false;
   if (push && cfg.name) {
-    await sendToName(env, cfg.name, {
+    // ownerOnly: das Briefing enthält Heimat-Daten — nie an ein fremdes Abo,
+    // das sich bloß denselben Namen gegeben hat.
+    pushed = (await sendToName(env, cfg.name, {
       title: "Guten Morgen",
       body: text.slice(0, 300),
       url: "/briefing/",
-    });
-    pushed = true;
+    }, { ownerOnly: true })) > 0;
   }
   return { ok: true, day, via, pushed, text };
 }

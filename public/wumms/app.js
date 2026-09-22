@@ -740,7 +740,7 @@ function gameOver() {
   ov.querySelector("#go-menu").onclick = () => { ov.remove(); startMenu(); };
   ov.querySelector("#go-board").onclick = () => GS.showLeaderboard({ game: "wumms", title: "Bestenliste", sub: "Die 50 besten Helden weltweit", daily: DAILY });
   ov.querySelector("#go-share").onclick = async () => {
-    const r = await GS.shareCard({ title: "WUMMS!", emoji: "🦝", accent: "#b678ff", big: score, subtitle: "Block-Puzzle-Highscore", url: GS.duelLink("wumms", score), text: `Ich hab ${score} Punkte bei WUMMS! geschafft 🦝💥 — schlag mich!` });
+    const r = await GS.shareCard({ title: "WUMMS!", emoji: "🦝", accent: "#b678ff", big: score, subtitle: "Punkte im Block-Puzzle", url: GS.duelLink("wumms", score), text: `Ich hab ${score} Punkte bei WUMMS! geschafft 🦝💥 — schlag mich!` });
     if (r === "copied" || r === "downloaded") toast("Geteilt!");
   };
 }

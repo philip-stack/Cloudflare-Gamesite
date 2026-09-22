@@ -84,3 +84,27 @@ export function drawerGain({ remain, turnTotal = D_TURN }) {
 
 // Buchstaben eines Worts ohne Leerzeichen (für den Längen-Bonus).
 export function wordLetters(word) { return [...String(word || "")].filter(c => c !== " ").length; }
+
+// Zeichen-Puffer des laufenden Zugs (für den Reconnect-Snapshot). Früher nur die
+// Op-Anzahl gedeckelt — Fortsetzungs-Punkte wurden unbegrenzt an den letzten
+// Strich gehängt (ein:e Zeichner:in konnte den Raum-State beliebig aufblähen).
+// Jetzt zusätzlich ein Gesamt-Punktebudget je Zug: darüber hinaus wird still
+// NICHT mehr gepuffert (live weitergereicht wird trotzdem — nur der Snapshot
+// für Neuzugänge endet dort). ~20k Punkte ≈ 300 KB Snapshot; normales Malen
+// (Flush alle 55 ms) liegt in 90 s deutlich darunter.
+export const D_MAX_OPS = 1500, D_MAX_BUF_PTS = 20000;
+
+// Strich-Nachricht m in ops rollen — Merge-Logik identisch zum Client
+// (public/kritzeln/app.js: s-Flag → neuer Strich, sonst anhängen ohne den
+// überlappenden ersten Punkt). used = bisher gepufferte Punkte; gibt den neuen
+// Stand zurück. Mutiert ops.
+export function mergeStroke(ops, m, used, maxOps = D_MAX_OPS, maxPts = D_MAX_BUF_PTS) {
+  if (ops.length >= maxOps) return used;          // Puffer voll (auch keine Fortsetzung)
+  const room = maxPts - used; if (room <= 0) return used;
+  const pts = Array.isArray(m.pts) ? m.pts : [], last = ops[ops.length - 1];
+  if (m.s || !last || last.k !== "s") { const add = pts.slice(0, room); ops.push({ k: "s", pts: add, c: m.c, w: m.w, e: !!m.e }); return used + add.length; }
+  const add = pts.slice(1, 1 + room); last.pts.push(...add); return used + add.length;
+}
+
+// Punkte eines Ops (für die Budget-Buchhaltung bei undo).
+export function opPts(op) { return op && Array.isArray(op.pts) ? op.pts.length : 0; }

@@ -137,7 +137,13 @@ function mockEnv(cfg, opts = {}) {
               return { results: Object.entries(conf).map(([k, v]) => ({ k, v })) };
             }
             if (/FROM fire_op/.test(sql)) return { results: opts.ops || [] };
-            if (/FROM push_sub/.test(sql)) return { results: [{ endpoint: "https://push.example/abc" }] };
+            if (/FROM push_sub/.test(sql)) {
+              // Zwei Abos unter demselben Namen: das echte (Geräte-Eigentümer) und
+              // ein fremdes, das sich bloß den Namen gegeben hat.
+              const subs = [{ endpoint: "https://push.example/abc", device: "dev-owner-1" },
+                            { endpoint: "https://push.example/fremd", device: "dev-fremd-9" }];
+              return { results: /device = \?/.test(sql) ? subs.filter(x => x.device === this.args[1]) : subs };
+            }
             return { results: [] };
           },
           async first() {
@@ -147,11 +153,12 @@ function mockEnv(cfg, opts = {}) {
               return { n: list.length, offen: list.filter(x => !x.ended).length };
             }
             if (/FROM sprit_price_log/.test(sql)) return null;
+            if (/SELECT device FROM scores/.test(sql)) return opts.owner === null ? null : { device: opts.owner || "dev-owner-1" };
             return null;
           },
           async run() {
             if (/INSERT INTO briefing/.test(sql)) briefing[this.args[0]] = { text: this.args[1], via: this.args[3] };
-            if (/INSERT INTO push_queue/.test(sql)) pushes.push({ title: this.args[1], body: this.args[2] });
+            if (/INSERT INTO push_queue/.test(sql)) pushes.push({ endpoint: this.args[0], title: this.args[1], body: this.args[2] });
             return {};
           },
         };
@@ -193,6 +200,15 @@ globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({}) 
   assert("Text kommt von der KI", r.via === "ai" && /Guten Morgen/.test(briefing[heute].text));
   assert("Push wird verschickt, wenn ein Name steht", r.pushed === true && pushes.length === 1);
   assert("Push trägt den Text im Rumpf", /Guten Morgen/.test(pushes[0].body));
+  assert("Push geht nur an das Gerät, dem der Name gehört", pushes[0].endpoint === "https://push.example/abc");
+}
+{
+  // Name gehört (noch) niemandem → lieber gar nicht pushen als an Fremde.
+  const { env, pushes } = mockEnv(
+    { briefing_on: "1", briefing_hour: "0", briefing_bezirk: "09", briefing_name: "Flip" },
+    { ops: [], owner: null });
+  const r = await generate(env);
+  assert("Name ohne Eigentümer: kein Push", r.ok && r.pushed === false && pushes.length === 0);
 }
 {
   const { env, pushes } = mockEnv(

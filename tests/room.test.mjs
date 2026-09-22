@@ -115,5 +115,31 @@ function mockDB() {
   assert("recordScores: nur Whitelist-Tabellen (Fremdname → no-op)", db.inserts.length === 0);
 }
 
+// ---------- Leerlauf-Abschaltung ----------
+{
+  const { IDLE_LOBBY_MS, IDLE_PLAY_MS, IDLE_REFUSE_MS, IDLE_CLOSE_CODE } = await import(modUrl);
+  const closeWs = () => ({ sent: [], closed: null, send(s) { this.sent.push(s); }, close(c, r) { this.closed = [c, r]; } });
+  const r = makeRoom(); let emptied = 0; r.onEmpty = () => { emptied++; };
+  const a = closeWs(), b = closeWs(); r.conns.set(a, { id: 1 }); r.conns.set(b, { id: 2 });
+  const t0 = 1e12; r.markActive(t0); r.clearIdle();
+  assert("idle: Lobby knapp unter Limit → bleibt offen", r.checkIdle(t0 + IDLE_LOBBY_MS - 1) === false && r.conns.size === 2);
+  r.clearIdle();
+  r.state = "drawing";
+  assert("idle: im Spiel gilt das längere Limit", r.checkIdle(t0 + IDLE_LOBBY_MS + 1) === false);
+  r.clearIdle();
+  r.markActive(t0 + 10 * 60e3); r.clearIdle(); r.state = "over";
+  assert("idle: Aktivität schiebt die Abschaltung hinaus", r.checkIdle(t0 + IDLE_LOBBY_MS + 1) === false);
+  r.clearIdle();
+  const tShut = t0 + 10 * 60e3 + IDLE_LOBBY_MS;
+  assert("idle: Limit erreicht → Abschaltung", r.checkIdle(tShut) === true);
+  assert("idle: alle Sockets mit eigenem Code geschlossen", a.closed && a.closed[0] === IDLE_CLOSE_CODE && b.closed && b.closed[0] === IDLE_CLOSE_CODE);
+  assert("idle: Systemhinweis vorher gesendet", JSON.parse(a.sent[0]).t === "chat");
+  assert("idle: conns leer + onEmpty genau einmal", r.conns.size === 0 && emptied === 1);
+  assert("idle: Reconnect direkt danach abgewiesen", r.idleRefused(tShut + 1000) === true);
+  assert("idle: nach dem Fenster wieder erlaubt", r.idleRefused(tShut + IDLE_REFUSE_MS + 1) === false);
+  assert("idle: leerer Raum → keine Prüfung", r.checkIdle(tShut + IDLE_PLAY_MS * 2) === false && emptied === 1);
+  assert("idle: Refuse-Fenster länger als Client-Backoff (~20 s)", IDLE_REFUSE_MS >= 25e3);
+}
+
 console.log("\n" + (ok ? "ROOM-BASIS OK" : "ROOM-BASIS FEHLGESCHLAGEN"));
 process.exit(ok ? 0 : 1);

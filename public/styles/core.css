@@ -273,8 +273,10 @@ button:active { transform: scale(0.94); }
   --edge: rgba(138, 106, 28, 0.32);
   --edge-soft: rgba(35, 45, 35, 0.15);
   --ink: #26301f;
-  --muted: #64705f;
-  --gold: #a5851f;
+  /* Kontrast (WCAG AA ≥ 4,5:1 auf dem hellsten bis dunkelsten Hintergrund):
+     vorher #64705f (4,05:1) bzw. #a5851f (2,7:1 — als Textfarbe zu blass). */
+  --muted: #56614f;
+  --gold: #7d6414;
   --gold-glow: rgba(165, 133, 31, 0.28);
   --foil: linear-gradient(115deg, #6d5416 0%, #a5851f 30%, #c9a13b 50%, #a5851f 70%, #6d5416 100%);
 }

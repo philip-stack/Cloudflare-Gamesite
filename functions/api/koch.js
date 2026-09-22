@@ -1,4 +1,4 @@
-import { bumpStat } from "./stat.js";
+import { bumpStat, statToday } from "./stat.js";
 import { json, rateLimit, clientIp, logError } from "./_util.js";
 
 // ====================================================================
@@ -77,6 +77,9 @@ function searchLinks(ings) {
   ];
 }
 
+// Modell-Aufrufe pro Tag (ai:koch zählt jeden Versuch, auch den Fallback).
+const KOCH_DAY_MAX = 25;
+
 export async function onRequestPost({ request, env }) {
   if (!env.AI) return json({ error: "KI ist auf diesem Deployment nicht verfügbar" }, 503);
 
@@ -84,6 +87,14 @@ export async function onRequestPost({ request, env }) {
   // Aufruf. Höchstens 6 Anfragen/Minute pro Client-IP, sonst Kosten-DoS möglich.
   if (!(await rateLimit(env, `koch:${clientIp(request)}`, 6, 60))) {
     return json({ error: "Zu viele Anfragen — kurz warten" }, 429);
+  }
+
+  // Tagesdeckel über ALLE Besucher: das Gratis-Kontingent von Workers AI teilen
+  // sich Kochstudio, Briefing und die Sprit-Freitextsuche. Ein Rezept auf dem
+  // großen Modell kostet ein Vielfaches einer Suche — ohne Deckel konnte ein
+  // einzelner Besucher (6/min) den ganzen Tag für alle verbrauchen.
+  if ((await statToday(env, "ai:koch")) >= KOCH_DAY_MAX) {
+    return json({ error: "Die Küche hat für heute Feierabend — morgen kocht sie wieder" }, 429);
   }
 
   const b = await request.json().catch(() => ({}));

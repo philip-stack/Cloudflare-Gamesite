@@ -564,8 +564,14 @@ const sound = (() => {
   try { const _m = localStorage.getItem("bb_muted"); if (_m !== null) { if (_m === "1" && GS.sound.on()) GS.sound.toggle(); localStorage.removeItem("bb_muted"); } } catch {}
   function ensure() {
     if (!ctx) try { ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch {}
+    wake();
     return ctx;
   }
+  // iOS lässt den Kontext nach Anruf/App-Wechsel auf "suspended"/"interrupted"
+  // stehen → stumm bis zum Neuladen. Darum vor jedem Ton und bei jedem Tippen wecken.
+  function wake() { if (ctx && ctx.state !== "running") try { const p = ctx.resume(); if (p && p.catch) p.catch(() => {}); } catch {} }
+  const unlock = () => { if (GS.sound.on()) ensure(); };   // ensure() weckt mit
+  ["pointerdown", "touchend"].forEach(ev => window.addEventListener(ev, unlock, { capture: true, passive: true }));
   function tone(freq, dur, type = "sine", gain = 0.12, when = 0) {
     if (!GS.sound.on() || !ensure()) return;
     const t = ctx.currentTime + when;
@@ -738,7 +744,7 @@ async function gameOver() {
   overlay.className = "overlay";
   overlay.innerHTML = `
     <div class="panel">
-      <h2>${isRecord ? "Neuer Rekord!" : "Game Over"}</h2>
+      <h2>${isRecord ? "Neuer Rekord!" : "Kein Zug mehr!"}</h2>
       <div class="go-score">${score}</div>
       ${isRecord ? `<div class="go-best-badge">👑 Persönliche Bestleistung</div>` : `<div class="sub">Bestleistung: ${best}</div>`}
       <div class="go-stats">

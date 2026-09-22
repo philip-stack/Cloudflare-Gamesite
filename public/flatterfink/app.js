@@ -747,7 +747,12 @@ window.addEventListener("keydown", e => {
 // ---------- Sound ----------
 const sound = (() => {
   let ctxA = null;
-  function ensure() { if (!ctxA) try { ctxA = new (window.AudioContext || window.webkitAudioContext)(); } catch {} return ctxA; }
+  function ensure() { if (!ctxA) try { ctxA = new (window.AudioContext || window.webkitAudioContext)(); } catch {} wake(); return ctxA; }
+  // iOS lässt den Kontext nach Anruf/App-Wechsel auf "suspended"/"interrupted"
+  // stehen → stumm bis zum Neuladen. Darum vor jedem Ton und bei jedem Tippen wecken.
+  function wake() { if (ctxA && ctxA.state !== "running") try { const p = ctxA.resume(); if (p && p.catch) p.catch(() => {}); } catch {} }
+  const unlock = () => { if (GS.sound.on()) ensure(); };   // ensure() weckt mit
+  ["pointerdown", "touchend"].forEach(ev => window.addEventListener(ev, unlock, { capture: true, passive: true }));
   function tone(freq, dur, type = "sine", gain = 0.09, when = 0) {
     if (!GS.sound.on() || !ensure()) return;
     const t = ctxA.currentTime + when;

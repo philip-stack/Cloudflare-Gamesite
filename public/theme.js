@@ -8,7 +8,9 @@
 // ====================================================================
 (function () {
   const KEY = "gamesite_theme";
-  const get = () => localStorage.getItem(KEY) === "light" ? "light" : "dark";
+  // try/catch: bei gesperrtem Speicher (Cookies aus) warf das beim Laden — dann
+  // fehlten Theme, Service Worker UND die Fehlermeldung weiter unten.
+  const get = () => { try { return localStorage.getItem(KEY) === "light" ? "light" : "dark"; } catch (_) { return "dark"; } };
 
   function apply(t) {
     document.documentElement.dataset.theme = t;
@@ -55,7 +57,7 @@
     get,
     toggle() {
       const t = get() === "light" ? "dark" : "light";
-      localStorage.setItem(KEY, t);
+      try { localStorage.setItem(KEY, t); } catch (_) {}
       apply(t);
       refreshButtons();
       return t;

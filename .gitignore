@@ -1,2 +1,7 @@
 .wrangler/
 node_modules/
+# Lokale Secrets für wrangler pages dev — nie einchecken
+.dev.vars*
+.env*
+# Lokaler wrangler-Zustand
+devstate/

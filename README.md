@@ -499,10 +499,11 @@ wuerfelpoker/
 ├── wrangler.toml              Pages-Config + D1-Binding (DB) + AI-Binding (Kochstudio)
 ├── migrations/                D1-Schema als versionierte, idempotente Migrationen
 │   ├── 0001_init.sql          Baseline (Würfelpoker, scores, used_token, banned_device, cloud_saves, party*, push_*, error_log, rate, draw_score, fire_*)
-│   └── 0002…0014_*.sql        additive Änderungen: draw_score-Gerät, fire_alert-Arten/Geo,
+│   └── 0002…0016_*.sql        additive Änderungen: draw_score-Gerät, fire_alert-Arten/Geo,
 │                              sprit_alert/-price_log, quiz_score, live_room+admin_log (0009),
 │                              client_log getrennt (0010), stat_daily (0011), ops_log (0012),
-│                              briefing (0013), Aufräum-Indizes (0014).
+│                              briefing (0013), Aufräum-Indizes (0014), ask_log (0015),
+│                              rate(at) + scores(game, created_at) (0016).
 │                              Anwenden: wrangler d1 migrations apply wuerfelpoker --remote
 ├── reset-dev.sql              ⚠️ nur lokal: setzt Würfelpoker-Tabellen zurück (enthält DROPs)
 ├── schema.sql                 nur noch Hinweis-Datei (zeigt auf migrations/)
@@ -578,7 +579,9 @@ wuerfelpoker/
 │                              Ops, Cloudflare-Zahlen, Briefing, Kochstudio,
 │                              admin-ui (Panel-Skript in node:vm gegen DOM-Stub)
 ├── scripts/
-│   └── bump-assets.mjs        Cache-Busting: setzt ?v=<Inhaltshash> für lokale JS/CSS (npm run bump; CI prüft mit --check)
+│   ├── bump-assets.mjs        Cache-Busting: setzt ?v=<Inhaltshash> für lokale JS/CSS (npm run bump; CI prüft mit --check)
+│   ├── deploy.mjs             npm run deploy: Tests → Migrationen → worker-rt (falls geändert) → Pages → Tag
+│   └── mkicon-tanken.mjs      erzeugt die Sprit-Radar-Icons (reiner PNG-Encoder, ohne Tools)
 ├── worker-rt/                 separater Worker: Echtzeit-Durable-Objects (PartyRoom/DrawRoom/
 │                              QuizRoom), base-room.js (gemeinsame Raum-Basis, in Node testbar),
 │                              rt-db.js (D1-Helfer), draw-logic.js/quiz-logic.js
@@ -608,13 +611,14 @@ core.css nicht einebnen. Universelle Primitive rund um Verhalten (Hell/Dunkel,
 Reduced-Motion, Energiesparen, Fokusring) liegen in `theme.js`, Schriften in
 `fonts/fonts.css`.
 
-Übernommen haben core.css bisher die Hub-Seiten; `/tanken/`, `/fire/noe/` und
-`/wuerfelpoker/` sind noch Ausreißer mit eigenem Fundament — bewusst nicht
-nachgezogen, weil ein Umbau dort mehr Risiko als Nutzen wäre.
+Eingebunden ist core.css nur im Hub (`public/index.html`). Spiele, Profil und
+Werkzeuge bringen ihr eigenes Stylesheet mit — bewusst: die eigene Identität je
+App ist gewollt, ein Zwangs-Umbau brächte mehr Risiko als Nutzen.
 
 Jedes Spiel ist bewusst **selbst enthalten**: ein Ordner mit `index.html`,
 `app.js`, `style.css` — kein Framework, kein Bundler. Die Spiele rendern
-auf Canvas (Komet, Sternensturm, Galopp) bzw. DOM (Würfelpoker, Funkelfeld)
+auf Canvas (Komet, Flatterfink, Sternensturm, Galopp, Neon-Schlange, WUMMS!, MEERI-MANIA)
+bzw. DOM (Würfelpoker, Funkelfeld)
 und teilen sich das „Midnight Felt“-Design-System (Fraunces + Outfit,
 Gold-Folie, dunkle Karten-Optik).
 
@@ -625,11 +629,22 @@ veröffentlicht **nichts**. Live schalten und Code sichern sind zwei getrennte
 Schritte.
 
 ```bash
-npm test                                  # muss grün sein
-npm run bump                              # ?v=-Hashes aktualisieren
+npm run bump                              # ?v=-Hashes aktualisieren, committen
+npm run deploy                            # alles Weitere, in der richtigen Reihenfolge
+npm run deploy -- --dry                   # nur anzeigen, was passieren würde
+```
+
+`scripts/deploy.mjs` verweigert einen schmutzigen Arbeitsbaum (Pages lädt den
+Ordner so hoch, wie er gerade ist), prüft Hashes und Tests und schaltet dann
+**Migrationen → worker-rt (nur wenn seit dem letzten `deploy-*`-Tag geändert)
+→ Pages** und setzt einen Tag. Die Reihenfolge ist Absicht: neuer Code darf nie
+vor seinen Tabellen oder den Durable Objects live gehen. Von Hand entspricht das:
+
+```bash
+npm test
+npx wrangler d1 migrations apply wuerfelpoker --remote
+cd worker-rt && npx wrangler deploy && cd ..       # nur bei Änderungen an Echtzeit/Cron
 npx wrangler pages deploy public --project-name philip-stack --branch main
-cd worker-rt && npx wrangler deploy       # nur bei Änderungen an Echtzeit/Cron
-npx wrangler d1 migrations apply wuerfelpoker --remote   # nur bei neuer Migration
 ```
 
 Beim Ändern der `SHELL`-Liste **oder** einer vorab gecachten Datei die

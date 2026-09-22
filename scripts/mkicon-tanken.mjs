@@ -1,5 +1,6 @@
 // Erzeugt die App-Icons (Sprit-Tropfen auf grünem Grund) ohne externe Tools —
-// reiner PNG-Encoder (RGBA) via node:zlib. Aufruf: node mkicon.mjs
+// reiner PNG-Encoder (RGBA) via node:zlib. Aufruf: node scripts/mkicon-tanken.mjs
+// (liegt bewusst außerhalb von public/ — wurde sonst öffentlich mit ausgeliefert)
 import { deflateSync } from "node:zlib";
 import { writeFileSync } from "node:fs";
 
@@ -60,5 +61,5 @@ function png(size) {
 const CRC = (() => { const t = []; for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
 function crc32(buf) { let c = 0xffffffff; for (let i = 0; i < buf.length; i++) c = CRC[(c ^ buf[i]) & 0xff] ^ (c >>> 8); return c ^ 0xffffffff; }
 
-for (const s of [32, 180, 192, 512]) writeFileSync(new URL(`./icon-${s}.png`, import.meta.url), png(s));
+for (const s of [32, 180, 192, 512]) writeFileSync(new URL(`../public/tanken/icons/icon-${s}.png`, import.meta.url), png(s));
 console.log("icons written");

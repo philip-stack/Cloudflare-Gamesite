@@ -8,7 +8,7 @@
   <link rel="icon" href="/favicon.ico" sizes="any">
   <link rel="icon" type="image/png" href="/icons/icon-32.png">
   <link rel="stylesheet" href="/fonts/fonts.css?v=8ff75776">
-  <script src="/theme.js?v=47979f2b"></script>
+  <script src="/theme.js?v=89f9deb7"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
@@ -87,22 +87,30 @@
     <h2>Welche Daten die Spiele speichern</h2>
     <ul>
       <li>
-        <strong>Bestenlisten</strong> (Funkelfeld, Komet, Sternensturm, Galopp): der von dir frei
-        gewählte Anzeigename, eine zufällig erzeugte Geräte-Kennung (kein Login, keine echte
-        Identität), deine Punktzahl mit Spiel-Statistik und der Zeitpunkt. Gespeichert in einer
-        Datenbank bei Cloudflare. Zweck: Anzeige der Rangliste und Schutz vor Manipulation
-        (Rate-Limit, signiertes Token). Rechtsgrundlage: Art. 6 Abs. 1 lit. b und lit. f DSGVO.
+        <strong>Bestenlisten</strong> (Funkelfeld, Komet, Flatterfink, Sternensturm, Galopp, WUMMS!,
+        MEERI-MANIA, Neon-Schlange sowie die Wertungen von Kritzeln &amp; Raten und Wer weiß's?):
+        der von dir frei gewählte Anzeigename, eine zufällig erzeugte Geräte-Kennung (kein Login,
+        keine echte Identität), deine Punktzahl mit Spiel-Statistik und der Zeitpunkt. Gespeichert
+        in einer Datenbank bei Cloudflare. Zweck: Anzeige der Rangliste und Schutz vor Manipulation.
+        Rechtsgrundlage: Art. 6 Abs. 1 lit. b und lit. f DSGVO.
       </li>
       <li>
         <strong>Geteilte Würfelpoker-Spiele</strong>: die eingegebenen Spielernamen, die
         Spielstände und ein Beitritts-Code, damit ihr euch dasselbe Punkteblatt teilen könnt.
       </li>
       <li>
+        <strong>Spieleabend-Raum, Kritzeln &amp; Raten, Wer weiß's?</strong> (Echtzeit-Spiele):
+        Anzeigename, Chat- und Rate-Eingaben sowie Zeichnungen werden nur für die Dauer der
+        Runde im Arbeitsspeicher des Servers gehalten und nicht dauerhaft gespeichert —
+        ausgenommen das Endergebnis für die Bestenliste. Spieleabend-Räume (Namen, Punkte,
+        Reaktionen) werden nach 14 Tagen gelöscht.
+      </li>
+      <li>
         <strong>Lokale Speicherung im Browser</strong> (localStorage): Anzeigename, Geräte-Kennung,
         Hell-/Dunkelmodus, Meilensteine und lokale Spielstände. Diese Daten bleiben auf deinem
-        Gerät und werden nicht an uns übertragen; sie sind für den Betrieb der Spiele notwendig
-        (kein Einwilligungs-Banner erforderlich). Du kannst sie jederzeit über die Browser-
-        Einstellungen löschen.
+        Gerät — außer du nutzt das Cloud-Backup (siehe unten). Sie sind für den Betrieb der Spiele
+        notwendig (kein Einwilligungs-Banner erforderlich). Du kannst sie jederzeit über die
+        Browser-Einstellungen löschen.
       </li>
     </ul>
     <p>
@@ -110,17 +118,69 @@
       Name nicht von mehreren Personen belegt werden.
     </p>
 
+    <h2>Cloud-Backup (freiwillig)</h2>
+    <p>
+      Legst du im <a href="/profil/">Profil</a> ein Cloud-Backup an, wird ein Abbild deiner lokalen
+      Spieldaten (Spielstände, Rekorde, Abzeichen, Anzeigename, Geräte-Kennung) unter einem
+      zufälligen 8-stelligen Code bei Cloudflare gespeichert und bei jedem Verlassen der Seite
+      aktualisiert. Wer den Code kennt, kann das Backup laden — gib ihn also nicht weiter.
+      Daten der Werkzeuge (Sprit-Radar, Feuerwehr-Monitor, z.&nbsp;B. dein Heimatort) sind
+      <strong>nicht</strong> Teil des Backups. Speicherdauer: Ein Backup, das 180 Tage lang nicht
+      aktualisiert wurde, wird gelöscht; die jeweils vorherige Version wird 30 Tage aufbewahrt.
+      Rechtsgrundlage: Art. 6 Abs. 1 lit. b DSGVO (von dir angeforderte Funktion).
+    </p>
+
+    <h2>Push-Benachrichtigungen (freiwillig)</h2>
+    <p>
+      Aktivierst du Benachrichtigungen (Rekord geschlagen, Feuerwehr-Alarm, Preis-Alarm), speichern
+      wir die vom Browser erzeugte Abo-Adresse samt technischen Schlüsseln, bei Spiele-Nachrichten
+      zusätzlich Anzeigename und Geräte-Kennung. Beim Feuerwehr-Alarm speichern wir die gewählten
+      Bezirke bzw. — wenn du einen Umkreis wählst — die Koordinaten deines Heimatorts und den
+      Radius, beim Preis-Alarm Tankstelle, Treibstoff und Zielpreis. Zugestellt wird über den
+      Push-Dienst deines Browsers (z.&nbsp;B. Google, Mozilla oder Apple); der Inhalt der Nachricht
+      geht dabei nicht an diesen Dienst, sondern wird vom Gerät direkt bei uns abgeholt.
+      Speicherdauer: bis du die Benachrichtigung abbestellst oder der Browser das Abo beendet.
+      Rechtsgrundlage: Art. 6 Abs. 1 lit. a DSGVO (Einwilligung, jederzeit widerrufbar).
+    </p>
+
+    <h2>Sprit-Radar und Feuerwehr-Monitor</h2>
+    <p>
+      Für die Suche nach günstigen Tankstellen werden dein Standort bzw. die eingegebene Adresse
+      oder Route an unseren Server geschickt und von dort an die Spritpreis-Schnittstelle der
+      <strong>E-Control</strong>, an <strong>OpenStreetMap/Nominatim</strong> und
+      <strong>Photon (komoot)</strong> zur Ortssuche sowie an <strong>OSRM</strong> zur
+      Routenberechnung weitergegeben. Diese Anfragen stellt unser Server — deine IP-Adresse
+      erreicht die Dienste nicht; auch die Kartenkacheln werden über unseren Server geladen.
+      Gefundene Orte werden ohne Bezug zu dir zwischengespeichert, damit dieselbe Suche nicht
+      erneut angefragt werden muss. Freitext-Eingaben der Suche werden zur Deutung an
+      <strong>Cloudflare Workers AI</strong> geschickt; Sätze, die das System nicht verstanden
+      hat, speichern wir ohne IP, Gerät oder Namen für 7 Tage, um die Suche zu verbessern.
+      Heimatort, Favoriten und Einstellungen liegen nur lokal in deinem Browser.
+      Rechtsgrundlage: Art. 6 Abs. 1 lit. b DSGVO.
+    </p>
+
     <h2>Anonyme Nutzungszahlen</h2>
     <p>
-      Um zu sehen, welche Spiele genutzt werden, zählen wir einige Ereignisse rein
-      <strong>anonym und ohne Personenbezug</strong> mit: Wird ein Spiel gestartet, ein
-      Herausforderungs-Link geöffnet oder eine Teilen-Karte erzeugt, erhöhen wir einen
-      einfachen Zähler pro Kalendertag (z.&nbsp;B. „Galopp, 2026-09-01, 12×"). Gespeichert werden
-      ausschließlich der Tag, die Art des Ereignisses und die Anzahl —
-      <strong>keine IP-Adresse, keine Geräte-Kennung, kein Name und keine Uhrzeit</strong>.
-      Erfasst wird also nur, <em>dass</em> etwas passiert ist, nicht <em>wer</em> es war;
-      die Zahlen lassen sich keiner Person zuordnen. Rechtsgrundlage: Art.&nbsp;6 Abs.&nbsp;1 lit.&nbsp;f
-      DSGVO (berechtigtes Interesse an einer anonymen Reichweitenmessung).
+      Um zu sehen, welche Teile der Seite genutzt werden, zählen wir einige Ereignisse rein
+      <strong>anonym und ohne Personenbezug</strong> mit: Aufruf der Seite, Begrüßung gesehen,
+      Spiel gestartet, Herausforderungs-Link geöffnet, Teilen-Karte erzeugt und Nutzung der
+      Freitext-Suche. Dafür erhöhen wir einen einfachen Zähler pro Kalendertag
+      (z.&nbsp;B. „Galopp, 2026-09-01, 12×"). Gespeichert werden ausschließlich der Tag, die Art des
+      Ereignisses und die Anzahl — <strong>keine IP-Adresse, keine Geräte-Kennung, kein Name und
+      keine Uhrzeit</strong>. Die Zahlen lassen sich keiner Person zuordnen. Rechtsgrundlage:
+      Art.&nbsp;6 Abs.&nbsp;1 lit.&nbsp;f DSGVO (berechtigtes Interesse an einer anonymen Reichweitenmessung).
+    </p>
+
+    <h2>Missbrauchsschutz und Fehlerprotokolle</h2>
+    <p>
+      Um Überlastung und Manipulation zu verhindern, begrenzen wir, wie oft eine Adresse pro
+      Minute Anfragen stellen darf. Dafür speichern wir kurzzeitig einen mit täglich wechselndem
+      Schlüssel gebildeten <strong>Hashwert der IP-Adresse (keine Klar-IP)</strong>, der nach
+      wenigen Minuten gelöscht wird. Tritt im Browser ein technischer Fehler auf, übermittelt die
+      Seite die Fehlermeldung, die betroffene Seite und die Browser-Kennung (User-Agent); diese
+      Meldungen werden nach spätestens 30 Tagen gelöscht. Fehlgeschlagene Anmeldeversuche am
+      Betreiberbereich werden mit IP-Adresse protokolliert und nach spätestens 90 Tagen gelöscht.
+      Rechtsgrundlage: Art. 6 Abs. 1 lit. f DSGVO (sicherer, stabiler Betrieb).
     </p>
 
     <h2>Kochstudio (KI-Funktion)</h2>
@@ -128,11 +188,11 @@
       Auf der Seite <a href="/kochstudio/">Kochstudio</a> kannst du freiwillig eingeben, welche
       Zutaten du zu Hause hast. Diese Eingabe wird zur Erstellung von Rezeptvorschlägen an
       <strong>Cloudflare Workers AI</strong> (KI-Modell, betrieben von Cloudflare als
-      Auftragsverarbeiter) übermittelt und als Suchanfrage an die Suchmaschine
-      <strong>DuckDuckGo</strong> geschickt, um passende Rezept-Links zu finden
+      Auftragsverarbeiter) übermittelt und von unserem Server als Suchanfrage an die
+      Suchmaschine <strong>DuckDuckGo</strong> geschickt, um passende Rezept-Links zu finden
       (Rechtsgrundlage: Art. 6 Abs. 1 lit. b DSGVO — Bereitstellung der Funktion).
-      Wir speichern deine Eingaben nicht. Bitte gib dort keine personenbezogenen Daten ein —
-      für die Funktion genügt eine Zutatenliste.
+      Wir speichern deine Eingaben nicht; deine letzten Rezepte merkt sich nur dein Browser.
+      Bitte gib dort keine personenbezogenen Daten ein — für die Funktion genügt eine Zutatenliste.
     </p>
 
     <h2>Schriftarten</h2>
@@ -150,9 +210,10 @@
 
     <h2>Speicherdauer</h2>
     <p>
-      Bestenlisten- und Spieldaten werden gespeichert, bis sie nicht mehr benötigt werden oder du
-      ihre Löschung verlangst. Auf Wunsch entfernen wir deinen Bestenlisten-Eintrag; schreib uns
-      dazu einfach eine E-Mail mit dem betroffenen Namen.
+      Soweit oben nicht anders angegeben: Tages- und Wochen-Bestenlisten werden nach Ablauf ihres
+      Zeitraums gelöscht; Einträge der Allzeit-Bestenlisten und geteilte Würfelpoker-Spiele bleiben
+      bestehen, bis du ihre Löschung verlangst. Auf Wunsch entfernen wir deine Einträge; schreib
+      uns dazu einfach eine E-Mail mit dem betroffenen Namen.
     </p>
 
     <h2>Deine Rechte</h2>
@@ -163,7 +224,7 @@
       <a href="https://www.dsb.gv.at/" target="_blank" rel="noopener">Österreichischen Datenschutzbehörde</a>.
     </p>
 
-    <p class="muted">Stand: Juli 2026</p>
+    <p class="muted">Stand: September 2026</p>
   </main>
 </body>
 </html>

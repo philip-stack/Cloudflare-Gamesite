@@ -206,8 +206,12 @@ function testStorage() {
     return ok;
   } catch { return false; }
 }
+// Solange der Tab verborgen ist, bleibt lastSeen auf dem Versteck-Zeitpunkt
+// stehen — sonst schiebt setInterval(save)/blur den Stempel weiter und die
+// Offline-Zeit (andere App, Sperrbildschirm) wäre bei der Rückkehr weg.
+let hiddenAt = 0;
 function save() {
-  lastSeen = Date.now();
+  lastSeen = hiddenAt || Date.now();
   try {
     localStorage.setItem(SAVE, JSON.stringify({
       coins, capLevel, buyCount, album, uid, up, lastSeen,
@@ -379,6 +383,7 @@ function passivePerSec() {
 }
 function applyOffline() {
   const elapsed = Math.max(0, (Date.now() - lastSeen) / 1000);
+  lastSeen = Date.now();   // gleich verbuchen → kein doppelter Ertrag bei erneutem Aufruf
   if (elapsed < 30 || !meeries.length) return;
   const capSec = offlineHours() * 3600;
   const rate = passivePerSec() * offlineEff();
@@ -1610,7 +1615,9 @@ function openBoard() {
     <button class="btn-secondary" id="mb-close">Schließen</button>`);
   ov.querySelector("#mb-top").onclick = () => { ov.remove(); showLb(); };
   ov.querySelector("#mb-close").onclick = () => ov.remove();
-  GS.scoreFlow(ov.querySelector("#mb-name"), ov.querySelector("#mb-rank"), { game: "meeri", score: peak });
+  // best statt peak: peak fällt beim Prestige auf 0 — danach wurde ein kleinerer
+  // Wert als der eigene Rekord gemeldet.
+  GS.scoreFlow(ov.querySelector("#mb-name"), ov.querySelector("#mb-rank"), { game: "meeri", score: best });
 }
 
 // ---------- Ganze Wiese als Bild teilen ----------
@@ -1926,8 +1933,14 @@ let rt = null;
 window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(layout, 120); });
 window.addEventListener("orientationchange", () => setTimeout(layout, 250));
 document.addEventListener("visibilitychange", () => {
-  if (document.hidden) save();
-  else { ensureDaily(true); updateHUD(); }   // Tageswechsel bei Rückkehr erkennen
+  if (document.hidden) { if (!hiddenAt) hiddenAt = Date.now(); save(); }
+  else {
+    // Rückkehr aus einer anderen App: die verborgene Zeit wie einen Kaltstart
+    // abrechnen (gleiche Deckel + „Willkommen zurück"). Der Frame-Loop klemmt dt,
+    // ohne das hier gäbe es nach 2 h Pause 0 Münzen.
+    if (hiddenAt) { lastSeen = hiddenAt; hiddenAt = 0; applyOffline(); save(); }
+    ensureDaily(true); updateHUD();   // Tageswechsel bei Rückkehr erkennen
+  }
 });
 window.addEventListener("pagehide", save);
 window.addEventListener("blur", save);   // iOS: pagehide feuert nicht immer zuverlässig

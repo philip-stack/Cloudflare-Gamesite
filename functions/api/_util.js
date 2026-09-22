@@ -7,11 +7,31 @@ export function json(data, status = 200) {
   return Response.json(data, { status });
 }
 
-// Client-IP hinter Cloudflare (Fallbacks für lokale Tests)
+// Client-IP hinter Cloudflare (Fallbacks für lokale Tests). IPv6 wird auf das
+// /64-Präfix gekürzt: ein Anschluss bekommt meist ein ganzes /64 und könnte
+// sonst durch Adresswechsel jede Drossel umgehen.
 export function clientIp(request) {
-  return request.headers.get("CF-Connecting-IP") ||
+  const ip = request.headers.get("CF-Connecting-IP") ||
     (request.headers.get("x-forwarded-for") || "").split(",")[0].trim() ||
     "0.0.0.0";
+  return ip.includes(":") ? ipv6Prefix64(ip) : ip;
+}
+export function ipv6Prefix64(ip) {
+  const [head, tail = ""] = ip.split("::");
+  const h = head ? head.split(":") : [], t = tail ? tail.split(":") : [];
+  const full = ip.includes("::") ? [...h, ...Array(Math.max(0, 8 - h.length - t.length)).fill("0"), ...t] : h;
+  return full.slice(0, 4).map(g => (g || "0").toLowerCase()).join(":") + "::/64";
+}
+
+// Schlüssel der rate-Tabelle ohne Klar-IP: SHA-256 über Tagessalz + Schlüssel.
+// Das Salz wechselt täglich (alle Fenster sind ≤ 1 Minute, der Wechsel stört
+// also nicht) und hängt am Server-Secret — die Hashes lassen sich damit nicht
+// per Durchprobieren aller IPv4-Adressen zurückrechnen.
+async function rateKey(env, key) {
+  const salt = String((env && (env.SCORE_SECRET || env.ADMIN_KEY)) || "") + new Date().toISOString().slice(0, 10);
+  const d = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(salt + "|" + key)));
+  const p = key.indexOf(":");
+  return (p > 0 ? key.slice(0, p + 1) : "") + [...d.slice(0, 12)].map(b => b.toString(16).padStart(2, "0")).join("");
 }
 
 // Einfaches Rate-Limit über die gemeinsame Tabelle `rate`.
@@ -19,15 +39,18 @@ export function clientIp(request) {
 // Fehlertolerant: bei DB-Problemen wird NIE blockiert.
 export async function rateLimit(env, key, max, windowSec) {
   try {
+    const k = await rateKey(env, key);
     const row = await env.DB.prepare(
       "SELECT COUNT(*) AS n FROM rate WHERE k = ? AND at > datetime('now', ?)"
-    ).bind(key, `-${windowSec} seconds`).first();
+    ).bind(k, `-${windowSec} seconds`).first();
     if (row && row.n >= max) return false;
-    await env.DB.prepare("INSERT INTO rate (k) VALUES (?)").bind(key).run();
+    await env.DB.prepare("INSERT INTO rate (k) VALUES (?)").bind(k).run();
     // Nur gelegentlich alte Einträge wegräumen (statt bei JEDEM Request drei
-    // Schreibvorgänge auf die einzige D1 zu jagen).
+    // Schreibvorgänge auf die einzige D1 zu jagen). Alle Fenster sind ≤ 1 Minute
+    // → 10 Minuten reichen; idx_rate_at (0016) macht das zur Bereichssuche statt
+    // zum Vollscan, dessen Kosten vorher quadratisch mit dem Verkehr wuchsen.
     if (Math.random() < 0.02) {
-      await env.DB.prepare("DELETE FROM rate WHERE at < datetime('now', '-1 day')").run();
+      await env.DB.prepare("DELETE FROM rate WHERE at < datetime('now', '-10 minutes')").run();
     }
     return true;
   } catch (e) { await logError(env, "rateLimit fehlgeschlagen (Drossel übersprungen)", "rate", e && e.message); return true; }

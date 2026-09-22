@@ -514,6 +514,7 @@ const UPGRADES = [
 ];
 
 function chooseUpgrade() {
+  if (paused) resumeGame();   // Auswahl-Overlay hält das Spiel ohnehin an
   mode = "choose";
   const avail = UPGRADES.filter(u => u.can(player));
   const picks = [];
@@ -577,6 +578,33 @@ window.addEventListener("pointerup", () => { dragging = false; });
 window.addEventListener("pointercancel", () => { dragging = false; });
 
 $("#nova-btn").addEventListener("click", fireNova);
+
+// ---------- Pause bei App-Wechsel ----------
+// Wer mitten in der Welle die App wechselt (Anruf o. Ä.), soll bei der Rückkehr
+// nicht ungefragt im Kugelhagel landen: anhalten, erst auf Tippen weiterfliegen.
+let paused = false, pauseOv = null;
+function pauseGame() {
+  if (mode !== "run" || paused) return;
+  paused = true; dragging = false;
+  pauseOv = document.createElement("div");
+  pauseOv.className = "overlay";
+  pauseOv.innerHTML = `
+    <div class="panel">
+      <h2><span class="foil">Pause</span></h2>
+      <p class="sub">Welle ${wave} wartet auf dich.</p>
+      <button class="btn-primary" id="p-go">▶ Weiter</button>
+    </div>`;
+  document.body.appendChild(pauseOv);
+  pauseOv.onclick = resumeGame;   // Tippen irgendwo = weiter
+}
+function resumeGame() {
+  if (!paused) return;
+  paused = false;
+  if (pauseOv) { pauseOv.remove(); pauseOv = null; }
+  last = performance.now();   // kein Riesen-dt nach der Pause
+}
+document.addEventListener("visibilitychange", () => { if (document.hidden) pauseGame(); });
+window.addEventListener("keydown", e => { if (paused && (e.code === "Space" || e.code === "Enter")) { e.preventDefault(); resumeGame(); } });
 
 // ---------- Nova ----------
 function updateNova() {
@@ -1108,8 +1136,9 @@ let last = performance.now();
 function frame(now) {
   const dt = Math.min(0.033, (now - last) / 1000);
   last = now;
-  if (mode === "run") step(dt);
-  draw(now, mode === "run" ? dt : dt * 0.3);
+  const live = mode === "run" && !paused;
+  if (live) step(dt);
+  draw(now, live ? dt : paused ? 0 : dt * 0.3);
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
@@ -1128,8 +1157,14 @@ const sound = (() => {
         for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
       } catch {}
     }
+    wake();
     return ctxA;
   }
+  // iOS lässt den Kontext nach Anruf/App-Wechsel auf "suspended"/"interrupted"
+  // stehen → stumm bis zum Neuladen. Darum vor jedem Ton und bei jedem Tippen wecken.
+  function wake() { if (ctxA && ctxA.state !== "running") try { const p = ctxA.resume(); if (p && p.catch) p.catch(() => {}); } catch {} }
+  const unlock = () => { if (GS.sound.on()) ensure(); };   // ensure() weckt mit
+  ["pointerdown", "touchend"].forEach(ev => window.addEventListener(ev, unlock, { capture: true, passive: true }));
   function tone(f0, f1, dur, type = "square", gain = 0.06, when = 0) {
     if (!GS.sound.on() || !ensure()) return;
     const t = ctxA.currentTime + when;
@@ -1307,8 +1342,8 @@ GS.badges.define("sternensturm", [
   { id: "w5",     icon: "🌊", name: "Wellenbrecher", desc: "Welle 5 erreicht",           test: s => s.wave >= 5 },
   { id: "w10",    icon: "🌀", name: "Sturmpilot",    desc: "Welle 10 erreicht",          test: s => s.wave >= 10 },
   { id: "w20",    icon: "⚡", name: "Sturmlegende",      desc: "Welle 20 erreicht",          test: s => s.wave >= 20 },
-  { id: "k50",    icon: "💥", name: "Scharfschütze", desc: "50 Abschüsse in einem Run", test: s => s.kills >= 50 },
-  { id: "p10k",   icon: "🏆", name: "Punktejäger", desc: "10.000 Punkte in einem Run", test: s => s.score >= 10000 },
-  { id: "sumk2k", icon: "🎯", name: "Fleet Admiral", desc: "2.000 Abschüsse insgesamt", test: (s, t) => t.sum_kills >= 2000 },
-  { id: "runs25", icon: "🎖️", name: "Stammgast", desc: "25 Runs geflogen",         test: (s, t) => t.runs >= 25 },
+  { id: "k50",    icon: "💥", name: "Scharfschütze", desc: "50 Abschüsse in einem Flug", test: s => s.kills >= 50 },
+  { id: "p10k",   icon: "🏆", name: "Punktejäger", desc: "10.000 Punkte in einem Flug", test: s => s.score >= 10000 },
+  { id: "sumk2k", icon: "🎯", name: "Flottenadmiral", desc: "2.000 Abschüsse insgesamt", test: (s, t) => t.sum_kills >= 2000 },
+  { id: "runs25", icon: "🎖️", name: "Stammgast", desc: "25 Flüge absolviert",         test: (s, t) => t.runs >= 25 },
 ]);

@@ -361,11 +361,17 @@ async function maintenance(env) {
   await del("live_room_ttl", "DELETE FROM live_room WHERE updated_at < datetime('now','-1 day')");
   // Admin-Protokoll gedeckelt halten (letzte 2000 Aktionen).
   await del("admin_log_trim", "DELETE FROM admin_log WHERE id <= (SELECT MAX(id) FROM admin_log) - 2000");
+  // …und zeitlich begrenzt: das Protokoll enthält IP-Adressen (auch von
+  // Fremden, die sich am Betreiberbereich versuchen) — nicht unbefristet.
+  await del("admin_log_ttl", "DELETE FROM admin_log WHERE created_at < datetime('now','-90 days')");
+  // Browser-Fehlermeldungen (mit Browser-Kennung) nach 30 Tagen weg.
+  await del("client_log_ttl", "DELETE FROM client_log WHERE created_at < datetime('now','-30 days')");
   // Fehler-Log deckeln (Client-Meldungen liegen jetzt in client_log). Gemeldete
   // Quiz-Fragen sind ausgenommen — die werden im Admin manuell abgearbeitet.
   await del("error_log_trim", "DELETE FROM error_log WHERE page IS NOT 'quiz-report' AND id <= (SELECT MAX(id) FROM error_log) - 3000");
   // Waisen in der Push-Queue (Sub existiert nicht mehr).
-  await del("push_queue_orphan", "DELETE FROM push_queue WHERE endpoint NOT IN (SELECT endpoint FROM push_sub)");
+  // Feuerwehr-/Sprit-Abos stehen NICHT in push_sub — deren Nachrichten sind keine Waisen.
+  await del("push_queue_orphan", "DELETE FROM push_queue WHERE endpoint NOT IN (SELECT endpoint FROM push_sub UNION SELECT endpoint FROM fire_alert UNION SELECT endpoint FROM sprit_alert)");
   // Abschluss-Tracking: Einträge zu Einsätzen, die längst beendet/gelöscht sind
   // (normal beim Ende entfernt; das ist der Sicherheitsnetz-TTL).
   await del("fire_alert_sent_ttl", "DELETE FROM fire_alert_sent WHERE at < datetime('now','-3 days')");
@@ -403,7 +409,8 @@ async function checkAdminAlert(env) {
 
     await sendToName(env, name, status === "warn"
       ? { title: "⚠️ Spieleabend: Achtung", body: warns.join(" · "), url: "/admin/" }
-      : { title: "✅ Spieleabend: wieder ok", body: "Alle Werte normal.", url: "/admin/" });
+      : { title: "✅ Spieleabend: wieder ok", body: "Alle Werte normal.", url: "/admin/" },
+      { ownerOnly: true });
   } catch (e) {
     await logError(env, "fire-cron: admin-alert " + e.message, "fire/cron");
   }

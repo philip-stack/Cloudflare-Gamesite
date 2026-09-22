@@ -4,7 +4,7 @@
 // installierbar und offline-tauglich. Strategie: Netz zuerst,
 // Cache als Fallback. /api/… liegt außerhalb des Scopes → immer live.
 // ====================================================================
-const CACHE = "fire-noe-v36";
+const CACHE = "fire-noe-v37";
 // CacheStorage ist pro Origin, nicht pro Scope — Hub/Fire/Tanken teilen sich einen
 // Speicher. Beim Aufräumen nur eigene Caches (gleicher Präfix) löschen, sonst wischt
 // dieser SW die Shells der anderen Apps weg. Präfix = alles vor dem "-vNN"-Suffix.
@@ -104,17 +104,37 @@ self.addEventListener("fetch", e => {
   const url = new URL(e.request.url);
   if (url.origin !== location.origin) return;
   if (url.pathname.startsWith("/api/")) return;   // Einsatzdaten nie cachen
-  e.respondWith(
-    fetch(e.request)
-      .then(res => {
-        if (res.ok) { const copy = res.clone(); caches.open(CACHE).then(c => c.put(e.request, copy)); }
-        return res;
-      })
-      .catch(async () => {
-        const hit = await caches.match(e.request, { ignoreSearch: true });
-        if (hit) return hit;
-        if (e.request.mode === "navigate") { const shell = await caches.match("./"); if (shell) return shell; }
-        return Response.error();
-      })
-  );
+  e.respondWith(netFirst(e, './'));
 });
+
+// Netz zuerst, Cache als Rückfall — mit zwei Korrekturen:
+//  • exakter Treffer vor ignoreSearch: sonst lieferte der Cache offline die
+//    zuerst abgelegte (nackte) JS/CSS-Version zu neuerem HTML.
+//  • Seitenaufrufe warten höchstens NAV_WAIT ms aufs Netz, wenn eine Kopie
+//    da ist — bei „Lie-Fi" (Zug, Keller) hing die Seite sonst bis zum
+//    Browser-Timeout. Die Netzantwort aktualisiert den Cache trotzdem.
+const NAV_WAIT = 3500;
+function netFirst(e, shell) {
+  const req = e.request, nav = req.mode === "navigate";
+  // HTML ohne Query ablegen (?duel=…, ?n=… würden sonst je eine Kopie erzeugen)
+  const key = nav ? new URL(req.url).pathname : req;
+  const net = fetch(req).then(res => {
+    if (res.ok) { const copy = res.clone(); e.waitUntil(caches.open(CACHE).then(c => c.put(key, copy))); }
+    return res;
+  });
+  const cached = async () => (await caches.match(key)) || (await caches.match(req, { ignoreSearch: true }));
+  return (async () => {
+    if (nav) {
+      const first = await Promise.race([net.catch(() => null), new Promise(r => setTimeout(r, NAV_WAIT, "slow"))]);
+      if (first instanceof Response) return first;
+      if (first === "slow") { const hit = await cached(); if (hit) return hit; }
+    }
+    try { return await net; } catch (_) {
+      const hit = await cached();
+      if (hit) return hit;
+      // Offline und nichts im Cache: bei Seitennavigation die Startseite zeigen
+      if (nav) { const s = await caches.match(shell); if (s) return s; }
+      return Response.error();
+    }
+  })();
+}

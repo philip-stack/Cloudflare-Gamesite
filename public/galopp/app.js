@@ -1864,9 +1864,14 @@ const sound = (() => {
         ctxA = new (window.AudioContext || window.webkitAudioContext)();
       } catch { return null; }
     }
-    if (ctxA.state === "suspended") ctxA.resume();
+    wake();   // auch "interrupted" (iOS), nicht nur "suspended"
     return ctxA;
   }
+  // iOS lässt den Kontext nach Anruf/App-Wechsel auf "suspended"/"interrupted"
+  // stehen → stumm bis zum Neuladen. Darum vor jedem Ton und bei jedem Tippen wecken.
+  function wake() { if (ctxA && ctxA.state !== "running") try { const p = ctxA.resume(); if (p && p.catch) p.catch(() => {}); } catch {} }
+  const unlock = () => { if (GS.sound.on()) ac(); };   // ac() weckt mit
+  ["pointerdown", "touchend"].forEach(ev => window.addEventListener(ev, unlock, { capture: true, passive: true }));
   function tone(f0, f1, dur, type = "sine", vol = 0.08, delay = 0) {
     if (!GS.sound.on()) return;
     const a = ac(); if (!a) return;

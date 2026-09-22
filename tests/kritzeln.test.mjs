@@ -86,5 +86,35 @@ assert("catOf: leer → null", L.catOf("") === null);
 assert("neue Kategorien da", ["berufe", "sport", "koerper", "musik", "werkzeug", "weltall"].every(k => Array.isArray(L.D_CATS[k]) && L.D_CATS[k].length >= 15));
 assert("wordPool zieht auch neue Kategorien", L.wordPool(["sport"]).includes("Tennis"));
 
+// ---------- mergeStroke (Zeichen-Puffer mit Punktebudget) ----------
+{
+  const ops = []; let used = 0;
+  used = L.mergeStroke(ops, { s: true, pts: [[0, 0], [1, 1]], c: "#000", w: 6 }, used);
+  used = L.mergeStroke(ops, { pts: [[1, 1], [2, 2], [3, 3]] }, used);
+  assert("mergeStroke: s=true → neuer Strich", ops.length === 1 && ops[0].k === "s" && ops[0].c === "#000");
+  assert("mergeStroke: Fortsetzung ohne überlappenden 1. Punkt", ops[0].pts.length === 4 && used === 4);
+  used = L.mergeStroke(ops, { s: true, pts: [[5, 5]] }, used);
+  assert("mergeStroke: zweiter Strich", ops.length === 2 && used === 5);
+}
+{
+  // Budget: ein endloser Strich wächst NICHT über maxPts hinaus.
+  const ops = []; let used = 0; const batch = Array.from({ length: 300 }, (_, i) => [i / 300, 0.5]);
+  used = L.mergeStroke(ops, { s: true, pts: batch }, used, 1500, 1000);
+  for (let i = 0; i < 50; i++) used = L.mergeStroke(ops, { pts: batch }, used, 1500, 1000);
+  assert("mergeStroke: Punktebudget deckelt Fortsetzungen", used === 1000 && ops[0].pts.length === 1000);
+  used = L.mergeStroke(ops, { s: true, pts: batch }, used, 1500, 1000);
+  assert("mergeStroke: über Budget → kein neuer Strich", ops.length === 1 && used === 1000);
+  const freed = used - L.opPts(ops.pop());
+  assert("mergeStroke/opPts: undo gibt Budget frei", freed === 0 && L.opPts(undefined) === 0);
+}
+{
+  const ops = []; let used = 0;
+  for (let i = 0; i < 5; i++) used = L.mergeStroke(ops, { s: true, pts: [[0, 0]] }, used, 3, 1000);
+  assert("mergeStroke: Op-Limit greift weiter", ops.length === 3 && used === 3);
+  used = L.mergeStroke(ops, { pts: [[0, 0], [1, 1]] }, used, 3, 1000);
+  assert("mergeStroke: bei vollem Op-Puffer auch keine Fortsetzung", ops[2].pts.length === 1);
+  assert("mergeStroke: Default-Budget sinnvoll", L.D_MAX_BUF_PTS >= 5000 && L.D_MAX_BUF_PTS <= 50000 && L.D_MAX_OPS === 1500);
+}
+
 console.log(ok ? "\n✅ kritzeln: alle Tests grün" : "\n❌ kritzeln: Tests fehlgeschlagen");
 process.exit(ok ? 0 : 1);

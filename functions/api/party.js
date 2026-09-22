@@ -38,7 +38,10 @@ async function ownName(env, code, name, device) {
   // Zeile eingefügt wird (der INSERT unten wird dann nicht erreicht).
   const row = await env.DB.prepare("SELECT device FROM party_member WHERE code = ? AND LOWER(name) = LOWER(?)").bind(code, name).first();
   if (row) {
-    if (row.device && device && row.device !== device) return "taken";
+    // Ohne (gültige) Geräte-Kennung darf ein schon gebundener Name nicht benutzt
+    // werden — vorher reichte es, `device` wegzulassen, um unter fremdem Namen
+    // Punkte einzutragen. Alle echten Clients schicken die Kennung immer mit.
+    if (row.device && row.device !== device) return "taken";
     if (!row.device && device) await env.DB.prepare("UPDATE party_member SET device = ? WHERE code = ? AND LOWER(name) = LOWER(?)").bind(device, code, name).run();
     return "ok";
   }

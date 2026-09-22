@@ -382,7 +382,7 @@ function frame(now) {
   const dt = Math.min(0.032, (now - last) / 1000);
   last = now;
 
-  if (mode === "run") step(dt);
+  if (mode === "run" && !paused) step(dt);
   if (shakeT > 0) shakeT = Math.max(0, shakeT - dt);
   for (const p of particles) {
     p.t += dt;
@@ -400,19 +400,42 @@ requestAnimationFrame(frame);
 // ---------- Input ----------
 stage.addEventListener("pointerdown", e => {
   e.preventDefault();
-  if (mode === "run") holding = true;
+  if (mode === "run" && !paused) holding = true;
 });
 window.addEventListener("pointerup", () => { holding = false; });
 window.addEventListener("pointercancel", () => { holding = false; });
 window.addEventListener("keydown", e => {
+  if (e.code === "Space" && paused) { e.preventDefault(); resumeGame(); return; }
   if (e.code === "Space" && mode === "run") { e.preventDefault(); holding = true; }
 });
 window.addEventListener("keyup", e => {
   if (e.code === "Space") holding = false;
 });
-document.addEventListener("visibilitychange", () => {
-  if (document.hidden && mode === "run") holding = false;
-});
+// ---------- Pause bei App-Wechsel ----------
+// Früher wurde nur das Seil losgelassen — bei der Rückkehr flog der Komet
+// ungefragt weiter (meist in den Absturz). Jetzt: anhalten, auf Tippen weiter.
+let paused = false, pauseOv = null;
+function pauseGame() {
+  if (mode !== "run" || paused) return;
+  paused = true; holding = false;
+  pauseOv = document.createElement("div");
+  pauseOv.className = "overlay";
+  pauseOv.innerHTML = `
+    <div class="panel">
+      <h2><span class="foil">Pause</span></h2>
+      <p class="sub">📏 ${meters()} m · ✦ ${sparkCount} Funken</p>
+      <button class="btn-primary" id="p-go">▶ Weiter</button>
+    </div>`;
+  document.body.appendChild(pauseOv);
+  pauseOv.onclick = resumeGame;   // Tippen irgendwo = weiter
+}
+function resumeGame() {
+  if (!paused) return;
+  paused = false;
+  if (pauseOv) { pauseOv.remove(); pauseOv = null; }
+  last = performance.now();   // kein Riesen-dt nach der Pause
+}
+document.addEventListener("visibilitychange", () => { if (document.hidden) pauseGame(); });
 
 // ---------- Sound ----------
 const sound = (() => {
@@ -421,8 +444,14 @@ const sound = (() => {
   try { const _m = localStorage.getItem("km_muted"); if (_m !== null) { if (_m === "1" && GS.sound.on()) GS.sound.toggle(); localStorage.removeItem("km_muted"); } } catch {}
   function ensure() {
     if (!ctxA) try { ctxA = new (window.AudioContext || window.webkitAudioContext)(); } catch {}
+    wake();
     return ctxA;
   }
+  // iOS lässt den Kontext nach Anruf/App-Wechsel auf "suspended"/"interrupted"
+  // stehen → stumm bis zum Neuladen. Darum vor jedem Ton und bei jedem Tippen wecken.
+  function wake() { if (ctxA && ctxA.state !== "running") try { const p = ctxA.resume(); if (p && p.catch) p.catch(() => {}); } catch {} }
+  const unlock = () => { if (GS.sound.on()) ensure(); };   // ensure() weckt mit
+  ["pointerdown", "touchend"].forEach(ev => window.addEventListener(ev, unlock, { capture: true, passive: true }));
   function tone(freq, dur, type = "sine", gain = 0.1, when = 0) {
     if (!GS.sound.on() || !ensure()) return;
     const t = ctxA.currentTime + when;

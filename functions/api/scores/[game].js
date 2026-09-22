@@ -80,9 +80,12 @@ const GAMES = {
       score <= m.lines * (m.combo + 1) * 500 + m.shoves * 30 + 3_000,
   },
   meeri: {
-    // Score = Goldene Karotten (Prestige-Währung); rein lokales Idle-Spiel
-    // ohne Server-Formel. Schutz hier: Obergrenze + Lauf-Token + Rate-Limit.
-    max: 1_000_000_000,
+    // Score = höchste Evolution (Stufen-Index + Kosmos-Level ab der Galaxie);
+    // rein lokales Idle-Spiel ohne Server-Formel. Echte Werte liegen im
+    // zweistelligen Bereich (jedes Kosmos-Level verdoppelt den Aufwand) — die
+    // frühere Grenze von 1e9 stammte noch aus der Karotten-Wertung und hielt
+    // gar nichts ab. Schutz: Obergrenze + Lauf-Token + Rate-Limit.
+    max: 10_000,
   },
   schlange: {
     max: 100_000,

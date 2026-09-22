@@ -1,31 +1,27 @@
-// Logik-Tests für WUMMS! — repliziert die reine Spiel-Logik aus
-// public/wumms/app.js (die Datei selbst braucht das DOM und lässt sich
-// nicht direkt importieren).
-const N = 8;
+// Logik-Tests für WUMMS! — die Datei public/wumms/app.js braucht das DOM
+// und lässt sich nicht direkt importieren. Rastergröße und Formen-Tabelle
+// (inkl. Rotations-Erzeugung) werden darum aus dem echten Quelltext
+// geschnitten und in node:vm ausgeführt; die Brett-Logik unten ist eine
+// Nachbildung (im Spiel hängt sie am globalen Zustand).
+import { fileURLToPath } from "node:url";
+import path from "node:path";
+import fs from "node:fs";
+import vm from "node:vm";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const src = fs.readFileSync(path.join(__dirname, "..", "public", "wumms", "app.js"), "utf8");
+const from = src.indexOf("// ---------- Block-Formen"), to = src.indexOf("// ---------- Spielzustand");
+const nLine = (src.match(/^const N = \d+;/m) || [""])[0];
+if (from < 0 || to < from || !nLine) { console.log("FAIL Abschnitts-Marker in wumms/app.js nicht gefunden"); process.exit(1); }
+const W = vm.runInContext(nLine + "\n" + src.slice(from, to) + ";({ N, BASE_SHAPES, SHAPES, keyOf })",
+  vm.createContext({ Math, Set }), { filename: "wumms/app.js" });
+const { N, BASE_SHAPES, SHAPES, keyOf } = W;
 let ok = true;
 const t = (name, cond) => { console.log((cond ? "OK   " : "FAIL ") + name); if (!cond) ok = false; };
 
-// ---- Formen erzeugen (wie im Spiel) ----
-const normalize = cells => {
-  const mr = Math.min(...cells.map(c => c[0])), mc = Math.min(...cells.map(c => c[1]));
-  return cells.map(([r, c]) => [r - mr, c - mc]).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
-};
-const rotate = cells => normalize(cells.map(([r, c]) => [c, -r]));
-const keyOf = cells => cells.map(c => c.join(",")).join(";");
-const BASE = [
-  [[0,0]], [[0,0],[0,1]], [[0,0],[0,1],[0,2]], [[0,0],[0,1],[0,2],[0,3]], [[0,0],[0,1],[0,2],[0,3],[0,4]],
-  [[0,0],[0,1],[1,0],[1,1]], [[0,0],[0,1],[0,2],[1,0],[1,1],[1,2]],
-  [[0,0],[0,1],[0,2],[1,0],[1,1],[1,2],[2,0],[2,1],[2,2]],
-  [[0,0],[1,0],[1,1]], [[0,0],[1,0],[2,0],[2,1]], [[0,0],[0,1],[0,2],[1,1]],
-  [[0,1],[0,2],[1,0],[1,1]], [[0,0],[0,1],[1,1],[1,2]], [[0,0],[1,0],[2,0],[2,1],[2,2]],
-];
-const SHAPES = (() => {
-  const seen = new Set(), out = [];
-  for (const s of BASE) { let cur = normalize(s); for (let r = 0; r < 4; r++) { const k = keyOf(cur); if (!seen.has(k)) { seen.add(k); out.push(cur); } cur = rotate(cur); } }
-  return out;
-})();
-
-t("Formen erzeugt (>= 25 einzigartige)", SHAPES.length >= 25);
+t("Rastergröße aus dem Spiel (>= 6)", Number.isInteger(N) && N >= 6);
+t("Formen erzeugt (mehr als Grundformen, >= 25 einzigartige)", SHAPES.length > BASE_SHAPES.length && SHAPES.length >= 25);
+t("jede Form passt aufs Brett", SHAPES.every(s => s.every(([r, c]) => r < N && c < N)));
 t("alle Formen normalisiert (min 0/0)", SHAPES.every(s => Math.min(...s.map(c => c[0])) === 0 && Math.min(...s.map(c => c[1])) === 0));
 t("keine doppelten Formen", new Set(SHAPES.map(keyOf)).size === SHAPES.length);
 
@@ -36,8 +32,8 @@ const canPlaceAt = (grid, piece, r0, c0) => piece.every(([r, c]) => {
 });
 
 let g = empty();
-t("leeres Feld: 1×1 passt in Ecke", canPlaceAt(g, [[0,0]], 7, 7));
-t("außerhalb passt nicht", !canPlaceAt(g, [[0,0]], 8, 0));
+t("leeres Feld: 1×1 passt in Ecke", canPlaceAt(g, [[0,0]], N - 1, N - 1));
+t("außerhalb passt nicht", !canPlaceAt(g, [[0,0]], N, 0));
 g[3][3] = { sp: 0 };
 t("belegtes Feld blockiert", !canPlaceAt(g, [[0,0]], 3, 3));
 
@@ -60,7 +56,7 @@ function clearLines(grid) {
 g = empty();
 for (let c = 0; c < N; c++) g[0][c] = { sp: 1 };     // volle, einfarbige Reihe
 let res = clearLines(g);
-t("volle Reihe wird erkannt", res.lines === 1 && res.cells === 8);
+t("volle Reihe wird erkannt", res.lines === 1 && res.cells === N);
 t("einfarbige Reihe zählt als Arten-Linie", res.speciesLines === 1);
 t("Reihe ist nach Clear leer", g[0].every(x => x === null));
 
@@ -73,7 +69,7 @@ g = empty();
 for (let i = 0; i < N; i++) { g[2][i] = { sp: 0 }; g[i][5] = { sp: 0 }; }  // Reihe + Spalte (Kreuz)
 res = clearLines(g);
 t("Reihe + Spalte gleichzeitig = 2 Linien", res.lines === 2);
-t("Kreuz räumt 15 Felder (8+8-1)", res.cells === 15);
+t("Kreuz räumt 2N-1 Felder (Reihe + Spalte, Schnittpunkt einmal)", res.cells === 2 * N - 1);
 
 // ---- Bösewicht-Schub ----
 function shove(grid, chosenCols) {
@@ -83,10 +79,10 @@ function shove(grid, chosenCols) {
   return { over: false };
 }
 g = empty();
-g[7][0] = { sp: 0 };
+g[N - 1][0] = { sp: 0 };
 let r1 = shove(g, new Set([1, 2, 3]));
-t("Schub schiebt Inhalt nach oben", g[6][0] && g[6][0].sp === 0);
-t("neue Bösewicht-Reihe unten", g[7][1] && g[7][1].villain === true && g[7][0] === null);
+t("Schub schiebt Inhalt nach oben", g[N - 2][0] && g[N - 2][0].sp === 0);
+t("neue Bösewicht-Reihe unten", g[N - 1][1] && g[N - 1][1].villain === true && g[N - 1][0] === null);
 t("Schub ohne Overflow ist ok", r1.over === false);
 g = empty();
 g[0][4] = { sp: 0 };   // oberste Reihe belegt → Overflow

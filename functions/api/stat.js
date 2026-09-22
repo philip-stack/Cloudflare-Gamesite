@@ -29,6 +29,16 @@ const GAME_RE = /^[a-z0-9_-]{1,24}$/;
 // weiß aber nicht, WOFÜR sie verbraucht wurden (Kochstudio und Briefing
 // laufen auf demselben Modell). Kein Personenbezug, wie beim Rest: nur
 // (Tag, Schlüssel, Anzahl).
+// Heutiger Stand eines Zählers (0 bei Fehler) — für Tagesdeckel, die an genau
+// diesen Zählern hängen (z. B. KI-Aufrufe des Kochstudios).
+export async function statToday(env, key) {
+  try {
+    const day = new Date().toISOString().slice(0, 10);
+    const r = await env.DB.prepare("SELECT n FROM stat_daily WHERE day = ? AND k = ?").bind(day, String(key).slice(0, 40)).first();
+    return (r && r.n) || 0;
+  } catch (_) { return 0; }
+}
+
 export async function bumpStat(env, key) {
   try {
     const day = new Date().toISOString().slice(0, 10);

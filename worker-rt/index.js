@@ -1,7 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 import { RoomMixin } from "./base-room.js";
 import { rtLogError, rtTouchRoom, rtDropRoom } from "./rt-db.js";
-import { D_CATS, D_CAT_KEYS, D_TURN, D_CHOOSE, D_REVEAL, dNorm, dLev, wordPool, pickWords, guessGain, drawerGain, wordLetters, catOf, hintCount } from "./draw-logic.js";
+import { D_CATS, D_CAT_KEYS, D_TURN, D_CHOOSE, D_REVEAL, dNorm, dLev, wordPool, pickWords, guessGain, drawerGain, wordLetters, catOf, hintCount, mergeStroke, opPts, D_MAX_OPS } from "./draw-logic.js";
 import { Q_TURN, Q_TURN_MAX, Q_REVEAL, Q_ROUNDS, Q_ROUND_CHOICES, Q_DIFF_CHOICES, Q_CAT_KEYS, questionPool, pickQuestions, shuffleOptions, answerGain, streakBonus, turnTime, Q_TB_TURN, Q_TB_REVEAL, Q_TB_MAX } from "./quiz-logic.js";
 
 // D1-Helfer (rtLogError/rtTouchRoom/rtDropRoom) und die geteilten Raum-Primitive
@@ -81,7 +81,7 @@ export class PartyRoom extends DurableObject {
 // ====================================================================
 // Zeichen-/Missbrauchs-Limits (Härtung gegen fehlerhafte oder böswillige Clients).
 const D_MAX_PTS = 300;        // Punkte pro stroke-Nachricht
-const D_MAX_OPS = 1500;       // gepufferte Ops pro Zug (begrenzt Snapshot-Größe)
+// D_MAX_OPS (Ops pro Zug) + D_MAX_BUF_PTS (Punkte pro Zug) → draw-logic.js (mergeStroke)
 const D_RATE_N = 120, D_RATE_MS = 2000;   // max. Nachrichten je Verbindung pro Fenster
 
 export class DrawRoom extends RoomMixin(DurableObject) {
@@ -96,17 +96,20 @@ export class DrawRoom extends RoomMixin(DurableObject) {
     this.turnGains = [];     // Punkte-Zuwachs des laufenden Zugs (für die Zusammenfassung)
     this.turnHits = 0;       // Anzahl korrekter Rater:innen im laufenden Zug (Platz-Bonus)
     this.drawOps = [];       // Zeichen-Ops des laufenden Zugs (für Snapshot bei Reconnect)
+    this.drawPts = 0;        // davon gepufferte Punkte (Budget D_MAX_BUF_PTS)
   }
 
   async fetch(request) {
     if (request.headers.get("Upgrade") !== "websocket") return new Response("expected websocket", { status: 426 });
     this.code = (new URL(request.url).searchParams.get("code") || this.code || "").toUpperCase();
+    // Kurz nach einer Leerlauf-Abschaltung: kein Upgrade (bricht die Auto-Reconnect-Schleife).
+    if (this.idleRefused()) return new Response("idle", { status: 409 });
     const pair = new WebSocketPair(); const [client, server] = Object.values(pair);
     server.accept();
     if (this.conns.size >= 10) { try { server.send(JSON.stringify({ t: "full" })); server.close(); } catch (_) {} return new Response(null, { status: 101, webSocket: client }); }
     const id = this.nextId++;
     const p = { id, name: "Spieler", score: 0, guessed: false, drawer: false };
-    this.conns.set(server, p);
+    this.conns.set(server, p); this.markActive();
     if (this.hostId == null) this.hostId = id;
     server.addEventListener("message", e => { try { this.onMsg(server, e.data); } catch (err) { this.logErr("onMsg", err && err.stack || err); } });
     server.addEventListener("close", () => this.onClose(server));
@@ -123,12 +126,8 @@ export class DrawRoom extends RoomMixin(DurableObject) {
 
   // Strich-Op in den Zug-Puffer rollen (identisch zur Client-Logik, damit der
   // Snapshot beim Reconnect exakt dieselbe Zeichnung ergibt).
-  opStroke(m) {
-    if (this.drawOps.length >= D_MAX_OPS) return;   // Puffer gedeckelt (bounded Snapshot)
-    const last = this.drawOps[this.drawOps.length - 1];
-    if (m.s || !last || last.k !== "s") this.drawOps.push({ k: "s", pts: (m.pts || []).slice(), c: m.c, w: m.w, e: !!m.e });
-    else last.pts.push(...(m.pts || []).slice(1));
-  }
+  // Gedeckelt über Op-Anzahl UND Gesamt-Punkte (mergeStroke in draw-logic.js).
+  opStroke(m) { this.drawPts = mergeStroke(this.drawOps, m, this.drawPts); }
 
   // Host wirft eine:n Spieler:in raus (Nachbereitung wie onClose).
   kick(id) {
@@ -154,6 +153,7 @@ export class DrawRoom extends RoomMixin(DurableObject) {
     if (++p.rl.n > D_RATE_N) return;
     if (typeof data !== "string" || data.length > 20000) return;   // übergroße Frames abweisen
     let m; try { m = JSON.parse(data); } catch (_) { return; }
+    if (m.t !== "ping") this.markActive(now);   // Pings halten die Verbindung, zählen aber nicht als Aktivität
     switch (m.t) {
       case "join": {
         p.name = (String(m.name || "").trim().slice(0, 14)) || "Spieler";
@@ -198,8 +198,8 @@ export class DrawRoom extends RoomMixin(DurableObject) {
         this.bc({ t: "draw", pts: m.pts, c: m.c, w: m.w, s: m.s, e: m.e }, p.id); this.opStroke(m);
       } break;
       case "fill": if (this.state === "drawing" && p.id === this.drawerId) { this.bc({ t: "fill", x: m.x, y: m.y, c: m.c }, p.id); if (this.drawOps.length < D_MAX_OPS) this.drawOps.push({ k: "f", x: m.x, y: m.y, c: m.c }); } break;
-      case "undo": if (this.state === "drawing" && p.id === this.drawerId) { this.bc({ t: "undo" }, p.id); this.drawOps.pop(); } break;
-      case "clear": if (this.state === "drawing" && p.id === this.drawerId) { this.bc({ t: "clear" }, p.id); this.drawOps = []; } break;
+      case "undo": if (this.state === "drawing" && p.id === this.drawerId) { this.bc({ t: "undo" }, p.id); this.drawPts = Math.max(0, this.drawPts - opPts(this.drawOps.pop())); } break;
+      case "clear": if (this.state === "drawing" && p.id === this.drawerId) { this.bc({ t: "clear" }, p.id); this.drawOps = []; this.drawPts = 0; } break;
       case "guess": this.onGuess(p, String(m.text || "")); break;
       // Reaktionen/Emotes: nur eine feste Auswahl zulassen, dann an alle relayen.
       // Sender ausschließen (p.id): der/die zeigt das Emote schon lokal sofort an,
@@ -213,18 +213,22 @@ export class DrawRoom extends RoomMixin(DurableObject) {
     const p = this.conns.get(ws); if (!p) return;
     this.conns.delete(ws);
     if (this.hostId === p.id) { const f = this.conns.values().next().value; this.hostId = f ? f.id : null; }
-    if (this.conns.size === 0) {
-      // Alle weg (Tabs geschlossen o. Ä.) mitten im Spiel → trotzdem werten.
-      if (this.parts && (this.state === "choosing" || this.state === "drawing" || this.state === "reveal")) this.saveScores([...this.parts.values()]);
-      try { this.ctx.waitUntil(rtDropRoom(this.env, this.code)); } catch (_) {}
-      this.clearTimers(); this.state = "lobby"; this.nextId = 1; this.hostId = null; this.parts = null; return;
-    }
+    if (this.conns.size === 0) return this.onEmpty();
     const playing = this.state === "choosing" || this.state === "drawing" || this.state === "reveal";
     // Zu wenige übrig → JETZT werten (die verbleibende Verbindung hält das DO
     // wach, der D1-Schreibvorgang läuft zuverlässig durch).
     if (playing && this.conns.size < 2) { this.endGame(); return; }
     if (playing && p.id === this.drawerId) { this.bc({ t: "chat", kind: "system", text: "Der/die Zeichner:in hat den Raum verlassen." }); this.endTurn(); return; }
     this.sendLobby();
+  }
+
+  // Alle weg (Tabs geschlossen, Leerlauf-Abschaltung o. Ä.) → Raum zurücksetzen.
+  onEmpty() {
+    // Mitten im Spiel → trotzdem werten.
+    if (this.parts && (this.state === "choosing" || this.state === "drawing" || this.state === "reveal")) this.saveScores([...this.parts.values()]);
+    try { this.ctx.waitUntil(rtDropRoom(this.env, this.code)); } catch (_) {}
+    this.clearTimers(); this.clearIdle(); this.state = "lobby"; this.nextId = 1; this.hostId = null; this.parts = null;
+    this.drawOps = []; this.drawPts = 0;
   }
 
   startGame() {
@@ -290,7 +294,7 @@ export class DrawRoom extends RoomMixin(DurableObject) {
     this.clearTimers();
     if (this.used) this.used.add(word);   // Wort für dieses Spiel als benutzt markieren
     this.word = word; this.revealed = [...word].map(() => false);
-    this.turnGains = []; this.turnHits = 0; this.turnDrawerGain = 0; this.drawOps = [];
+    this.turnGains = []; this.turnHits = 0; this.turnDrawerGain = 0; this.drawOps = []; this.drawPts = 0;
     const T = this.turnTime;
     this.state = "drawing"; this.turnEndsAt = Date.now() + T * 1000;
     const ids = this.order.filter(id => this.pget(id));
@@ -394,12 +398,14 @@ export class QuizRoom extends RoomMixin(DurableObject) {
   async fetch(request) {
     if (request.headers.get("Upgrade") !== "websocket") return new Response("expected websocket", { status: 426 });
     this.code = (new URL(request.url).searchParams.get("code") || this.code || "").toUpperCase();
+    // Kurz nach einer Leerlauf-Abschaltung: kein Upgrade (bricht die Auto-Reconnect-Schleife).
+    if (this.idleRefused()) return new Response("idle", { status: 409 });
     const pair = new WebSocketPair(); const [client, server] = Object.values(pair);
     server.accept();
     if (this.conns.size >= 10) { try { server.send(JSON.stringify({ t: "full" })); server.close(); } catch (_) {} return new Response(null, { status: 101, webSocket: client }); }
     const id = this.nextId++;
     const p = { id, name: "Spieler", score: 0, answered: false, ansIdx: -1, ansRemain: 0, streak: 0, ready: false, jokerUsed: false, tbOut: false, lastSeen: Date.now() };
-    this.conns.set(server, p);
+    this.conns.set(server, p); this.markActive();
     if (this.hostId == null) this.hostId = id;
     server.addEventListener("message", e => { try { this.onMsg(server, e.data); } catch (err) { this.logErr("onMsg", err && err.stack || err); } });
     server.addEventListener("close", () => this.onClose(server));
@@ -464,6 +470,7 @@ export class QuizRoom extends RoomMixin(DurableObject) {
     if (++p.rl.n > Q_RATE_N) return;
     if (typeof data !== "string" || data.length > 4000) return;
     let m; try { m = JSON.parse(data); } catch (_) { return; }
+    if (m.t !== "ping") this.markActive(now);   // Pings halten die Verbindung, zählen aber nicht als Aktivität
     switch (m.t) {
       case "join": {
         p.name = (String(m.name || "").trim().slice(0, 14)) || "Spieler";
@@ -525,11 +532,7 @@ export class QuizRoom extends RoomMixin(DurableObject) {
     const p = this.conns.get(ws); if (!p) return;
     this.conns.delete(ws); this.votes.delete(p.id);
     if (this.hostId === p.id) { const f = this.conns.values().next().value; this.hostId = f ? f.id : null; }
-    if (this.conns.size === 0) {
-      if (this.parts && (this.state === "question" || this.state === "reveal" || this.state === "tiebreak")) this.saveScores([...this.parts.values()]);
-      try { this.ctx.waitUntil(rtDropRoom(this.env, this.code)); } catch (_) {}
-      this.clearTimers(); this.state = "lobby"; this.nextId = 1; this.hostId = null; this.parts = null; this.votes = new Map(); this.tbRound = 0; this.tbIds = null; return;
-    }
+    if (this.conns.size === 0) return this.onEmpty();
     // Stichfrage: verbleibende Gleichstand-Menge neu bestimmen; bleibt nur eine:r,
     // gewinnt sie/er; sind alle Verbliebenen bereits raus, nächste Frage.
     if (this.state === "tiebreak") {
@@ -547,6 +550,13 @@ export class QuizRoom extends RoomMixin(DurableObject) {
     if (playing && this.conns.size < 2) { this.endGame(); return; }
     if (playing && this.state === "question" && this.allAnswered()) { this.revealQuestion(); return; }
     this.sendLobby();
+  }
+
+  // Alle weg (Tabs geschlossen, Leerlauf-Abschaltung o. Ä.) → Raum zurücksetzen.
+  onEmpty() {
+    if (this.parts && (this.state === "question" || this.state === "reveal" || this.state === "tiebreak")) this.saveScores([...this.parts.values()]);
+    try { this.ctx.waitUntil(rtDropRoom(this.env, this.code)); } catch (_) {}
+    this.clearTimers(); this.clearIdle(); this.state = "lobby"; this.nextId = 1; this.hostId = null; this.parts = null; this.votes = new Map(); this.tbRound = 0; this.tbIds = null;
   }
 
   startGame() {

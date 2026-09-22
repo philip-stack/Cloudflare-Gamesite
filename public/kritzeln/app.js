@@ -54,7 +54,12 @@ function connect(c, isRe) {
   try { ws = new WebSocket(wsUrl(code)); } catch { return tryReconnect(); }
   ws.onopen = () => { reTries = 0; send({ t: "join", name: GS.getName() || "Spieler", uid: TAB_UID, dev: (GS.deviceId && GS.deviceId()) || "" }); if (pingT) clearInterval(pingT); pingT = setInterval(() => send({ t: "ping" }), 20000); };
   ws.onmessage = e => { let m; try { m = JSON.parse(e.data); } catch { return; } onMsg(m); };
-  ws.onclose = () => { if (pingT) { clearInterval(pingT); pingT = null; } if (intentional) return; tryReconnect(); };
+  // 4000 = der Raum hat sich wegen Inaktivität selbst geschlossen (worker-rt,
+  // base-room.js). Dann NICHT neu verbinden — sonst hielte ein vergessener Tab
+  // den Raum ewig wach. Der Code bleibt im Menü vorausgefüllt.
+  ws.onclose = e => { if (pingT) { clearInterval(pingT); pingT = null; } if (intentional) return;
+    if (e && e.code === 4000) { intentional = true; showMenu("Raum wegen Inaktivität geschlossen.", code); return; }
+    tryReconnect(); };
   ws.onerror = () => {};
 }
 function tryReconnect() {

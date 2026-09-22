@@ -15,18 +15,23 @@
   })[c]);
 
   // ---------- Identität ----------
+  // Speicherzugriffe hier sind try/catch-geschützt: bei gesperrtem Speicher
+  // (Cookies aus, manche Privat-Modi) warf sonst schon das Laden jedes Spiels.
+  let tmpDevice = null;
   function deviceId() {
-    let d = localStorage.getItem("gs_device");
+    let d = null;
+    try { d = localStorage.getItem("gs_device"); } catch {}
     if (!d) {
+      if (tmpDevice) return tmpDevice;
       const a = new Uint8Array(18);
       crypto.getRandomValues(a);
-      d = [...a].map(b => "abcdefghijklmnopqrstuvwxyz0123456789"[b % 36]).join("");
-      localStorage.setItem("gs_device", d);
+      d = tmpDevice = [...a].map(b => "abcdefghijklmnopqrstuvwxyz0123456789"[b % 36]).join("");
+      try { localStorage.setItem("gs_device", d); } catch {}
     }
     return d;
   }
-  const getName = () => (localStorage.getItem("bb_name") || "").trim();
-  const setName = v => localStorage.setItem("bb_name", String(v).trim().slice(0, 16));
+  const getName = () => { try { return (localStorage.getItem("bb_name") || "").trim(); } catch { return ""; } };
+  const setName = v => { try { localStorage.setItem("bb_name", String(v).trim().slice(0, 16)); } catch {} };
 
   // ---------- Score-Einsendung ----------
   // → {rank, best} | {error, nameTaken} | null (kein Name / Netzfehler)
@@ -110,7 +115,7 @@
     } catch {}
 
     const showResult = resp => {
-      if (!resp) { rankEl.textContent = "Score konnte nicht übertragen werden"; return; }
+      if (!resp) { rankEl.textContent = "Punkte konnten nicht übertragen werden"; return; }
       if (resp.error) {
         rankEl.textContent = resp.error;
         if (resp.nameTaken) { submitted = false; askName(true); }
@@ -133,7 +138,7 @@
         ${retry ? "" : `<p class="sub">Wie sollen wir dich in der Bestenliste nennen?</p>`}
         <input type="text" class="gs-name" maxlength="16" placeholder="Dein Name" autocomplete="off"
                value="${retry ? "" : esc(getName())}">
-        <button class="btn-secondary gs-save" style="margin-bottom:10px">Score eintragen</button>`;
+        <button class="btn-secondary gs-save" style="margin-bottom:10px">In die Bestenliste eintragen</button>`;
       container.querySelector(".gs-save").onclick = () => {
         const v = container.querySelector(".gs-name").value.trim().slice(0, 16);
         if (!v) return;
@@ -360,14 +365,15 @@
 
   // ---------- Sound & Haptik (gemeinsam, abschaltbar) ----------
   let actx = null;
-  const soundOn = () => localStorage.getItem("gs_sound_off") !== "1";
+  const soundOn = () => { try { return localStorage.getItem("gs_sound_off") !== "1"; } catch { return true; } };
   const sound = {
     on: soundOn,
-    toggle() { const off = !soundOn(); localStorage.setItem("gs_sound_off", off ? "1" : "0"); return !off; },
+    toggle() { const off = !soundOn(); try { localStorage.setItem("gs_sound_off", off ? "1" : "0"); } catch {} return !off; },
     ctx() {
       try {
         if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
-        if (actx.state === "suspended") actx.resume().catch(() => {});
+        // iOS meldet nach Anruf/App-Wechsel "interrupted" statt "suspended"
+        if (actx.state !== "running") actx.resume().catch(() => {});
         return actx;
       } catch { return null; }
     },
@@ -448,7 +454,7 @@
   // ---------- Onboarding (einmaliger Hinweis beim ersten Start) ----------
   function onboard(game, { title = "So geht's", steps = [], force = false } = {}) {
     const key = "gs_onboard_" + game;
-    if (!force && localStorage.getItem(key)) return;
+    try { if (!force && localStorage.getItem(key)) return; } catch { return; }
     const overlay = document.createElement("div");
     overlay.className = "overlay";
     overlay.innerHTML = `
@@ -457,7 +463,7 @@
         <ul class="gs-steps">${steps.map(s => `
           <li><span class="gs-step-ic">${s.icon || "•"}</span><span>${esc(s.text)}</span></li>`).join("")}</ul>
         <button class="btn-secondary gs-close">Los geht's!</button>`;
-    overlay.querySelector(".gs-close").onclick = () => { localStorage.setItem(key, "1"); overlay.remove(); };
+    overlay.querySelector(".gs-close").onclick = () => { try { localStorage.setItem(key, "1"); } catch {} overlay.remove(); };
     document.body.appendChild(overlay);
   }
 
@@ -653,7 +659,7 @@
   const QUEST_POOL = [
     { id: "play2", type: "play", goal: 2, xp: 40, icon: "🎮", label: "Spiele 2 verschiedene Spiele" },
     { id: "play3", type: "play", goal: 3, xp: 70, icon: "🕹️", label: "Spiele 3 verschiedene Spiele" },
-    { id: "score1", type: "score", goal: 1, xp: 30, icon: "📊", label: "Trag einen Score in eine Bestenliste ein" },
+    { id: "score1", type: "score", goal: 1, xp: 30, icon: "📊", label: "Trag dich in eine Bestenliste ein" },
     { id: "record1", type: "record", goal: 1, xp: 60, icon: "🏅", label: "Stell einen persönlichen Rekord auf" },
     { id: "badge1", type: "badge", goal: 1, xp: 50, icon: "🎖️", label: "Verdien dir ein Abzeichen" },
     { id: "streak1", type: "play", goal: 1, xp: 20, icon: "🔥", label: "Halte deinen Tages-Streak am Leben" },
@@ -733,7 +739,7 @@
   // wird hochgeladen; beim Start wird ein NEUERER Stand von einem anderen
   // Gerät angeboten. Ohne Code passiert nichts.
   const cloud = {
-    code() { return (localStorage.getItem("gs_sync_code") || "").trim().toUpperCase(); },
+    code() { try { return (localStorage.getItem("gs_sync_code") || "").trim().toUpperCase(); } catch { return ""; } },
     // Gerätelokale Schreiber-Kennung (NIE im Backup enthalten): damit lässt
     // sich der eigene letzte Upload von dem eines anderen Geräts unterscheiden.
     writerId() {
@@ -745,39 +751,40 @@
       }
       return w;
     },
-    // Identitäts-/Sync-Bookkeeping gehört nicht ins geräteübergreifende Backup
-    _skip(k) { return /^(gs_sync|gs_cloud)/.test(k) || k === "__gs_test__" || k === "__meeri_test__"; },
+    // Nicht ins geräteübergreifende Backup: Identitäts-/Sync-Bookkeeping, der
+    // Admin-Schlüssel (das Backup ist nur durch den 8-stelligen Code geschützt)
+    // und alles von Sprit-Radar/Feuerwehr (Heimatort, Routen — eigene Apps,
+    // gehören nicht in ein Spielstand-Backup).
+    _skip(k) { return /^(gs_sync|gs_cloud|admin_|fire_|sprit_)/.test(k) || k === "__gs_test__" || k === "__meeri_test__"; },
     snapshot() {
       const o = {};
       for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (!this._skip(k)) o[k] = localStorage.getItem(k); }
       return o;
     },
-    // Zuverlässig beim Verlassen (kein await möglich) → sendBeacon
-    pushBeacon() {
-      const code = this.code(); if (!code) return;
-      try {
-        const body = JSON.stringify({ code, data: this.snapshot(), writer: this.writerId() });
-        if (navigator.sendBeacon && navigator.sendBeacon("/api/cloud", new Blob([body], { type: "application/json" }))) {
-          localStorage.setItem("gs_sync_local_at", String(Date.now()));
-        }
-      } catch {}
-    },
+    // Beim Verlassen. Früher sendBeacon — das kann kein `base` auswerten (Antwort
+    // unlesbar) und klobberte so einen neueren Stand eines anderen Geräts, und über
+    // 64 KB schlug es still fehl. Jetzt push(): keepalive-fetch mit `base`.
+    pushBeacon() { this.push(); },
     async push() {
       const code = this.code(); if (!code) return null;
+      if (this._busy) return null;   // visibilitychange + pagehide feuern oft beide
+      this._busy = true;
       try {
         // base = zuletzt bekannter Cloud-Stand → optimistische Sperre serverseitig.
         const base = localStorage.getItem("gs_sync_at") || undefined;
+        const body = JSON.stringify({ code, data: this.snapshot(), writer: this.writerId(), base });
+        // keepalive hat (wie sendBeacon) ein 64-KB-Limit — größere Stände gehen als
+        // normaler fetch; beim Tab-Wechsel lebt die Seite dafür lange genug.
         const res = await fetch("/api/cloud", {
-          method: "POST", headers: { "Content-Type": "application/json" }, keepalive: true,
-          body: JSON.stringify({ code, data: this.snapshot(), writer: this.writerId(), base }),
+          method: "POST", headers: { "Content-Type": "application/json" }, keepalive: body.length < 60000, body,
         });
         // Konflikt: der Cloud-Stand ist neuer (anderes Gerät) → nicht klobbern,
-        // sondern beim nächsten Laden abgleichen (syncOnLoad bietet das Laden an).
-        if (res.status === 409) { try { this.syncOnLoad(); } catch {} return null; }
+        // sondern abgleichen — aber nur mit sichtbarer Seite (kein confirm() beim Verlassen).
+        if (res.status === 409) { if (document.visibilityState === "visible") { try { this.syncOnLoad(); } catch {} } return null; }
         const d = await res.json().catch(() => ({}));
-        if (d.updated_at) { localStorage.setItem("gs_sync_at", d.updated_at); localStorage.setItem("gs_sync_local_at", String(Date.now())); }
+        if (d.updated_at) { localStorage.setItem("gs_sync_at", d.updated_at); localStorage.setItem("gs_sync_seen", d.updated_at); localStorage.setItem("gs_sync_local_at", String(Date.now())); }
         return d;
-      } catch { return null; }
+      } catch { return null; } finally { this._busy = false; }
     },
     // Beim Start prüfen, ob der jüngste Cloud-Stand von einem ANDEREN
     // Gerät stammt — nur dann zum Laden anbieten (eigener Upload = still).
@@ -789,17 +796,22 @@
         const d = await res.json();
         if (!d.updated_at) return;
         const me = this.writerId();
-        if (d.writer && d.writer === me) { localStorage.setItem("gs_sync_seen", d.updated_at); return; }
+        // Eigener Upload (dessen Antwort evtl. beim Schließen verloren ging): Stand
+        // übernehmen, sonst liefe jeder weitere Upload mit veraltetem base in 409.
+        if (d.writer && d.writer === me) { localStorage.setItem("gs_sync_seen", d.updated_at); localStorage.setItem("gs_sync_at", d.updated_at); return; }
         if (localStorage.getItem("gs_sync_seen") === d.updated_at) return;   // schon behandelt
         const data = typeof d.data === "string" ? JSON.parse(d.data) : (d.data || {});
         if (confirm("☁️ Auf einem anderen Gerät gibt es einen neueren Spielstand. Jetzt hier laden? (überschreibt den aktuellen Stand auf diesem Gerät)")) {
-          for (const [k, v] of Object.entries(data)) { try { localStorage.setItem(k, v); } catch {} }
+          for (const [k, v] of Object.entries(data)) { try { if (!this._skip(k)) localStorage.setItem(k, v); } catch {} }
           localStorage.setItem("gs_sync_seen", d.updated_at);
           localStorage.setItem("gs_sync_at", d.updated_at);
           localStorage.setItem("gs_sync_local_at", String(Date.now()));
           location.reload();
         } else {
-          localStorage.setItem("gs_sync_seen", d.updated_at);   // nicht erneut nachfragen
+          // Nicht laden = dieser Stand gilt. base nachziehen, sonst sichert dieses
+          // Gerät nie wieder (jeder Upload → 409). Der Cloud-Stand davor bleibt als prev_data.
+          localStorage.setItem("gs_sync_seen", d.updated_at);
+          localStorage.setItem("gs_sync_at", d.updated_at);
         }
       } catch {}
     },
@@ -904,6 +916,18 @@
 
   // Eingehende Duell-Herausforderung aus der URL für diese Session merken.
   try { duel.capture(); } catch {}
+
+  // Tages-Schlüssel (gs_playxp_/gs_quests_JJJJ-MM-TT) werden nur am jeweiligen
+  // Tag gelesen, sammelten sich aber für immer an — und wandern alle ins
+  // Cloud-Backup. Älter als 7 Tage → weg.
+  try {
+    const cut = ymdOf(new Date(Date.now() - 7 * 864e5)), old = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i), m = /^gs_(?:playxp|quests)_(\d{4}-\d{2}-\d{2})$/.exec(k || "");
+      if (m && m[1] < cut) old.push(k);
+    }
+    old.forEach(k => localStorage.removeItem(k));
+  } catch {}
 
   // Auto-Sync verdrahten (nur wenn ein Sync-Code existiert): beim Verlassen
   // automatisch sichern; beim Start einen neueren Stand eines ANDEREN Geraets
