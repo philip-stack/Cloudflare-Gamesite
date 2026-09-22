@@ -22,7 +22,7 @@ import path from "node:path";
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const dry = process.argv.includes("--dry");
 const sh = (cmd, opts = {}) => execSync(cmd, { cwd: root, stdio: "inherit", shell: true, ...opts });
-const out = cmd => execSync(cmd, { cwd: root, encoding: "utf8", shell: true }).trim();
+const out = cmd => execSync(cmd, { cwd: root, encoding: "utf8", shell: true, stdio: ["ignore", "pipe", "ignore"] }).trim();
 const step = (label, cmd, opts) => {
   console.log(`\n▶ ${label}${cmd ? `\n  $ ${cmd}` : ""}`);
   if (cmd && !dry) sh(cmd, opts);
