@@ -134,7 +134,49 @@ function blitFoot(sp, x, y, scale = 1, alpha = 1) {
   ctx.restore();
 }
 
+function blitFootXY(sp, x, y, sx, sy, alpha = 1) {
+  if (sx <= 0.01 || sy <= 0.01 || alpha <= 0.01) return;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(sx, sy);
+  ctx.globalAlpha = alpha;
+  ctx.drawImage(sp.c, -sp.w / 2, -sp.h, sp.w, sp.h);
+  ctx.restore();
+}
+
 const SPR = {};
+
+// Cartoon-Umriss wie bei Läuferin und Einhorn: deckende Pixel (Alpha > 55 %)
+// werden um r Pixel (Sprite-Auflösung) ausgedehnt, darunter dunkel gefüllt.
+// Glüh-Säume zählen nicht mit — so umrandet der Umriss die Form, nicht den Schein.
+function outlineSprite(sp, r = 4, rgb = [34, 18, 52], a = 0.72) {
+  const c = sp.c, w = c.width, h = c.height;
+  const g = c.getContext("2d");
+  const src = g.getImageData(0, 0, w, h), d = src.data;
+  const m = new Uint8Array(w * h);
+  for (let i = 0; i < w * h; i++) m[i] = d[i * 4 + 3] > 140 ? 1 : 0;
+  const tmp = new Uint8Array(w * h), dil = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) {               // waagrecht
+    let run = -1e9;
+    for (let x = 0; x < w; x++) { if (m[y * w + x]) run = x; if (x - run <= r) tmp[y * w + x] = 1; }
+    run = 1e9;
+    for (let x = w - 1; x >= 0; x--) { if (m[y * w + x]) run = x; if (run - x <= r) tmp[y * w + x] = 1; }
+  }
+  for (let x = 0; x < w; x++) {               // senkrecht
+    let run = -1e9;
+    for (let y = 0; y < h; y++) { if (tmp[y * w + x]) run = y; if (y - run <= r) dil[y * w + x] = 1; }
+    run = 1e9;
+    for (let y = h - 1; y >= 0; y--) { if (tmp[y * w + x]) run = y; if (run - y <= r) dil[y * w + x] = 1; }
+  }
+  const out = g.createImageData(w, h), o2 = out.data;
+  for (let i = 0; i < w * h; i++) if (dil[i]) { o2[i * 4] = rgb[0]; o2[i * 4 + 1] = rgb[1]; o2[i * 4 + 2] = rgb[2]; o2[i * 4 + 3] = a * 255; }
+  const oc = document.createElement("canvas"); oc.width = w; oc.height = h;
+  const og = oc.getContext("2d");
+  og.putImageData(out, 0, 0);
+  og.drawImage(c, 0, 0);
+  sp.c = oc;
+  return sp;
+}
 
 // --- Zuckerstangen-Hürde (springen!) ---
 SPR.hurdle = makeSprite(120, 64, g => {
@@ -173,39 +215,74 @@ SPR.hurdle = makeSprite(120, 64, g => {
   rail(-14); rail(6);
 });
 
-// --- Regenbogen-Balken (ducken!) — schwebt auf Kopfhöhe ---
+// --- Steintor mit Regenbogen-Wimpeln (ducken!) ---
+// Zwei Säulen tragen einen Sturz auf Kopfhöhe; die Wimpel hängen herab —
+// klares Signal: DRUNTER DURCH. Vorher hing ein Balken an Seilen, die oben
+// aus dem Bild verschwanden, und wirkte schwebend.
+const STONE = ["#f1e8f7", "#c8b8dc", "#8c7aa8"];
+function stonePillar(g, x, yTop, w, h) {
+  const gr = g.createLinearGradient(x - w / 2, 0, x + w / 2, 0);
+  gr.addColorStop(0, STONE[0]); gr.addColorStop(0.55, STONE[1]); gr.addColorStop(1, STONE[2]);
+  g.fillStyle = gr;
+  g.beginPath(); g.roundRect(x - w / 2, yTop, w, h, 3); g.fill();
+  g.strokeStyle = "rgba(60, 40, 90, 0.35)"; g.lineWidth = 1.2;
+  for (let yy = yTop + 14; yy < yTop + h - 4; yy += 14) { g.beginPath(); g.moveTo(x - w / 2 + 1, yy); g.lineTo(x + w / 2 - 1, yy); g.stroke(); }
+}
 SPR.arch = makeSprite(140, 100, g => {
-  // Halteseile nach oben (aus dem Bild hinaus)
-  g.strokeStyle = "rgba(217, 201, 160, 0.85)";
-  g.lineWidth = 2.5;
-  for (const x of [-56, 56]) {
-    g.beginPath(); g.moveTo(x, -100); g.lineTo(x, -84); g.stroke();
-  }
-  // Massiver leuchtender Regenbogen-Balken
-  const bg = g.createLinearGradient(-62, 0, 62, 0);
-  RAINBOW.forEach((c, i) => bg.addColorStop(i / 5, c));
-  g.shadowColor = "#fff"; g.shadowBlur = 14;
+  stonePillar(g, -56, -88, 14, 88);
+  stonePillar(g, 56, -88, 14, 88);
+  // Sturz
+  const bg = g.createLinearGradient(0, -98, 0, -74);
+  bg.addColorStop(0, STONE[0]); bg.addColorStop(0.5, STONE[1]); bg.addColorStop(1, STONE[2]);
   g.fillStyle = bg;
-  g.beginPath(); g.roundRect(-64, -88, 128, 14, 7); g.fill();
+  g.beginPath(); g.roundRect(-66, -98, 132, 20, 4); g.fill();
+  g.fillStyle = "rgba(255,255,255,0.45)";
+  g.beginPath(); g.roundRect(-62, -96, 124, 4, 2); g.fill();
+  // Kristall-Einlage in der Mitte
+  g.shadowColor = PINK; g.shadowBlur = 10;
+  g.fillStyle = PINK;
+  g.beginPath(); g.moveTo(0, -97); g.lineTo(6, -88); g.lineTo(0, -79); g.lineTo(-6, -88); g.closePath(); g.fill();
   g.shadowBlur = 0;
-  // Lichtkante
-  g.fillStyle = "rgba(255,255,255,0.5)";
-  g.beginPath(); g.roundRect(-60, -86, 120, 4, 2); g.fill();
-  // Wimpel hängen herab — klares Signal: DRUNTER DURCH!
+  // Wimpel
   for (let i = 0; i < 6; i++) {
-    const x = -52 + i * 20.8;
+    const x = -45 + i * 18;
     g.fillStyle = RAINBOW[i];
-    g.shadowColor = RAINBOW[i]; g.shadowBlur = 8;
-    g.beginPath();
-    g.moveTo(x - 8, -74); g.lineTo(x + 8, -74); g.lineTo(x, -54);
-    g.closePath(); g.fill();
-    g.shadowBlur = 0;
+    g.beginPath(); g.moveTo(x - 7, -78); g.lineTo(x + 7, -78); g.lineTo(x, -60); g.closePath(); g.fill();
+    g.strokeStyle = "rgba(34, 18, 52, 0.5)"; g.lineWidth = 1.2; g.stroke();
   }
-  // Funkel-Punkte auf dem Balken
-  g.fillStyle = "rgba(255,255,255,0.9)";
-  for (const [px, py] of [[-38, -81], [4, -84], [40, -80]]) {
-    g.beginPath(); g.arc(px, py, 1.8, 0, Math.PI * 2); g.fill();
-  }
+});
+
+// --- Kulisse: Ruinen (Temple-Run-Gefühl statt nur Pilze & Kristalle) ---
+SPR.pillar = makeSprite(60, 150, g => {
+  // Sockel
+  g.fillStyle = STONE[2];
+  g.beginPath(); g.roundRect(-20, -14, 40, 14, 3); g.fill();
+  // Schaft mit Kanneluren, oben abgebrochen
+  const gr = g.createLinearGradient(-14, 0, 14, 0);
+  gr.addColorStop(0, STONE[0]); gr.addColorStop(0.55, STONE[1]); gr.addColorStop(1, STONE[2]);
+  g.fillStyle = gr;
+  g.beginPath();
+  g.moveTo(-14, -14); g.lineTo(-14, -118); g.lineTo(-6, -128); g.lineTo(-1, -116); g.lineTo(6, -134);
+  g.lineTo(14, -122); g.lineTo(14, -14); g.closePath(); g.fill();
+  g.strokeStyle = "rgba(60, 40, 90, 0.3)"; g.lineWidth = 1.4;
+  for (const x of [-7, 0, 7]) { g.beginPath(); g.moveTo(x, -18); g.lineTo(x, -112); g.stroke(); }
+  // Moos
+  g.fillStyle = "rgba(90, 170, 90, 0.7)";
+  for (const [x, y, r] of [[-12, -30, 5], [-9, -24, 4], [11, -60, 4], [-12, -92, 3.5]]) { g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill(); }
+});
+SPR.ruin = makeSprite(130, 130, g => {
+  stonePillar(g, -44, -112, 18, 112);
+  stonePillar(g, 44, -74, 18, 74);
+  // halber Bogen, rechts abgebrochen
+  g.strokeStyle = STONE[1]; g.lineWidth = 16; g.lineCap = "butt";
+  g.beginPath(); g.arc(0, -96, 44, Math.PI * 1.02, Math.PI * 1.62); g.stroke();
+  g.strokeStyle = "rgba(255,255,255,0.35)"; g.lineWidth = 3;
+  g.beginPath(); g.arc(0, -96, 51, Math.PI * 1.05, Math.PI * 1.58); g.stroke();
+  // Trümmer am Boden
+  g.fillStyle = STONE[2];
+  for (const [x, y, w, h] of [[14, -8, 16, 8], [30, -6, 10, 6], [-8, -5, 9, 5]]) { g.beginPath(); g.roundRect(x, y, w, h, 2); g.fill(); }
+  g.fillStyle = "rgba(90, 170, 90, 0.7)";
+  for (const [x, y, r] of [[-52, -20, 5], [-38, -60, 4], [40, -30, 4.5]]) { g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill(); }
 });
 
 // --- Kristallfels (nur ausweichen!) ---
@@ -388,6 +465,10 @@ SPR.edgeB = makeSprite(26, 24, g => {
   g.shadowBlur = 0;
 });
 
+for (const k of ["hurdle", "arch", "rock", "coin", "gem", "mushroom", "tree", "pillar", "ruin"]) {
+  try { outlineSprite(SPR[k], k === "coin" || k === "gem" ? 3 : 4); } catch (_) {}
+}
+
 // --- Weiche, fluffige Wolke (heller Kern + weiche Unterschattierung) ---
 // --- Grasbüschel & Blumen am Wegrand ---
 // Halme aus Schatten + Licht statt fester Farbe: so passen sie auf Wiese, Eis
@@ -520,6 +601,11 @@ function hash2(a, b) {
   h = Math.imul(h ^ (h >>> 13), 1274126177);
   return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 }
+// Abgrund-Abschnitte: alle 170 Einheiten läuft der Weg 42 Einheiten lang als
+// Felsgrat über einer dunstigen Tiefe (wie die Brücken bei Temple Run).
+const ABY_START = 70, ABY_PER = 170, ABY_LEN = 42;
+function abyssAt(w) { if (w < ABY_START) return false; return (w - ABY_START) % ABY_PER < ABY_LEN; }
+
 // Energiesparen (Profil → Einstellungen): Deko-Extras weglassen
 const LOWP = () => document.documentElement.hasAttribute("data-lowpower");
 function mixHex(a, b, u) {
@@ -636,10 +722,11 @@ function spawnEvent(wz) {
     return;
   }
   if (r < 0.30 && meters > 120) {
-    // Ganze Breite: springen oder ducken
-    const kind = rngW() < 0.5 ? "hurdle" : "arch";
+    // Ganze Breite: springen (Hürde oder Lücke im Weg) oder ducken
+    const q = rngW();
+    const kind = meters > 200 && q < 0.34 ? "gap" : q < 0.67 ? "hurdle" : "arch";
     entities.push({ type: "ob", kind, lane: -1, wz, passed: false });
-    if (kind === "hurdle" && rngW() < 0.6) spawnCoinArc(wz, Math.floor(rngW() * 3));
+    if ((kind === "hurdle" || kind === "gap") && rngW() < 0.6) spawnCoinArc(wz, Math.floor(rngW() * 3));
     return;
   }
   // 1–2 Spuren blockiert (nie alle 3)
@@ -695,7 +782,7 @@ function spawnPowerup(wz) {
 }
 
 function spawnScenery(wz) {
-  const kinds = ["tree", "mushroom", "lantern", "tree"];
+  const kinds = ["tree", "mushroom", "lantern", "tree", "pillar", "ruin", "pillar"];
   sceneries.push({
     kind: kinds[Math.floor(Math.random() * kinds.length)],
     side: Math.random() < 0.5 ? -1 : 1,
@@ -719,6 +806,15 @@ function puff(x, y, color, n = 10, spd = 120, up = 0) {
       grav: 300,
     });
   }
+}
+// Funkelsterne beim Einsammeln (statt runder Punkte)
+function starBurst(x, y, color, n = 5) {
+  for (let i = 0; i < n; i++) {
+    const a = -Math.PI / 2 + (Math.random() - 0.5) * 2.4, v = 60 + Math.random() * 90;
+    particles.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: 0.45 + Math.random() * 0.25, age: 0,
+      size: 5 + Math.random() * 4, color, grav: 120, star: true, rot: Math.random() * Math.PI });
+  }
+  particles.push({ x, y, vx: 0, vy: -20, life: 0.28, age: 0, size: 11, color: "#fffbe6", grav: 0, star: true, rot: 0 });
 }
 function sparkleTrail(x, y, color) {
   particles.push({
@@ -1020,7 +1116,7 @@ function update(dt) {
         comboT = 1.4;
         sound.coin(Math.min(coinCombo, 12));
         const cy = groundY(tOf(z)) - e.h * tOf(z) / PLAYER_T;
-        puff(laneX(e.lanePos, tOf(z)), cy, e.kind === "gem" ? PINK : GOLD, 7, 100, 60);
+        starBurst(laneX(e.lanePos, tOf(z)), cy, e.kind === "gem" ? PINK : GOLD, e.kind === "gem" ? 9 : 5);
       }
     } else if (e.type === "pow" && !e.taken) {
       if (Math.abs(z - PLAYER_Z) < 0.45 && Math.abs(e.lane - laneCur) < 0.55) {
@@ -1039,6 +1135,7 @@ function update(dt) {
           e.passed = true;
           const cleared =
             (e.kind === "hurdle" && jumpH > 38) ||
+            (e.kind === "gap" && jumpH > 26) ||
             (e.kind === "arch" && sliding > 0);
           if (!cleared) hitObstacle(e);
         }
@@ -1249,11 +1346,68 @@ function render(now) {
       const alpha = Math.min(1, t * 5);
       for (const sgn of [-1, 1]) for (let j = 0; j < 2; j++) {
         if (jun && sgn === jun.dir && z > gapZ - 0.4 && z < jun.z + 0.6) continue;
+        if (abyssAt(o + z)) continue;
         const h = hash2(k * 2 + j, sgn);
         const x = centerX(t) + sgn * roadHalf(t) * (1.22 + h * 1.9 + j * 0.35);
         if (x < -30 || x > W + 30) continue;
         const sp = h > 0.86 ? SPR.flowerA : h > 0.76 ? SPR.flowerB : SPR.tuft;
         blitFoot(sp, x, y, t / PLAYER_T * (1 + h * 0.4), alpha);
+      }
+    }
+  }
+
+  // --- Abgrund links und rechts des Wegs ---
+  {
+    const kA = Math.floor((o + ZN - ABY_START) / ABY_PER), kB = Math.ceil((o + SPAWN_Z - ABY_START) / ABY_PER);
+    for (let k = Math.max(0, kA); k <= kB; k++) {
+      const zA = Math.max(ZN, ABY_START + k * ABY_PER - o);
+      const zB = Math.min(SPAWN_Z, ABY_START + k * ABY_PER + ABY_LEN - o);
+      if (zB <= zA) continue;
+      const n = 12, pts = [];
+      for (let i = 0; i <= n; i++) {
+        const z = zA + (zB - zA) * Math.pow(i / n, 1.6);
+        const t = tOf(z);
+        pts.push([t, groundY(t)]);
+      }
+      const yA = pts[0][1], yB = pts[n][1], tB = pts[n][0];
+      for (const sgn of [-1, 1]) {
+        const xo = t => centerX(t) + sgn * (roadHalf(t) + 30 * t);
+        const edgeX = sgn > 0 ? W + 80 : -80;
+        // Tiefe: nah dunkel, fern im Dunst
+        const ag = ctx.createLinearGradient(0, yB, 0, Math.min(yA, H + 60));
+        ag.addColorStop(0, mixHex(pal.sky[2], pal.ridge, 0.35));
+        ag.addColorStop(0.3, mixHex(pal.ridge, "#000000", 0.45));
+        ag.addColorStop(1, "#12081f");
+        ctx.fillStyle = ag;
+        ctx.beginPath();
+        pts.forEach(([t, y], i) => i ? ctx.lineTo(xo(t), y) : ctx.moveTo(xo(t), y));
+        ctx.lineTo(edgeX, yB); ctx.lineTo(edgeX, yA);
+        ctx.closePath(); ctx.fill();
+        // Felswand unter dem Grat
+        const cg = ctx.createLinearGradient(0, yB, 0, Math.min(yA + 80, H + 140));
+        cg.addColorStop(0, mixHex(pal.road[1], "#000000", 0.3));
+        cg.addColorStop(1, "#140a22");
+        ctx.fillStyle = cg;
+        ctx.beginPath();
+        pts.forEach(([t, y], i) => i ? ctx.lineTo(xo(t), y) : ctx.moveTo(xo(t), y));
+        for (let i = n; i >= 0; i--) { const [t, y] = pts[i]; ctx.lineTo(xo(t) - sgn * 8 * t, y + 90 * t); }
+        ctx.closePath(); ctx.fill();
+        // gegenüberliegende Kante der Wiese (ihre Wand zeigt zu uns)
+        if (zB < SPAWN_Z - 0.01) {
+          const x0 = xo(tB), fh = 40 * tB;
+          const rg = ctx.createLinearGradient(0, yB, 0, yB + fh);
+          rg.addColorStop(0, mixHex(pal.ground[1], "#000000", 0.35));
+          rg.addColorStop(1, "rgba(18,8,31,0)");
+          ctx.fillStyle = rg;
+          ctx.fillRect(Math.min(x0, edgeX), yB, Math.abs(edgeX - x0), fh);
+          ctx.fillStyle = pal.ground[0];
+          ctx.fillRect(Math.min(x0, edgeX), yB - Math.max(1, 2 * tB), Math.abs(edgeX - x0), Math.max(1.5, 3 * tB));
+        }
+        // nahe Kante der Wiese
+        if (zA > ZN + 0.01) {
+          ctx.fillStyle = pal.ground[0];
+          ctx.fillRect(Math.min(xo(pts[0][0]), edgeX), yA - 1, Math.abs(edgeX - xo(pts[0][0])), Math.max(2, 3 * pts[0][0]));
+        }
       }
     }
   }
@@ -1457,6 +1611,7 @@ function render(now) {
     const z = s.wz - o;
     if (z < 0.6 || z > SPAWN_Z) continue;
     if (jun && s.side === jun.dir && z > gapZ - 0.8 && z < jun.z + 1.2) continue;   // nicht auf dem Seitenweg
+    if (abyssAt(s.wz)) continue;                                                        // nicht im Abgrund
     drawables.push({ z, kind: "scen", e: s });
   }
   for (const e of entities) {
@@ -1492,6 +1647,10 @@ function render(now) {
       blitFoot(SPR[e.kind], x, groundY(t), t / PLAYER_T * e.sc * 1.5, alpha);
     } else if (d.kind === "ob" && e.kind === "turn") {
       drawJunction(e, now, pal);
+    } else if (d.kind === "ob" && e.kind === "gap") {
+      drawGap(e, d.z, pal);
+    } else if (d.kind === "ob" && e.kind === "arch" && e.lane === -1) {
+      drawGate(t, alpha);
     } else if (d.kind === "ob") {
       const lanes = e.lane === -1 ? [0, 1, 2] : [e.lane];
       for (const l of lanes) {
@@ -1510,8 +1669,10 @@ function render(now) {
       const x = laneX(e.lanePos, t);
       const bob = Math.sin(now * 0.005 + e.wz * 2) * 4;
       const y = groundY(t) - (e.h + bob) * t / PLAYER_T;
-      const sc = t / PLAYER_T * ITEMS * (0.85 + 0.15 * Math.sin(now * 0.006 + e.wz * 3));
-      blitFoot(SPR[e.kind], x, y + 17 * sc, sc, alpha);
+      const sc = t / PLAYER_T * ITEMS;
+      // Taler drehen sich um die Hochachse (Juwele funkeln ruhig)
+      const spin = e.kind === "coin" ? 0.28 + 0.72 * Math.abs(Math.cos(now * 0.0042 + e.wz * 1.7)) : 1;
+      blitFootXY(SPR[e.kind], x, y + 17 * sc, sc * spin, sc, alpha);
     } else if (d.kind === "pow") {
       const x = laneX(e.lane, t);
       const bob = Math.sin(now * 0.004 + e.wz) * 6;
@@ -1571,22 +1732,35 @@ function render(now) {
     ctx.globalAlpha = Math.max(0, 1 - p.age / p.life);
     ctx.fillStyle = p.color;
     ctx.beginPath();
-    ctx.arc(p.x, p.y, p.size * (1 - p.age / p.life * 0.5), 0, Math.PI * 2);
+    if (p.star) {   // vierzackiger Funkelstern
+      const r = p.size * (1 - p.age / p.life * 0.4), rot = p.rot + p.age * 6;
+      for (let i = 0; i < 8; i++) {
+        const rr = i % 2 ? r * 0.28 : r, a = rot + i * Math.PI / 4;
+        i ? ctx.lineTo(p.x + Math.cos(a) * rr, p.y + Math.sin(a) * rr) : ctx.moveTo(p.x + Math.cos(a) * rr, p.y + Math.sin(a) * rr);
+      }
+      ctx.closePath();
+    } else {
+      ctx.arc(p.x, p.y, p.size * (1 - p.age / p.life * 0.5), 0, Math.PI * 2);
+    }
     ctx.fill();
   }
   ctx.globalAlpha = 1;
 
   // --- Boost-Speedlines ---
+  // Fahrtwind: feine Streifen ziehen an den Bildrändern vorbei (vorher Strahlen
+  // aus der Bildmitte, die über der Figur lagen)
   if (boostT > 0) {
-    ctx.strokeStyle = "rgba(255, 243, 196, 0.35)";
-    ctx.lineWidth = 2;
-    for (let i = 0; i < 10; i++) {
-      const a = (i / 10) * Math.PI * 2 + now * 0.002;
-      const r1 = Math.min(W, H) * 0.34, r2 = Math.min(W, H) * 0.6;
-      ctx.beginPath();
-      ctx.moveTo(W / 2 + Math.cos(a) * r1, H * 0.5 + Math.sin(a) * r1);
-      ctx.lineTo(W / 2 + Math.cos(a) * r2, H * 0.5 + Math.sin(a) * r2);
-      ctx.stroke();
+    const fade = Math.min(1, boostT / 0.4);
+    ctx.lineCap = "round";
+    for (let i = 0; i < 16; i++) {
+      const side = i % 2 ? 1 : -1;
+      const x = side > 0 ? W * (0.84 + hash2(i, 5) * 0.15) : W * (0.01 + hash2(i, 5) * 0.15);
+      const v = 1.4 + hash2(i, 9) * 1.3;
+      const y = ((now * 0.001 * v * H + hash2(i, 3) * H * 1.3) % (H * 1.3)) - H * 0.15;
+      const len = 40 + hash2(i, 7) * 70;
+      ctx.strokeStyle = `rgba(255, 246, 214, ${(0.22 + hash2(i, 13) * 0.25) * fade})`;
+      ctx.lineWidth = 1.2 + hash2(i, 11) * 1.8;
+      ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + side * len * 0.14, y + len); ctx.stroke();
     }
   }
 
@@ -1604,6 +1778,83 @@ function render(now) {
   }
 
   ctx.drawImage(vignette, 0, 0);
+}
+
+// --- Steintor über den ganzen Weg: Säulen stehen auf den Randmauern ---
+function drawGate(t, alpha) {
+  const k = t / PLAYER_T * OBS;
+  const y = groundY(t), cx = centerX(t), half = roadHalf(t);
+  const wallTop = y - 24 * t;
+  const beamB = y - 74 * k, beamH = 18 * k, pw = 18 * k;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.lineJoin = "round";
+  // Schattenband auf dem Weg
+  ctx.fillStyle = "rgba(10,5,18,0.22)";
+  ctx.fillRect(cx - half, y - 3 * t, half * 2, 6 * t);
+  const pillar = x => {
+    const g = ctx.createLinearGradient(x - pw / 2, 0, x + pw / 2, 0);
+    g.addColorStop(0, STONE[0]); g.addColorStop(0.55, STONE[1]); g.addColorStop(1, STONE[2]);
+    ctx.fillStyle = g; ctx.strokeStyle = U_OUT; ctx.lineWidth = Math.max(1.5, 2.5 * k);
+    ctx.beginPath(); ctx.rect(x - pw / 2, beamB - beamH, pw, wallTop - (beamB - beamH)); ctx.stroke(); ctx.fill();
+    ctx.strokeStyle = "rgba(60,40,90,0.35)"; ctx.lineWidth = Math.max(1, 1.2 * k);
+    for (let yy = beamB; yy < wallTop - 4; yy += 16 * k) { ctx.beginPath(); ctx.moveTo(x - pw / 2, yy); ctx.lineTo(x + pw / 2, yy); ctx.stroke(); }
+  };
+  pillar(cx - half * 0.98); pillar(cx + half * 0.98);
+  // Sturz
+  const bg = ctx.createLinearGradient(0, beamB - beamH, 0, beamB);
+  bg.addColorStop(0, STONE[0]); bg.addColorStop(0.5, STONE[1]); bg.addColorStop(1, STONE[2]);
+  ctx.fillStyle = bg; ctx.strokeStyle = U_OUT; ctx.lineWidth = Math.max(1.5, 2.5 * k);
+  ctx.beginPath(); ctx.rect(cx - half * 0.98 - pw * 0.8, beamB - beamH, half * 1.96 + pw * 1.6, beamH); ctx.stroke(); ctx.fill();
+  ctx.fillStyle = "rgba(255,255,255,0.4)";
+  ctx.fillRect(cx - half * 0.98 - pw * 0.6, beamB - beamH + 2 * k, half * 1.96 + pw * 1.2, 3 * k);
+  // Kristall in der Mitte
+  ctx.shadowColor = PINK; ctx.shadowBlur = LOWP() ? 0 : 10;
+  ctx.fillStyle = PINK;
+  ctx.beginPath(); ctx.moveTo(cx, beamB - beamH + 1); ctx.lineTo(cx + 6 * k, beamB - beamH / 2); ctx.lineTo(cx, beamB - 1); ctx.lineTo(cx - 6 * k, beamB - beamH / 2); ctx.closePath(); ctx.fill();
+  ctx.shadowBlur = 0;
+  // Wimpel über alle drei Spuren
+  const n = 14, span = half * 1.8;
+  for (let i = 0; i < n; i++) {
+    const x = cx - span / 2 + (i + 0.5) * span / n, w = span / n * 0.42;
+    ctx.fillStyle = RAINBOW[i % 6];
+    ctx.beginPath(); ctx.moveTo(x - w, beamB); ctx.lineTo(x + w, beamB); ctx.lineTo(x, beamB + 17 * k); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = "rgba(34, 18, 52, 0.45)"; ctx.lineWidth = Math.max(1, 1.2 * k); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// --- Lücke im Weg (springen!) — das Pflaster ist weggebrochen ---
+function drawGap(e, zc, pal) {
+  const z0 = Math.max(0.72, zc - 0.5), z1 = zc + 0.5;
+  if (z1 <= z0) return;
+  const t0 = tOf(z0), t1 = tOf(z1), y0 = groundY(t0), y1 = groundY(t1);
+  const L = t => centerX(t) - roadHalf(t), R = t => centerX(t) + roadHalf(t);
+  ctx.save();
+  ctx.globalAlpha = Math.min(1, t1 * 8);
+  // Tiefe
+  const g = ctx.createLinearGradient(0, y1, 0, y0);
+  g.addColorStop(0, mixHex(pal.road[1], "#000000", 0.35));   // gegenüberliegende Bruchkante
+  g.addColorStop(0.35, "#1a0d2a");
+  g.addColorStop(1, "#07030d");
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.moveTo(L(t0), y0); ctx.lineTo(R(t0), y0); ctx.lineTo(R(t1), y1); ctx.lineTo(L(t1), y1); ctx.closePath(); ctx.fill();
+  // Gezackte Bruchkanten (vorn und hinten), Steinfarbe des Wegs
+  const jag = (t, y, dir, seed) => {
+    const x0 = L(t), x1 = R(t), n = 9, amp = (y0 - y1) * 0.12;
+    ctx.fillStyle = mixHex(pal.road[0], "#000000", dir > 0 ? 0.05 : 0.2);
+    ctx.beginPath(); ctx.moveTo(x0, y);
+    for (let i = 0; i <= n; i++) {
+      const x = x0 + (x1 - x0) * i / n;
+      ctx.lineTo(x, y + dir * amp * (0.3 + hash2(i + seed, 17) * (i % 2 ? 1 : 0.4)));
+    }
+    ctx.lineTo(x1, y); ctx.closePath(); ctx.fill();
+  };
+  jag(t1, y1, 1, 3);    // hintere Kante ragt zu uns in die Lücke
+  jag(t0, y0, -1, 9);   // vordere Kante ragt nach hinten
+  ctx.strokeStyle = "rgba(255,255,255,0.18)"; ctx.lineWidth = Math.max(1, 2 * t1);
+  ctx.beginPath(); ctx.moveTo(L(t1), y1); ctx.lineTo(R(t1), y1); ctx.stroke();
+  ctx.restore();
 }
 
 // --- Kreuzung wie bei Temple Run ---
@@ -1980,6 +2231,14 @@ function drawUnicorn(now) {
   const catchK = Math.min(1, over * 2);
   const ux = Math.max(W * 0.13, laneX(uniLane, PLAYER_T) - W * 0.2 * (1 - catchK) - YAW * 0.4 * s) + Math.sin(gp * 0.5) * 3 * s;
   const uy = H + 212 * s - rise - bob;
+
+  // Schatten am Boden (bleibt unten, während es springt)
+  if (uy + bob < H + 30) {
+    ctx.globalAlpha = 0.3;
+    ctx.fillStyle = "#0a0512";
+    ctx.beginPath(); ctx.ellipse(ux + YAW * 0.3 * s, uy + bob + 2, 62 * s * (1 - bob / (60 * s)), 9 * s, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 1;
+  }
 
   ctx.save();
   ctx.translate(ux, uy);
@@ -2380,7 +2639,7 @@ function autoPilot() {
   if (!nearest) return;
   const e = nearest.e;
   if (e.lane === -1) {
-    if (e.kind === "hurdle" && nearest.z < PLAYER_Z + 1.4) doJump();
+    if ((e.kind === "hurdle" || e.kind === "gap") && nearest.z < PLAYER_Z + 1.4) doJump();
     if (e.kind === "arch" && nearest.z < PLAYER_Z + 1.4) doSlide();
   } else if (Math.abs(e.lane - laneTarget) < 0.5) {
     const free = [0, 1, 2].filter(l =>

@@ -100,38 +100,44 @@ button:active { transform: scale(0.94); }
   flex-shrink: 0;
 }
 
-/* HUD liegt AUF der Bühne — maximale Spielfläche */
+/* HUD liegt AUF der Bühne — schlankes Band wie bei Temple Run: Strecke links,
+   Punkte in der Mitte, Taler rechts (vorher drei große Kästen über dem Himmel) */
 .hud {
   position: absolute;
-  left: 12px; right: 12px; top: 10px;
+  left: 10px; right: 10px; top: 8px;
   display: flex;
+  justify-content: space-between;
   gap: 8px;
   z-index: 5;
   pointer-events: none;
 }
 .hud-item {
-  flex: 1;
-  background: rgba(18, 8, 30, 0.55);
-  backdrop-filter: blur(8px);
-  border-radius: 12px;
-  padding: 5px 10px;
-  text-align: center;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  background: rgba(18, 8, 30, 0.42);
+  backdrop-filter: blur(6px);
+  border-radius: 999px;
+  padding: 4px 12px;
   box-shadow: 0 0 0 1px var(--edge-soft) inset;
 }
+.hud-item:nth-child(1) { order: 2; }   /* Punkte in die Mitte */
+.hud-item:nth-child(2) { order: 1; }   /* Strecke links */
+.hud-item:nth-child(3) { order: 3; }   /* Taler rechts */
 .hud-item span {
-  display: block;
   font-family: var(--font-display);
   font-weight: 800;
-  font-size: 1.2rem;
-  line-height: 1.15;
+  font-size: 1.05rem;
+  line-height: 1.2;
   font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.5);
 }
 #hud-coins { color: var(--gold); }
 .hud-item label {
   color: var(--muted);
-  font-size: 0.6rem;
+  font-size: 0.55rem;
   text-transform: uppercase;
-  letter-spacing: 0.2em;
+  letter-spacing: 0.14em;
 }
 
 /* ---------- Bühne ---------- */
@@ -150,7 +156,7 @@ button:active { transform: scale(0.94); }
 /* ---------- Einhorn-Abstandsleiste ---------- */
 #chase-ui {
   position: absolute;
-  left: 12px; right: 12px; top: 68px;
+  left: 12px; right: 12px; top: 46px;
   display: flex;
   align-items: center;
   gap: 8px;
