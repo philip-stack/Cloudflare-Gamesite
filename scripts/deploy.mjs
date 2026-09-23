@@ -38,7 +38,10 @@ catch { fail("?v=-Hashes veraltet — `npm run bump`, committen, dann nochmal.")
 
 step("Tests", "npm test");
 
-step("D1-Migrationen", "npx wrangler d1 migrations apply wuerfelpoker --remote");
+// Der Migrationsschritt scheiterte schon zweimal sporadisch an der Cloudflare-API
+// (beim zweiten Aufruf sofort ok) — darum ein zweiter Versuch, bevor abgebrochen wird.
+try { step("D1-Migrationen", "npx wrangler d1 migrations apply wuerfelpoker --remote"); }
+catch { console.log("  … erster Versuch fehlgeschlagen, zweiter Versuch"); step("D1-Migrationen (2. Versuch)", "npx wrangler d1 migrations apply wuerfelpoker --remote"); }
 
 let lastTag = "";
 try { lastTag = out('git describe --tags --abbrev=0 --match "deploy-*"'); } catch {}
