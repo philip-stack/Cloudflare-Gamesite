@@ -633,6 +633,7 @@ let o = 0;              // Welt-Offset (zurückgelegte Einheiten)
 let speed = 0, meters = 0, coins = 0, score = 0;
 let laneTarget = 1, laneCur = 1;
 let uniLane = 1;        // Spur des Einhorns — folgt der Läuferin träge
+let laneVel = 0, leanS = 0;   // Spurwechsel als gedämpfte Feder, weiche Körperneigung
 let jumpH = 0, jumpV = 0, sliding = 0;
 let stumbleT = 0, invuln = 0, runPhase = 0, landT = 0;
 let chase = 0.5;        // Einhorn-Nähe 0..1 (1 = erwischt)
@@ -658,7 +659,7 @@ let best = Number(localStorage.getItem("galopp_best") || 0);
 
 function newRun() {
   o = 0; speed = BASE_SPEED; meters = 0; coins = 0; score = 0;
-  laneTarget = 1; laneCur = 1; uniLane = 1;
+  laneTarget = 1; laneCur = 1; uniLane = 1; laneVel = 0; leanS = 0;
   jumpH = 0; jumpV = 0; sliding = 0;
   stumbleT = 0; invuln = 0; runPhase = 0; landT = 0;
   chase = 0.5; catchT = 0; shake = 0; flash = 0;
@@ -1047,7 +1048,17 @@ function update(dt) {
   }
 
   // Spur / Sprung / Slide
-  laneCur += (laneTarget - laneCur) * Math.min(1, dt * 11);
+  // Spurwechsel als kritisch gedämpfte Feder: fährt weich an und kommt weich
+  // an, ohne Überschwingen (vorher sprang die Geschwindigkeit beim Wischen
+  // schlagartig von 0 auf voll — das wirkte wie ein Ruckler).
+  {
+    const w0 = 19, h = Math.min(dt, 1 / 30);
+    laneVel += (w0 * w0 * (laneTarget - laneCur) - 2 * w0 * laneVel) * h;
+    laneCur += laneVel * h;
+    if (Math.abs(laneTarget - laneCur) < 0.002 && Math.abs(laneVel) < 0.02) { laneCur = laneTarget; laneVel = 0; }
+  }
+  // Körperneigung folgt der Seitwärts-Geschwindigkeit, springt nie
+  leanS += (Math.max(-1, Math.min(1, laneVel * 0.16)) - leanS) * Math.min(1, dt * 12);
   uniLane += (laneCur - uniLane) * Math.min(1, dt * 3.2);   // zieht hinterher, springt nicht mit
   if (jumpH > 0 || jumpV > 0) {
     jumpH += jumpV * dt;
@@ -1204,12 +1215,12 @@ function render(now) {
   if (shake > 0) {
     ctx.translate((Math.random() - 0.5) * shake * 14, (Math.random() - 0.5) * shake * 14);
   }
-  // Kamera: läuft mit (Kopf-Wippen) und lehnt sich in den Spurwechsel
+  // Kamera: läuft mit (leichtes Wippen) und folgt der Läuferin seitlich weich,
+  // wie bei Temple Run. Kein Kippen beim Spurwechsel mehr — das setzte
+  // schlagartig ein und wirkte wie ein Ruckler.
   if (mode === "run" || mode === "catch") {
-    const camBob = jumpH > 2 ? 0 : Math.abs(Math.sin(runPhase)) * 4;
-    ctx.translate(W / 2, H / 2);
-    ctx.rotate((laneTarget - laneCur) * 0.018);
-    ctx.translate(-W / 2, -H / 2 + camBob);
+    const camBob = jumpH > 2 ? 0 : Math.abs(Math.sin(runPhase)) * 3;
+    ctx.translate(-(laneCur - 1) * W * 0.05, camBob);
   }
 
   // --- Himmel ---
@@ -1218,7 +1229,7 @@ function render(now) {
   sky.addColorStop(0.62, pal.sky[1]);
   sky.addColorStop(1, pal.sky[2]);
   ctx.fillStyle = sky;
-  ctx.fillRect(0, 0, W, hY * 1.3);
+  ctx.fillRect(-80, -80, W + 160, hY * 1.3 + 80);   // übergroß: Kamera-Wippen legt keinen Rand frei
 
   // Sterne
   if (pal.stars > 0.05) {
@@ -1265,7 +1276,7 @@ function render(now) {
   hg2.addColorStop(0, pal.sky[2].replace("rgb", "rgba").replace(")", ",0.5)"));
   hg2.addColorStop(1, "rgba(0,0,0,0)");
   ctx.fillStyle = hg2;
-  ctx.fillRect(0, hY - W * 0.3, W, W * 0.6);
+  ctx.fillRect(-80, hY - W * 0.3, W + 160, W * 0.6);
 
   // --- Bergrücken (Parallax) ---
   // Luftperspektive: je ferner, desto heller und blasser; Gipfel im Licht
@@ -1283,7 +1294,7 @@ function render(now) {
     rg.addColorStop(1, mixHex(base, pal.sky[2], L.haze));
     ctx.fillStyle = rg;
     ctx.beginPath();
-    ctx.moveTo(0, hY + 2);
+    ctx.moveTo(-80, hY + 2);
     const n = ridge.pts.length - 1;
     for (let rep = -1; rep <= 1; rep++) {
       for (let i = 0; i <= n; i++) {
@@ -1320,7 +1331,7 @@ function render(now) {
   // --- Boden: Streifen scrollen auf die Kamera zu ---
   const STRIPE = 3.4;
   ctx.fillStyle = pal.ground[1];
-  ctx.fillRect(0, hY, W, H - hY);
+  ctx.fillRect(-80, hY, W + 160, H - hY + 100);
   const kMin = Math.floor((o + ZN) / STRIPE);
   const kMax = Math.ceil((o + SPAWN_Z) / STRIPE);
   for (let k = kMin; k <= kMax; k++) {
@@ -1331,7 +1342,7 @@ function render(now) {
     const yFar = groundY(tOf(zFar));
     const yNear = groundY(tOf(zNear));
     ctx.fillStyle = pal.ground[0];
-    ctx.fillRect(0, yFar, W, yNear - yFar);
+    ctx.fillRect(-80, yFar, W + 160, yNear - yFar);
   }
 
   // Grasbüschel & Blumen am Wegrand — laufen perspektivisch mit, fern → nah
@@ -1979,7 +1990,7 @@ function drawRunner(now) {
   const x = laneX(laneCur, t);
   const yG = groundY(t);
   const y = yG - jumpH;
-  const lean = (laneTarget - laneCur) * 0.5;
+  const lean = leanS * 0.5;   // weich aufgebaut (update), springt beim Wischen nicht
   const ph = runPhase;
   const inAir = jumpH > 2;
   const duck = sliding > 0;
