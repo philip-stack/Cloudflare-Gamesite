@@ -546,6 +546,7 @@ let mode = "menu"; // menu | run | catch | over | pause
 let o = 0;              // Welt-Offset (zurückgelegte Einheiten)
 let speed = 0, meters = 0, coins = 0, score = 0;
 let laneTarget = 1, laneCur = 1;
+let uniLane = 1;        // Spur des Einhorns — folgt der Läuferin träge
 let jumpH = 0, jumpV = 0, sliding = 0;
 let stumbleT = 0, invuln = 0, runPhase = 0, landT = 0;
 let chase = 0.5;        // Einhorn-Nähe 0..1 (1 = erwischt)
@@ -571,7 +572,7 @@ let best = Number(localStorage.getItem("galopp_best") || 0);
 
 function newRun() {
   o = 0; speed = BASE_SPEED; meters = 0; coins = 0; score = 0;
-  laneTarget = 1; laneCur = 1;
+  laneTarget = 1; laneCur = 1; uniLane = 1;
   jumpH = 0; jumpV = 0; sliding = 0;
   stumbleT = 0; invuln = 0; runPhase = 0; landT = 0;
   chase = 0.5; catchT = 0; shake = 0; flash = 0;
@@ -891,6 +892,7 @@ function startCatch() {
 function update(dt) {
   if (mode === "catch") {
     catchT += dt;
+    uniLane += (laneCur - uniLane) * Math.min(1, dt * 5);
     speed = Math.max(0, speed - dt * 14);
     o += speed * dt;
     runPhase += speed * dt * 1.6;
@@ -950,6 +952,7 @@ function update(dt) {
 
   // Spur / Sprung / Slide
   laneCur += (laneTarget - laneCur) * Math.min(1, dt * 11);
+  uniLane += (laneCur - uniLane) * Math.min(1, dt * 3.2);   // zieht hinterher, springt nicht mit
   if (jumpH > 0 || jumpV > 0) {
     jumpH += jumpV * dt;
     jumpV -= GRAV * dt;
@@ -1948,185 +1951,197 @@ function drawRunner(now) {
 }
 
 // --- Das wütende Einhorn (zwischen Kamera und Läuferin) ---
-// --- Das wütende Einhorn — galoppiert links hinter der Läuferin her ---
-// Eine echte Pferdesilhouette im Profil (Blick zur Läuferin): Rücken, Kruppe,
-// Brust und gewölbter Hals als EINE Form, Beine mit Gelenken in den vier
-// Phasen des Galopps (unterstellen → abstoßen → einziehen → vorgreifen).
-// Ursprung = Boden unter dem Bauch, Blick nach rechts.
+// --- Das wütende Einhorn — rennt dir HINTERHER ---
+// Rückansicht wie die Verfolger bei Temple Run: es läuft in dieselbe Richtung
+// wie du, direkt hinter dir (zwischen Kamera und Läuferin) und folgt deiner
+// Spur mit Verzögerung. Man sieht Hinterhand mit Regenbogenschweif, die
+// galoppierenden Hinterbeine (Sohlen blitzen auf), dahinter Rücken, Hals mit
+// Mähne und Hinterkopf mit Ohren und Horn. Läufst du sauber, fällt es zurück
+// und verschwindet unter dem Bildrand; stolperst du, taucht es hinter dir auf.
+// Ursprung = Boden zwischen den Hinterhufen, y nach oben negativ.
 const U_OUT = "rgba(34, 18, 52, 0.62)";
 function drawUnicorn(now) {
   let p = chase;
   if (mode === "catch") p = Math.min(1.55, 1 + catchT * 0.8);
-  if (mode === "over") p = 1.55;                       // steht nach dem Fangen groß im Bild
-  const pc = Math.min(p, 1);
-  const s = 0.44 + p * 0.52;
-  const gallopF = 1.6 + pc * 1.1;                      // Galoppsprünge pro Sekunde
+  if (mode === "over") p = 1.55;
+  const pc = Math.min(p, 1), over = Math.max(0, p - 1);
+  const s = 1.4 + pc * 0.3 + over * 0.8;
+  const gallopF = 1.7 + pc * 1.1;                          // Galoppsprünge pro Sekunde
   const gp = now * 0.001 * gallopF * Math.PI * 2;
-  const bob = (0.5 + 0.5 * Math.sin(gp * 1 + 1.2)) * 7 * s;
-  // Links hinter der Figur, die Nüstern auf Höhe ihrer Fersen; beim Fangen
-  // schiebt es sich über sie.
-  const catchK = Math.min(1, Math.max(0, p - 1) * 2);
-  const rx = laneX(laneCur, PLAYER_T);
-  const ux = rx - W * 0.12 * (1 - catchK) - 108 * s;
-  const uy = H - 6 + Math.max(0, 0.5 - p) * 240 * s - bob;
+  // Wie weit ragt es über den unteren Rand? 0 = ganz unten verschwunden.
+  // Bis zum Fangen höchstens bis zu deinen Beinen — es darf dich nicht verdecken,
+  // sonst sähe man nach einem Stolperer weder sich noch die nächsten Hindernisse.
+  const rise = Math.max(0, Math.min(1, (p - 0.1) / 0.9)) * 165 + over * 420;
+  if (rise <= 1) return;
+  const bob = (0.5 + 0.5 * Math.sin(gp + 1.2)) * 9 * s;
+  const ux = laneX(uniLane, PLAYER_T) + Math.sin(gp * 0.5) * 3 * s;
+  const uy = H + 212 * s - rise - bob;
 
   ctx.save();
   ctx.translate(ux, uy);
   ctx.scale(s, s);
-  ctx.rotate(Math.sin(gp + 0.4) * 0.04);   // Nicken im Sprung
+  ctx.rotate(Math.sin(gp) * 0.035);                        // Hinterhand schaukelt
   ctx.lineCap = "round"; ctx.lineJoin = "round";
+  const hi = Math.sin(gp);                                  // welches Hinterbein oben ist
 
-  // Bein: Winkel gegen die Senkrechte (+ = nach vorn/rechts)
-  const leg = (x0, y0, ph, front, far) => {
-    const sn = Math.sin(ph), fold = Math.max(0, -Math.cos(ph));
-    const a1 = front ? 0.12 - 0.58 * sn : -0.05 - 0.5 * sn;
-    const a2 = front ? a1 + 0.08 - fold * 1.7 : a1 - 0.2 - fold * 1.1;
-    const L1 = front ? 30 : 34, L2 = front ? 34 : 32;
-    const x1 = x0 + Math.sin(a1) * L1, y1 = y0 + Math.cos(a1) * L1;
-    const x2 = x1 + Math.sin(a2) * L2, y2 = y1 + Math.cos(a2) * L2;
-    const col = far ? mixHex(USKIN.leg, "#000000", 0.3) : USKIN.leg;
-    const seg = (w, ax, ay, bx, by) => {
-      ctx.strokeStyle = U_OUT; ctx.lineWidth = w + 3.5;
-      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
-      ctx.strokeStyle = col; ctx.lineWidth = w;
-      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
-    };
-    seg(front ? 12 : 15, x0, y0, x1, y1);    // Unterarm / Unterschenkel
-    seg(7.5, x1, y1, x2, y2);                // Röhre
-    ctx.fillStyle = col;                     // Gelenk
-    ctx.beginPath(); ctx.arc(x1, y1, front ? 5.5 : 6.5, 0, Math.PI * 2); ctx.fill();
-    // Huf entlang der Röhre
+  // --- Vorderbeine (weit vorn, zwischen den Hinterbeinen, dunkler) ---
+  const fcol = mixHex(USKIN.leg, "#000000", 0.32);
+  for (const side of [-1, 1]) {
+    const lift = Math.max(0, Math.sin(gp + 2.2 + (side > 0 ? 0.6 : 0)));
+    const fx = side * 11, fy = -12 - lift * 22;
+    ctx.strokeStyle = U_OUT; ctx.lineWidth = 11;
+    ctx.beginPath(); ctx.moveTo(side * 12, -74); ctx.lineTo(side * (11 + lift * 3), -44 - lift * 10); ctx.lineTo(fx, fy); ctx.stroke();
+    ctx.strokeStyle = fcol; ctx.lineWidth = 7.5;
+    ctx.beginPath(); ctx.moveTo(side * 12, -74); ctx.lineTo(side * (11 + lift * 3), -44 - lift * 10); ctx.lineTo(fx, fy); ctx.stroke();
+    ctx.fillStyle = mixHex(USKIN.hoof, "#000000", 0.3);
+    ctx.beginPath(); ctx.ellipse(fx, fy + 2, 5.5, 3.5, 0, 0, Math.PI * 2); ctx.fill();
+  }
+
+  // --- Hals + Hinterkopf (weiter weg → höher im Bild, schmaler) ---
+  const neckG = ctx.createLinearGradient(0, -180, 0, -100);
+  neckG.addColorStop(0, USKIN.body[1]); neckG.addColorStop(1, USKIN.body[2]);
+  const headBob = Math.sin(gp + Math.PI) * 3;
+  const neckPath = () => {
+    ctx.beginPath();
+    ctx.moveTo(-20, -104);
+    ctx.bezierCurveTo(-18, -130, -15, -150, -13, -160 + headBob);
+    ctx.lineTo(13, -160 + headBob);
+    ctx.bezierCurveTo(15, -150, 18, -130, 20, -104);
+    ctx.closePath();
+  };
+  ctx.strokeStyle = U_OUT; ctx.lineWidth = 3;
+  neckPath(); ctx.stroke(); ctx.fillStyle = neckG; ctx.fill();
+  // Ohren (zurückgelegt vor Zorn, wenn es nah ist)
+  const earTilt = pc > 0.7 ? 0.35 : 0;
+  for (const side of [-1, 1]) {
     ctx.save();
-    ctx.translate(x2, y2); ctx.rotate(-a2);
-    ctx.fillStyle = far ? mixHex(USKIN.hoof, "#000000", 0.25) : USKIN.hoof;
-    ctx.strokeStyle = U_OUT; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.roundRect(-5.5, -2, 11, 8, 2.5); ctx.stroke(); ctx.fill();
+    ctx.translate(side * 9, -172 + headBob);
+    ctx.rotate(side * (0.25 + earTilt));
+    ctx.fillStyle = USKIN.ear; ctx.strokeStyle = U_OUT; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(-5, 3); ctx.lineTo(0, -18); ctx.lineTo(5, 3); ctx.closePath(); ctx.stroke(); ctx.fill();
+    ctx.fillStyle = "rgba(255, 150, 190, 0.55)";
+    ctx.beginPath(); ctx.moveTo(-2.5, 1); ctx.lineTo(0, -12); ctx.lineTo(2.5, 1); ctx.closePath(); ctx.fill();
     ctx.restore();
-  };
-
-  // Ferne Beine (dunkler, hinter dem Körper)
-  leg(38, -80, gp + 2.7, true, true);
-  leg(-46, -82, gp + 0.5, false, true);
-
-  // Schweif — weht nach hinten
-  for (let i = 0; i < 6; i++) {
-    const off = i - 2.5, wav = Math.sin(now * 0.007 + i * 0.7) * 8;
-    ctx.strokeStyle = USKIN.mane[i];
-    ctx.lineWidth = 6.5;
-    ctx.shadowColor = USKIN.mane[i]; ctx.shadowBlur = LOWP() ? 0 : 8;
-    ctx.beginPath();
-    ctx.moveTo(-74, -106);
-    ctx.bezierCurveTo(-96, -112 + off * 3, -112 + wav, -92 + off * 4, -128 + wav * 1.4, -70 + off * 6);
-    ctx.stroke();
   }
-  ctx.shadowBlur = 0;
-
-  // Körper und Hals + Kopf — erst beide Konturen, dann beide Füllungen (keine Naht)
-  const bodyPath = () => {
-    ctx.beginPath();
-    ctx.moveTo(44, -120);
-    ctx.bezierCurveTo(20, -113, -20, -106, -56, -116);   // Rücken zur Kruppe
-    ctx.bezierCurveTo(-76, -121, -88, -104, -81, -88);   // Hinterbacke
-    ctx.bezierCurveTo(-77, -74, -63, -66, -48, -68);     // Oberschenkel
-    ctx.bezierCurveTo(-20, -62, 20, -62, 40, -68);       // Bauch
-    ctx.bezierCurveTo(57, -71, 70, -85, 66, -99);        // Brust
-    ctx.bezierCurveTo(62, -111, 54, -120, 44, -120);
-    ctx.closePath();
-  };
-  const headPath = () => {
-    ctx.beginPath();
-    ctx.moveTo(34, -118);
-    ctx.bezierCurveTo(48, -140, 58, -160, 70, -168);     // Mähnenkamm hinauf zum Genick
-    ctx.quadraticCurveTo(80, -178, 93, -172);            // Stirn
-    ctx.bezierCurveTo(106, -166, 118, -157, 124, -149);  // Nasenrücken
-    ctx.quadraticCurveTo(129, -140, 120, -136);          // Maul
-    ctx.quadraticCurveTo(110, -132, 102, -138);          // Kinn
-    ctx.quadraticCurveTo(93, -142, 87, -146);            // Ganasche
-    ctx.bezierCurveTo(79, -130, 71, -112, 65, -97);      // Kehle hinab zur Brust
-    ctx.lineTo(48, -104);
-    ctx.closePath();
-  };
-  const bgr = ctx.createLinearGradient(0, -178, 0, -62);
-  bgr.addColorStop(0, USKIN.body[0]); bgr.addColorStop(0.6, USKIN.body[1]); bgr.addColorStop(1, USKIN.body[2]);
-  ctx.strokeStyle = U_OUT; ctx.lineWidth = 3.2;
-  bodyPath(); ctx.stroke(); headPath(); ctx.stroke();
-  ctx.fillStyle = bgr;
-  bodyPath(); ctx.fill(); headPath(); ctx.fill();
-  // Glanz auf Rücken und Hals, Schatten am Bauch
-  ctx.strokeStyle = "rgba(255,255,255,0.5)"; ctx.lineWidth = 3;
-  ctx.beginPath(); ctx.moveTo(34, -114); ctx.bezierCurveTo(10, -108, -22, -102, -52, -110); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(40, -122); ctx.bezierCurveTo(50, -140, 58, -156, 68, -163); ctx.stroke();
-  ctx.strokeStyle = "rgba(40,20,60,0.2)"; ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.arc(-58, -92, 18, 1.9, 3.6); ctx.stroke();                     // Hinterbacke
-  ctx.beginPath(); ctx.moveTo(-30, -70); ctx.bezierCurveTo(0, -66, 22, -66, 38, -72); ctx.stroke();   // Bauchlinie
-
-  // Mähne am Hals entlang, weht nach hinten
-  for (let i = 0; i < 6; i++) {
-    const u = i / 5;
-    const mx = 70 - u * 32, my = -166 + u * 46;
-    const wav = Math.sin(now * 0.008 + i * 0.9) * 6;
-    ctx.strokeStyle = USKIN.mane[i];
-    ctx.lineWidth = 7;
-    ctx.shadowColor = USKIN.mane[i]; ctx.shadowBlur = LOWP() ? 0 : 8;
-    ctx.beginPath();
-    ctx.moveTo(mx + 4, my - 2);
-    ctx.quadraticCurveTo(mx - 14 + wav, my - 6, mx - 30 + wav * 1.5, my + 8);
-    ctx.stroke();
-  }
-  ctx.shadowBlur = 0;
-  // Stirnschopf
-  ctx.strokeStyle = USKIN.mane[0]; ctx.lineWidth = 5;
-  ctx.beginPath(); ctx.moveTo(84, -175); ctx.quadraticCurveTo(90, -168, 88, -160); ctx.stroke();
-
-  // Ohr
-  ctx.fillStyle = USKIN.ear; ctx.strokeStyle = U_OUT; ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.moveTo(72, -170); ctx.lineTo(74, -192); ctx.lineTo(83, -173); ctx.closePath();
-  ctx.stroke(); ctx.fill();
-
-  // DAS HORN — golden, spiralig, glühend, zeigt nach vorn oben
+  // Hinterkopf
+  const headG = ctx.createRadialGradient(-4, -174 + headBob, 2, 0, -166 + headBob, 18);
+  headG.addColorStop(0, USKIN.body[0]); headG.addColorStop(1, USKIN.body[1]);
+  ctx.fillStyle = headG; ctx.strokeStyle = U_OUT; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.ellipse(0, -166 + headBob, 16, 13, 0, 0, Math.PI * 2); ctx.stroke(); ctx.fill();
+  // Horn — zeigt nach vorn, von hinten also steil nach oben, glühend
   const hornGlow = 0.6 + 0.4 * Math.sin(now * 0.005);
-  ctx.shadowColor = USKIN.hornGlow; ctx.shadowBlur = LOWP() ? 0 : 16 * hornGlow;
-  const hgr = ctx.createLinearGradient(90, -214, 92, -170);
-  hgr.addColorStop(0, USKIN.horn[0]); hgr.addColorStop(0.5, USKIN.horn[1]); hgr.addColorStop(1, USKIN.horn[2]);
-  ctx.fillStyle = hgr;
-  ctx.beginPath(); ctx.moveTo(86, -173); ctx.lineTo(108, -215); ctx.lineTo(97, -169); ctx.closePath(); ctx.fill();
+  ctx.shadowColor = USKIN.hornGlow; ctx.shadowBlur = LOWP() ? 0 : 18 * hornGlow;
+  const hg = ctx.createLinearGradient(0, -214, 0, -174);
+  hg.addColorStop(0, USKIN.horn[0]); hg.addColorStop(0.5, USKIN.horn[1]); hg.addColorStop(1, USKIN.horn[2]);
+  ctx.fillStyle = hg;
+  ctx.beginPath(); ctx.moveTo(-5, -176 + headBob); ctx.lineTo(0, -216 + headBob); ctx.lineTo(5, -176 + headBob); ctx.closePath(); ctx.fill();
   ctx.shadowBlur = 0;
-  ctx.strokeStyle = "rgba(138, 106, 28, 0.6)"; ctx.lineWidth = 1.5;
+  ctx.strokeStyle = "rgba(138, 106, 28, 0.6)"; ctx.lineWidth = 1.3;
   for (let i = 1; i <= 4; i++) {
-    const k = i / 5;
-    const bx = 91.5 + (108 - 91.5) * k, by = -171 + (-215 + 171) * k, w = 5.5 * (1 - k);
-    ctx.beginPath(); ctx.moveTo(bx - w, by + 2); ctx.lineTo(bx + w, by - 2); ctx.stroke();
+    const yy = -176 - i * 8 + headBob, w = 5 * (1 - i / 5.2);
+    ctx.beginPath(); ctx.moveTo(-w, yy + 1.5); ctx.lineTo(w, yy - 1.5); ctx.stroke();
+  }
+  // Glühende Augen seitlich am Kopf — nur wenn es dir gefährlich nah ist
+  if (pc > 0.6) {
+    const a = Math.min(1, (pc - 0.6) / 0.3) * (0.7 + 0.3 * Math.sin(now * 0.01));
+    ctx.globalAlpha = a;
+    ctx.fillStyle = "#ff3b5c"; ctx.shadowColor = "#ff3b5c"; ctx.shadowBlur = LOWP() ? 0 : 10;
+    // schmale, schräge Schlitze am Kopfrand (wie Glut, die seitlich hervorleuchtet)
+    ctx.strokeStyle = "#ff3b5c"; ctx.lineWidth = 2; ctx.lineCap = "round";
+    for (const side of [-1, 1]) {
+      ctx.beginPath(); ctx.moveTo(side * 13, -169 + headBob); ctx.lineTo(side * 17.5, -166.5 + headBob); ctx.stroke();
+    }
+    ctx.shadowBlur = 0; ctx.globalAlpha = 1;
+  }
+  // Mähne: viele feine Strähnen, die vom Mähnenkamm über die Halsseite fallen
+  // und im Galopp mitschwingen (vorher sechs dicke Balken quer über den Hals)
+  const mSide = Math.sin(gp) > 0 ? 1 : -1;
+  const mSwing = Math.sin(gp) * 3;
+  ctx.shadowBlur = 0;
+  for (let i = 0; i < 12; i++) {
+    const u = i / 11, yy = -162 + u * 56 + headBob * (1 - u);
+    const hw = 13 + u * 6;                                   // halbe Halsbreite an dieser Höhe
+    const wav = Math.sin(now * 0.009 + i * 0.8) * 2.5;
+    ctx.strokeStyle = USKIN.mane[i % 6];
+    ctx.lineWidth = 3.4;
+    ctx.globalAlpha = 0.92;
+    ctx.beginPath();
+    ctx.moveTo(-1 * mSide, yy);
+    ctx.quadraticCurveTo(mSide * hw * 0.6 + mSwing, yy + 2 + wav, mSide * (hw + 3) + mSwing * 1.4, yy + 11 + wav);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+  // Schopf zwischen den Ohren
+  ctx.strokeStyle = USKIN.mane[0]; ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.moveTo(0, -176 + headBob); ctx.quadraticCurveTo(mSide * 5, -172 + headBob, mSide * 7, -166 + headBob); ctx.stroke();
+
+  // --- Rumpf von hinten (Rücken sichtbar, weil die Kamera etwas höher steht) ---
+  const bodyG = ctx.createLinearGradient(0, -130, 0, -60);
+  bodyG.addColorStop(0, USKIN.body[0]); bodyG.addColorStop(0.55, USKIN.body[1]); bodyG.addColorStop(1, USKIN.body[2]);
+  ctx.fillStyle = bodyG; ctx.strokeStyle = U_OUT; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.ellipse(0, -104, 30, 18, 0, 0, Math.PI * 2); ctx.stroke(); ctx.fill();   // Rücken dahinter
+
+  // Hinterhand: zwei runde Backen + breite Kruppe als eine Form
+  const rumpPath = () => {
+    ctx.beginPath();
+    ctx.ellipse(0, -96, 40, 24, 0, 0, Math.PI * 2);
+    ctx.moveTo(-1, -84); ctx.arc(-19, -84, 22, 0, Math.PI * 2);
+    ctx.moveTo(39, -84); ctx.arc(19, -84, 22, 0, Math.PI * 2);
+  };
+  rumpPath(); ctx.lineWidth = 3.4; ctx.stroke();
+  ctx.fillStyle = bodyG; ctx.fill();
+  // Streiflicht oben, Schatten der Backen-Falte
+  const gl = ctx.createLinearGradient(0, -122, 0, -80);
+  gl.addColorStop(0, "rgba(255,255,255,0.5)"); gl.addColorStop(1, "rgba(255,255,255,0)");
+  rumpPath(); ctx.fillStyle = gl; ctx.fill();
+  ctx.strokeStyle = "rgba(40,20,60,0.28)"; ctx.lineWidth = 2.2;
+  ctx.beginPath(); ctx.moveTo(0, -104); ctx.quadraticCurveTo(-2, -82, 0, -64); ctx.stroke();
+
+  // --- Hinterbeine: Standbein gestreckt, Schwungbein angewinkelt (Sohle zeigt) ---
+  for (const side of [-1, 1]) {
+    const c = side < 0 ? hi : -hi;
+    const lift = Math.max(0, c);
+    const hx = side * 20, hy = -68;
+    const kx = side * (22 + lift * 2), ky = -34 - lift * 12;     // Sprunggelenk
+    const fx = side * (18 - lift * 2), fy = -3 - lift * 30;      // Huf
+    ctx.strokeStyle = U_OUT; ctx.lineWidth = 17.5;
+    ctx.beginPath(); ctx.moveTo(hx, hy); ctx.lineTo(kx, ky); ctx.stroke();
+    ctx.strokeStyle = USKIN.leg; ctx.lineWidth = 14;
+    ctx.beginPath(); ctx.moveTo(hx, hy); ctx.lineTo(kx, ky); ctx.stroke();
+    ctx.strokeStyle = U_OUT; ctx.lineWidth = 11.5;
+    ctx.beginPath(); ctx.moveTo(kx, ky); ctx.lineTo(fx, fy); ctx.stroke();
+    ctx.strokeStyle = USKIN.leg; ctx.lineWidth = 8.5;
+    ctx.beginPath(); ctx.moveTo(kx, ky); ctx.lineTo(fx, fy); ctx.stroke();
+    // Huf; beim hochgeschnellten Bein sieht man die Sohle
+    ctx.fillStyle = USKIN.hoof; ctx.strokeStyle = U_OUT; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.ellipse(fx, fy + 1, 7, 4 + lift * 2.5, 0, 0, Math.PI * 2); ctx.stroke(); ctx.fill();
+    if (lift > 0.3) {
+      ctx.fillStyle = "rgba(40, 24, 10, 0.45)";
+      ctx.beginPath(); ctx.ellipse(fx, fy + 1.5, 4.5, 2.5 * lift, 0, 0, Math.PI * 2); ctx.fill();
+    }
   }
 
-  // Wütendes Auge + Braue, Nüstern
-  ctx.fillStyle = "#fff";
-  ctx.beginPath(); ctx.ellipse(97, -160, 5, 5.5, 0.2, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = p > 0.7 ? "#d92b4a" : "#7a2fd9";
-  ctx.beginPath(); ctx.arc(98.5, -159.5, 3, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = "#1a0a24";
-  ctx.beginPath(); ctx.arc(99.2, -159.5, 1.5, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = USKIN.brow; ctx.lineWidth = 3;
-  ctx.beginPath(); ctx.moveTo(89, -170); ctx.lineTo(105, -164); ctx.stroke();
-  ctx.fillStyle = USKIN.nostril;
-  ctx.beginPath(); ctx.ellipse(120, -144, 2.4, 3.4, -0.5, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = "rgba(40,20,60,0.35)"; ctx.lineWidth = 1.6;
-  ctx.beginPath(); ctx.moveTo(112, -137); ctx.quadraticCurveTo(118, -135, 123, -139); ctx.stroke();   // Maulspalte
-
-  // Nahe Beine (vor dem Körper)
-  leg(48, -78, gp + 2.2, true, false);
-  leg(-58, -80, gp, false, false);
+  // --- Regenbogen-Schweif: hängt zur Kamera, schwingt im Galopp ---
+  const sw = Math.sin(gp) * 16;
+  for (let i = 0; i < 6; i++) {
+    const off = (i - 2.5) * 3.2, wav = Math.sin(now * 0.007 + i * 0.7) * 5;
+    ctx.strokeStyle = USKIN.mane[i]; ctx.lineWidth = 6.5;
+    ctx.shadowColor = USKIN.mane[i]; ctx.shadowBlur = LOWP() ? 0 : 8;
+    ctx.beginPath();
+    ctx.moveTo(off * 0.4, -112);
+    ctx.bezierCurveTo(off + sw * 0.4, -92, off * 1.4 + sw + wav, -66, off * 1.8 + sw * 1.3 + wav, -38);
+    ctx.stroke();
+  }
+  ctx.shadowBlur = 0;
 
   ctx.restore();
 
-  // Dampf aus den Nüstern, Hufstaub, Funkel-Spur
-  if (p > 0.45 && Math.sin(now * 0.004 * gallopF * 3) > 0.8) {
-    puff(ux + 124 * s, uy - 142 * s, "rgba(255,255,255,0.5)", 1, 40, 20);
+  // Hufstaub beim Aufsetzen, Funkel-Spur
+  if (mode === "run" && !LOWP() && Math.abs(hi) > 0.97) {
+    puff(ux + (hi > 0 ? 1 : -1) * 18 * s, uy - 2, "rgba(236, 226, 246, 0.55)", 2, 70, 18);
   }
-  if (mode === "run" && !LOWP() && Math.sin(gp) > 0.96) {
-    puff(ux - 60 * s, uy - 2, "rgba(236, 226, 246, 0.5)", 2, 60, 16);
-  }
-  if (p > 0.25 && Math.random() < p * 0.5) {
-    sparkleTrail(ux + (Math.random() - 0.5) * 120 * s, uy - Math.random() * 120 * s, USKIN.mane[Math.floor(Math.random() * 6)]);
+  if (p > 0.3 && Math.random() < p * 0.45) {
+    sparkleTrail(ux + (Math.random() - 0.5) * 70 * s, uy - Math.random() * 150 * s, USKIN.mane[Math.floor(Math.random() * 6)]);
   }
 }
 
