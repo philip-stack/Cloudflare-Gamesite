@@ -1367,57 +1367,160 @@ function render(now) {
     }
   }
 
-  // --- Abgrund links und rechts des Wegs ---
+  // --- Schlucht mit Bogenbrücke ---
+  // Vorher war es nur eine dunkle Fläche neben dem Weg — das wirkte wie ein
+  // Fehler („der Boden fehlt"). Jetzt: die Wiese endet an einer Felskante, gegenüber
+  // steht eine zerklüftete Felswand, unten zieht Nebel, und der Weg läuft als
+  // steinerne Bogenbrücke mit Pfeilern darüber (Brückentürme: siehe drawTower).
+  const bridges = [];
   {
     const kA = Math.floor((o + ZN - ABY_START) / ABY_PER), kB = Math.ceil((o + SPAWN_Z - ABY_START) / ABY_PER);
     for (let k = Math.max(0, kA); k <= kB; k++) {
-      const zA = Math.max(ZN, ABY_START + k * ABY_PER - o);
-      const zB = Math.min(SPAWN_Z, ABY_START + k * ABY_PER + ABY_LEN - o);
+      const wA = ABY_START + k * ABY_PER, wB = wA + ABY_LEN;
+      const zA = Math.max(ZN, wA - o), zB = Math.min(SPAWN_Z, wB - o);
       if (zB <= zA) continue;
-      const n = 12, pts = [];
+      bridges.push({ wA, wB, zA, zB });
+      const n = 14, pts = [];
       for (let i = 0; i <= n; i++) {
         const z = zA + (zB - zA) * Math.pow(i / n, 1.6);
         const t = tOf(z);
-        pts.push([t, groundY(t)]);
+        pts.push([t, groundY(t), z]);
       }
-      const yA = pts[0][1], yB = pts[n][1], tB = pts[n][0];
+      const yA = pts[0][1], yB = pts[n][1], tB = pts[n][0], tA = pts[0][0];
+      const farRim = wB - o < SPAWN_Z - 0.01, nearRim = wA - o > ZN + 0.01;
+      const rock0 = mixHex(pal.ridge, "#000000", 0.15), rock1 = mixHex(pal.ridge, "#000000", 0.6);
       for (const sgn of [-1, 1]) {
         const xo = t => centerX(t) + sgn * (roadHalf(t) + 30 * t);
         const edgeX = sgn > 0 ? W + 80 : -80;
-        // Tiefe: nah dunkel, fern im Dunst
+        const xl = x => Math.min(x, edgeX), wd = x => Math.abs(edgeX - x);
+
+        // Tiefe: oben dunstig, schnell tief und dunkel
         const ag = ctx.createLinearGradient(0, yB, 0, Math.min(yA, H + 60));
-        ag.addColorStop(0, mixHex(pal.sky[2], pal.ridge, 0.35));
-        ag.addColorStop(0.3, mixHex(pal.ridge, "#000000", 0.45));
-        ag.addColorStop(1, "#12081f");
+        ag.addColorStop(0, mixHex(pal.sky[2], "#2a1a44", 0.55));
+        ag.addColorStop(0.18, mixHex(pal.ridge, "#000000", 0.55));
+        ag.addColorStop(1, "#0d0618");
         ctx.fillStyle = ag;
         ctx.beginPath();
         pts.forEach(([t, y], i) => i ? ctx.lineTo(xo(t), y) : ctx.moveTo(xo(t), y));
         ctx.lineTo(edgeX, yB); ctx.lineTo(edgeX, yA);
         ctx.closePath(); ctx.fill();
-        // Felswand unter dem Grat
-        const cg = ctx.createLinearGradient(0, yB, 0, Math.min(yA + 80, H + 140));
-        cg.addColorStop(0, mixHex(pal.road[1], "#000000", 0.3));
-        cg.addColorStop(1, "#140a22");
-        ctx.fillStyle = cg;
-        ctx.beginPath();
-        pts.forEach(([t, y], i) => i ? ctx.lineTo(xo(t), y) : ctx.moveTo(xo(t), y));
-        for (let i = n; i >= 0; i--) { const [t, y] = pts[i]; ctx.lineTo(xo(t) - sgn * 8 * t, y + 90 * t); }
-        ctx.closePath(); ctx.fill();
-        // gegenüberliegende Kante der Wiese (ihre Wand zeigt zu uns)
-        if (zB < SPAWN_Z - 0.01) {
-          const x0 = xo(tB), fh = 40 * tB;
+
+        // Gegenüberliegende Felswand (zeigt zu uns), mit Rissen und Graskante
+        if (farRim) {
+          const x0 = xo(tB), fh = 210 * tB;
           const rg = ctx.createLinearGradient(0, yB, 0, yB + fh);
-          rg.addColorStop(0, mixHex(pal.ground[1], "#000000", 0.35));
-          rg.addColorStop(1, "rgba(18,8,31,0)");
+          rg.addColorStop(0, rock0); rg.addColorStop(0.55, rock1); rg.addColorStop(1, "rgba(13,6,24,0)");
           ctx.fillStyle = rg;
-          ctx.fillRect(Math.min(x0, edgeX), yB, Math.abs(edgeX - x0), fh);
+          ctx.beginPath();
+          ctx.moveTo(x0, yB);
+          const steps = 10;
+          for (let i = 0; i <= steps; i++) {        // unten ausgefranst in den Nebel
+            const x = x0 + (edgeX - x0) * i / steps;
+            ctx.lineTo(x, yB);
+          }
+          for (let i = steps; i >= 0; i--) {
+            const x = x0 + (edgeX - x0) * i / steps;
+            ctx.lineTo(x, yB + fh * (0.75 + hash2(i + k * 7, 21 + sgn) * 0.25));
+          }
+          ctx.closePath(); ctx.fill();
+          ctx.strokeStyle = "rgba(10,4,20,0.35)"; ctx.lineWidth = Math.max(1, 1.6 * tB);
+          for (let i = 1; i < 8; i++) {
+            const x = x0 + (edgeX - x0) * (i / 8 + (hash2(i, k + 3) - 0.5) * 0.06);
+            const l = fh * (0.25 + hash2(i, k + 9) * 0.45);
+            ctx.beginPath(); ctx.moveTo(x, yB + 3 * tB);
+            ctx.lineTo(x + sgn * 3 * tB, yB + l * 0.5); ctx.lineTo(x - sgn * 2 * tB, yB + l); ctx.stroke();
+          }
+          // überhängende Graskante
           ctx.fillStyle = pal.ground[0];
-          ctx.fillRect(Math.min(x0, edgeX), yB - Math.max(1, 2 * tB), Math.abs(edgeX - x0), Math.max(1.5, 3 * tB));
+          ctx.beginPath(); ctx.moveTo(x0, yB - 2 * tB);
+          for (let i = 0; i <= 16; i++) {
+            const x = x0 + (edgeX - x0) * i / 16;
+            ctx.lineTo(x, yB + (2 + (i % 2 ? 5 : 1) * hash2(i, k + 5)) * tB);
+          }
+          ctx.lineTo(edgeX, yB - 2 * tB); ctx.closePath(); ctx.fill();
         }
-        // nahe Kante der Wiese
-        if (zA > ZN + 0.01) {
+        // Nebelschwaden, die langsam durch die Schlucht ziehen
+        if (!LOWP()) {
+          for (let m = 0; m < 3; m++) {
+            const f = 0.22 + m * 0.26;
+            const my = yB + (Math.min(yA, H + 40) - yB) * f;
+            const drift = ((now * 0.012 * (m + 1) + m * 97) % (W * 0.8));
+            ctx.fillStyle = rgbaOf(pal.sky[2], 0.07 + m * 0.02);
+            for (let q = -1; q < 3; q++) {
+              const cx = (sgn > 0 ? W * 0.55 : 0) + q * W * 0.3 + drift * sgn * 0.3;
+              ctx.beginPath(); ctx.ellipse(cx, my, W * 0.22, 7 + m * 5, 0, 0, Math.PI * 2); ctx.fill();
+            }
+          }
+        }
+        // Nahe Felskante: Grasrand mit herabhängenden Steinzacken
+        if (nearRim) {
+          const x0 = xo(tA);
+          ctx.fillStyle = mixHex(pal.ground[1], "#000000", 0.35);
+          ctx.beginPath(); ctx.moveTo(x0, yA);
+          for (let i = 0; i <= 14; i++) {
+            const x = x0 + (edgeX - x0) * i / 14;
+            ctx.lineTo(x, yA + (6 + hash2(i, k + 11) * 16) * tA);
+          }
+          ctx.lineTo(edgeX, yA); ctx.closePath(); ctx.fill();
           ctx.fillStyle = pal.ground[0];
-          ctx.fillRect(Math.min(xo(pts[0][0]), edgeX), yA - 1, Math.abs(edgeX - xo(pts[0][0])), Math.max(2, 3 * pts[0][0]));
+          ctx.fillRect(xl(x0), yA - 1, wd(x0), Math.max(2, 3.5 * tA));
+        }
+
+        // --- Bogenbrücke: Bögen und Pfeiler unter dem Weg ---
+        // Die Brückenseite lädt nach unten aus (wie geböschte Pfeiler). Eine
+        // senkrechte Wand sähe man von oben mittig kaum — sie wäre nur ein
+        // schmaler Streifen an der Wegkante in Wegfarbe.
+        const PIER = 3.4, D0 = 14, DC = 34, DS = 120, DP = 300;
+        const bx = (z, d = 0) => { const t = tOf(z); return centerX(t) + sgn * (roadHalf(t) + (32 + Math.min(d, 150) * 0.8) * t); };
+        const by = (z, d) => { const t = tOf(z); return groundY(t) + d * 0.85 * t; };
+        const face0 = STONE[0], face1 = mixHex(STONE[2], pal.ridge, 0.25);
+        // Pfeiler (von fern nach nah, damit nahe darüber liegen)
+        const pk0 = Math.ceil((o + zA - wA) / PIER), pk1 = Math.floor((o + zB - wA) / PIER);
+        for (let j = pk1; j >= pk0; j--) {
+          const zp = wA + j * PIER - o;
+          if (zp < zA || zp > zB) continue;
+          const z1 = Math.max(zA, zp - 0.18), z2 = Math.min(zB, zp + 0.18);
+          const pg = ctx.createLinearGradient(0, by(zp, DS), 0, by(zp, DP));
+          pg.addColorStop(0, face0); pg.addColorStop(1, "rgba(13,6,24,0)");
+          ctx.fillStyle = pg;
+          ctx.beginPath();
+          ctx.moveTo(bx(z1, DS), by(z1, DS)); ctx.lineTo(bx(z2, DS), by(z2, DS));
+          ctx.lineTo(bx(z2, DP), by(z2, DP)); ctx.lineTo(bx(z1, DP), by(z1, DP));
+          ctx.closePath(); ctx.fill();
+          ctx.strokeStyle = "rgba(20,8,34,0.4)"; ctx.lineWidth = Math.max(1, 1.5 * tOf(zp)); ctx.stroke();
+        }
+        // Bögen zwischen den Pfeilern
+        for (let j = pk0 - 1; j <= pk1; j++) {
+          const za = Math.max(zA, wA + j * PIER - o), zb = Math.min(zB, wA + (j + 1) * PIER - o);
+          if (zb - za < 0.05) continue;
+          const full = (wA + (j + 1) * PIER - o) - (wA + j * PIER - o);
+          const u0 = (za - (wA + j * PIER - o)) / full, u1 = (zb - (wA + j * PIER - o)) / full;
+          const m = 10;
+          const sg = ctx.createLinearGradient(0, by((za + zb) / 2, D0), 0, by((za + zb) / 2, DS));
+          sg.addColorStop(0, face0); sg.addColorStop(1, face1);
+          ctx.fillStyle = sg;
+          const archD = u => DC + (DS - DC) * (1 - Math.sin(Math.PI * u));
+          ctx.beginPath();
+          for (let i = 0; i <= m; i++) { const z = za + (zb - za) * i / m; i ? ctx.lineTo(bx(z, 0), by(z, 0)) : ctx.moveTo(bx(z, 0), by(z, 0)); }
+          for (let i = m; i >= 0; i--) {
+            const u = u0 + (u1 - u0) * i / m, z = za + (zb - za) * i / m, d = archD(u);
+            ctx.lineTo(bx(z, d), by(z, d));
+          }
+          ctx.closePath(); ctx.fill();
+          ctx.strokeStyle = U_OUT; ctx.lineWidth = Math.max(1.2, 2.4 * tOf((za + zb) / 2)); ctx.stroke();
+          // Bogenkante (Keilsteine) und Deckgesims
+          ctx.strokeStyle = "rgba(20,8,34,0.45)"; ctx.lineWidth = Math.max(1, 1.6 * tOf((za + zb) / 2));
+          // Keilsteine entlang des Bogens
+          ctx.strokeStyle = "rgba(20,8,34,0.32)";
+          for (let i = 1; i < m; i++) {
+            const u = u0 + (u1 - u0) * i / m, z = za + (zb - za) * i / m, d = archD(u);
+            ctx.beginPath(); ctx.moveTo(bx(z, d), by(z, d)); ctx.lineTo(bx(z, d - 12), by(z, d - 12)); ctx.stroke();
+          }
+          // Gesims unter dem Weg (Licht)
+          ctx.strokeStyle = "rgba(255,255,255,0.3)";
+          ctx.beginPath();
+          for (let i = 0; i <= m; i++) { const z = za + (zb - za) * i / m; i ? ctx.lineTo(bx(z, D0), by(z, D0)) : ctx.moveTo(bx(z, D0), by(z, D0)); }
+          ctx.stroke();
         }
       }
     }
@@ -1559,6 +1662,53 @@ function render(now) {
     ctx.stroke();
     ctx.shadowBlur = 0;
   }
+  // Auf der Brücke wird die Randmauer zur Brüstung: Öffnungen zwischen Pfosten,
+  // durch die man in die Schlucht sieht — aus dieser Sicht das klarste Zeichen
+  // „Brücke".
+  for (const br of bridges) {
+    const PST = 0.95;
+    const j0 = Math.ceil((o + br.zA - br.wA) / PST), j1 = Math.floor((o + Math.min(br.zB, ZF) - br.wA) / PST);
+    for (let j = j1; j >= j0; j--) {
+      const za = br.wA + j * PST - o + 0.2, zb = br.wA + (j + 1) * PST - o - 0.2;
+      if (za < ZN || zb > Math.min(br.zB, ZF) || zb <= za) continue;
+      const ta = tOf(za), tb = tOf(zb);
+      for (const sgn of [-1, 1]) {
+        if (jun && sgn === jun.dir && zb > gapZ) continue;
+        const ex = t => centerX(t) + sgn * roadHalf(t);
+        const ya = groundY(ta), yb = groundY(tb);
+        const og = ctx.createLinearGradient(0, yb - WH * tb, 0, ya);
+        og.addColorStop(0, mixHex(pal.sky[2], pal.ridge, 0.45)); og.addColorStop(1, "#1a0e2e");
+        ctx.fillStyle = og;
+        ctx.beginPath();
+        ctx.moveTo(ex(ta), ya - 4 * ta); ctx.lineTo(ex(tb), yb - 4 * tb);
+        ctx.lineTo(ex(tb), yb - (WH - 7) * tb); ctx.lineTo(ex(ta), ya - (WH - 7) * ta);
+        ctx.closePath(); ctx.fill();
+      }
+    }
+  }
+
+  // Geländerpfosten: ragen über die Brüstung hinaus und laufen in die Tiefe —
+  // wie ein Brückengeländer sofort lesbar
+  for (const br of bridges) {
+    const PST = 0.95, zEnd = Math.min(br.zB, ZF);
+    const j0 = Math.ceil((o + br.zA - br.wA) / PST), j1 = Math.floor((o + zEnd - br.wA) / PST);
+    for (let j = j1; j >= j0; j--) {
+      const zp = br.wA + j * PST - o;
+      if (zp < ZN || zp > zEnd) continue;
+      const t = tOf(zp), y = groundY(t), k2 = Math.max(1, 2 * t);
+      for (const sgn of [-1, 1]) {
+        if (jun && sgn === jun.dir && zp > gapZ) continue;
+        const x = centerX(t) + sgn * (roadHalf(t) + 6 * t), pw = 9 * t, top = y - (WH + 20) * t;
+        const g = ctx.createLinearGradient(x - pw / 2, 0, x + pw / 2, 0);
+        g.addColorStop(0, STONE[0]); g.addColorStop(1, STONE[2]);
+        ctx.fillStyle = g; ctx.strokeStyle = U_OUT; ctx.lineWidth = k2;
+        ctx.beginPath(); ctx.rect(x - pw / 2, top, pw, y - top); ctx.stroke(); ctx.fill();
+        ctx.fillStyle = STONE[0];
+        ctx.beginPath(); ctx.rect(x - pw * 0.75, top - 3 * t, pw * 1.5, 4 * t); ctx.stroke(); ctx.fill();
+      }
+    }
+  }
+
   // Blockfugen: senkrecht in der Innenwand, weiter über die Oberseite
   ctx.strokeStyle = "rgba(0,0,0,0.3)";
   for (let k = sMin; k <= sMax; k++) {
@@ -1631,6 +1781,12 @@ function render(now) {
     if (jun && e.kind !== "turn" && z > jun.z + 0.05) continue;   // liegt hinter der Ecke
     drawables.push({ z, kind: e.type, e });
   }
+  for (const br of bridges) {
+    for (const w of [br.wA, br.wB]) {
+      const z = w - o;
+      if (z > ZN - 0.3 && z < SPAWN_Z) drawables.push({ z, kind: "tower", e: null });
+    }
+  }
   drawables.sort((a, b) => b.z - a.z);
 
   // Luftperspektive: Boden, Weg und FERNE Objekte verblassen in der Horizont-
@@ -1653,7 +1809,9 @@ function render(now) {
     const t = tOf(d.z);
     const alpha = Math.min(1, t * 6);
     const e = d.e;
-    if (d.kind === "scen") {
+    if (d.kind === "tower") {
+      drawTower(t, alpha, now);
+    } else if (d.kind === "scen") {
       const x = centerX(t) + e.side * (roadHalf(t) + (34 + e.off) * t);
       blitFoot(SPR[e.kind], x, groundY(t), t / PLAYER_T * e.sc * 1.5, alpha);
     } else if (d.kind === "ob" && e.kind === "turn") {
@@ -1789,6 +1947,37 @@ function render(now) {
   }
 
   ctx.drawImage(vignette, 0, 0);
+}
+
+// --- Brückentürme: hohe Pfeiler mit Laterne an beiden Enden jeder Brücke ---
+// Schon von Weitem das Zeichen „jetzt kommt eine Brücke".
+function drawTower(t, alpha, now) {
+  const k = t / PLAYER_T * OBS;
+  const y = groundY(t), wallTop = y - 24 * t;
+  const pw = 22 * k, ph = 92 * k;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  for (const sgn of [-1, 1]) {
+    const x = centerX(t) + sgn * (roadHalf(t) + 15 * t);
+    const g = ctx.createLinearGradient(x - pw / 2, 0, x + pw / 2, 0);
+    g.addColorStop(0, STONE[0]); g.addColorStop(0.55, STONE[1]); g.addColorStop(1, STONE[2]);
+    ctx.fillStyle = g; ctx.strokeStyle = U_OUT; ctx.lineWidth = Math.max(1.5, 2.5 * k);
+    ctx.beginPath(); ctx.rect(x - pw / 2, wallTop - ph, pw, ph); ctx.stroke(); ctx.fill();
+    // Kapitell
+    ctx.fillStyle = STONE[0];
+    ctx.beginPath(); ctx.rect(x - pw * 0.7, wallTop - ph - 7 * k, pw * 1.4, 8 * k); ctx.stroke(); ctx.fill();
+    ctx.strokeStyle = "rgba(60,40,90,0.35)"; ctx.lineWidth = Math.max(1, 1.2 * k);
+    for (let yy = wallTop - ph + 16 * k; yy < wallTop - 4; yy += 16 * k) { ctx.beginPath(); ctx.moveTo(x - pw / 2, yy); ctx.lineTo(x + pw / 2, yy); ctx.stroke(); }
+    // Laterne
+    const glow = 0.75 + 0.25 * Math.sin(now * 0.004 + sgn);
+    ctx.shadowColor = GOLD; ctx.shadowBlur = LOWP() ? 0 : 18 * glow;
+    const lg = ctx.createRadialGradient(x, wallTop - ph - 18 * k, 1, x, wallTop - ph - 18 * k, 10 * k);
+    lg.addColorStop(0, "#fffbe8"); lg.addColorStop(0.6, GOLD); lg.addColorStop(1, "rgba(163,122,30,0.4)");
+    ctx.fillStyle = lg;
+    ctx.beginPath(); ctx.arc(x, wallTop - ph - 18 * k, 9 * k, 0, Math.PI * 2); ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+  ctx.restore();
 }
 
 // --- Steintor über den ganzen Weg: Säulen stehen auf den Randmauern ---
