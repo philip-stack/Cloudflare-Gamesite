@@ -547,7 +547,7 @@ let o = 0;              // Welt-Offset (zurückgelegte Einheiten)
 let speed = 0, meters = 0, coins = 0, score = 0;
 let laneTarget = 1, laneCur = 1;
 let jumpH = 0, jumpV = 0, sliding = 0;
-let stumbleT = 0, invuln = 0, runPhase = 0;
+let stumbleT = 0, invuln = 0, runPhase = 0, landT = 0;
 let chase = 0.5;        // Einhorn-Nähe 0..1 (1 = erwischt)
 let catchT = 0;
 let shake = 0, flash = 0;
@@ -555,6 +555,7 @@ let magnetT = 0, boostT = 0, shieldOn = false;
 let coinCombo = 0, comboT = 0;
 let zoneShown = -1;
 let whip = null, swayKick = 0, turnCount = 0; // Abbiege-Zustand
+let turnAnim = null, bgPan = 0, bgPanT = 0;    // 90°-Schwenk: Horizont zieht weiter
 let nextSpawnW = 0, nextScenW = 0, nextPowM = 0, nextTurnM = 0;
 let entities = [], sceneries = [], particles = [];
 let submitted = false;
@@ -572,11 +573,12 @@ function newRun() {
   o = 0; speed = BASE_SPEED; meters = 0; coins = 0; score = 0;
   laneTarget = 1; laneCur = 1;
   jumpH = 0; jumpV = 0; sliding = 0;
-  stumbleT = 0; invuln = 0; runPhase = 0;
+  stumbleT = 0; invuln = 0; runPhase = 0; landT = 0;
   chase = 0.5; catchT = 0; shake = 0; flash = 0;
   magnetT = 0; boostT = 0; shieldOn = false;
   coinCombo = 0; comboT = 0; zoneShown = -1;
   whip = null; swayKick = 0; turnCount = 0;
+  turnAnim = null; bgPan = 0; bgPanT = 0;
   if (DAILY) {
     const d = new Date();
     rngW = mulberry32(d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate());
@@ -775,11 +777,14 @@ function executeTurn(e) {
   e.taken = true;
   e.passed = true;
   turnCount++;
-  whip = { dir: e.dir, t: 0 };          // Kamera-Schwenk
-  swayKick = e.dir * W * 0.55;          // Weg biegt sichtbar ab
-  shake = Math.max(shake, 0.18);
+  // Wie bei Temple Run: ruhiger 90°-Schwenk um die Läuferin. Der Horizont zieht
+  // eine Bildbreite weiter, der neue Weg schwingt von der Seite herein, wo eben
+  // noch der Seitenweg lag. Vorher kippte die Kamera, sprang zur Seite und
+  // wackelte — alles gleichzeitig.
+  turnAnim = { dir: e.dir, t: 0 };
+  bgPanT += e.dir * W * 1.15;
+  swayKick = e.dir * W * 1.25;
   sound.turn();
-  puff(laneX(laneCur, PLAYER_T), groundY(PLAYER_T) - 30, CREAM, 10, 200, 60);
 }
 
 let touchStart = null;
@@ -843,8 +848,8 @@ function hitObstacle(e) {
     speed *= 0.4;
     invuln = 1.6;
     stumbleT = 0.7;
-    shake = 0.9;
-    flash = 0.5;
+    shake = 0.45;
+    flash = 0.22;
     coinCombo = 0;
     sound.stumble();
     puff(px, py - 40, VIOLET, 22, 240, 130);
@@ -865,8 +870,8 @@ function hitObstacle(e) {
   speed *= 0.5;
   invuln = 1.3;
   stumbleT = 0.5;
-  shake = 0.6;
-  flash = 0.35;
+  shake = 0.32;
+  flash = 0.16;
   coinCombo = 0;
   sound.stumble();
   puff(px, py - 20, "#c9b8d9", 14, 160, 80);
@@ -902,9 +907,10 @@ function update(dt) {
   o += speed * dt;
   meters += speed * dt * 2.2;
   runPhase += speed * dt * 1.55;
-  swayKick *= Math.exp(-dt * 2.0);
+  swayKick *= Math.exp(-dt * 5.5);   // schwingt zügig, aber weich zurück
   sway = Math.sin(o * 0.085) * W * 0.09 + Math.sin(o * 0.021) * W * 0.05 + swayKick;
-  if (whip) { whip.t += dt; if (whip.t > 0.55) whip = null; }
+  bgPan += (bgPanT - bgPan) * Math.min(1, dt * 7);
+  if (turnAnim) { turnAnim.t += dt; if (turnAnim.t > 0.45) turnAnim = null; }
 
   // Zonen-Banner
   const zi = Math.max(0, Math.floor(meters / ZONE_LEN));
@@ -945,11 +951,18 @@ function update(dt) {
     jumpH += jumpV * dt;
     jumpV -= GRAV * dt;
     if (jumpH <= 0) {
-      jumpH = 0; jumpV = 0;
+      jumpH = 0; jumpV = 0; landT = 0.16;
       puff(laneX(laneCur, PLAYER_T), groundY(PLAYER_T), "rgba(220,200,240,0.7)", 5, 80);
     }
   }
-  if (sliding > 0) sliding -= dt;
+  if (sliding > 0) {
+    sliding -= dt;
+    // Rutsch-Staub unter der Figur
+    if (!LOWP() && Math.random() < 0.55) {
+      puff(laneX(laneCur, PLAYER_T) + (Math.random() - 0.5) * 34, groundY(PLAYER_T), "rgba(236, 226, 246, 0.6)", 1, 90, 24);
+    }
+  }
+  if (landT > 0) landT -= dt;
 
   // Boost-Funken
   if (boostT > 0) {
@@ -1091,16 +1104,9 @@ function render(now) {
   // Kamera: läuft mit (Kopf-Wippen) und lehnt sich in den Spurwechsel
   if (mode === "run" || mode === "catch") {
     const camBob = jumpH > 2 ? 0 : Math.abs(Math.sin(runPhase)) * 4;
-    // Abbiege-Schwenk: die Welt saust zur Seite vorbei
-    let whipRot = 0, whipX = 0;
-    if (whip) {
-      const k = Math.sin(Math.PI * Math.min(1, whip.t / 0.55));
-      whipRot = whip.dir * 0.13 * k;
-      whipX = -whip.dir * W * 0.22 * k;
-    }
     ctx.translate(W / 2, H / 2);
-    ctx.rotate((laneTarget - laneCur) * 0.022 + whipRot);
-    ctx.translate(-W / 2 + whipX, -H / 2 + camBob);
+    ctx.rotate((laneTarget - laneCur) * 0.018);
+    ctx.translate(-W / 2, -H / 2 + camBob);
   }
 
   // --- Himmel ---
@@ -1118,15 +1124,18 @@ function render(now) {
       ctx.globalAlpha = a;
       ctx.fillStyle = "#fff";
       ctx.beginPath();
-      ctx.arc(s.x * W, s.y * hY, s.r, 0, Math.PI * 2);
+      ctx.arc(((s.x * W - bgPan * 0.9) % W + W) % W, s.y * hY, s.r, 0, Math.PI * 2);
       ctx.fill();
     }
     ctx.globalAlpha = 1;
   }
 
   // Himmelskörper: tagsüber strahlende Sonne mit Bloom, nachts Zwillingsmonde
+  // Sonne/Monde wandern beim Abbiegen mit dem Horizont (in einem 2,4-fachen
+  // Bildband, damit sie nach ein paar Kurven wieder auftauchen)
+  const skyX = x0 => ((x0 - bgPan) % (W * 2.4) + W * 2.4) % (W * 2.4) - W * 0.7;
   if (pal.stars < 0.4) {
-    blitFoot(SPR.sun, W * 0.75, hY * 0.4 + SPR.sun.h / 2, 1, 1);
+    blitFoot(SPR.sun, skyX(W * 0.75), hY * 0.4 + SPR.sun.h / 2, 1, 1);
   } else {
     const moon = (mx, my, r, col, glow) => {
       ctx.shadowColor = glow; ctx.shadowBlur = 26;
@@ -1136,15 +1145,15 @@ function render(now) {
       ctx.beginPath(); ctx.arc(mx, my, r, 0, Math.PI * 2); ctx.fill();
       ctx.shadowBlur = 0;
     };
-    moon(W * 0.78, hY * 0.34, 26, "#e8d9b0", "rgba(232,217,176,0.8)");
-    moon(W * 0.66, hY * 0.58, 9, "#d9b8e8", "rgba(217,184,232,0.8)");
+    moon(skyX(W * 0.78), hY * 0.34, 26, "#e8d9b0", "rgba(232,217,176,0.8)");
+    moon(skyX(W * 0.66), hY * 0.58, 9, "#d9b8e8", "rgba(217,184,232,0.8)");
   }
 
   // Wolken ziehen vorbei (Parallax) — tagsüber hell & fluffig
   const cloudA = 0.5 * (1 - pal.stars * 0.7);
   for (const c of clouds) {
     const span = W + 260;
-    const x = ((c.x0 * span - o * c.sp) % span + span) % span - 130;
+    const x = ((c.x0 * span - o * c.sp - bgPan * 0.8) % span + span) % span - 130;
     blitFoot(SPR.cloud, x, hY * c.y + 35 * c.sc, c.sc, cloudA);
   }
 
@@ -1161,7 +1170,7 @@ function render(now) {
   const RL = [{ sp: 0.18, h: 0.68, haze: 0.62, lit: 0.5 }, { sp: 0.4, h: 0.5, haze: 0.4, lit: 0.2 }, { sp: 0.9, h: 0.32, haze: 0.15, lit: 0.1 }];
   for (const ridge of ridges) {
     const L = RL[ridge.li];
-    const shift = (o * L.sp * 14) % W;
+    const shift = (((o * L.sp * 14 + bgPan * (0.55 + ridge.li * 0.2)) % W) + W) % W;
     const baseH = hY * L.h;
     const base = ridge.li === 0 ? mixHex(pal.ridge, pal.sky[1], 0.4)
       : ridge.li === 1 ? pal.ridge : mixHex(pal.ridge, "#000000", 0.3);
@@ -1193,6 +1202,18 @@ function render(now) {
   const tBot = (H + 70 - hY) / (H * 1.08 - hY);
   const ZN = Math.max(NEAR * 0.7, NEAR / tBot);
 
+  // Kreuzung voraus? Dann endet der Weg an ihrer Mauer (dahinter Wiese), und
+  // die Randmauer auf der Abbiege-Seite öffnet sich für den Seitenweg — die
+  // Kreuzung selbst ist der Hinweis, wie bei Temple Run (keine Pfeile).
+  let jun = null;
+  for (const e of entities) {
+    if (e.kind !== "turn" || e.taken) continue;
+    const z = e.wz - o;
+    if (z > 0.6 && (!jun || z < jun.z)) jun = { e, z, dir: e.dir };
+  }
+  const ZF = jun ? Math.max(ZN + 0.05, Math.min(SPAWN_Z, jun.z)) : SPAWN_Z;
+  const gapZ = jun ? jun.z - JUN_D : Infinity;   // ab hier offen zur Abbiege-Seite
+
   // --- Boden: Streifen scrollen auf die Kamera zu ---
   const STRIPE = 3.4;
   ctx.fillStyle = pal.ground[1];
@@ -1221,6 +1242,7 @@ function render(now) {
       if (y > H + 30) continue;
       const alpha = Math.min(1, t * 5);
       for (const sgn of [-1, 1]) for (let j = 0; j < 2; j++) {
+        if (jun && sgn === jun.dir && z > gapZ - 0.4 && z < jun.z + 0.6) continue;
         const h = hash2(k * 2 + j, sgn);
         const x = centerX(t) + sgn * roadHalf(t) * (1.22 + h * 1.9 + j * 0.35);
         if (x < -30 || x > W + 30) continue;
@@ -1231,7 +1253,7 @@ function render(now) {
   }
 
   // --- Weg ---
-  const tN = tOf(ZN), tF = tOf(SPAWN_Z);
+  const tN = tOf(ZN), tF = tOf(ZF);
   const roadGrad = ctx.createLinearGradient(0, groundY(tF), 0, H);
   roadGrad.addColorStop(0, pal.road[1]);
   roadGrad.addColorStop(1, pal.road[0]);
@@ -1239,12 +1261,16 @@ function render(now) {
   ctx.beginPath();
   // Rand in mehreren z-Schritten sampeln, damit die Kurve sichtbar wird
   const steps = 14;
-  const edge = [];
-  for (let i = 0; i <= steps; i++) {
-    const z = ZN + (SPAWN_Z - ZN) * Math.pow(i / steps, 2.2);
-    const t = tOf(z);
-    edge.push([centerX(t) - roadHalf(t), centerX(t) + roadHalf(t), groundY(t), t]);
-  }
+  const sampleEdge = zB => {
+    const out = [];
+    for (let i = 0; i <= steps; i++) {
+      const z = ZN + (zB - ZN) * Math.pow(i / steps, 2.2);
+      const t = tOf(z);
+      out.push([centerX(t) - roadHalf(t), centerX(t) + roadHalf(t), groundY(t), t]);
+    }
+    return out;
+  };
+  const edge = sampleEdge(ZF);
   ctx.moveTo(edge[0][0], edge[0][2]);
   for (let i = 1; i <= steps; i++) ctx.lineTo(edge[i][0], edge[i][2]);
   for (let i = steps; i >= 0; i--) ctx.lineTo(edge[i][1], edge[i][2]);
@@ -1256,13 +1282,13 @@ function render(now) {
   // glatte Fläche mit kaum sichtbaren Fugen.
   const SLAB = 1.7;
   const sMin = Math.floor((o + ZN) / SLAB);
-  const sMax = Math.ceil((o + SPAWN_Z) / SLAB);
+  const sMax = Math.ceil((o + ZF) / SLAB);
   // Pflaster: 6 Platten je Reihe, jede zweite Reihe um eine halbe Platte versetzt
   // (Verband wie echtes Steinpflaster), mit senkrechten Fugen.
   const NC = 6, PW = 2 / NC;
   ctx.lineWidth = 1;
   for (let k = sMin; k <= sMax; k++) {
-    const z0 = Math.max(ZN, k * SLAB - o), z1 = Math.min(SPAWN_Z, (k + 1) * SLAB - o);
+    const z0 = Math.max(ZN, k * SLAB - o), z1 = Math.min(ZF, (k + 1) * SLAB - o);
     if (z1 <= z0) continue;
     const t0 = tOf(z0), t1 = tOf(z1);
     const y0 = groundY(t0), y1 = groundY(t1);
@@ -1307,7 +1333,7 @@ function render(now) {
   ctx.strokeStyle = "rgba(10, 5, 20, 0.3)";
   for (let k = sMin; k <= sMax; k++) {
     const z = k * SLAB - o;
-    if (z < ZN || z > SPAWN_Z) continue;
+    if (z < ZN || z > ZF) continue;
     const t = tOf(z);
     const y = groundY(t);
     if (y > H + 4) continue;
@@ -1329,16 +1355,19 @@ function render(now) {
   // Oberseite im Licht, Blockfugen im Takt der Platten. Vorher eine flache,
   // schräge Kante, die man kaum als Mauer lesen konnte.
   const WH = 24, WT = 30;   // Mauerhöhe und Breite der Oberseite bei t = 1
-  const wallTopY = i => edge[i][2] - WH * edge[i][3];
+  const edgeGap = jun && gapZ > ZN + 0.05 ? sampleEdge(Math.min(gapZ, ZF)) : null;
   for (const side of [0, 1]) {
     const sgn = side === 0 ? -1 : 1;
+    const E = jun && sgn === jun.dir ? edgeGap : edge;
+    if (!E) continue;
+    const wallTopY = i => E[i][2] - WH * E[i][3];
     const face = ctx.createLinearGradient(0, groundY(tOf(SPAWN_Z)), 0, H);
     face.addColorStop(0, mixHex(pal.ridge, "#000000", 0.3));
     face.addColorStop(1, mixHex(pal.road[1], "#000000", 0.42));
     ctx.fillStyle = face;
     ctx.beginPath();
-    for (let i = 0; i <= steps; i++) i ? ctx.lineTo(edge[i][side], edge[i][2]) : ctx.moveTo(edge[i][side], edge[i][2]);
-    for (let i = steps; i >= 0; i--) ctx.lineTo(edge[i][side], wallTopY(i));
+    for (let i = 0; i <= steps; i++) i ? ctx.lineTo(E[i][side], E[i][2]) : ctx.moveTo(E[i][side], E[i][2]);
+    for (let i = steps; i >= 0; i--) ctx.lineTo(E[i][side], wallTopY(i));
     ctx.closePath();
     ctx.fill();
     const top = ctx.createLinearGradient(0, groundY(tOf(SPAWN_Z)), 0, H);
@@ -1346,8 +1375,8 @@ function render(now) {
     top.addColorStop(1, mixHex(pal.road[0], "#ffffff", 0.28));
     ctx.fillStyle = top;
     ctx.beginPath();
-    for (let i = 0; i <= steps; i++) i ? ctx.lineTo(edge[i][side], wallTopY(i)) : ctx.moveTo(edge[i][side], wallTopY(i));
-    for (let i = steps; i >= 0; i--) { const t = edge[i][3]; ctx.lineTo(edge[i][side] + sgn * WT * t, wallTopY(i) - 5 * t); }
+    for (let i = 0; i <= steps; i++) i ? ctx.lineTo(E[i][side], wallTopY(i)) : ctx.moveTo(E[i][side], wallTopY(i));
+    for (let i = steps; i >= 0; i--) { const t = E[i][3]; ctx.lineTo(E[i][side] + sgn * WT * t, wallTopY(i) - 5 * t); }
     ctx.closePath();
     ctx.fill();
     // Goldene Glow-Kante an der Innenkante oben
@@ -1355,7 +1384,7 @@ function render(now) {
     ctx.lineWidth = 2;
     ctx.shadowColor = GOLD; ctx.shadowBlur = 7;
     ctx.beginPath();
-    for (let i = 0; i <= steps; i++) i ? ctx.lineTo(edge[i][side], wallTopY(i)) : ctx.moveTo(edge[i][side], wallTopY(i));
+    for (let i = 0; i <= steps; i++) i ? ctx.lineTo(E[i][side], wallTopY(i)) : ctx.moveTo(E[i][side], wallTopY(i));
     ctx.stroke();
     ctx.shadowBlur = 0;
   }
@@ -1364,11 +1393,12 @@ function render(now) {
   for (let k = sMin; k <= sMax; k++) {
     if (k % 2) continue;
     const z = k * SLAB - o;
-    if (z < ZN || z > SPAWN_Z) continue;
+    if (z < ZN || z > ZF) continue;
     const t = tOf(z), y = groundY(t);
     if (y > H + 4) continue;
     ctx.lineWidth = Math.max(1, 2 * t);
     for (const sgn of [-1, 1]) {
+      if (jun && sgn === jun.dir && z > gapZ) continue;
       const x = centerX(t) + sgn * roadHalf(t);
       ctx.beginPath();
       ctx.moveTo(x, y); ctx.lineTo(x, y - WH * t); ctx.lineTo(x + sgn * WT * t, y - WH * t - 5 * t);
@@ -1382,13 +1412,14 @@ function render(now) {
   const eMax = Math.ceil((o + SPAWN_Z) / EDGE_STEP);
   for (let k = eMin; k <= eMax; k++) {
     const z = k * EDGE_STEP - o;
-    if (z < NEAR * 0.75 || z > SPAWN_Z) continue;
+    if (z < NEAR * 0.75 || z > ZF) continue;
     const t = tOf(z);
     const y = groundY(t) - WH * t - 3 * t;   // auf der Mauerkrone
     if (y > H + 10) continue;
     const sp = (k % 2 === 0) ? SPR.edgeA : SPR.edgeB;
     const alpha = Math.min(1, t * 6);
     for (const sgn of [-1, 1]) {
+      if (jun && sgn === jun.dir && z > gapZ) continue;
       blitFoot(sp, centerX(t) + sgn * (roadHalf(t) + WT * 0.5 * t), y, t / PLAYER_T * 1.25, alpha);
     }
   }
@@ -1398,11 +1429,11 @@ function render(now) {
   ctx.lineCap = "round";
   const DASH = 2.6;
   const dMin = Math.floor((o + ZN) / DASH);
-  const dMax = Math.ceil((o + SPAWN_Z) / DASH);
+  const dMax = Math.ceil((o + ZF) / DASH);
   for (let k = dMin; k <= dMax; k++) {
     if (k % 2) continue;
     const z0 = Math.max(ZN, k * DASH - o);
-    const z1 = Math.min(SPAWN_Z, (k + 0.55) * DASH - o);
+    const z1 = Math.min(ZF, (k + 0.55) * DASH - o);
     if (z1 <= z0) continue;
     const t0 = tOf(z0), t1 = tOf(z1);
     for (const b of [-0.5, 0.5]) {
@@ -1419,11 +1450,13 @@ function render(now) {
   for (const s of sceneries) {
     const z = s.wz - o;
     if (z < 0.6 || z > SPAWN_Z) continue;
+    if (jun && s.side === jun.dir && z > gapZ - 0.8 && z < jun.z + 1.2) continue;   // nicht auf dem Seitenweg
     drawables.push({ z, kind: "scen", e: s });
   }
   for (const e of entities) {
     const z = e.wz - o;
     if (z < 0.6 || z > SPAWN_Z) continue;
+    if (jun && e.kind !== "turn" && z > jun.z + 0.05) continue;   // liegt hinter der Ecke
     drawables.push({ z, kind: e.type, e });
   }
   drawables.sort((a, b) => b.z - a.z);
@@ -1452,7 +1485,7 @@ function render(now) {
       const x = centerX(t) + e.side * (roadHalf(t) + (34 + e.off) * t);
       blitFoot(SPR[e.kind], x, groundY(t), t / PLAYER_T * e.sc * 1.5, alpha);
     } else if (d.kind === "ob" && e.kind === "turn") {
-      drawTurnWall(e, t, alpha, now, pal);
+      drawJunction(e, now, pal);
     } else if (d.kind === "ob") {
       const lanes = e.lane === -1 ? [0, 1, 2] : [e.lane];
       for (const l of lanes) {
@@ -1552,41 +1585,6 @@ function render(now) {
 
   ctx.restore();
 
-  // Abbiege-Warnung in Bildschirm-Koordinaten: goldener Schimmer +
-  // große Chevrons am Bildrand in Abbiege-Richtung
-  if (mode === "run") {
-    const up = upcomingTurn();
-    if (up) {
-      const u = 1 - Math.max(0, (up.z - PLAYER_Z) / (16 - PLAYER_Z)); // 0 fern → 1 nah
-      const pulse2 = 0.5 + 0.5 * Math.sin(now * (0.008 + u * 0.008));
-      const dir = up.e.dir;
-      // Seiten-Schimmer
-      const gw = W * 0.3;
-      const sg2 = ctx.createLinearGradient(dir < 0 ? 0 : W, 0, dir < 0 ? gw : W - gw, 0);
-      sg2.addColorStop(0, `rgba(232, 193, 90, ${(0.1 + 0.28 * u) * pulse2})`);
-      sg2.addColorStop(1, "rgba(232, 193, 90, 0)");
-      ctx.fillStyle = sg2;
-      ctx.fillRect(dir < 0 ? 0 : W - gw, 0, gw, H);
-      // Chevrons
-      const cxs = dir < 0 ? 34 : W - 34;
-      const size = 16 + u * 14;
-      ctx.strokeStyle = `rgba(255, 224, 102, ${0.35 + 0.65 * u * pulse2})`;
-      ctx.lineWidth = 6 + u * 3;
-      ctx.lineCap = "round";
-      ctx.lineJoin = "round";
-      ctx.shadowColor = GOLD; ctx.shadowBlur = 18 * pulse2;
-      for (let i = 0; i < 2; i++) {
-        const ox = cxs + dir * i * (size + 10) + Math.sin(now * 0.01) * 4 * dir;
-        ctx.beginPath();
-        ctx.moveTo(ox - dir * size * 0.5, H * 0.44 - size);
-        ctx.lineTo(ox + dir * size * 0.5, H * 0.44);
-        ctx.lineTo(ox - dir * size * 0.5, H * 0.44 + size);
-        ctx.stroke();
-      }
-      ctx.shadowBlur = 0;
-    }
-  }
-
   // Blitz beim Stolpern / Fangen
   if (flash > 0) {
     ctx.fillStyle = `rgba(255, 122, 194, ${flash * 0.4})`;
@@ -1601,108 +1599,118 @@ function render(now) {
   ctx.drawImage(vignette, 0, 0);
 }
 
-// --- Abzweigung: Balustrade quer über den Weg, Seitenpfad + Pfeile ---
-function drawTurnWall(e, t, alpha, now, pal) {
-  alpha = Math.min(1, t * 10); // Abzweigungen früher sichtbar als alles andere
-  const y = Math.min(H + 30, groundY(t));
-  const cx = centerX(t), half = roadHalf(t);
-  const k = t / PLAYER_T;
-  const hWall = 78 * k;
+// --- Kreuzung wie bei Temple Run ---
+// Der Weg endet an einer Mauer quer vor dir; zur Abbiege-Seite geht ein
+// gepflasterter Seitenweg im rechten Winkel ab (Kanten konstanter Tiefe sind
+// am Schirm waagrecht, Fugen quer dazu laufen zum Fluchtpunkt). Keine Pfeile —
+// nur bei den ersten zwei Kreuzungen ein dezenter Hinweis auf dem Seitenweg.
+const JUN_D = 2.6;   // Breite des Seitenwegs in Tiefen-Einheiten
+function drawJunction(e, now, pal) {
+  const z1 = e.wz - o, z0 = Math.max(0.7, z1 - JUN_D);
+  if (z1 < 0.7) return;
+  const t0 = tOf(z0), t1 = tOf(z1);
+  const y0 = groundY(t0), y1 = groundY(t1);
+  const dir = e.dir;
+  const alpha = Math.min(1, t1 * 10);
+  const X = (t, k) => centerX(t) + dir * (roadHalf(t) + k * t);   // k = Abstand vom Wegrand (px bei t = 1)
+  const out = dir > 0 ? W + 80 : -80;
+  const WH = 24, WT = 30, EH = 36;   // Seitenmauer-Höhe/-Breite wie am Weg, Endmauer etwas höher
 
   ctx.save();
   ctx.globalAlpha = alpha;
 
-  // Seitenpfad: der Weg knickt sichtbar in Pfeilrichtung ab
-  const stripH = 30 * k;
-  ctx.fillStyle = pal.road[0];
+  // Seitenweg
+  const rg = ctx.createLinearGradient(0, y1, 0, y0);
+  rg.addColorStop(0, pal.road[1]); rg.addColorStop(1, pal.road[0]);
+  ctx.fillStyle = rg;
   ctx.beginPath();
-  if (e.dir < 0) ctx.rect(0, y - stripH, cx, stripH);
-  else ctx.rect(cx, y - stripH, W - cx, stripH);
-  ctx.fill();
-  ctx.strokeStyle = "rgba(232, 193, 90, 0.4)";
-  ctx.lineWidth = Math.max(1, 2 * k);
-  ctx.beginPath();
-  ctx.moveTo(e.dir < 0 ? 0 : cx, y - stripH);
-  ctx.lineTo(e.dir < 0 ? cx : W, y - stripH);
-  ctx.stroke();
-
-  // Balustrade (Steinmauer mit Kristallkante)
-  const wg = ctx.createLinearGradient(0, y - hWall, 0, y);
-  wg.addColorStop(0, "#4a2668");
-  wg.addColorStop(0.25, "#331a4a");
-  wg.addColorStop(1, "#1c0d2e");
-  ctx.fillStyle = wg;
-  ctx.fillRect(cx - half, y - hWall, half * 2, hWall);
-  // Mauerkrone
-  ctx.fillStyle = "#5e3a8f";
-  ctx.fillRect(cx - half, y - hWall, half * 2, 7 * k);
-  ctx.strokeStyle = "rgba(232, 193, 90, 0.55)";
-  ctx.lineWidth = Math.max(1, 2 * k);
-  ctx.shadowColor = GOLD; ctx.shadowBlur = 8;
-  ctx.beginPath();
-  ctx.moveTo(cx - half, y - hWall);
-  ctx.lineTo(cx + half, y - hWall);
-  ctx.stroke();
-  ctx.shadowBlur = 0;
-  // Fugen
-  ctx.strokeStyle = "rgba(10, 5, 20, 0.4)";
-  ctx.lineWidth = Math.max(0.5, 1.4 * k);
-  for (let i = 1; i < 4; i++) {
-    const yy = y - hWall + (hWall / 4) * i;
-    ctx.beginPath(); ctx.moveTo(cx - half, yy); ctx.lineTo(cx + half, yy); ctx.stroke();
+  ctx.moveTo(X(t0, 0), y0); ctx.lineTo(out, y0); ctx.lineTo(out, y1); ctx.lineTo(X(t1, 0), y1);
+  ctx.closePath(); ctx.fill();
+  // Pflaster: zwei Reihen, Platten versetzt, Fugen zum Fluchtpunkt
+  const TW = W * 0.2, zm = (z0 + z1) / 2, tm = tOf(zm), ym = groundY(tm);
+  for (let r = 0; r < 2; r++) {
+    const ta = r ? tm : t0, tb = r ? t1 : tm, ya = r ? ym : y0, yb = r ? y1 : ym;
+    for (let k = 0; k < 14; k++) {
+      const ka = (k + (r ? 0.5 : 0)) * TW, kb = ka + TW;
+      const xa = X(ta, ka), xb = X(ta, kb);
+      if (dir > 0 ? Math.min(xa, X(tb, ka)) > W + 80 : Math.max(xa, X(tb, ka)) < -80) break;
+      const v = ((k + r) % 2 ? 0.055 : -0.035) + (hash2(k + r * 31, 91) - 0.5) * 0.1;
+      ctx.fillStyle = v > 0 ? `rgba(255,250,255,${v.toFixed(3)})` : `rgba(14,4,26,${(-v).toFixed(3)})`;
+      ctx.beginPath();
+      ctx.moveTo(xa, ya); ctx.lineTo(xb, ya); ctx.lineTo(X(tb, kb), yb); ctx.lineTo(X(tb, ka), yb);
+      ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = "rgba(10,5,20,0.24)"; ctx.lineWidth = Math.max(1, 2 * ta);
+      ctx.beginPath(); ctx.moveTo(xa, ya); ctx.lineTo(X(tb, ka), yb); ctx.stroke();
+    }
   }
+  ctx.strokeStyle = "rgba(10,5,20,0.28)"; ctx.lineWidth = Math.max(1, 2.4 * tm);
+  ctx.beginPath(); ctx.moveTo(X(tm, 0), ym); ctx.lineTo(out, ym); ctx.stroke();
+  // Schatten der Endmauer auf dem Seitenweg
+  const sh = ctx.createLinearGradient(0, y1, 0, y1 + (y0 - y1) * 0.45);
+  sh.addColorStop(0, "rgba(10,4,22,0.28)"); sh.addColorStop(1, "rgba(10,4,22,0)");
+  ctx.fillStyle = sh;
+  ctx.fillRect(Math.min(X(t1, 0), out), y1, Math.abs(out - X(t1, 0)), (y0 - y1) * 0.45);
+
+  // Mauerkopf dort, wo die Randmauer für den Seitenweg aufhört
+  ctx.fillStyle = mixHex(pal.ridge, "#000000", 0.42);
+  ctx.beginPath();
+  ctx.moveTo(X(t0, 0), y0); ctx.lineTo(X(t0, 0), y0 - WH * t0);
+  ctx.lineTo(X(t0, WT), y0 - WH * t0 - 5 * t0); ctx.lineTo(X(t0, WT), y0 - 5 * t0);
+  ctx.closePath(); ctx.fill();
+
+  // Endmauer quer vor dir — vom gegenüberliegenden Wegrand bis zum Bildrand
+  const xa = centerX(t1) - dir * roadHalf(t1);
+  const x0 = Math.min(xa, out), x1 = Math.max(xa, out);
+  const face = ctx.createLinearGradient(0, y1 - EH * t1, 0, y1);
+  face.addColorStop(0, mixHex(pal.ridge, "#000000", 0.15));
+  face.addColorStop(1, mixHex(pal.road[1], "#000000", 0.45));
+  ctx.fillStyle = face;
+  ctx.fillRect(x0, y1 - EH * t1, x1 - x0, EH * t1);
+  // Krone im Licht
+  ctx.fillStyle = mixHex(pal.road[0], "#ffffff", 0.22);
+  ctx.fillRect(x0, y1 - EH * t1 - 6 * t1, x1 - x0, 6 * t1);
+  // Blockfugen
+  ctx.strokeStyle = "rgba(0,0,0,0.3)"; ctx.lineWidth = Math.max(1, 1.8 * t1);
+  ctx.beginPath();
+  ctx.moveTo(x0, y1 - EH * t1 * 0.5); ctx.lineTo(x1, y1 - EH * t1 * 0.5);
+  const bw = W * 0.16 * t1;
+  for (let bx = xa - dir * bw * 0.3, i = 0; i < 30; i++, bx += dir * bw) {
+    if (bx < x0 - 1 || bx > x1 + 1) break;
+    const off = (i % 2) * bw * 0.5 * dir;
+    ctx.moveTo(bx, y1 - EH * t1); ctx.lineTo(bx, y1 - EH * t1 * 0.5);
+    ctx.moveTo(bx + off, y1 - EH * t1 * 0.5); ctx.lineTo(bx + off, y1);
+  }
+  ctx.stroke();
+  // Goldene Lichtkante wie an den Randmauern
+  ctx.strokeStyle = "rgba(232, 193, 90, 0.55)"; ctx.lineWidth = 2;
+  ctx.shadowColor = GOLD; ctx.shadowBlur = 7;
+  ctx.beginPath(); ctx.moveTo(x0, y1 - EH * t1); ctx.lineTo(x1, y1 - EH * t1); ctx.stroke();
+  ctx.shadowBlur = 0;
   // Kristalle auf der Krone
-  for (let i = 0; i < 5; i++) {
-    const xx = cx - half + (half * 2) * (0.12 + 0.19 * i);
-    blitFoot(i % 2 ? SPR.edgeA : SPR.edgeB, xx, y - hWall + 2 * k, k * 1.1, alpha);
+  for (let i = 0; i < 4; i++) {
+    const cxk = xa + dir * (roadHalf(t1) * (0.35 + i * 0.55));
+    if (cxk < -40 || cxk > W + 40) continue;
+    blitFoot(i % 2 ? SPR.edgeA : SPR.edgeB, cxk, y1 - EH * t1 - 5 * t1, t1 / PLAYER_T * 1.25, alpha);
   }
 
-  // Pulsierende Richtungspfeile (Chevrons) auf der Mauer
-  const pulse = 0.55 + 0.45 * Math.sin(now * 0.008);
-  ctx.strokeStyle = `rgba(255, 224, 102, ${pulse})`;
-  ctx.lineWidth = Math.max(2, 7 * k);
-  ctx.lineCap = "round";
-  ctx.lineJoin = "round";
-  ctx.shadowColor = GOLD; ctx.shadowBlur = 14 * pulse;
-  const ay = y - hWall * 0.5;
-  const chW = 15 * k, chH = 20 * k;
-  for (let i = 0; i < 3; i++) {
-    const off = (i - 1) * 30 * k * e.dir + Math.sin(now * 0.006) * 4 * k * e.dir;
-    const axx = cx + off;
-    ctx.beginPath();
-    ctx.moveTo(axx - e.dir * chW * 0.5, ay - chH * 0.5);
-    ctx.lineTo(axx + e.dir * chW * 0.5, ay);
-    ctx.lineTo(axx - e.dir * chW * 0.5, ay + chH * 0.5);
-    ctx.stroke();
+  // Lernhilfe: nur bei den ersten zwei Kreuzungen, dezent auf dem Seitenweg
+  if (turnCount < 2) {
+    const pulse = 0.35 + 0.3 * (0.5 + 0.5 * Math.sin(now * 0.006));
+    ctx.globalAlpha = alpha * pulse;
+    ctx.strokeStyle = "#fff6d8"; ctx.lineWidth = Math.max(2, 5 * tm);
+    ctx.lineCap = "round"; ctx.lineJoin = "round";
+    const hh = (y0 - y1) * 0.22;
+    for (let i = 0; i < 3; i++) {
+      const cx = X(tm, TW * (0.5 + i * 0.7));
+      const aw = 12 * tm;
+      ctx.beginPath();
+      ctx.moveTo(cx - dir * aw, ym - hh); ctx.lineTo(cx + dir * aw, ym); ctx.lineTo(cx - dir * aw, ym + hh);
+      ctx.stroke();
+    }
   }
-  ctx.shadowBlur = 0;
-
-  // Schwebender Hinweispfeil überm Weg — von Anfang an sichtbar,
-  // wird beim Näherkommen größer
-  {
-    const bob2 = Math.sin(now * 0.006) * 6 * k;
-    const py2 = y - hWall - 48 * k + bob2;
-    ctx.globalAlpha = alpha * (0.7 + 0.3 * pulse);
-    ctx.fillStyle = GOLD;
-    ctx.shadowColor = GOLD; ctx.shadowBlur = 16;
-    ctx.beginPath();
-    const aw = 42 * k, ah = 28 * k;
-    ctx.moveTo(cx + e.dir * aw, py2);
-    ctx.lineTo(cx, py2 - ah * 0.7);
-    ctx.lineTo(cx, py2 - ah * 0.25);
-    ctx.lineTo(cx - e.dir * aw * 0.7, py2 - ah * 0.25);
-    ctx.lineTo(cx - e.dir * aw * 0.7, py2 + ah * 0.25);
-    ctx.lineTo(cx, py2 + ah * 0.25);
-    ctx.lineTo(cx, py2 + ah * 0.7);
-    ctx.closePath();
-    ctx.fill();
-    ctx.shadowBlur = 0;
-  }
-
   ctx.restore();
 }
 
-// --- Die Diebin: kleine Kobold-Läuferin mit dem Zuckerkristall ---
 // Cartoon-Umriss + Streiflicht: vorher war die Figur Lila auf lila Pflaster
 // ohne Kontur — von hinten nur ein dunkler Fleck mit einer Kugel darauf.
 const R_OUT = "rgba(18, 8, 32, 0.82)";
@@ -1735,13 +1743,19 @@ function drawRunner(now) {
   }
   lastStep = step;
 
+  // In die Kurve legen (Abbiegen), Taumeln beim Stolpern
+  const turnLean = turnAnim ? turnAnim.dir * 0.3 * Math.sin(Math.PI * Math.min(1, turnAnim.t / 0.45)) : 0;
+  const wobble = stumbleT > 0 ? Math.sin(now * 0.028) * 0.2 * Math.min(1, stumbleT / 0.5) : 0;
   ctx.save();
   ctx.translate(x, y);
-  ctx.rotate(lean * 0.35);
+  ctx.rotate(lean * 0.35 + turnLean + wobble);
   ctx.scale(RS, RS);
-  if (duck) { ctx.translate(0, 10); ctx.scale(1.15, 0.62); }
+  if (duck) { ctx.translate(0, 13); ctx.scale(1.1, 0.64); }          // tief gerutscht
+  else if (inAir && jumpV > 0) ctx.scale(0.95, 1.06);                 // Streckung im Absprung
+  else if (landT > 0) { const k = landT / 0.16; ctx.scale(1 + k * 0.12, 1 - k * 0.16); }   // Einfedern
 
-  const bob = inAir ? 0 : Math.abs(Math.sin(ph)) * 4;
+  // Kopf-Wippen mit Doppelschlag (zwei Schritte je Zyklus)
+  const bob = inAir || duck ? 0 : Math.abs(Math.sin(ph)) * 4.5;
   ctx.translate(0, -bob);
   ctx.lineCap = "round"; ctx.lineJoin = "round";
 
@@ -1760,22 +1774,35 @@ function drawRunner(now) {
     ctx.fillStyle = fill; ctx.fill();
   };
 
-  // Beine: von hinten sieht man abwechselnd die hochschnellende Sohle
-  const foot = (side, phase) => {
-    const kick = inAir ? 10 : Math.max(0, phase) * 16;
-    const fx = side * 5 + side * (inAir ? 0 : Math.abs(phase)) * 2;
-    const fy = -6 - kick;
-    line(7.5, SKIN.leg, () => { ctx.moveTo(side * 5, -27); ctx.quadraticCurveTo(side * 6.5, -16, fx, fy); });
-    // Stiefel: Schaft + Sohle, die beim Hochschnellen sichtbar wird
-    const bh = 4 + kick * 0.13;
+  // Laufzyklus von hinten (wie Temple Run): das Standbein schiebt zur Kamera,
+  // das Schwungbein holt mit hochschnellender Ferse aus — Knie leicht nach
+  // außen, die Sohle blitzt auf. Hüfte → Knie → Fuß als EIN Pfad (runde Gelenke).
+  const leg = (side, c) => {
+    const lift = inAir ? (side < 0 ? 0.95 : 0.65) : Math.max(0, c);   // Sprung: Knie angezogen
+    const plant = inAir ? 0 : Math.max(0, -c);
+    const hipX = side * 5.5, hipY = -27;
+    const kx = side * (7.5 + lift * 3.5), ky = -15.5 - lift * 7;
+    const fx = side * (6 + plant * 2.5 - lift * 1.5), fy = -3 - lift * 20 + plant;
+    line(7.6, SKIN.leg, () => { ctx.moveTo(hipX, hipY); ctx.lineTo(kx, ky); ctx.lineTo(fx, fy); });
+    // Stiefel: hochgeschnellte Ferse zeigt die Sohle
+    const bh = 3.8 + lift * 2.8;
     shape(SKIN.boot, () => ctx.ellipse(fx, fy, 5.6, bh, 0, 0, Math.PI * 2), 2.5);
     ctx.fillStyle = "rgba(40, 20, 12, 0.55)";
-    ctx.beginPath(); ctx.ellipse(fx, fy + bh * 0.35, 4.4, bh * 0.5, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(fx, fy + bh * 0.3, 4.4, bh * 0.55 * (0.4 + lift), 0, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = "rgba(255,255,255,0.35)";
-    ctx.beginPath(); ctx.ellipse(fx - 1.5, fy - bh * 0.45, 2.2, 1.2, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(fx - 1.5, fy - bh * 0.5, 2.2, 1.2, 0, 0, Math.PI * 2); ctx.fill();
   };
-  foot(-1, legA);
-  foot(1, -legA);
+  if (!duck) {   // im Rutschen liegen die Beine vorn (von hinten verdeckt)
+    // das Schwungbein (Ferse hoch) wird zuletzt gezeichnet
+    const cL = Math.sin(ph), cR = -cL;
+    if (cL > cR) { leg(1, cR); leg(-1, cL); } else { leg(-1, cL); leg(1, cR); }
+  }
+
+  // Oberkörper dreht leicht gegen die Beine
+  ctx.save();
+  ctx.translate(0, -27);
+  ctx.rotate(inAir || duck ? 0 : Math.sin(ph) * 0.055);
+  ctx.translate(Math.sin(ph) * (inAir || duck ? 0 : 1.2), 27);
 
   // Rumpf (Rücken)
   const bg = ctx.createLinearGradient(0, -58, 0, -22);
@@ -1825,12 +1852,18 @@ function drawRunner(now) {
   ctx.fillStyle = "rgba(255,255,255,0.7)";
   ctx.beginPath(); ctx.moveTo(13, -76); ctx.lineTo(16, -67); ctx.lineTo(13, -66); ctx.closePath(); ctx.fill();
 
-  // Arme pumpen seitlich (von hinten sichtbar)
-  const armA = inAir ? -0.6 : Math.sin(ph + Math.PI);
+  // Arme: angewinkelt, schwingen gegengleich zu den Beinen
+  const armA = Math.sin(ph + Math.PI);
+  const flail = stumbleT > 0 ? Math.sin(now * 0.04) * 7 : 0;
   for (const side of [-1, 1]) {
     const sw = side === -1 ? armA : -armA;
-    line(6.5, SKIN.cloak[0], () => { ctx.moveTo(side * 12, -52); ctx.quadraticCurveTo(side * 17.5, -44, side * 15, -36 + sw * 7); });
-    shape("#f2d9c4", () => ctx.arc(side * 15, -35 + sw * 7, 3.4, 0, Math.PI * 2), 2);
+    let ex, ey, hx, hy;
+    if (inAir) { ex = side * 19; ey = -58; hx = side * 23; hy = -67; }            // Arme hoch
+    else if (duck) { ex = side * 19; ey = -47; hx = side * 26; hy = -41; }        // seitlich abstützen
+    else { ex = side * (17 + sw * 1.5); ey = -44 + sw * 3; hx = side * (14 - sw * 2.5); hy = -37 + sw * 8; }
+    hy += flail * side;
+    line(6.3, SKIN.cloak[0], () => { ctx.moveTo(side * 12, -52); ctx.lineTo(ex, ey); ctx.lineTo(hx, hy); });
+    shape("#f2d9c4", () => ctx.arc(hx, hy + 1, 3.4, 0, Math.PI * 2), 2);
   }
 
   // Schal im Fahrtwind — Farbakzent, der die Figur vom Weg abhebt
@@ -1876,6 +1909,7 @@ function drawRunner(now) {
   ctx.ellipse(0, -56.5, 6, 2.6, 0, 0, Math.PI);
   ctx.fill();
 
+  ctx.restore();   // Oberkörper
   ctx.restore();
 
   // Schild-Blase
@@ -1891,146 +1925,200 @@ function drawRunner(now) {
 }
 
 // --- Das wütende Einhorn (zwischen Kamera und Läuferin) ---
+// --- Das wütende Einhorn — galoppiert schräg hinter der Läuferin her ---
+// Ganzer Körper im Galopp, schräg von hinten (wie die Verfolger bei Temple
+// Run): Hinterhand nah an der Kamera, Brust und Kopf weiter vorn. Vorher war
+// es nur ein Kopf mit Hals, der von unten ins Bild ragte.
+const U_OUT = "rgba(34, 18, 52, 0.55)";
 function drawUnicorn(now) {
   let p = chase;
   if (mode === "catch") p = Math.min(1.55, 1 + catchT * 0.8);
-  const s = 0.72 + p * 1.3; // Größe
+  const s = 0.55 + p * 0.95; // Größe
   const gallopF = 6 + p * 5;
-  const bob = Math.abs(Math.sin(now * 0.001 * gallopF)) * 14 * s;
-  // Folgt der Spur mit Verzögerung
-  // Seitlich hinter der Figur statt mittig: vorher ragte der Kopf samt Horn
-  // mitten durch sie hindurch. Beim Fangen rückt es in die Mitte.
+  const gp = now * 0.001 * gallopF * Math.PI;   // Galopp-Phase
+  const bob = Math.abs(Math.sin(gp)) * 10 * s;
+  // Seitlich hinter der Figur; beim Fangen rückt es in die Mitte.
   const side = W * 0.3 * (1 - Math.min(1, Math.max(0, p - 1) * 2));
   const ux = laneX(laneCur, PLAYER_T) * 0.35 + (W / 2) * 0.65 - side;
-  const baseY = H + 150 * s * (0.62 - p * 0.5);
+  // Standlinie: wenig Nähe → weit unten (halb verdeckt), nah → ganz im Bild
+  const baseY = H - 22 * s + (0.55 - Math.min(p, 1)) * 190 * s;
   const uy = baseY - bob;
 
   ctx.save();
   ctx.translate(ux, uy);
   ctx.scale(s, s);
+  ctx.rotate(Math.sin(gp * 2) * 0.05 - 0.04);   // Galopp-Nicken
+  ctx.lineCap = "round"; ctx.lineJoin = "round";
 
-  // Mähne (fließende Bänder)
-  for (let i = 0; i < 6; i++) {
-    const off = i - 2.5;
-    ctx.strokeStyle = USKIN.mane[i];
-    ctx.globalAlpha = 0.95;
-    ctx.lineWidth = 7.5;
+  // Bein aus zwei Segmenten; Phase im Vierschlag-Galopp
+  const leg = (hx, hy, ph, front, far) => {
+    const sw = Math.sin(ph), lift = Math.max(0, Math.cos(ph));
+    const kx = hx + (front ? 12 : -8) * sw, ky = hy + 21 - lift * 7;
+    const fx = hx + (front ? 24 : -18) * sw + (front ? 5 : 0), fy = hy + 43 - lift * 17;
+    const w = front ? 10.5 : 13;
+    const col = far ? mixHex(USKIN.leg, "#000000", 0.28) : USKIN.leg;
+    ctx.strokeStyle = U_OUT; ctx.lineWidth = w + 3.5;
+    ctx.beginPath(); ctx.moveTo(hx, hy); ctx.quadraticCurveTo(kx, ky, fx, fy); ctx.stroke();
+    ctx.strokeStyle = col; ctx.lineWidth = w;
+    ctx.beginPath(); ctx.moveTo(hx, hy); ctx.quadraticCurveTo(kx, ky, fx, fy); ctx.stroke();
+    ctx.fillStyle = far ? mixHex(USKIN.hoof, "#000000", 0.25) : USKIN.hoof;
+    ctx.strokeStyle = U_OUT; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.ellipse(fx, fy + 2, front ? 7 : 8.5, 5, 0, 0, Math.PI * 2); ctx.stroke(); ctx.fill();
+  };
+
+  // Ferne Beine zuerst (dunkler)
+  leg(-16, -42, gp + 0.55, false, true);
+  leg(42, -66, gp + Math.PI + 0.55, true, true);
+
+  // Rumpf + Hinterhand (nah an der Kamera, darum größer)
+  const bodyPath = () => {
+    ctx.beginPath();
+    ctx.ellipse(8, -56, 46, 25, -0.5, 0, Math.PI * 2);
+    ctx.moveTo(5, -40);
+    ctx.arc(-22, -40, 27, 0, Math.PI * 2);
+  };
+  const bgr = ctx.createLinearGradient(-50, -92, 44, -18);
+  bgr.addColorStop(0, USKIN.body[0]); bgr.addColorStop(0.55, USKIN.body[1]); bgr.addColorStop(1, USKIN.body[2]);
+  bodyPath(); ctx.strokeStyle = U_OUT; ctx.lineWidth = 3; ctx.stroke();
+  ctx.fillStyle = bgr; ctx.fill();
+  const gl = ctx.createLinearGradient(-44, -86, 8, -30);
+  gl.addColorStop(0, "rgba(255,255,255,0.45)"); gl.addColorStop(0.5, "rgba(255,255,255,0)");
+  bodyPath(); ctx.fillStyle = gl; ctx.fill();
+  ctx.strokeStyle = "rgba(40,20,60,0.2)"; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(-22, -40, 17, 2.1, 4.0); ctx.stroke();   // Muskel der Hinterhand
+
+  // Hals + Kopf (bisheriger Kopf, kleiner an die Brust gesetzt)
+  const hx = ux + (36 + 46 * 0.64) * s, hy = uy + (-62 - 82 * 0.64) * s;   // Nüstern (für Dampf)
+  ctx.save();
+  ctx.translate(36, -62);
+  ctx.scale(0.64, 0.64);
+  ctx.rotate(0.1);
+    // Mähne (fließende Bänder)
+    for (let i = 0; i < 6; i++) {
+      const off = i - 2.5;
+      ctx.strokeStyle = USKIN.mane[i];
+      ctx.globalAlpha = 0.95;
+      ctx.lineWidth = 7.5;
+      ctx.lineCap = "round";
+      ctx.shadowColor = USKIN.mane[i]; ctx.shadowBlur = 13;
+      ctx.beginPath();
+      const wav = Math.sin(now * 0.004 + i * 0.9) * 12;
+      ctx.moveTo(-14 + off * 2, -96);
+      ctx.quadraticCurveTo(-48 + off * 5 + wav, -74 + off * 6, -60 + off * 6 + wav * 1.4, -30 + off * 9);
+      ctx.stroke();
+    }
+    ctx.shadowBlur = 0;
+    ctx.globalAlpha = 1;
+
+    // Hals + Kopf
+    const hg = ctx.createLinearGradient(-20, -110, 30, -40);
+    hg.addColorStop(0, USKIN.body[0]); hg.addColorStop(0.6, USKIN.body[1]); hg.addColorStop(1, USKIN.body[2]);
+    ctx.fillStyle = hg;
+    ctx.beginPath();
+    ctx.moveTo(-34, 10);
+    ctx.quadraticCurveTo(-30, -70, -10, -98);   // Halsrücken
+    ctx.quadraticCurveTo(4, -116, 26, -108);    // Stirn
+    ctx.quadraticCurveTo(46, -102, 52, -88);    // Nasenrücken
+    ctx.quadraticCurveTo(56, -78, 46, -74);     // Maul
+    ctx.quadraticCurveTo(30, -70, 22, -58);     // Kinn
+    ctx.quadraticCurveTo(10, -30, 16, 10);      // Halsvorderseite
+    ctx.closePath();
+    ctx.fill();
+    // Glänzendes Rim-Light + weicher Bauchschatten — denselben Körperpfad noch
+    // einmal mit einem gecachten Verlauf füllen (kein Clip, keine Allokation
+    // pro Frame → kein Ruckler).
+    if (!UNI_GLOSS) {
+      UNI_GLOSS = ctx.createLinearGradient(-30, -120, 44, -20);
+      UNI_GLOSS.addColorStop(0, "rgba(255,255,255,0.42)");
+      UNI_GLOSS.addColorStop(0.32, "rgba(255,255,255,0.04)");
+      UNI_GLOSS.addColorStop(1, "rgba(30,16,48,0.22)");
+    }
+    ctx.fillStyle = UNI_GLOSS;
+    ctx.fill();
+    ctx.strokeStyle = "rgba(20,10,30,0.22)"; ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Nüstern (schnaubt!)
+    ctx.fillStyle = USKIN.nostril;
+    ctx.beginPath(); ctx.ellipse(46, -82, 2.8, 4, -0.4, 0, Math.PI * 2); ctx.fill();
+    // Dampfwölkchen beim Schnauben
+    if (p > 0.45 && Math.sin(now * 0.003 * gallopF) > 0.7) {
+      puff(hx, hy, "rgba(255,255,255,0.5)", 1, 40, 20);
+    }
+
+    // Wütendes Auge
+    ctx.fillStyle = "#fff";
+    ctx.beginPath(); ctx.ellipse(18, -92, 7.5, 8.5, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = p > 0.7 ? "#d92b4a" : "#7a2fd9";
+    ctx.beginPath(); ctx.arc(20, -91, 4.2, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#1a0a24";
+    ctx.beginPath(); ctx.arc(21, -91, 2, 0, Math.PI * 2); ctx.fill();
+    // Zornige Braue
+    ctx.strokeStyle = USKIN.brow;
+    ctx.lineWidth = 3.5;
     ctx.lineCap = "round";
-    ctx.shadowColor = USKIN.mane[i]; ctx.shadowBlur = 13;
     ctx.beginPath();
-    const wav = Math.sin(now * 0.004 + i * 0.9) * 12;
-    ctx.moveTo(-14 + off * 2, -96);
-    ctx.quadraticCurveTo(-48 + off * 5 + wav, -74 + off * 6, -60 + off * 6 + wav * 1.4, -30 + off * 9);
+    ctx.moveTo(8, -104); ctx.lineTo(28, -97);
     ctx.stroke();
-  }
-  ctx.shadowBlur = 0;
-  ctx.globalAlpha = 1;
 
-  // Hals + Kopf
-  const hg = ctx.createLinearGradient(-20, -110, 30, -40);
-  hg.addColorStop(0, USKIN.body[0]); hg.addColorStop(0.6, USKIN.body[1]); hg.addColorStop(1, USKIN.body[2]);
-  ctx.fillStyle = hg;
-  ctx.beginPath();
-  ctx.moveTo(-34, 10);
-  ctx.quadraticCurveTo(-30, -70, -10, -98);   // Halsrücken
-  ctx.quadraticCurveTo(4, -116, 26, -108);    // Stirn
-  ctx.quadraticCurveTo(46, -102, 52, -88);    // Nasenrücken
-  ctx.quadraticCurveTo(56, -78, 46, -74);     // Maul
-  ctx.quadraticCurveTo(30, -70, 22, -58);     // Kinn
-  ctx.quadraticCurveTo(10, -30, 16, 10);      // Halsvorderseite
-  ctx.closePath();
-  ctx.fill();
-  // Glänzendes Rim-Light + weicher Bauchschatten — denselben Körperpfad noch
-  // einmal mit einem gecachten Verlauf füllen (kein Clip, keine Allokation
-  // pro Frame → kein Ruckler).
-  if (!UNI_GLOSS) {
-    UNI_GLOSS = ctx.createLinearGradient(-30, -120, 44, -20);
-    UNI_GLOSS.addColorStop(0, "rgba(255,255,255,0.42)");
-    UNI_GLOSS.addColorStop(0.32, "rgba(255,255,255,0.04)");
-    UNI_GLOSS.addColorStop(1, "rgba(30,16,48,0.22)");
-  }
-  ctx.fillStyle = UNI_GLOSS;
-  ctx.fill();
-  ctx.strokeStyle = "rgba(20,10,30,0.22)"; ctx.lineWidth = 2;
-  ctx.stroke();
-
-  // Nüstern (schnaubt!)
-  ctx.fillStyle = USKIN.nostril;
-  ctx.beginPath(); ctx.ellipse(46, -82, 2.8, 4, -0.4, 0, Math.PI * 2); ctx.fill();
-  // Dampfwölkchen beim Schnauben
-  if (p > 0.45 && Math.sin(now * 0.003 * gallopF) > 0.7) {
-    puff(ux + 50 * s, uy - 80 * s, "rgba(255,255,255,0.5)", 1, 40, 20);
-  }
-
-  // Wütendes Auge
-  ctx.fillStyle = "#fff";
-  ctx.beginPath(); ctx.ellipse(18, -92, 7.5, 8.5, 0, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = p > 0.7 ? "#d92b4a" : "#7a2fd9";
-  ctx.beginPath(); ctx.arc(20, -91, 4.2, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = "#1a0a24";
-  ctx.beginPath(); ctx.arc(21, -91, 2, 0, Math.PI * 2); ctx.fill();
-  // Zornige Braue
-  ctx.strokeStyle = USKIN.brow;
-  ctx.lineWidth = 3.5;
-  ctx.lineCap = "round";
-  ctx.beginPath();
-  ctx.moveTo(8, -104); ctx.lineTo(28, -97);
-  ctx.stroke();
-
-  // Ohr
-  ctx.fillStyle = USKIN.ear;
-  ctx.beginPath();
-  ctx.moveTo(-4, -108); ctx.lineTo(4, -126); ctx.lineTo(10, -106);
-  ctx.closePath(); ctx.fill();
-
-  // DAS HORN — golden, spiralig, glühend
-  const hornGlow = 0.6 + 0.4 * Math.sin(now * 0.005);
-  ctx.shadowColor = USKIN.hornGlow; ctx.shadowBlur = 18 * hornGlow;
-  const hgr = ctx.createLinearGradient(14, -160, 22, -110);
-  hgr.addColorStop(0, USKIN.horn[0]); hgr.addColorStop(0.5, USKIN.horn[1]); hgr.addColorStop(1, USKIN.horn[2]);
-  ctx.fillStyle = hgr;
-  ctx.beginPath();
-  ctx.moveTo(10, -112);
-  ctx.lineTo(20, -164);
-  ctx.lineTo(28, -110);
-  ctx.closePath();
-  ctx.fill();
-  ctx.shadowBlur = 0;
-  // Spirale
-  ctx.strokeStyle = "rgba(138, 106, 28, 0.6)";
-  ctx.lineWidth = 1.6;
-  for (let i = 1; i <= 4; i++) {
-    const yy = -112 - i * 11;
-    const ww = 9 - i * 1.8;
+    // Ohr
+    ctx.fillStyle = USKIN.ear;
     ctx.beginPath();
-    ctx.moveTo(19 - ww, yy);
-    ctx.quadraticCurveTo(19, yy - 4, 19 + ww, yy - 1);
-    ctx.stroke();
-  }
+    ctx.moveTo(-4, -108); ctx.lineTo(4, -126); ctx.lineTo(10, -106);
+    ctx.closePath(); ctx.fill();
 
-  // Vorderbeine im Galopp (nur sichtbar wenn nah)
-  if (p > 0.4) {
-    const leg = Math.sin(now * 0.001 * gallopF * Math.PI);
-    ctx.strokeStyle = USKIN.leg;
-    ctx.lineWidth = 12;
-    ctx.lineCap = "round";
+    // DAS HORN — golden, spiralig, glühend
+    const hornGlow = 0.6 + 0.4 * Math.sin(now * 0.005);
+    ctx.shadowColor = USKIN.hornGlow; ctx.shadowBlur = 18 * hornGlow;
+    const hgr = ctx.createLinearGradient(14, -160, 22, -110);
+    hgr.addColorStop(0, USKIN.horn[0]); hgr.addColorStop(0.5, USKIN.horn[1]); hgr.addColorStop(1, USKIN.horn[2]);
+    ctx.fillStyle = hgr;
     ctx.beginPath();
-    ctx.moveTo(-24, 4);
-    ctx.quadraticCurveTo(-20 + leg * 14, 34, -14 + leg * 26, 52);
-    ctx.moveTo(4, 6);
-    ctx.quadraticCurveTo(8 - leg * 14, 36, 14 - leg * 26, 54);
-    ctx.stroke();
-    // Hufe
-    ctx.fillStyle = USKIN.hoof;
-    ctx.beginPath(); ctx.arc(-14 + leg * 26, 54, 7, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.arc(14 - leg * 26, 54, 7, 0, Math.PI * 2); ctx.fill();
-  }
+    ctx.moveTo(10, -112);
+    ctx.lineTo(20, -164);
+    ctx.lineTo(28, -110);
+    ctx.closePath();
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    // Spirale
+    ctx.strokeStyle = "rgba(138, 106, 28, 0.6)";
+    ctx.lineWidth = 1.6;
+    for (let i = 1; i <= 4; i++) {
+      const yy = -112 - i * 11;
+      const ww = 9 - i * 1.8;
+      ctx.beginPath();
+      ctx.moveTo(19 - ww, yy);
+      ctx.quadraticCurveTo(19, yy - 4, 19 + ww, yy - 1);
+      ctx.stroke();
+    }
 
   ctx.restore();
 
-  // Funkel-Spur hinterm Einhorn
+  // Nahe Beine
+  leg(30, -58, gp + Math.PI, true, false);
+  leg(-30, -34, gp, false, false);
+
+  // Regenbogen-Schweif — weht Richtung Kamera
+  for (let i = 0; i < 6; i++) {
+    const off = i - 2.5, wav = Math.sin(now * 0.006 + i * 0.8) * 10;
+    ctx.strokeStyle = USKIN.mane[i];
+    ctx.lineWidth = 7;
+    ctx.shadowColor = USKIN.mane[i]; ctx.shadowBlur = LOWP() ? 0 : 9;   // Weichzeichner ist teuer
+    ctx.beginPath();
+    ctx.moveTo(-44, -56);
+    ctx.quadraticCurveTo(-72 + wav, -62 + off * 5, -100 + wav * 1.6, -32 + off * 7);
+    ctx.stroke();
+  }
+  ctx.shadowBlur = 0;
+
+  ctx.restore();
+
+  // Hufstaub und Funkel-Spur
   if (p > 0.25 && Math.random() < p * 0.6) {
     sparkleTrail(ux + (Math.random() - 0.5) * 90 * s, uy - Math.random() * 60 * s, USKIN.mane[Math.floor(Math.random() * 6)]);
+  }
+  if (mode === "run" && !LOWP() && Math.sin(gp) > 0.93) {
+    puff(ux - 24 * s, uy + 8 * s, "rgba(236, 226, 246, 0.5)", 2, 60, 16);
   }
 }
 
@@ -2072,7 +2160,7 @@ const sound = (() => {
     jump() { tone(280, 640, 0.18, "sine", 0.07); },
     slide() { tone(300, 110, 0.16, "triangle", 0.06); },
     whoosh() { tone(500, 260, 0.09, "sine", 0.045); },
-    turn() { tone(240, 880, 0.28, "sawtooth", 0.06); tone(700, 180, 0.32, "sine", 0.07, 0.02); },
+    turn() { tone(520, 240, 0.24, "sine", 0.06); tone(260, 150, 0.2, "triangle", 0.035, 0.03); },
     turnWarn() { [880, 1175].forEach((f, i) => tone(f, f * 0.99, 0.16, "sine", 0.07, i * 0.14)); },
     coin(combo) { tone(660 + combo * 55, 880 + combo * 55, 0.09, "square", 0.045); },
     stumble() { tone(170, 55, 0.3, "sawtooth", 0.13); tone(90, 40, 0.25, "square", 0.09, 0.03); },
