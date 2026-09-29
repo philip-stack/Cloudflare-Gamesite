@@ -75,7 +75,9 @@ for (const f of srcFiles) {
   const txt = readFileSync(f, "utf8");
   for (const m of txt.match(MAIL_RE) || []) {
     mailsGeprueft++;
-    if (!ERLAUBT.includes(m.toLowerCase())) {
+    // example.com/.org/.net sind per RFC 2606 reservierte Beispiel-Domains
+    // (Platzhalter in Formularen) — niemand dahinter.
+    if (!ERLAUBT.includes(m.toLowerCase()) && !/@example\.(com|org|net)$/i.test(m)) {
       fail(rel, `fremde E-Mail-Adresse (${m}) — nach außen geht nur die Adresse aus dem Impressum`);
     }
   }
