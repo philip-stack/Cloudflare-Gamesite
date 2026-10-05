@@ -12,6 +12,7 @@
 // ====================================================================
 import { DurableObject } from "cloudflare:workers";
 import F1 from "../public/f1/model.js";
+import { rtLogError } from "./rt-db.js";
 
 const HOST = "https://livetiming.formula1.com/signalrcore";
 const UA = "Rennticker/1.0 (+https://philip-stack.pages.dev/f1/; privat)";
@@ -20,6 +21,7 @@ export const TOPICS = ["Heartbeat", "SessionInfo", "SessionStatus", "TrackStatus
   "DriverList", "TimingData", "TimingAppData", "RaceControlMessages"];
 const IDLE_MS = 5 * 60 * 1000;
 const PING_MS = 15 * 1000;
+const LOG_EVERY_MS = 10 * 60 * 1000;   // gleiche Störung höchstens alle 10 min ins error_log
 
 // Lastbalancer-Cookies aus der Negotiate-Antwort (die Verbindung muss am
 // selben Server landen).
@@ -34,17 +36,37 @@ export class F1Live extends DurableObject {
     this.ws = null; this.state = null; this.ready = false;
     this.connecting = null; this.lastPoll = 0; this.lastMsg = 0; this.ping = null;
     this.cache = null; this.cacheAt = 0; this.error = "";
+    this.logged = new Map();
+  }
+
+  // Störungen ins gemeinsame error_log (Admin-Dashboard), gedrosselt je Art —
+  // eine hängende Verbindung soll das Protokoll nicht fluten.
+  log(kind, detail) {
+    const now = Date.now();
+    if (now - (this.logged.get(kind) || 0) < LOG_EVERY_MS) return;
+    this.logged.set(kind, now);
+    this.ctx.waitUntil(rtLogError(this.env, "F1-Live: " + kind, "f1-live", detail == null ? null : String(detail)));
   }
 
   async fetch() {
     this.lastPoll = Date.now();
     if (!(await this.ctx.storage.getAlarm())) await this.ctx.storage.setAlarm(Date.now() + 60000);
-    try { await this.connect(); } catch (e) { this.error = String(e && e.message || e); }
+    try { await this.connect(); } catch (e) { this.error = String(e && e.message || e); this.log("Verbindung fehlgeschlagen", this.error); }
     // Erster Gesamtstand kommt kurz nach dem Abo
     for (let i = 0; i < 25 && !this.ready && this.ws; i++) await new Promise(r => setTimeout(r, 200));
-    if (!this.ready) return Response.json({ ok: false, error: this.error || "connecting" }, { status: 503 });
+    if (!this.ready) {
+      if (this.ws) this.log("kein Gesamtstand nach Abo", this.error || "Timeout 5 s");
+      return Response.json({ ok: false, error: this.error || "connecting" }, { status: 503 });
+    }
     if (!this.cache || Date.now() - this.cacheAt > 1000) {
-      this.cache = JSON.stringify({ ok: true, updated: this.lastMsg, ...F1.fromLive(this.state) });
+      try {
+        this.cache = JSON.stringify({ ok: true, updated: this.lastMsg, ...F1.fromLive(this.state) });
+      } catch (e) {
+        // Feed-Format geändert? Stand verwerfen, beim nächsten Abruf frisch abonnieren
+        this.log("Auswertung fehlgeschlagen", e && e.stack || e);
+        this.drop();
+        return Response.json({ ok: false, error: "parse" }, { status: 503 });
+      }
       this.cacheAt = Date.now();
     }
     return new Response(this.cache, { headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" } });
@@ -52,7 +74,7 @@ export class F1Live extends DurableObject {
 
   async alarm() {
     if (Date.now() - this.lastPoll > IDLE_MS) { this.drop(); return; }
-    if (!this.ws) { try { await this.connect(); } catch (e) { this.error = String(e && e.message || e); } }
+    if (!this.ws) { try { await this.connect(); } catch (e) { this.error = String(e && e.message || e); this.log("Neuverbindung fehlgeschlagen", this.error); } }
     await this.ctx.storage.setAlarm(Date.now() + 60000);
   }
 
@@ -84,23 +106,30 @@ export class F1Live extends DurableObject {
           let m; try { m = JSON.parse(part); } catch (_) { continue; }
           if (!handshaken) {
             handshaken = true;
-            if (m.error) { this.error = m.error; ws.close(); return; }
+            if (m.error) { this.error = m.error; this.log("Handshake abgelehnt", m.error); ws.close(); return; }
             ws.send(JSON.stringify({ type: 1, invocationId: "1", target: "Subscribe", arguments: [TOPICS] }) + RS);
             continue;
           }
           if (m.type === 3 && m.invocationId === "1") {
-            if (m.error) { this.error = m.error; continue; }
+            if (m.error) { this.error = m.error; this.log("Abo abgelehnt", m.error); continue; }
             for (const [t, v] of Object.entries(m.result || {})) this.state[t] = v;
             this.ready = true; this.cache = null;
           } else if (m.type === 1 && m.target === "feed" && Array.isArray(m.arguments)) {
             const [topic, data] = m.arguments;
             if (TOPICS.includes(topic)) { this.state[topic] = F1.mergeFeed(this.state[topic], data); this.cache = null; }
           } else if (m.type === 7) {
+            if (m.error) this.log("Feed hat getrennt", m.error);
             ws.close();
           }
         }
       });
-      const gone = () => { if (this.ws === ws) { clearInterval(this.ping); this.ping = null; this.ws = null; this.ready = false; } };
+      const gone = ev => {
+        if (this.ws !== ws) return;
+        clearInterval(this.ping); this.ping = null; this.ws = null; this.ready = false;
+        // Unerwartet weg, während jemand zuschaut → protokollieren (Alarm verbindet neu)
+        const code = ev && ev.code;
+        if (Date.now() - this.lastPoll < 60000 && code !== 1000) this.log("Verbindung abgebrochen", "Code " + (code ?? "error") + (ev && ev.reason ? " " + ev.reason : ""));
+      };
       ws.addEventListener("close", gone);
       ws.addEventListener("error", gone);
       ws.send(JSON.stringify({ protocol: "json", version: 1 }) + RS);

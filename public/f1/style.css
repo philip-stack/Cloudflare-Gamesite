@@ -214,6 +214,19 @@ body.is-live { padding-bottom: env(safe-area-inset-bottom); }
 .age { font-size: 13px; color: var(--muted); font-weight: 600; min-width: 1.4em; }
 .c-stops { font-weight: 600; color: var(--muted); }
 .c-last { font-size: 14px; font-weight: 600; white-space: nowrap; }
+.tr { font-style: normal; font-weight: 700; font-size: 12px; margin-right: 3px; }
+.fav-grid .tr { font-size: 11px; margin: 0 0 0 4px; }
+.tr-in { color: var(--pb); } .tr-out { color: var(--red-2); }
+.row.in-danger .c-pos b { color: var(--red-2); }
+.row.in-danger { background: color-mix(in srgb, var(--red) 7%, var(--panel)); }
+.row.cutline { border-bottom: 2px dashed var(--red); }
+.fav-stints { display: flex; gap: 3px; padding: 10px 12px 12px 20px; border-top: 1px solid var(--line); }
+.fav-stints .seg {
+  min-width: 26px; height: 22px; border-radius: 6px; display: flex; align-items: center; justify-content: center; gap: 3px;
+  font-size: 11px; font-weight: 900; color: #111; background: var(--tc, var(--muted)); overflow: hidden; white-space: nowrap;
+}
+.fav-stints .seg small { font-weight: 600; font-size: 10px; opacity: .75; }
+:root[data-theme="light"] .fav-stints .seg.t-H { color: #fff; }
 .purple { color: var(--purple); }
 .pb { color: var(--pb); }
 .row.is-fav { background: color-mix(in srgb, var(--team) 20%, var(--panel)); }

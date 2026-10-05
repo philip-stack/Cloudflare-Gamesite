@@ -128,6 +128,24 @@
     (r.category === "Flag" && r.scope === "Track" && r.flag !== "GREEN") ||
     (r.category === "Other" && RELEVANT.test((r.message || "").toUpperCase()) && !NOISE.test((r.message || "").toUpperCase()));
 
+  // Bisherige Reifen-Abschnitte bis Runde `done` als [{ c, laps }]. Stopps
+  // mitten in einem Stint (fehlender neuer Stint bei OpenF1) teilen ihn.
+  function stintHistory(S, pitsSoFar, done) {
+    const out = [];
+    for (const s of S) {
+      // gerade aufgezogener Satz (Stopp schon da, noch keine Runde darauf) zählt mit
+      const fresh = s.lap_start === done + 1 && pitsSoFar.some(p => p.lap_number >= done);
+      if (s.lap_start > Math.max(done, 1) && !fresh) break;
+      const end = Math.min(s.lap_end == null ? done : s.lap_end, done);
+      let from = s.lap_start;
+      for (const p of pitsSoFar) {
+        if (p.lap_number >= from && p.lap_number < end) { out.push({ c: s.compound, laps: p.lap_number - from + 1 }); from = p.lap_number + 1; }
+      }
+      out.push({ c: s.compound, laps: Math.max(0, end - from + 1) });
+    }
+    return out;
+  }
+
   // Reifenalter in Runden. Fehlt nach einem Stopp ein neuer Stint (kommt bei
   // OpenF1 vor), zählen wir ab dem Stopp neu.
   function tyreAge(st, pitsSoFar, done) {
@@ -251,6 +269,7 @@
           best,
           compound: st ? st.compound : null,
           tyreAge: st ? tyreAge(st, P, done.length) : null,
+          stints: stintHistory(S, P, done.length),
           pits: P.length,
           pitNow: P.some(x => x.time > prevT),
           out, status: res ? (res.dsq ? "DSQ" : res.dns ? "DNS" : res.dnf ? "DNF" : "") : "",
@@ -355,6 +374,7 @@
         best: parseTime((t.BestLapTime || {}).Value),
         compound: cur && cur.Compound && cur.Compound !== "UNKNOWN" ? cur.Compound : null,
         tyreAge: cur ? cur.TotalLaps ?? null : null,
+        stints: stints.filter(x => x && x.Compound).map(x => ({ c: x.Compound, laps: Math.max(0, (x.TotalLaps || 0) - (x.StartLaps || 0)) })),
         pits: t.NumberOfPitStops || 0,
         pitNow: !!(t.InPit || t.PitOut),
         out: !!(t.Retired || t.Stopped || t.KnockedOut),
@@ -383,6 +403,13 @@
       .filter(isRelevantMsg)
       .map(r => ({ time: r.time, lap: r.lap_number, text: msgText(r), driver: r.driver_number }));
     const lc = st.LapCount || {};
+    // Qualifying: Teil (Q1–Q3) und wie viele weiterkommen (NoEntries = Autos je Teil)
+    const tdAll = st.TimingData || {};
+    const qp = !isRace && +tdAll.SessionPart || 0;
+    const entries = list(tdAll.NoEntries).map(Number);
+    const sprintQ = /sprint/i.test(info.Name || "") || /sprint/i.test(info.Type || "");
+    const part = qp ? (sprintQ ? "SQ" : "Q") + qp : null;
+    const cut = qp && status !== "fin" && entries[qp] > 0 ? entries[qp] : null;
     return {
       session: {
         key: info.Key || null, name: SESSION_DE[info.Name] || info.Name || "", type: info.Type || "", race: isRace,
@@ -390,7 +417,7 @@
         state: ss, start: info.StartDate || null,
       },
       drivers,
-      frame: { lap: lc.CurrentLap || 0, total: lc.TotalLaps || 0, final: status === "fin", live: true, status, rows, msgs },
+      frame: { lap: lc.CurrentLap || 0, total: lc.TotalLaps || 0, final: status === "fin", live: true, status, part, cut, rows, msgs },
     };
   }
 

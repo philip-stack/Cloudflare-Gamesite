@@ -124,7 +124,7 @@
       const f = d.frame;
       // Pfeile ▲▼: Veränderung seit Beginn der laufenden Runde
       if (f.lap !== liveLap) { liveBase = lastPos; liveLap = f.lap; }
-      lastPos = new Map(f.rows.map(r => [r.n, r.pos]));
+      lastPos = new Map(f.rows.map(r => [r.n, r]));
       liveSession = d.session;
       race = { live: true, drivers: new Map(d.drivers.map(x => [x.n, x])), laps: f.total, frames: [f] };
       if (Date.now() - d.updated > 60000) note("Der Live-Feed ist seit über einer Minute still – vermutlich Pause oder Session vorbei.", "soft");
@@ -179,6 +179,22 @@
     vsc: "Virtuelles SC", "vsc-end": "VSC endet", red: "Rote Flagge", fin: "Zielflagge",
   };
 
+  // Vergleichszeilen: Nachschau = Vorrunde, live = Stand zu Beginn der Runde
+  function baseRows() {
+    const f = race.frames[frame], prev = race.frames[frame - 1];
+    return f.live ? liveBase : new Map(prev ? prev.rows.map(r => [r.n, r]) : []);
+  }
+  const isTimed = () => race.frames[frame].live && liveSession && !liveSession.race;   // Training/Qualifying
+  // Veränderung eines Abstands seit der Vorrunde (Sekunden, negativ = kleiner)
+  function delta(r, key) {
+    const f = race.frames[frame];
+    if (f.final || isTimed() || r.out || r.pitNow) return null;
+    const b = baseRows().get(r.n);
+    if (!b || b.pitNow || typeof r[key] !== "number" || typeof b[key] !== "number") return null;
+    return r[key] - b[key];
+  }
+  const TREND_MIN = 0.2;
+
   function gapCell(r, i) {
     if (r.out) return `<span class="dnf">${r.status || "Aus"}</span>`;
     const f = race.frames[frame];
@@ -187,8 +203,12 @@
     if (i === 0) return `<span class="lead">${timed ? "Bestzeit" : f.final ? "Sieger" : "Führt"}</span>`;
     const v = gapMode === "leader" ? r.gap : r.interval;
     const txt = M.gapText(v);
-    const close = !race.frames[frame].final && gapMode === "interval" && typeof v === "number" && v < 1;   // DRS-Fenster
-    return txt ? `<span class="${close ? "drs" : ""}">${txt}</span>` : `<span class="muted">–</span>`;
+    const close = !race.frames[frame].final && !isTimed() && gapMode === "interval" && typeof v === "number" && v < 1;   // DRS-Fenster
+    const d = delta(r, gapMode === "leader" ? "gap" : "interval");
+    const tr = d == null || Math.abs(d) < TREND_MIN ? "" : d < 0
+      ? `<i class="tr tr-in" title="${Math.abs(d).toFixed(1)} s näher als letzte Runde">↓</i>`
+      : `<i class="tr tr-out" title="${d.toFixed(1)} s weiter weg als letzte Runde">↑</i>`;
+    return txt ? `${tr}<span class="${close ? "drs" : ""}">${txt}</span>` : `<span class="muted">–</span>`;
   }
 
   function tyre(c, age) {
@@ -206,21 +226,27 @@
     const noLaps = f.live && !race.laps;      // Training/Qualifying: keine Rundenzahl
     $("lapbox").classList.toggle("is-live", !!f.live);
     $("lbl").textContent = noLaps ? liveSession.name || "Session" : "Runde";
-    $("lap").textContent = noLaps ? "Live" : f.lap === 0 ? "Start" : String(f.lap);
+    $("lap").textContent = noLaps ? f.part || "Live" : f.lap === 0 ? "Start" : String(f.lap);
     $("laps").textContent = noLaps || f.lap === 0 ? "" : "/" + race.laps;
     const fl = $("flag"); fl.dataset.s = f.status; fl.textContent = f.final ? "Ergebnis" : STATUS[f.status] || "";
     $("gapmode").textContent = gapMode === "leader" ? "Zum 1." : "Int.";
     $("gapmode").title = gapMode === "leader" ? "Abstand zum Führenden – tippen für Intervall" : "Abstand zum Vordermann – tippen für Abstand zum Führenden";
 
-    const before = f.live ? liveBase : new Map(prev ? prev.rows.map(r => [r.n, r.pos]) : []);
+    const before = baseRows();
+    const timed = isTimed();
+    $("lasthead").textContent = timed ? "Beste" : "Letzte";
     $("rows").innerHTML = f.rows.map((r, i) => {
       const d = race.drivers.get(r.n);
-      const was = before.get(r.n);
+      const was = (before.get(r.n) || {}).pos;
       const delta = !r.out && was && r.pos ? was - r.pos : 0;
       const move = delta > 0 ? `<i class="up">▲${delta}</i>` : delta < 0 ? `<i class="down">▼${-delta}</i>` : "";
-      const last = r.last == null ? "–" : M.lapTime(r.last);
-      const lastCls = r.lastPurple ? "purple" : r.lastPB ? "pb" : "";
-      return `<li class="row${r.n === fav ? " is-fav" : ""}${r.out ? " is-out" : ""}" style="--team:${esc(d.color)}" data-n="${r.n}" tabindex="0" role="button" aria-pressed="${r.n === fav}" aria-label="${esc(d.first + " " + d.last)}, Platz ${r.pos ?? "–"}">
+      // Training/Qualifying: Bestzeit statt letzter Runde (Ein-/Ausfahrrunden sind Rauschen)
+      const t = timed ? r.best : r.last;
+      const last = t == null ? "–" : M.lapTime(t);
+      const lastCls = timed ? (r.fastest ? "purple" : "") : r.lastPurple ? "purple" : r.lastPB ? "pb" : "";
+      const zone = f.cut && !r.out && r.pos > f.cut ? " in-danger" : "";
+      const line = f.cut && r.pos === f.cut ? " cutline" : "";
+      return `<li class="row${r.n === fav ? " is-fav" : ""}${r.out ? " is-out" : ""}${zone}${line}" style="--team:${esc(d.color)}" data-n="${r.n}" tabindex="0" role="button" aria-pressed="${r.n === fav}" aria-label="${esc(d.first + " " + d.last)}, Platz ${r.pos ?? "–"}">
         <span class="c-pos"><b>${r.pos ?? "–"}</b>${move}</span>
         <span class="c-drv"><span class="bar"></span><b>${esc(d.abbr)}</b>${r.fastest ? '<i class="fl" title="Schnellste Runde"></i>' : ""}${f.final && r.points ? `<i class="pts">+${r.points}</i>` : ""}<small>${esc(d.team)}</small></span>
         <span class="c-gap">${r.pitNow && !r.out ? '<span class="box">BOX</span>' : gapCell(r, i)}</span>
@@ -243,6 +269,16 @@
     const gapTo = (a, b) => (!a || !b || a.out || b.out || f.lap === 0) ? null :
       (typeof b.interval === "number" ? b.interval : typeof a.gap === "number" && typeof b.gap === "number" ? b.gap - a.gap : null);
     const gA = gapTo(ahead, r), gB = gapTo(r, behind);
+    // Trend je Runde: vorne kleiner = gut, hinten kleiner = Druck
+    const dA = delta(r, "interval"), dB = behind ? delta(behind, "interval") : null;
+    const trend = (d, good) => d == null || Math.abs(d) < TREND_MIN ? "" :
+      `<i class="tr ${(d < 0) === good ? "tr-in" : "tr-out"}">${d < 0 ? "↓" : "↑"}${Math.abs(d).toFixed(1)}</i>`;
+    const segs = (r.stints || []).filter(x => x.laps > 0 || x === r.stints[r.stints.length - 1]);
+    const sum = segs.reduce((a, x) => a + Math.max(x.laps, 1), 0);
+    const bar = segs.length ? `<div class="fav-stints" aria-label="Reifenverlauf">${segs.map(x => {
+      const k = M.TYRE[x.c] || "?";
+      return `<span class="seg t-${k}" style="flex:${Math.max(x.laps, 1) / sum}" title="${esc(x.c)}: ${x.laps} Runden">${k}<small>${x.laps}</small></span>`;
+    }).join("")}</div>` : "";
     const nm = x => race.drivers.get(x.n).abbr;
     box.hidden = false;
     box.style.setProperty("--team", d.color);
@@ -253,11 +289,11 @@
         <button class="unfav" type="button" title="Nicht mehr verfolgen" aria-label="Nicht mehr verfolgen">✕</button>
       </div>
       <div class="fav-grid">
-        <div><span>Vordermann</span><b>${ahead && gA != null ? "−" + gA.toFixed(1) + " s" : "–"}</b><small>${ahead ? nm(ahead) : ""}</small></div>
-        <div><span>Hintermann</span><b>${behind && gB != null ? "+" + gB.toFixed(1) + " s" : "–"}</b><small>${behind ? nm(behind) : ""}</small></div>
+        <div><span>Vordermann</span><b>${ahead && gA != null ? "−" + gA.toFixed(1) + " s" : "–"}${trend(dA, true)}</b><small>${ahead ? nm(ahead) : ""}</small></div>
+        <div><span>Hintermann</span><b>${behind && gB != null ? "+" + gB.toFixed(1) + " s" : "–"}${trend(dB, false)}</b><small>${behind ? nm(behind) : ""}</small></div>
         <div><span>Reifen</span><b class="fav-tyre">${tyre(r.compound)} ${r.tyreAge ?? "–"} Rd.</b><small>${r.pits} ${r.pits === 1 ? "Stopp" : "Stopps"}</small></div>
         <div><span>Letzte / Beste</span><b class="${r.lastPurple ? "purple" : r.lastPB ? "pb" : ""}">${M.lapTime(r.last)}</b><small>${M.lapTime(r.best)}</small></div>
-      </div>`;
+      </div>${bar}`;
     box.querySelector(".unfav").addEventListener("click", () => setFav(null));
   }
 

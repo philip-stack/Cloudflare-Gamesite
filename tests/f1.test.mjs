@@ -120,6 +120,16 @@ assert("Live: Meldungen gefiltert & übersetzt", L.frame.msgs.length === 1 && L.
 const Q = M.fromLive({ ...liveState, SessionInfo: { Name: "Qualifying", Type: "Qualifying", Meeting: {} }, SessionStatus: { Status: "Finished" } });
 assert("Live Qualifying: Rückstand auf Bestzeit", Q.frame.rows[1].gap === 0.8 && Q.frame.status === "fin" && !Q.session.race);
 assert("Live: leerer Stand wirft nicht", M.fromLive({}).frame.rows.length === 0);
+assert("Live: Reifenverlauf aus Stints", JSON.stringify(lb.stints) === '[{"c":"MEDIUM","laps":9},{"c":"HARD","laps":0}]');
+const Q1 = M.fromLive({ ...liveState, SessionInfo: { Name: "Qualifying", Type: "Qualifying", Meeting: {} },
+  TimingData: { ...liveState.TimingData, SessionPart: 1, NoEntries: [22, 16, 10] } });
+assert("Live Qualifying: Teil Q1, Grenze 16", Q1.frame.part === "Q1" && Q1.frame.cut === 16);
+const Q3 = M.fromLive({ ...liveState, SessionInfo: { Name: "Sprint Qualifying", Type: "Qualifying", Meeting: {} },
+  TimingData: { ...liveState.TimingData, SessionPart: 3, NoEntries: [22, 16, 10] } });
+assert("Live Sprint-Qualifying: SQ3 ohne Grenze", Q3.frame.part === "SQ3" && Q3.frame.cut === null);
+assert("Live Rennen: keine Qualifying-Grenze", L.frame.part === null && L.frame.cut === null);
+assert("Nachschau: Reifenverlauf je Stopp", JSON.stringify(f2.rows[1].stints) === '[{"c":"SOFT","laps":1},{"c":"HARD","laps":0}]'
+  && JSON.stringify(fz.rows.find(r => r.n === 1).stints) === '[{"c":"MEDIUM","laps":3}]');
 
 // ---- Proxy-Allowlist ----
 assert("Proxy: erlaubter Endpunkt", buildUrl("laps", "?session_key=11731") === "https://api.openf1.org/v1/laps?session_key=11731");
