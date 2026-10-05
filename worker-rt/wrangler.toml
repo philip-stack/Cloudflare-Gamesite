@@ -23,6 +23,11 @@ class_name = "DrawRoom"
 name = "QUIZ_ROOM"
 class_name = "QuizRoom"
 
+# Rennticker (/f1/): ein DO hält während einer Session den F1-Live-Feed
+[[durable_objects.bindings]]
+name = "F1_LIVE"
+class_name = "F1Live"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["PartyRoom"]
@@ -43,6 +48,10 @@ new_sqlite_classes = ["QuizRoom"]
 [[migrations]]
 tag = "v5"
 deleted_classes = ["TronRoom"]
+
+[[migrations]]
+tag = "v6"
+new_sqlite_classes = ["F1Live"]
 
 # Cron: alle 2 Minuten den Feuerwehr-Bezirksalarm prüfen (pingt die
 # geschützte Pages-Route /api/fire/cron). Secret CRON_TOKEN nötig:

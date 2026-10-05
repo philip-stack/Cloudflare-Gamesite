@@ -121,6 +121,11 @@
       desc: "Einsätze in NÖ, live.",
       long: "Aktuelle Feuerwehr-Einsätze in Niederösterreich — Karte, Bezirks-Alarm, Historie.",
     },
+    {
+      key: "f1", name: "Rennticker", icon: "🏎️", accent: "#e10600", href: "/f1/",
+      desc: "Formel 1 live, nur was zählt.",
+      long: "Schlanke F1-Zeitenliste fürs Handy — live während der Session, danach Runde für Runde nachschauen.",
+    },
   ];
 
   const esc = s => String(s).replace(/[&<>"']/g, c => ({

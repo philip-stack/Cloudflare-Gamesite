@@ -1,5 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 import { RoomMixin } from "./base-room.js";
+export { F1Live } from "./f1-live.js";
 import { rtLogError, rtTouchRoom, rtDropRoom } from "./rt-db.js";
 import { D_CATS, D_CAT_KEYS, D_TURN, D_CHOOSE, D_REVEAL, dNorm, dLev, wordPool, pickWords, guessGain, drawerGain, wordLetters, catOf, hintCount, mergeStroke, opPts, D_MAX_OPS } from "./draw-logic.js";
 import { Q_TURN, Q_TURN_MAX, Q_REVEAL, Q_ROUNDS, Q_ROUND_CHOICES, Q_DIFF_CHOICES, Q_CAT_KEYS, questionPool, pickQuestions, shuffleOptions, answerGain, streakBonus, turnTime, Q_TB_TURN, Q_TB_REVEAL, Q_TB_MAX } from "./quiz-logic.js";

@@ -6,7 +6,7 @@
 // der Hub auch beim allerersten Offline-Aufruf erscheint.
 // API-Anfragen (/api/…) werden nie gecacht.
 // ====================================================================
-const CACHE = "gamesite-v94";
+const CACHE = "gamesite-v95";
 // CacheStorage ist pro Origin (nicht pro Scope) — die drei PWAs (Hub, /fire/noe/,
 // /tanken/) teilen sich denselben Speicher. Beim Aufräumen NUR eigene Cache-Namen
 // (gleicher Präfix) löschen, sonst wischt der zuletzt aktivierte SW die Shells der
@@ -126,6 +126,7 @@ self.addEventListener("fetch", e => {
   if (e.request.method !== "GET") return;
   if (url.origin !== location.origin) return;      // Fonts etc. macht der Browser-Cache
   if (url.pathname.startsWith("/api/")) return;    // Spielstände/Scores nie cachen
+  if (url.pathname.startsWith("/f1data/")) return; // Renndaten (MB-groß) macht der Browser-Cache
 
   e.respondWith(netFirst(e, '/'));
 });
