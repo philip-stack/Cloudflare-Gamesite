@@ -64,7 +64,7 @@
     if (t.state === "err") return `<div class="clip-tx"><p class="tx-wait">${esc(t.msg)}</p></div>`;
     if (!t.segs.length) return `<div class="clip-tx"><p class="tx-wait">Kein Text erkennbar.</p></div>`;
     const now = on ? audio.currentTime : -1;
-    return `<div class="clip-tx">${t.segs.map(x => `<p class="tx-l${now >= x.s && now < x.e ? " now" : ""}" data-s="${x.s}" data-e="${x.e}"><span class="tx-en">${esc(x.t)}</span>${x.d ? `<span class="tx-de">${esc(x.d)}</span>` : ""}</p>`).join("")}</div>`;
+    return `<div class="clip-tx">${t.segs.map(x => `<p class="tx-l${now >= x.s && now < x.e ? " now" : ""}" data-s="${x.s}" data-e="${x.e}"><span class="tx-en">${esc(x.t)}</span>${x.d ? `<span class="tx-de">${esc(x.d)}</span>` : ""}</p>`).join("")}<p class="tx-ai">Automatisch per KI abgeschrieben${showDe ? " und übersetzt" : ""} – kann Fehler enthalten.</p></div>`;
   }
   // Runde zum Zeitpunkt (Nachschau: wie viele Runden der Führende da beendet hatte)
   function lapAt(t) {

@@ -469,6 +469,7 @@ body.is-live { padding-bottom: env(safe-area-inset-bottom); }
 .tx-en { font-size: 14.5px; font-weight: 600; }
 .tx-de { font-size: 13px; color: var(--muted); font-style: italic; }
 .no-de .tx-de { display: none; }
+.tx-ai { margin: 0; padding-left: 11px; font-size: 11px; color: var(--muted); opacity: .8; }
 .tx-wait { margin: 0; font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 8px; }
 .tx-wait .spinner { width: 14px; height: 14px; }
 
