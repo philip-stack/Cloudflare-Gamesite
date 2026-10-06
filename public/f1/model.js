@@ -93,6 +93,7 @@
       if (/DEPLOYED/.test(U)) return "Safety Car auf der Strecke";
     }
     if (r.category === "Flag") {
+      if (/BLACK AND WHITE/.test(r.flag || "")) return `${who}: Schwarz-weiße Flagge (Verwarnung)`;
       if (r.flag === "CHEQUERED") return "Zielflagge";
       if (r.flag === "RED") return "Rote Flagge – Rennen unterbrochen";
       if (r.flag === "CLEAR" || r.flag === "GREEN") return "Strecke frei";
@@ -127,6 +128,133 @@
     r.category === "SafetyCar" ||
     (r.category === "Flag" && r.scope === "Track" && r.flag !== "GREEN") ||
     (r.category === "Other" && RELEVANT.test((r.message || "").toUpperCase()) && !NOISE.test((r.message || "").toUpperCase()));
+
+  // --- Rennleitung: offene Untersuchungen und Strafen je Fahrer ---------------
+  // Die Meldungen tragen am Ende die Uhrzeit des Vorfalls „(16:40:50)“ — daran
+  // hängen Notiert → Untersuchung → Entscheidung bzw. Strafe → abgesessen.
+  //   → { [n]: { inv: "noted"|"after"|"inv"|null, invText, pens: [{ label, text }], warn } }
+  const INV_RANK = { noted: 1, after: 2, inv: 3 };
+  function stewards(rc) {
+    const inc = new Map(), pens = [], warn = new Set();
+    for (const r of rc || []) {
+      const U = String(r.message || "").toUpperCase();
+      const cars = [...U.matchAll(/(\d+) \([A-Z]{3}\)/g)].map(m => +m[1]);
+      if (r.category === "Flag" && /BLACK AND WHITE/.test(r.flag || "")) {
+        for (const n of cars.length ? cars : [r.driver_number]) if (n) warn.add(+n);
+        continue;
+      }
+      if (!/STEWARDS|INCIDENT|PENALTY|INVESTIGAT|NOTED/.test(U) || /DELETED/.test(U)) continue;
+      const idm = /\((\d\d:\d\d:\d\d)\)\s*$/.exec(U);
+      const id = idm ? idm[1] : U.replace(/^.*? - /, "");
+      if (/PENALTY SERVED/.test(U)) {
+        const i = pens.findIndex(p => p.id === id && (!cars.length || cars.includes(p.n)));
+        if (i >= 0) pens.splice(i, 1);
+        continue;
+      }
+      const pm = /(\d+) SECOND (TIME|STOP\/GO) PENALTY/.exec(U);
+      if (pm || /DRIVE THROUGH/.test(U)) {
+        const label = pm ? (pm[2] === "TIME" ? `+${pm[1]} s` : `Stop-and-Go ${pm[1]} s`) : "Durchfahrt";
+        for (const n of cars) pens.push({ id, n, label, text: msgText(r) });
+        inc.delete(id);
+        continue;
+      }
+      if (/NO FURTHER|REPRIMAND|NO ACTION/.test(U)) { inc.delete(id); continue; }
+      const st = /AFTER THE RACE|AFTER THE SESSION/.test(U) ? "after" : /UNDER INVESTIGATION/.test(U) ? "inv" : /NOTED/.test(U) ? "noted" : null;
+      if (st && cars.length) inc.set(id, { cars, st, text: msgText(r) });
+    }
+    const out = {};
+    const get = n => (out[n] = out[n] || { inv: null, invText: "", pens: [], warn: false });
+    for (const x of inc.values()) for (const n of x.cars) {
+      const o = get(n);
+      if (!o.inv || INV_RANK[x.st] >= INV_RANK[o.inv]) { o.inv = x.st; o.invText = x.text; }
+    }
+    for (const p of pens) get(p.n).pens.push({ label: p.label, text: p.text });
+    for (const n of warn) get(n).warn = true;
+    return out;
+  }
+
+  // --- Ereignisse zwischen zwei Ständen (Zeitleiste) --------------------------
+  // Überholt (beide ohne Boxenstopp dazwischen), Box, Ausfall, schnellste Runde.
+  // start = erste Runde: statt Einzelduellen die größten Gewinner/Verlierer.
+  // Überholungen je Fahrer zusammengefasst (o = alle Überholten, vorne zuerst).
+  //   → [{ k: "pass", n, o: [n…], pos } | { k: "drop", n, d, pos } | { k: "pit", n, stop, c0, c } | { k: "out", n, status }
+  //      | { k: "fl", n, s } | { k: "start", moves: [{ n, d }] }]
+  function frameEvents(prev, cur, start) {
+    const ev = [];
+    if (!prev || !cur) return ev;
+    const P = new Map(prev.rows.map(r => [r.n, r]));
+    const ok = r => !!r && !r.out && !r.pitNow && typeof r.pos === "number";
+    const both = cur.rows.filter(r => { const p = P.get(r.n); return ok(r) && ok(p) && p.pits === r.pits; });
+    for (const r of cur.rows) {
+      const p = P.get(r.n);
+      if (!p) continue;
+      if (r.out && !p.out) ev.push({ k: "out", n: r.n, status: r.status || "" });
+      else if (!r.out && r.pits > p.pits) ev.push({ k: "pit", n: r.n, stop: r.pits, c0: p.compound, c: r.compound });
+    }
+    if (start) {
+      const moves = both.map(r => ({ n: r.n, d: P.get(r.n).pos - r.pos })).filter(x => Math.abs(x.d) >= 2)
+        .sort((a, b) => Math.abs(b.d) - Math.abs(a.d) || b.d - a.d).slice(0, 4);
+      if (moves.length) ev.push({ k: "start", moves });
+    } else {
+      // Wer von 3+ Autos auf einmal überholt wird (Dreher, Defekt), steht als
+      // „verliert Plätze“ statt in jeder einzelnen Überholung
+      const passed = b => both.filter(a => a !== b && P.get(a.n).pos > P.get(b.n).pos && a.pos < b.pos).length;
+      const drops = new Set(both.filter(b => passed(b) >= 3).map(b => b.n));
+      for (const n of drops) { const r = both.find(x => x.n === n); ev.push({ k: "drop", n, d: r.pos - P.get(n).pos, pos: r.pos }); }
+      for (const a of both.slice().sort((x, y) => x.pos - y.pos)) {
+        const o = both.filter(b => b !== a && !drops.has(b.n) && P.get(a.n).pos > P.get(b.n).pos && a.pos < b.pos).sort((x, y) => P.get(x.n).pos - P.get(y.n).pos).map(b => b.n);
+        if (o.length) ev.push({ k: "pass", n: a.n, o, pos: a.pos });
+      }
+    }
+    const fc = cur.rows.find(r => r.fastest && r.best != null), fp = prev.rows.find(r => r.fastest && r.best != null);
+    if (fc && fp && (fc.n !== fp.n || fc.best < fp.best - 1e-6)) ev.push({ k: "fl", n: fc.n, s: fc.best });
+    return ev;
+  }
+
+  // --- Boxenstopp-Rechner ------------------------------------------------------
+  // Wo käme Fahrer n wieder raus, wenn er jetzt stoppt? Abstand zum Führenden
+  // + Boxenverlust, eingeordnet zwischen die anderen (Überrundete zählen nicht).
+  //   → { pos, ahead: { n, d }, behind: { n, d } } | null
+  function pitRejoin(rows, n, loss) {
+    const gapOf = r => (r.pos === 1 ? 0 : typeof r.gap === "number" ? r.gap : null);
+    const me = rows.find(r => r.n === n);
+    if (!me || me.out || gapOf(me) == null || !(loss > 0)) return null;
+    const target = gapOf(me) + loss;
+    const others = rows.filter(r => r.n !== n && !r.out && gapOf(r) != null).map(r => ({ n: r.n, g: gapOf(r) })).sort((a, b) => a.g - b.g);
+    const front = others.filter(o => o.g <= target);
+    const a = front[front.length - 1], b = others.find(o => o.g > target);
+    return { pos: front.length + 1, ahead: a ? { n: a.n, d: +(target - a.g).toFixed(1) } : null, behind: b ? { n: b.n, d: +(b.g - target).toFixed(1) } : null };
+  }
+  // Boxenverlust aus den Rundenzeiten: (Einfahr- + Ausfahrrunde) − 2 × normale
+  // Runde desselben Fahrers rund um den Stopp. Ohne Safety Car, Median.
+  //   series: Map n → [{ lap, s, pitIn, pitOut, sc }]  →  Sekunden | null
+  function pitLoss(series) {
+    const out = [];
+    for (const L of series.values()) {
+      const by = new Map(L.map(l => [l.lap, l]));
+      for (const l of L) {
+        const nx = by.get(l.lap + 1);
+        if (!l.pitIn || !nx || l.s == null || nx.s == null || l.sc || nx.sc) continue;
+        const ref = L.filter(x => Math.abs(x.lap - l.lap) <= 6 && x.lap > 1 && x.s != null && !x.pitIn && !x.pitOut && !x.sc && x !== nx).map(x => x.s).sort((a, b) => a - b);
+        if (ref.length < 3) continue;
+        const loss = l.s + nx.s - 2 * ref[ref.length >> 1];
+        if (loss > 10 && loss < 45) out.push(loss);
+      }
+    }
+    if (!out.length) return null;
+    out.sort((a, b) => a - b);
+    return { s: +out[out.length >> 1].toFixed(1), stops: out.length };
+  }
+
+  // --- Wetter: F1-Feed (WeatherData, Texte) bzw. OpenF1 (Zahlen) → ein Format --
+  function weather(w) {
+    if (!w || typeof w !== "object") return null;
+    const n = v => (v == null || v === "" ? null : isFinite(+v) ? +v : null);
+    const air = n(w.AirTemp ?? w.air_temperature), track = n(w.TrackTemp ?? w.track_temperature);
+    if (air == null && track == null) return null;
+    return { air, track, hum: n(w.Humidity ?? w.humidity), rain: !!+(w.Rainfall ?? w.rainfall ?? 0),
+      wind: n(w.WindSpeed ?? w.wind_speed), dir: n(w.WindDirection ?? w.wind_direction) };
+  }
 
   // Reifenplan eines Fahrers: Die Grenzen der Stints kommen aus den
   // Boxenstopps (verlässlich), die Mischungen der Reihe nach aus dem
@@ -282,24 +410,28 @@
         r.lastPurple = !!fastest && r.last != null && r.last === fastest.s && fastest.n === r.n;
         r.lastPB = r.last != null && r.last === r.best;
       }
-      const msgs = rc.filter(r => r.time <= t + 1000 && isRelevantMsg(r))
+      // Ergebnis: auch, was nach der Zielflagge kam (Untersuchungen nach dem Rennen)
+      const rcNow = isLast ? rc : rc.filter(r => r.time <= t + 1000);
+      const msgs = rcNow.filter(isRelevantMsg)
         .map(r => ({ time: r.time, lap: r.lap_number, text: msgText(r), driver: r.driver_number }));
       frames.push({
         lap: k, t, final: isLast,
         status: isLast ? "fin" : trackStatus(rc, t, raceStart),
         rows, msgs,
+        stew: stewards(rcNow),
       });
     });
 
     // Rundenzeiten je Fahrer (Diagramm „Rundenzeiten“, Duell, Streckenkarte):
-    // [{ lap, s, t, end, pitIn, pitOut, c }] — t/end = Beginn/Ende in ms
+    // [{ lap, s, t, end, pitIn, pitOut, c, sec: [s1, s2, s3] }] — t/end = Beginn/Ende in ms
     const lapTimes = new Map();
     for (const d of drivers.values()) {
       const plan = plans.get(d.n) || [];
       const inLaps = new Set((raw.pit || []).filter(x => x.driver_number === d.n).map(x => x.lap_number));
       lapTimes.set(d.n, (laps.get(d.n) || []).map(l => {
         const g = plan.find(x => l.lap_number >= x.from && l.lap_number <= x.to);
-        return { lap: l.lap_number, s: num(l.lap_duration), t: l.time, end: l.end, pitIn: inLaps.has(l.lap_number), pitOut: !!l.is_pit_out_lap, c: g ? g.c : null };
+        return { lap: l.lap_number, s: num(l.lap_duration), t: l.time, end: l.end, pitIn: inLaps.has(l.lap_number), pitOut: !!l.is_pit_out_lap, c: g ? g.c : null,
+          sec: [num(l.duration_sector_1), num(l.duration_sector_2), num(l.duration_sector_3)] };
       }));
     }
 
@@ -368,6 +500,7 @@
     const info = st.SessionInfo || {}, meet = info.Meeting || {};
     const td = (st.TimingData || {}).Lines || {}, ta = (st.TimingAppData || {}).Lines || {};
     const dl = st.DriverList || {};
+    const tsl = (st.TimingStats || {}).Lines || {};
     const isRace = /race|sprint$/i.test(info.Type || "") || /^(Race|Sprint)$/.test(info.Name || "");
     const isQuali = !isRace && (/qualifying|shootout/i.test(info.Type || "") || /qualifying|shootout/i.test(info.Name || ""));
     const drivers = [];
@@ -393,6 +526,9 @@
         tyreAge: cur ? cur.TotalLaps ?? null : null,
         stints: liveStints(stints),
         qtimes: isQuali ? list(t.BestLapTimes).map(x => parseTime(x && x.Value)) : null,
+        // Sektoren der laufenden/letzten Runde und die besten der Session
+        sec: list(t.Sectors).map(x => (x && typeof x === "object" ? { v: parseTime(x.Value), ob: !!x.OverallFastest, pb: !!x.PersonalFastest } : null)),
+        bsec: list((tsl[k] || {}).BestSectors).map(x => ({ v: parseTime(x && x.Value), rank: x && x.Position ? +x.Position : null })),
         pits: t.NumberOfPitStops || 0,
         pitNow: !!(t.InPit || t.PitOut),
         // Im Qualifying bleiben Ausgeschiedene sichtbar (mit ihrer Zeit), nur markiert
@@ -435,9 +571,9 @@
     let status = LIVE_TRACK[(st.TrackStatus || {}).Status] || "green";
     if (/^(Inactive)$/i.test(ss)) status = "pre";
     if (/^(Finished|Finalised|Ends)$/i.test(ss)) status = "fin";
-    const msgs = list((st.RaceControlMessages || {}).Messages)
-      .map(m => ({ category: m.Category, flag: m.Flag, scope: m.Scope, message: m.Message, lap_number: m.Lap, driver_number: m.RacingNumber ? +m.RacingNumber : null, time: Date.parse((m.Utc || "") + "Z") }))
-      .filter(isRelevantMsg)
+    const rcAll = list((st.RaceControlMessages || {}).Messages)
+      .map(m => ({ category: m.Category, flag: m.Flag, scope: m.Scope, message: m.Message, lap_number: m.Lap, driver_number: m.RacingNumber ? +m.RacingNumber : null, time: Date.parse((m.Utc || "") + "Z") }));
+    const msgs = rcAll.filter(isRelevantMsg)
       .map(r => ({ time: r.time, lap: r.lap_number, text: msgText(r), driver: r.driver_number }));
     const lc = st.LapCount || {};
     // WM-Hochrechnung (nur im Rennen/Sprint): Stand vorher + wenn jetzt Schluss wäre
@@ -461,15 +597,16 @@
         meeting: (meet.Name || "").replace(/ Grand Prix$/i, " GP"), location: meet.Location || "",
         state: ss, start: info.StartDate || null,
       },
-      drivers, wm,
+      drivers, wm, weather: weather(st.WeatherData),
       // Boxenfunk: die letzten Clips (Datei relativ zum Session-Pfad im F1-Archiv)
       radio: list((st.TeamRadio || {}).Captures).filter(c => c && c.Path).slice(-60)
         .map(c => ({ n: +c.RacingNumber, utc: c.Utc, file: String(c.Path).replace(/^TeamRadio\//, "") })),
-      frame: { lap: lc.CurrentLap || 0, total: lc.TotalLaps || 0, final: status === "fin", live: true, timed: !isRace, status, part, cut, rows, msgs },
+      frame: { lap: lc.CurrentLap || 0, total: lc.TotalLaps || 0, final: status === "fin", live: true, timed: !isRace, status, part, cut, rows, msgs, stew: stewards(rcAll) },
     };
   }
 
-  const api = { gapText, lapTime, trackStatus, msgText, isRelevantMsg, buildRace, tyrePlan, TYRE, mergeFeed, parseGap, parseTime, fromLive };
+  const api = { gapText, lapTime, trackStatus, msgText, isRelevantMsg, buildRace, tyrePlan, TYRE, mergeFeed, parseGap, parseTime, fromLive,
+    stewards, frameEvents, pitRejoin, pitLoss, weather };
   if (typeof module === "object" && module.exports) module.exports = api;
   else root.F1Model = api;
 })(typeof window !== "undefined" ? window : globalThis);

@@ -242,5 +242,74 @@ assert("Funk: nur Clip-Dateinamen und Session-Pfade", RADIO_FILE.test("VER_3_202
 assert("Proxy: kaputter Wert", buildUrl("laps", "?session_key=1;drop") === null);
 assert("Proxy: Prototyp-Name", buildUrl("constructor", "?session_key=1") === null);
 
+// ---- Rennleitung je Fahrer (echte Meldungen, Bahrain 2026) ----
+const rcm = (message, extra) => ({ category: "Other", message, ...extra });
+const stw1 = M.stewards([
+  rcm("TURN 9 INCIDENT INVOLVING CARS 16 (LEC) AND 27 (HUL) NOTED - CAUSING A COLLISION (16:40:50)"),
+  rcm("TURN 2 INCIDENT INVOLVING CARS 5 (BOR) AND 55 (SAI) NOTED - CAUSING A COLLISION (17:01:01)"),
+  rcm("FIA STEWARDS: TURN 2 INCIDENT INVOLVING CARS 5 (BOR) AND 55 (SAI) UNDER INVESTIGATION - CAUSING A COLLISION (17:01:01)"),
+  rcm("FIA STEWARDS: INCIDENT INVOLVING CAR 23 (ALB) WILL BE INVESTIGATED AFTER THE RACE - DRIVING ERRATICALLY (16:53:01)"),
+  { category: "Flag", flag: "BLACK AND WHITE", driver_number: 87, message: "BLACK AND WHITE FLAG FOR CAR 87 (BEA) - TRACK LIMITS" },
+  rcm("CAR 44 (HAM) TIME 1:32.100 DELETED - TRACK LIMITS AT TURN 4 LAP 7 14:01:02"),
+]);
+assert("Rennleitung: notiert / untersucht / nach dem Rennen / Verwarnung", stw1[16].inv === "noted" && stw1[27].inv === "noted"
+  && stw1[5].inv === "inv" && stw1[55].inv === "inv" && stw1[23].inv === "after" && stw1[87].warn && !stw1[44]);
+const stw2 = M.stewards([
+  rcm("FIA STEWARDS: TURN 2 INCIDENT INVOLVING CARS 5 (BOR) AND 55 (SAI) UNDER INVESTIGATION - CAUSING A COLLISION (17:01:01)"),
+  rcm("FIA STEWARDS: TURN 9 INCIDENT INVOLVING CARS 16 (LEC) AND 27 (HUL) REVIEWED NO FURTHER INVESTIGATION - CAUSING A COLLISION (16:40:50)"),
+  rcm("FIA STEWARDS: 10 SECOND TIME PENALTY FOR CAR 5 (BOR) - CAUSING A COLLISION (17:01:01)"),
+]);
+assert("Rennleitung: Strafe beendet die Untersuchung für alle Beteiligten", stw2[5].pens.length === 1 && stw2[5].pens[0].label === "+10 s"
+  && !stw2[5].inv && !(stw2[55] && stw2[55].inv) && /BOR: 10-Sekunden-Zeitstrafe/.test(stw2[5].pens[0].text));
+const stw3 = M.stewards([
+  rcm("FIA STEWARDS: 10 SECOND TIME PENALTY FOR CAR 5 (BOR) - CAUSING A COLLISION (17:01:01)"),
+  rcm("FIA STEWARDS: PENALTY SERVED - 10 SECOND TIME PENALTY FOR CAR 5 (BOR) - CAUSING A COLLISION (17:01:01)"),
+  rcm("FIA STEWARDS: DRIVE THROUGH PENALTY FOR CAR 18 (STR) - SPEEDING IN THE PIT LANE (17:20:00)"),
+]);
+assert("Rennleitung: abgesessene Strafe weg, Durchfahrt offen", (!stw3[5] || !stw3[5].pens.length) && stw3[18].pens[0].label === "Durchfahrt");
+assert("Rennleitung: Stand je Runde im Rennen", R.frames.every(f => f.stew && typeof f.stew === "object"));
+
+// ---- Ereignisse zwischen zwei Ständen ----
+const fr = (rows, extra) => ({ rows: rows.map(([n, pos, pits, o]) => ({ n, pos, pits, out: false, pitNow: false, compound: "MEDIUM", best: null, fastest: false, ...(o || {}) })), ...extra });
+const evA = fr([[1, 1, 0], [2, 2, 0], [3, 3, 0], [4, 4, 0]]);
+const evB = fr([[2, 1, 0], [1, 2, 0], [4, 3, 1, { compound: "HARD" }], [3, 4, 0, { out: true, status: "DNF" }]]);
+const ev = M.frameEvents(evA, evB, false);
+assert("Ereignisse: Überholung, Box mit Reifenwechsel, Ausfall", ev.some(e => e.k === "pass" && e.n === 2 && e.o.join() === "1" && e.pos === 1)
+  && ev.some(e => e.k === "pit" && e.n === 4 && e.stop === 1 && e.c0 === "MEDIUM" && e.c === "HARD")
+  && ev.some(e => e.k === "out" && e.n === 3) && !ev.some(e => e.k === "pass" && (e.n === 4 || e.o.includes(4) || e.o.includes(3))));
+const evG = M.frameEvents(fr([[1, 1, 0], [2, 2, 0], [3, 3, 0]]), fr([[3, 1, 0], [1, 2, 0], [2, 3, 0]]), false);
+const evD = M.frameEvents(fr([[1, 1, 0], [2, 2, 0], [3, 3, 0], [4, 4, 0]]), fr([[2, 1, 0], [3, 2, 0], [4, 3, 0], [1, 4, 0]]), false);
+assert("Ereignisse: von 3+ überholt = verliert Plätze", evD.length === 1 && evD[0].k === "drop" && evD[0].n === 1 && evD[0].d === 3);
+assert("Ereignisse: mehrere Überholte in einer Zeile", evG.length === 1 && evG[0].n === 3 && evG[0].o.join() === "1,2");
+const evS = M.frameEvents(fr([[1, 1, 0], [2, 2, 0], [3, 3, 0], [4, 4, 0]]), fr([[4, 1, 0], [1, 2, 0], [2, 3, 0], [3, 4, 0]]), true);
+assert("Ereignisse: Start = Gewinner/Verlierer statt Duelle", evS.length === 1 && evS[0].k === "start" && evS[0].moves[0].n === 4 && evS[0].moves[0].d === 3);
+const evF = M.frameEvents(fr([[1, 1, 0, { best: 90, fastest: true }], [2, 2, 0, { best: 91 }]]), fr([[1, 1, 0, { best: 90 }], [2, 2, 0, { best: 89.5, fastest: true }]]), false);
+assert("Ereignisse: neue schnellste Runde", evF.some(e => e.k === "fl" && e.n === 2 && e.s === 89.5));
+
+// ---- Boxenstopp-Rechner ----
+const pr = [{ n: 1, pos: 1, gap: null }, { n: 2, pos: 2, gap: 3 }, { n: 3, pos: 3, gap: 10 }, { n: 4, pos: 4, gap: 24 }, { n: 5, pos: 5, gap: 30 }, { n: 6, pos: 6, gap: "+1 LAP" }];
+const rj = M.pitRejoin(pr, 2, 20);
+assert("Boxenstopp: P4 zwischen Nr. 3 und Nr. 4", rj.pos === 3 && rj.ahead.n === 3 && rj.ahead.d === 13 && rj.behind.n === 4 && rj.behind.d === 1);
+assert("Boxenstopp: Führender / ohne Abstand", M.pitRejoin(pr, 1, 25).pos === 4 && M.pitRejoin(pr, 6, 20) === null);
+const plt = () => [88, 88.2, 88.1, 88.3, 108.5, 99.9, 88.4, 88.2, 88.5].map((s, i) => ({ lap: i + 2, s, pitIn: i === 4, pitOut: i === 5, sc: false }));
+const pl = M.pitLoss(new Map([[1, plt()], [2, plt()]]));
+assert("Boxenverlust aus den Rundenzeiten", pl && pl.stops === 2 && Math.abs(pl.s - 31.8) < 0.3);
+
+// ---- Wetter + Sektoren im Live-Format ----
+const wx = M.weather({ AirTemp: "27.9", Humidity: "79.2", Rainfall: "1", TrackTemp: "32.8", WindDirection: "72", WindSpeed: "2.0" });
+const wx2 = M.weather({ air_temperature: 31, track_temperature: 45.6, humidity: 61.7, rainfall: 0, wind_speed: 3, wind_direction: 254 });
+assert("Wetter: Feed und OpenF1 im selben Format", wx.air === 27.9 && wx.rain === true && wx.dir === 72 && wx2.track === 45.6 && wx2.rain === false && M.weather({}) === null);
+const lv2 = M.fromLive({
+  SessionInfo: { Name: "Qualifying", Type: "Qualifying" },
+  DriverList: { "1": { RacingNumber: "1", Tla: "NOR" } },
+  TimingData: { Lines: { "1": { Position: "1", Sectors: [{ Value: "25.691", OverallFastest: true }, { Value: "34.327", PersonalFastest: true }, { Value: "" }] } } },
+  TimingStats: { Lines: { "1": { BestSectors: [{ Position: 10, Value: "24.906" }, { Position: 1, Value: "31.481" }, { Position: 5, Value: "39.342" }] } } },
+  WeatherData: { AirTemp: "20", TrackTemp: "30" },
+  RaceControlMessages: { Messages: [{ Category: "Other", Message: "FIA STEWARDS: CAR 1 (NOR) UNDER INVESTIGATION - IMPEDING (14:00:00)", Utc: "2026-10-03T14:01:00" }] },
+});
+const s1 = lv2.frame.rows[0];
+assert("Live: Sektoren, beste Sektoren, Wetter, Rennleitung", s1.sec[0].v === 25.691 && s1.sec[0].ob && s1.sec[1].pb && s1.sec[2].v === null && s1.bsec[1].rank === 1 && s1.bsec[0].v === 24.906
+  && lv2.weather.air === 20 && lv2.frame.stew[1].inv === "inv");
+
 if (!ok) process.exit(1);
 console.log("f1: alle Tests grün");

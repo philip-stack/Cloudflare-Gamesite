@@ -193,7 +193,7 @@
       if (f.lap !== liveLap) { liveBase = lastPos; liveLap = f.lap; }
       lastPos = new Map(f.rows.map(r => [r.n, r]));
       race = { live: true, session: { ...d.session, year: d.session.start ? new Date(d.session.start).getFullYear() : new Date().getFullYear() },
-        wm: d.wm, pos: d.pos, radio: d.radio || [], drivers: new Map(d.drivers.map(x => [x.n, x])), laps: f.total, frames: [f] };
+        wm: d.wm, pos: d.pos, radio: d.radio || [], weather: d.weather, drivers: new Map(d.drivers.map(x => [x.n, x])), laps: f.total, frames: [f] };
       if (d.session.race && f.lap > 0) liveHist.set(f.lap, { lap: f.lap, status: f.status, rows: f.rows.map(r => ({ n: r.n, pos: r.pos, pits: r.pits, out: r.out, gap: r.gap, interval: r.interval, compound: r.compound, tyreAge: r.tyreAge })) });
       // Rundenzeiten je Fahrer (Runde = abgeschlossene Runden des Fahrers)
       for (const r of f.rows) if (r.last != null && r.laps > 0) {
@@ -243,7 +243,7 @@
   }
 
   const PARTS = [["drivers", "Fahrer"], ["session_result", "Ergebnis"], ["laps", "Runden"], ["position", "Positionen"],
-    ["intervals", "Abstände"], ["stints", "Reifen"], ["pit", "Boxenstopps"], ["race_control", "Rennleitung"]];
+    ["intervals", "Abstände"], ["stints", "Reifen"], ["pit", "Boxenstopps"], ["race_control", "Rennleitung"], ["weather", "Wetter"]];
 
   function loading(text) {
     stop(); stopLive();
@@ -263,7 +263,8 @@
         const [ep, label] = PARTS[i];
         const p = $("prog"); if (p) p.textContent = `Lade ${label} … (${i + 1}/${PARTS.length})`;
         try { raw[ep] = await get(ep, { session_key: key }); }
-        catch (e) { if (e.status === 404) raw[ep] = []; else throw e; }
+        // Wetter ist Beiwerk: fehlt es, läuft die Nachschau ohne
+        catch (e) { if (e.status === 404 || ep === "weather") raw[ep] = []; else throw e; }
       }
     } catch (e) {
       $("rows").innerHTML = `<li class="loading err">Daten gerade nicht verfügbar${e.status === 403 ? " (Live-Session – nur für OpenF1-Sponsoren)" : ""}. Bitte später nochmal probieren.</li>`;
@@ -277,6 +278,8 @@
     catch (_) { raw.tyres = null; }
     if (+$("session").value !== key || mode !== "race") return;     // inzwischen anderes gewählt
     race = M.buildRace(raw);
+    // Wetter je Minute (OpenF1) → passend zur gewählten Runde
+    race.wx = (raw.weather || []).map(w => ({ t: Date.parse(w.date), ...M.weather(w) })).filter(w => isFinite(w.t) && w.air != null).sort((a, b) => a.t - b.t);
     race.session = { name: sess ? sessName(sess) : "Rennen", race: true, key, year: new Date(sess ? sess.date_start : Date.now()).getFullYear(), circuit: sess ? sess.circuit_key : null };
     if (!race.frames.length) { $("rows").innerHTML = `<li class="loading err">Für diese Session gibt es noch keine Daten.</li>`; return; }
     const sl = $("slider");
@@ -286,7 +289,7 @@
 
   // Training/Qualifying: Endstand aus dem offiziellen F1-Archiv — dasselbe
   // Format wie der Live-Feed, darum rechnet F1Model.fromLive auch hier.
-  const ARCHIVE_TOPICS = ["DriverList", "TimingData", "TimingAppData", "SessionInfo", "SessionStatus", "TrackStatus", "RaceControlMessages"];
+  const ARCHIVE_TOPICS = ["DriverList", "TimingData", "TimingAppData", "TimingStats", "SessionInfo", "SessionStatus", "TrackStatus", "RaceControlMessages", "WeatherData"];
   async function loadArchive(s) {
     loading(`Lade ${sessName(s)} …`);
     mode = "archive";
@@ -309,7 +312,7 @@
     L.session.name = sessName(s);
     L.session.short = SHORT[s.session_name] || "";
     Object.assign(L.session, { key, year, circuit: s.circuit_key || L.session.circuit });
-    race = { archive: true, session: L.session, drivers: new Map(L.drivers.map(x => [x.n, x])), laps: 0, frames: [L.frame] };
+    race = { archive: true, session: L.session, weather: L.weather, drivers: new Map(L.drivers.map(x => [x.n, x])), laps: 0, frames: [L.frame] };
     document.body.classList.add("single");     // ein Endstand → keine Abspielleiste
     show(0);
   }
@@ -352,6 +355,24 @@
     return txt ? `${tr}<span class="${close ? "drs" : ""}">${txt}</span>` : `<span class="muted">–</span>`;
   }
 
+  // Rennleitung je Fahrer: offene Strafe (rot), Untersuchung (gelb), notiert
+  // bzw. schwarz-weiße Flagge (grau). Kurz in der Liste, ausführlich auf der Karte.
+  const INV_DE = { noted: "notiert", inv: "wird untersucht", after: "Untersuchung nach dem Rennen" };
+  function stewBadge(s) {
+    if (!s) return "";
+    let h = s.pens.map(p => `<i class="stw pen" title="${esc(p.text)}">${esc(p.label.replace(/ s$/, "s"))}</i>`).join("");
+    if (s.inv) h += `<i class="stw ${s.inv === "noted" ? "noted" : "inv"}" title="${esc(s.invText)}" aria-label="${INV_DE[s.inv]}">${s.inv === "after" ? "⚖︎ n. R." : "⚖︎"}</i>`;
+    else if (s.warn && !s.pens.length) h += `<i class="stw noted" title="Schwarz-weiße Flagge (Verwarnung)" aria-label="Verwarnung">⚑</i>`;
+    return h;
+  }
+  function stewLines(s) {
+    if (!s) return "";
+    const L = s.pens.map(p => ({ cls: "pen", lbl: "Strafe", txt: p.text }));
+    if (s.inv) L.push({ cls: s.inv === "noted" ? "noted" : "inv", lbl: s.inv === "noted" ? "Notiert" : "Untersuchung", txt: s.invText });
+    if (s.warn) L.push({ cls: "noted", lbl: "Verwarnung", txt: "Schwarz-weiße Flagge (Streckenbegrenzung)" });
+    return L.length ? `<ul class="fav-stw">${L.map(x => `<li class="${x.cls}"><b>${x.lbl}</b>${esc(x.txt)}</li>`).join("")}</ul>` : "";
+  }
+
   function tyre(c, age) {
     if (!c) return `<span class="tyre none">?</span>`;
     const k = M.TYRE[c] || "?";
@@ -389,7 +410,7 @@
       const line = f.cut && r.pos === f.cut ? " cutline" : "";
       return `<li class="row${r.n === fav ? " is-fav" : ""}${r.out ? " is-out" : ""}${r.knocked ? " is-knocked" : ""}${zone}${line}" style="--team:${esc(d.color)}" data-n="${r.n}" tabindex="0" role="button" aria-pressed="${r.n === fav}" aria-label="${esc(d.first + " " + d.last)}, Platz ${r.pos ?? "–"}">
         <span class="c-pos"><b>${r.pos ?? "–"}</b>${move}</span>
-        <span class="c-drv"><span class="bar"></span><b>${esc(d.abbr)}</b>${r.fastest ? '<i class="fl" title="Schnellste Runde"></i>' : ""}${f.final && r.points ? `<i class="pts">+${r.points}</i>` : ""}${r.knocked ? `<i class="qtag" title="ausgeschieden in ${esc(r.status)}">${esc(r.status)}</i>` : ""}<small>${esc(d.team)}</small></span>
+        <span class="c-drv"><span class="bar"></span><b>${esc(d.abbr)}</b>${r.fastest ? '<i class="fl" title="Schnellste Runde"></i>' : ""}${f.final && r.points ? `<i class="pts">+${r.points}</i>` : ""}${r.knocked ? `<i class="qtag" title="ausgeschieden in ${esc(r.status)}">${esc(r.status)}</i>` : ""}${stewBadge((f.stew || {})[r.n])}<small>${esc(d.team)}</small></span>
         <span class="c-gap">${r.pitNow && !r.out ? '<span class="box">BOX</span>' : gapCell(r, i)}</span>
         <span class="c-tyre">${tyre(r.compound, r.tyreAge)}</span>
         <span class="c-stops">${r.pits}</span>
@@ -454,7 +475,7 @@
         ${f.timed
           ? `<div><span>Bestzeit</span><b class="${r.fastest ? "purple" : ""}">${M.lapTime(r.best)}</b><small>${r.laps} Runden${r.knocked ? " · raus in " + esc(r.status) : ""}</small></div>`
           : `<div><span>Letzte / Beste</span><b class="${r.lastPurple ? "purple" : r.lastPB ? "pb" : ""}">${M.lapTime(r.last)}</b><small>${M.lapTime(r.best)}</small></div>`}
-      </div>${bar}`;
+      </div>${bar}${stewLines((f.stew || {})[r.n])}`;
     box.querySelector(".unfav").addEventListener("click", () => setFav(null));
   }
 

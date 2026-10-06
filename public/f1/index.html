@@ -24,7 +24,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="Rennticker" />
-  <link rel="stylesheet" href="style.css?v=8c748644" />
+  <link rel="stylesheet" href="style.css?v=fba7103e" />
 </head>
 <body>
   <div id="app">
@@ -54,6 +54,7 @@
         <div class="lapbox" id="lapbox"><span class="live-dot" aria-hidden="true"></span><span class="lbl" id="lbl">Runde</span><b id="lap">–</b><span class="of" id="laps"></span></div>
         <div class="flag" id="flag" data-s="pre">–</div>
       </div>
+      <div class="wx" id="wx" aria-label="Wetter" hidden></div>
       <p class="note" id="note" hidden></p>
       <details class="plan" id="plan" hidden>
         <summary><span class="plan-ico" aria-hidden="true">⏱</span><span class="plan-sum" id="plan-sum"></span></summary>
@@ -83,6 +84,12 @@
       </div>
       <ol class="rows" id="rows"></ol>
       <p class="hint" id="hint">Tipp auf einen Fahrer, um ihn oben zu verfolgen.</p>
+    </section>
+
+    <section class="rc events" id="events" aria-label="Ereignisse" hidden>
+      <div class="ev-head"><h2>Ereignisse</h2><button type="button" class="chip" id="ev-fav" aria-pressed="false" hidden>Nur mein Fahrer</button></div>
+      <ul id="ev-list"></ul>
+      <button class="more" id="ev-more" type="button" hidden></button>
     </section>
 
     <section class="tyres" id="tyres" aria-label="Reifenverlauf aller Fahrer" hidden>
@@ -191,16 +198,20 @@
     <button class="icon-btn end" id="end" type="button" title="Zum Ergebnis">⏭</button>
   </nav>
 
-  <script src="model.js?v=cbb7fe66"></script>
-  <script src="core.js?v=3afb59c3"></script>
+  <script src="model.js?v=31759a66"></script>
+  <script src="core.js?v=739e762a"></script>
   <script src="push.js?v=00f72533"></script>
   <script src="tyres.js?v=9e1da3c7"></script>
   <script src="chart.js?v=270fe871"></script>
   <script src="wm.js?v=1e6fafe8"></script>
-  <script src="laps.js?v=38a15758"></script>
+  <script src="weather.js?v=8717d18d"></script>
+  <script src="pit.js?v=e7cc8719"></script>
+  <script src="sectors.js?v=17128543"></script>
+  <script src="laps.js?v=657a4c39"></script>
   <script src="duel.js?v=7b6d6411"></script>
   <script src="radio.js?v=268df605"></script>
   <script src="map.js?v=727be6a0"></script>
   <script src="docs.js?v=7a6cff2e"></script>
+  <script src="events.js?v=64d66e6a"></script>
 </body>
 </html>

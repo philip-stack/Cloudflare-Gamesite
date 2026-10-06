@@ -1,12 +1,12 @@
 // Service Worker des Renntickers (PWA, Scope /f1/). Netz zuerst, Cache als
 // Fallback für die App-Hülle. Renndaten (/f1data/, /api/) gehen nie in den
 // Cache — sie sind groß bzw. müssen frisch sein.
-const CACHE = "f1-v3";
+const CACHE = "f1-v4";
 // CacheStorage ist pro Origin — nur eigene Caches (gleicher Präfix) aufräumen,
 // sonst verschwinden die Hüllen von Hub, Sprit-Radar und Feuerwehr.
 const PREFIX = CACHE.replace(/-v\d+$/, "-");
 const SHELL = [
-  "./", "./core.js", "./push.js", "./tyres.js", "./chart.js", "./wm.js", "./docs.js", "./laps.js", "./duel.js", "./radio.js", "./map.js", "./model.js", "./style.css", "./manifest.webmanifest",
+  "./", "./core.js", "./push.js", "./tyres.js", "./chart.js", "./wm.js", "./docs.js", "./laps.js", "./duel.js", "./radio.js", "./map.js", "./weather.js", "./pit.js", "./sectors.js", "./events.js", "./model.js", "./style.css", "./manifest.webmanifest",
   "./icons/icon-192.png", "./icons/icon-512.png",
   "./fonts/titillium-400.woff2", "./fonts/titillium-600.woff2", "./fonts/titillium-700.woff2",
   "./fonts/titillium-700i.woff2", "./fonts/titillium-900.woff2",

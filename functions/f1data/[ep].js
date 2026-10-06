@@ -19,6 +19,7 @@ export const ENDPOINTS = {
   drivers: 3600, position: 3600, intervals: 3600, laps: 3600,
   stints: 3600, pit: 3600, race_control: 3600, session_result: 3600,
   championship_drivers: 3600, championship_teams: 3600,
+  weather: 3600,          // Wetter je Minute
   location: 86400,          // Streckenkarte: x/y je Auto (nur mit Zeitfenster)
 };
 const PARAMS = { session_key: /^\d{1,6}$/, meeting_key: /^\d{1,6}$/, year: /^20\d\d$/, session_type: /^[A-Za-z]{1,20}$/,
@@ -50,7 +51,7 @@ export function buildUrl(ep, search) {
 // liefert den Endstand eines Themas (Standard: TimingAppData = Reifen).
 // Training/Qualifying zeigt der Rennticker komplett aus dem Archiv.
 const ARCHIVE = "https://livetiming.formula1.com/static/";
-export const TOPICS = ["TimingAppData", "TimingData", "DriverList", "SessionInfo", "SessionStatus", "TrackStatus", "RaceControlMessages", "TeamRadio"];
+export const TOPICS = ["TimingAppData", "TimingData", "DriverList", "SessionInfo", "SessionStatus", "TrackStatus", "RaceControlMessages", "TeamRadio", "WeatherData", "TimingStats"];
 const stripBom = t => t.replace(/^﻿/, "");
 export async function archivePath(year, key, fetchJson) {
   const idx = await fetchJson(`${ARCHIVE}${year}/Index.json`);

@@ -17,7 +17,9 @@
     const f = race.frames[S.frame];
     if (race.live) {
       const m = S.liveLaps.get(n);
-      return m ? [...m.values()].sort((a, b) => a.lap - b.lap).map(x => ({ lap: x.lap, s: x.s, c: x.compound, pitIn: false, pitOut: false, sc: false })) : [];
+      // Live: Einfahrrunde = beim Rundenabschluss in der Box; SC aus dem Rundenverlauf
+      const scLive = lap => /sc|vsc|red/.test((S.liveHist.get(lap) || {}).status || "");
+      return m ? [...m.values()].sort((a, b) => a.lap - b.lap).map(x => ({ lap: x.lap, s: x.s, c: x.compound, pitIn: !!x.pit, pitOut: !!(m.get(x.lap - 1) || {}).pit, sc: scLive(x.lap) })) : [];
     }
     if (!race.lapTimes) return [];
     const row = f.rows.find(r => r.n === n);

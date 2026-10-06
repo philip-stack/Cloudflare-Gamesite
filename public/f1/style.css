@@ -567,3 +567,64 @@ body.pdf-open { overflow: hidden; }
   background: #fff; border: 4px solid var(--red); box-shadow: 0 2px 8px rgba(0,0,0,.35);
 }
 .player input[type="range"]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: #fff; border: 4px solid var(--red); }
+
+/* ---------- Wetter ---------- */
+.wx { display: flex; gap: 6px; margin-top: 8px; overflow-x: auto; scrollbar-width: none; }
+.wx::-webkit-scrollbar { display: none; }
+.wx[hidden] { display: none; }
+.wx-c { flex: none; display: flex; align-items: baseline; gap: 5px; padding: 5px 10px; border-radius: 10px; background: var(--panel); border: 1px solid var(--line); font-size: 13px; }
+.wx-c small { font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; }
+.wx-c b { font-weight: 700; display: inline-flex; align-items: center; gap: 3px; }
+.wx-c.rain { background: var(--t-W); border-color: transparent; color: #fff; }
+.wx-up, .wx-down { font-style: normal; font-size: 12px; }
+.wx-up { color: var(--red-2); } .wx-down { color: var(--t-W); }
+.wx-dir { width: 11px; height: 11px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ---------- Rennleitung je Fahrer ---------- */
+.stw { font-style: normal; font-size: 10px; font-weight: 700; padding: 1px 4px; border-radius: 4px; line-height: 1.3; flex: none; }
+.stw.pen { background: var(--red); color: #fff; }
+.stw.inv { background: color-mix(in srgb, var(--yellow) 26%, var(--panel)); color: var(--text); }
+.stw.noted { background: var(--panel-2); color: var(--muted); border: 1px solid var(--line); }
+.fav-stw { list-style: none; margin: 0; padding: 8px 12px 10px 20px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.fav-stw li { display: flex; gap: 8px; align-items: baseline; }
+.fav-stw b { flex: none; font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; padding: 1px 6px; border-radius: 4px; }
+.fav-stw .pen b { background: var(--red); color: #fff; }
+.fav-stw .inv b { background: color-mix(in srgb, var(--yellow) 26%, var(--panel)); }
+.fav-stw .noted b { background: var(--panel-2); color: var(--muted); }
+
+/* ---------- Boxenstopp-Rechner + Sektoren (Lieblingsfahrer-Karte) ---------- */
+.fav-pit, .fav-sec { padding: 4px 12px 10px 20px; border-top: 1px solid var(--line); }
+.fav-pit-r { margin: 4px 0 0; font-size: 14px; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px; }
+.fav-pit-r.muted { color: var(--muted); }
+.pit-pos { font-size: 18px; font-weight: 900; font-style: italic; }
+.pit-tag { font-style: normal; font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 4px; margin-left: 2px; }
+.pit-tag.ok { background: color-mix(in srgb, var(--pb) 20%, var(--panel)); color: var(--pb); }
+.pit-tag.warn { background: color-mix(in srgb, var(--yellow) 26%, var(--panel)); color: var(--text); }
+.pit-tag.bad { background: color-mix(in srgb, var(--red) 18%, var(--panel)); color: var(--red-2); }
+.pit-loss { display: inline-flex; align-items: center; gap: 4px; }
+.pit-loss button { width: 26px; height: 26px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel-2); color: var(--text); font-weight: 700; cursor: pointer; padding: 0; }
+.pit-src { margin: 4px 0 0; font-size: 11.5px; color: var(--muted); }
+.secs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 4px; }
+.sec { display: flex; flex-direction: column; padding: 6px 8px; border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); min-width: 0; }
+.sec span { font-size: 10.5px; color: var(--muted); font-weight: 700; }
+.sec b { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.sec small { font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--muted); }
+.sec.ob { border-color: var(--purple); } .sec.ob b { color: var(--purple); }
+.sec.pb b { color: var(--pb); }
+.sec-ideal { margin: 6px 0 0; font-size: 12.5px; color: var(--muted); }
+.sec-ideal b { color: var(--text); }
+
+/* ---------- Ereignisse ---------- */
+.events { margin-top: 14px; }
+.ev-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.ev-head h2 { margin: 0; }
+.ev-head .chip { padding: 5px 10px; }
+.events li { align-items: center; }
+.ev-ico { font-style: normal; flex: none; width: 22px; height: 22px; border-radius: 6px; display: grid; place-items: center; font-size: 12px; font-weight: 900; background: var(--panel-2); color: var(--muted); }
+.ev-pass .ev-ico, .ev-start .ev-ico { color: var(--pb); }
+.ev-drop .ev-ico { color: var(--red-2); }
+.ev-pit .ev-ico { background: var(--text); color: var(--bg); }
+.ev-out .ev-ico, .ev-pen .ev-ico { background: color-mix(in srgb, var(--red) 18%, var(--panel)); color: var(--red-2); }
+.ev-fl .ev-ico { color: var(--purple); }
+.ev-t { min-width: 0; display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.ev-t .tyre { transform: scale(.85); }
