@@ -311,5 +311,19 @@ const s1 = lv2.frame.rows[0];
 assert("Live: Sektoren, beste Sektoren, Wetter, Rennleitung", s1.sec[0].v === 25.691 && s1.sec[0].ob && s1.sec[1].pb && s1.sec[2].v === null && s1.bsec[1].rank === 1 && s1.bsec[0].v === 24.906
   && lv2.weather.air === 20 && lv2.frame.stew[1].inv === "inv");
 
+// ---- Boxenfunk-Abschrift (reine Helfer) ----
+const TX = await import("file://" + path.join(__dirname, "..", "functions", "api", "f1", "_transcript.js").replace(/\\/g, "/"));
+const sg = TX.segmentsOf({ text: "x", segments: [
+  { start: 0, end: 2.4, text: " Box, box. ", no_speech_prob: 0.01 },
+  { start: 2.4, end: 3, text: "Thank you.", no_speech_prob: 0.2 },
+  { start: 3, end: 5, text: "rauschen", no_speech_prob: 0.95 },
+  { start: 5, end: 7.5, text: "Copy.", no_speech_prob: 0.1 }] });
+assert("Funk: Sätze ohne Stille und Rausch-Halluzinationen", sg.length === 2 && sg[0].t === "Box, box." && sg[1].s === 5 && sg[1].e === 7.5);
+assert("Funk: ohne Segmente → ganzer Text", TX.segmentsOf({ text: " Push now. " })[0].t === "Push now." && TX.segmentsOf({ text: "Thank you." }).length === 0);
+assert("Funk: Übersetzung Zeile für Zeile", JSON.stringify(TX.parseTranslation("1| Box, box.\n2| Verstanden.", 2)) === '["Box, box.","Verstanden."]'
+  && TX.parseTranslation("1| Box, box.", 2) === null && TX.parseTranslation(null, 1) === null && TX.translateInput(sg) === "1| Box, box.\n2| Copy.");
+assert("Funk: Name im Prompt nur, wenn harmlos", TX.whisperPrompt("Max Verstappen").includes("Max Verstappen.") && !TX.whisperPrompt("<script>").includes("<script>"));
+assert("Funk: Base64", TX.toBase64(new TextEncoder().encode("Box box").buffer) === "Qm94IGJveA==");
+
 if (!ok) process.exit(1);
 console.log("f1: alle Tests grün");

@@ -462,6 +462,15 @@ body.is-live { padding-bottom: env(safe-area-inset-bottom); }
 .clip-t small { font-size: 12px; color: var(--muted); }
 .clip-prog { height: 4px; border-radius: 2px; background: var(--line); overflow: hidden; }
 .clip-prog i { display: block; height: 100%; background: var(--red); width: 0; }
+/* Abschrift unter dem Clip: Englisch wie im TV, Deutsch darunter */
+.clip-tx { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 6px; padding: 2px 0 4px 54px; }
+.tx-l { margin: 0; display: flex; flex-direction: column; gap: 1px; padding: 4px 8px; border-left: 3px solid var(--line); border-radius: 0 6px 6px 0; transition: background .2s, border-color .2s; }
+.tx-l.now { border-left-color: var(--team, var(--red)); background: var(--panel-2); }
+.tx-en { font-size: 14.5px; font-weight: 600; }
+.tx-de { font-size: 13px; color: var(--muted); font-style: italic; }
+.no-de .tx-de { display: none; }
+.tx-wait { margin: 0; font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+.tx-wait .spinner { width: 14px; height: 14px; }
 
 /* ---------- WM-Stand ---------- */
 .wm-tools { display: flex; align-items: center; gap: 10px; padding: 10px; border-bottom: 1px solid var(--line); background: var(--panel-2); flex-wrap: wrap; }

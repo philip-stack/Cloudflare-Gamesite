@@ -85,22 +85,30 @@ async function archive(search) {
 //   GET /f1data/radio?year=2026&session_key=11731&file=…   (Pfad über Index.json)
 export const RADIO_FILE = /^[A-Z]{3}[A-Z0-9]?_\d{1,2}_\d{8}_\d{6}\.mp3$/;
 export const SESSION_PATH = /^20\d\d\/[^?#\\]+\/$/;
-async function radio(search) {
+// Quelle eines Funk-Clips im F1-Archiv (auch für /api/f1/transcript)
+//   → { url, file } | { status } (400 = ungültig, 404 = Session unbekannt)
+export async function radioSource(search) {
   const q = new URLSearchParams(search);
   const file = q.get("file") || "";
   let path = q.get("path");
-  if (!RADIO_FILE.test(file) || (path && (!SESSION_PATH.test(path) || path.includes("..")))) return new Response("bad request", { status: 400 });
+  if (!RADIO_FILE.test(file) || (path && (!SESSION_PATH.test(path) || path.includes("..")))) return { status: 400 };
+  if (!path) {
+    const year = q.get("year"), key = q.get("session_key");
+    if (!PARAMS.year.test(year || "") || !PARAMS.session_key.test(key || "")) return { status: 400 };
+    path = await archivePath(year, +key, async url => {
+      const r = await fetch(url, { headers: { "User-Agent": UA }, cf: { cacheTtl: 3600, cacheEverything: true } });
+      return r.ok ? JSON.parse(stripBom(await r.text())) : null;
+    });
+    if (!path || path.includes("..")) return { status: 404 };
+  }
+  return { url: ARCHIVE + encodeURI(path) + "TeamRadio/" + file, file };
+}
+export const RADIO_UA = UA;
+async function radio(search) {
   try {
-    if (!path) {
-      const year = q.get("year"), key = q.get("session_key");
-      if (!PARAMS.year.test(year || "") || !PARAMS.session_key.test(key || "")) return new Response("bad request", { status: 400 });
-      path = await archivePath(year, +key, async url => {
-        const r = await fetch(url, { headers: { "User-Agent": UA }, cf: { cacheTtl: 3600, cacheEverything: true } });
-        return r.ok ? JSON.parse(stripBom(await r.text())) : null;
-      });
-      if (!path || path.includes("..")) return new Response("not found", { status: 404 });
-    }
-    const r = await fetch(ARCHIVE + encodeURI(path) + "TeamRadio/" + file, { headers: { "User-Agent": UA }, cf: { cacheTtl: 86400, cacheEverything: true } });
+    const src = await radioSource(search);
+    if (!src.url) return new Response(src.status === 400 ? "bad request" : "not found", { status: src.status });
+    const r = await fetch(src.url, { headers: { "User-Agent": UA }, cf: { cacheTtl: 86400, cacheEverything: true } });
     if (!r.ok) return new Response("not found", { status: r.status === 404 ? 404 : 502 });
     return new Response(r.body, { headers: { "Content-Type": "audio/mpeg", "Cache-Control": "public, max-age=86400" } });
   } catch (_) {
