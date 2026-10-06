@@ -357,6 +357,7 @@
     const td = (st.TimingData || {}).Lines || {}, ta = (st.TimingAppData || {}).Lines || {};
     const dl = st.DriverList || {};
     const isRace = /race|sprint$/i.test(info.Type || "") || /^(Race|Sprint)$/.test(info.Name || "");
+    const isQuali = !isRace && (/qualifying|shootout/i.test(info.Type || "") || /qualifying|shootout/i.test(info.Name || ""));
     const drivers = [];
     for (const k of Object.keys(dl)) {
       const d = dl[k];
@@ -379,9 +380,12 @@
         compound: cur && cur.Compound && cur.Compound !== "UNKNOWN" ? cur.Compound : null,
         tyreAge: cur ? cur.TotalLaps ?? null : null,
         stints: liveStints(stints),
+        qtimes: isQuali ? list(t.BestLapTimes).map(x => parseTime(x && x.Value)) : null,
         pits: t.NumberOfPitStops || 0,
         pitNow: !!(t.InPit || t.PitOut),
-        out: !!(t.Retired || t.Stopped || t.KnockedOut),
+        // Im Qualifying bleiben Ausgeschiedene sichtbar (mit ihrer Zeit), nur markiert
+        out: !!(t.Retired || t.Stopped || (t.KnockedOut && !isQuali)),
+        knocked: !!(isQuali && t.KnockedOut),
         status: t.Retired ? "DNF" : t.KnockedOut ? "Raus" : t.Stopped ? "Aus" : "",
         points: null,
       });
@@ -389,8 +393,25 @@
     rows.sort((a, b) => (a.out - b.out) || ((a.pos ?? 99) - (b.pos ?? 99)));
     const bestAll = rows.reduce((m, r) => (r.best != null && (m == null || r.best < m) ? r.best : m), null);
     for (const r of rows) r.fastest = r.best != null && r.best === bestAll;
-    // Training/Qualifying: kein Rennabstand → Rückstand der Bestzeit auf P1
-    if (!isRace) {
+    // Qualifying: Zeit des letzten erreichten Abschnitts, Rückstand auf den
+    // Schnellsten DIESES Abschnitts (ein Q1-Aus wird mit Q1 verglichen, nicht mit der Pole)
+    // (ohne Abschnittszeiten im Feed → wie Training über die Bestzeit)
+    if (isQuali && rows.some(r => (r.qtimes || []).some(v => v != null))) {
+      const fastestIn = [];
+      for (const r of rows) (r.qtimes || []).forEach((v, i) => { if (v != null && (fastestIn[i] == null || v < fastestIn[i])) fastestIn[i] = v; });
+      rows.forEach((r, i) => {
+        let q = -1;
+        (r.qtimes || []).forEach((v, j) => { if (v != null) q = j; });
+        r.qpart = q + 1;
+        r.best = q >= 0 ? r.qtimes[q] : null;
+        if (r.knocked) r.status = (/sprint/i.test(info.Name || "") ? "SQ" : "Q") + (q + 1);
+        r.fastest = q >= 0 && r.best === fastestIn[q];
+        r.gap = q >= 0 && !r.fastest ? +(r.best - fastestIn[q]).toFixed(3) : null;
+        const a = rows[i - 1];
+        r.interval = a && a.qpart === r.qpart && a.best != null && r.best != null ? +(r.best - a.best).toFixed(3) : r.gap;
+      });
+    } else if (!isRace) {
+      // Training: kein Rennabstand → Rückstand der Bestzeit auf P1
       const p1 = rows.find(r => r.best != null);
       rows.forEach((r, i) => {
         const a = rows[i - 1];
@@ -416,12 +437,12 @@
     const cut = qp && status !== "fin" && entries[qp] > 0 ? entries[qp] : null;
     return {
       session: {
-        key: info.Key || null, name: SESSION_DE[info.Name] || info.Name || "", type: info.Type || "", race: isRace,
+        key: info.Key || null, name: SESSION_DE[info.Name] || info.Name || "", type: info.Type || "", race: isRace, quali: isQuali,
         meeting: (meet.Name || "").replace(/ Grand Prix$/i, " GP"), location: meet.Location || "",
         state: ss, start: info.StartDate || null,
       },
       drivers,
-      frame: { lap: lc.CurrentLap || 0, total: lc.TotalLaps || 0, final: status === "fin", live: true, status, part, cut, rows, msgs },
+      frame: { lap: lc.CurrentLap || 0, total: lc.TotalLaps || 0, final: status === "fin", live: true, timed: !isRace, status, part, cut, rows, msgs },
     };
   }
 

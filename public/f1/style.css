@@ -101,6 +101,14 @@ button, select, input { font: inherit; color: inherit; }
   background-size: 6px 6px; background-repeat: no-repeat;
   box-shadow: var(--shadow);
 }
+.picks { display: flex; flex-direction: column; gap: 8px; }
+.pick-s select { font-size: 15px; padding: 9px 40px 9px 14px; font-weight: 600; box-shadow: none; }
+.pick-s select[hidden] { display: none; }
+@media (min-width: 520px) { .picks { flex-direction: row; } .picks .pick { flex: 3; } .picks .pick-s { flex: 2; } .pick-s select { font-size: 17px; padding: 12px 40px 12px 14px; font-weight: 700; } }
+body.single .player { display: none; }
+body.single { padding-bottom: env(safe-area-inset-bottom); }
+.qtag { font-style: normal; font-size: 10px; font-weight: 700; padding: 1px 4px; border-radius: 4px; line-height: 1.3; flex: none; background: color-mix(in srgb, var(--red) 18%, var(--panel)); color: var(--red-2); }
+.row.is-knocked .c-drv b, .row.is-knocked .c-gap, .row.is-knocked .c-last { opacity: .7; }
 .pick select option { background: var(--panel); color: var(--text); }
 .statusbar { display: flex; align-items: stretch; gap: 10px; margin-top: 12px; }
 .lapbox {

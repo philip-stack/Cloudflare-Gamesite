@@ -34,8 +34,11 @@ export function buildUrl(ep, search) {
 // Reifen aus dem offiziellen F1-Archiv (livetiming.formula1.com/static):
 // OpenF1-Stints sind teils verschoben, die F1-Stints stimmen. Die Session-
 // Schlüssel sind dieselben wie bei OpenF1.
-//   GET /f1data/archive?year=2026&session_key=11731 → TimingAppData (Endstand)
+//   GET /f1data/archive?year=2026&session_key=11731[&topic=TimingData]
+// liefert den Endstand eines Themas (Standard: TimingAppData = Reifen).
+// Training/Qualifying zeigt der Rennticker komplett aus dem Archiv.
 const ARCHIVE = "https://livetiming.formula1.com/static/";
+export const TOPICS = ["TimingAppData", "TimingData", "DriverList", "SessionInfo", "SessionStatus", "TrackStatus", "RaceControlMessages"];
 const stripBom = t => t.replace(/^﻿/, "");
 export async function archivePath(year, key, fetchJson) {
   const idx = await fetchJson(`${ARCHIVE}${year}/Index.json`);
@@ -44,8 +47,8 @@ export async function archivePath(year, key, fetchJson) {
 }
 async function archive(search) {
   const q = new URLSearchParams(search);
-  const year = q.get("year"), key = q.get("session_key");
-  if (!PARAMS.year.test(year || "") || !PARAMS.session_key.test(key || "")) return new Response("bad request", { status: 400 });
+  const year = q.get("year"), key = q.get("session_key"), topic = q.get("topic") || "TimingAppData";
+  if (!PARAMS.year.test(year || "") || !PARAMS.session_key.test(key || "") || !TOPICS.includes(topic)) return new Response("bad request", { status: 400 });
   const fetchJson = async url => {
     const r = await fetch(url, { headers: { "User-Agent": UA }, cf: { cacheTtl: 3600, cacheEverything: true } });
     if (!r.ok) return null;
@@ -54,7 +57,7 @@ async function archive(search) {
   try {
     const path = await archivePath(year, +key, fetchJson);
     // Pfad kommt vom F1-Server; trotzdem kein Ausbrechen aus /static/ (z. B. São Paulo → encodeURI)
-    const data = path && !/\.\.|[?#\\]/.test(path) ? await fetchJson(ARCHIVE + encodeURI(path) + "TimingAppData.json") : null;
+    const data = path && !/\.\.|[?#\\]/.test(path) ? await fetchJson(ARCHIVE + encodeURI(path) + topic + ".json") : null;
     if (!data) return new Response(JSON.stringify({ error: 404 }), { status: 404, headers: { "Content-Type": "application/json" } });
     return new Response(JSON.stringify(data), {
       headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "public, max-age=600" },

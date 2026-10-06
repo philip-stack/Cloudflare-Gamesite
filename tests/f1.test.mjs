@@ -151,6 +151,22 @@ assert("Archiv: Mischung von AAA aus dem F1-Archiv", ra(1).compound === "SOFT" &
 assert("Archiv: BBB gebraucht aufgezogen (2 + 2 Runden)", ra(2).compound === "SOFT" && ra(2).tyreAge === 4 && ra(2).stints[0].c === "MEDIUM");
 assert("Archiv fehlt für CCC → OpenF1", ra(3).compound === "SOFT");
 
+// ---- Qualifying: Zeit + Rückstand im Abschnitt, in dem man ausgeschieden ist ----
+const qState = {
+  SessionInfo: { Name: "Qualifying", Type: "Qualifying", Meeting: {} }, SessionStatus: { Status: "Finalised" },
+  DriverList: { "1": { RacingNumber: "1", Tla: "AAA" }, "2": { RacingNumber: "2", Tla: "BBB" }, "3": { RacingNumber: "3", Tla: "CCC" } },
+  TimingData: { SessionPart: 3, NoEntries: [3, 2, 1], Lines: {
+    "1": { Position: "1", BestLapTimes: [{ Value: "1:30.500" }, { Value: "1:30.000" }, { Value: "1:29.800" }] },
+    "2": { Position: "2", KnockedOut: true, BestLapTimes: [{ Value: "1:30.700" }, { Value: "1:30.400" }, {}] },
+    "3": { Position: "3", KnockedOut: true, BestLapTimes: [{ Value: "1:31.000" }, {}, {}] },
+  } },
+};
+const QL = M.fromLive(qState), qr = n => QL.frame.rows.find(r => r.n === n);
+assert("Quali: Pole mit Q3-Zeit", qr(1).best === 89.8 && qr(1).fastest && qr(1).gap === null);
+assert("Quali: Q2-Aus mit Q2-Zeit, Rückstand auf Q2-Schnellsten", qr(2).best === 90.4 && qr(2).gap === 0.4 && qr(2).status === "Q2" && qr(2).knocked && !qr(2).out);
+assert("Quali: Q1-Aus mit Q1-Zeit, Rückstand auf Q1-Schnellsten", qr(3).best === 91 && qr(3).gap === 0.5 && qr(3).status === "Q1");
+assert("Quali: Frame ist Zeitsession", QL.frame.timed && QL.session.quali && QL.frame.status === "fin");
+
 // ---- Proxy-Allowlist ----
 assert("Proxy: erlaubter Endpunkt", buildUrl("laps", "?session_key=11731") === "https://api.openf1.org/v1/laps?session_key=11731");
 assert("Proxy: Kalender", buildUrl("sessions", "?year=2026&session_type=Race") === "https://api.openf1.org/v1/sessions?year=2026&session_type=Race");

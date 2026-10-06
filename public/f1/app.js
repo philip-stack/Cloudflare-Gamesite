@@ -58,50 +58,84 @@
   let fav = +store.get("f1_fav") || null;
   let gapMode = store.get("f1_gapmode") === "leader" ? "leader" : "interval";
   let showAll = false;
-  let liveTimer = null, liveLap = -1, liveBase = new Map(), lastPos = new Map(), liveSession = null;
+  let liveTimer = null, liveLap = -1, liveBase = new Map(), lastPos = new Map();
+  let mode = "";          // "live" | "race" (OpenF1-Nachschau) | "archive" (Training/Qualifying)
+  let meetings = [];      // [{ key, name, sessions: [...] }] neueste zuerst
   const LIVE_EVERY = 3000;
 
   const fmtDate = d => new Intl.DateTimeFormat("de-AT", { day: "numeric", month: "short", timeZone: "Europe/Vienna" }).format(new Date(d));
   const fmtClock = d => new Intl.DateTimeFormat("de-AT", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Vienna" }).format(new Date(d));
   const gpName = m => (m && m.meeting_name ? m.meeting_name.replace(/ Grand Prix$/i, " GP") : "");
 
+  const SESSION_DE = { Race: "Rennen", Sprint: "Sprint", Qualifying: "Qualifying", "Sprint Qualifying": "Sprint-Qualifying",
+    "Sprint Shootout": "Sprint-Qualifying", "Practice 1": "1. Training", "Practice 2": "2. Training", "Practice 3": "3. Training" };
+  const sessName = s => SESSION_DE[s.session_name] || s.session_name;
+  const SHORT = { "Practice 1": "FP1", "Practice 2": "FP2", "Practice 3": "FP3", Qualifying: "Quali", "Sprint Qualifying": "SQ", "Sprint Shootout": "SQ" };
+  const fmtDay = d => new Intl.DateTimeFormat("de-AT", { weekday: "short", day: "numeric", month: "short", timeZone: "Europe/Vienna" }).format(new Date(d));
+
   async function loadCalendar() {
     const now = Date.now();
     const year = new Date().getFullYear();
-    let list = [], all = [];
+    let all = [];
     for (const y of [year, year - 1]) {
       const [ss, ms] = await Promise.all([get("sessions", { year: y }), get("meetings", { year: y })]);
       const mm = new Map(ms.map(m => [m.meeting_key, m]));
       ss.forEach(s => { s.meeting = mm.get(s.meeting_key); });
       all = all.concat(ss.filter(s => !s.is_cancelled));
-      list = list.concat(ss.filter(s => !s.is_cancelled && s.session_type === "Race"));
-      if (list.some(s => Date.parse(s.date_end) + DONE_AFTER < now)) break;
+      if (all.some(s => Date.parse(s.date_end) + DONE_AFTER < now)) break;
     }
-    list.sort((a, b) => Date.parse(b.date_start) - Date.parse(a.date_start));
-    // Live-Fenster: eine Stunde vor bis eine Stunde nach jeder Session (auch
-    // Training/Qualifying) — dann hängt sich die Seite an den F1-Feed.
+    // Live-Fenster: eine Stunde vor bis eine Stunde nach jeder Session — dann
+    // hängt sich die Seite an den F1-Feed.
     const live = all.find(s => Date.parse(s.date_start) - 3600e3 <= now && Date.parse(s.date_end) + 3600e3 > now);
     // ?live erzwingt den Live-Modus (z. B. bei stark verspätetem Start)
     const force = !live && new URLSearchParams(location.search).has("live");
-    const next = list.filter(s => Date.parse(s.date_start) > now).pop();
-    sessions = list.filter(s => Date.parse(s.date_end) + DONE_AFTER < now);
-    const sel = $("session");
-    sel.innerHTML = (live ? `<option value="live">● LIVE · ${esc(gpName(live.meeting) || live.location)} · ${esc(SESSION_DE[live.session_name] || live.session_name)}</option>`
+    const next = all.filter(s => Date.parse(s.date_start) > now).sort((a, b) => Date.parse(a.date_start) - Date.parse(b.date_start))[0];
+    sessions = all.filter(s => Date.parse(s.date_end) + DONE_AFTER < now);
+    // Nach Wochenende gruppieren (neueste zuerst), Sessions darin chronologisch
+    const byM = new Map();
+    for (const s of sessions) {
+      if (!byM.has(s.meeting_key)) byM.set(s.meeting_key, { key: s.meeting_key, name: gpName(s.meeting) || s.location, sessions: [] });
+      byM.get(s.meeting_key).sessions.push(s);
+    }
+    meetings = [...byM.values()];
+    meetings.forEach(m => m.sessions.sort((a, b) => Date.parse(a.date_start) - Date.parse(b.date_start)));
+    meetings.sort((a, b) => Date.parse(b.sessions[0].date_start) - Date.parse(a.sessions[0].date_start));
+    $("meeting").innerHTML = (live ? `<option value="live">● LIVE · ${esc(gpName(live.meeting) || live.location)} · ${esc(sessName(live))}</option>`
       : force ? `<option value="live">● LIVE · F1-Live-Timing</option>` : "") +
-      sessions.map(s =>
-      `<option value="${s.session_key}">${esc(gpName(s.meeting) || s.location)} · ${s.session_name === "Sprint" ? "Sprint" : "Rennen"} · ${fmtDate(s.date_start)}</option>`).join("");
-    if (!live && next) note(`Nächstes: <b>${esc(gpName(next.meeting) || next.location)}</b> · ${next.session_name === "Sprint" ? "Sprint" : "Rennen"} am ${fmtDate(next.date_start)} um ${fmtClock(next.date_start)} Uhr`, "soft");
-    if (live || force) { sel.value = "live"; return startLive(); }
+      meetings.map(m => `<option value="${m.key}">${esc(m.name)} · ${fmtDate(m.sessions[m.sessions.length - 1].date_start)}</option>`).join("");
+    if (!live && next) note(`Nächstes: <b>${esc(gpName(next.meeting) || next.location)}</b> · ${esc(sessName(next))} am ${fmtDay(next.date_start)} um ${fmtClock(next.date_start)} Uhr`, "soft");
+    if (live || force) { $("meeting").value = "live"; fillSessions(); return startLive(); }
+    // Zuletzt angesehene Session, sonst die neueste
     const want = +store.get("f1_session");
-    if (want && sessions.some(s => s.session_key === want)) sel.value = String(want);
-    if (sessions.length) await loadSession(+sel.value);
+    const m = meetings.find(x => x.sessions.some(s => s.session_key === want)) || meetings[0];
+    if (!m) return;
+    $("meeting").value = String(m.key);
+    const s = m.sessions.find(x => x.session_key === want) || m.sessions[m.sessions.length - 1];
+    fillSessions(s.session_key);
+    await openSession(s.session_key);
   }
-  const SESSION_DE = { Race: "Rennen", Sprint: "Sprint", Qualifying: "Qualifying", "Sprint Qualifying": "Sprint-Qualifying",
-    "Sprint Shootout": "Sprint-Qualifying", "Practice 1": "1. Training", "Practice 2": "2. Training", "Practice 3": "3. Training" };
+
+  function fillSessions(key) {
+    const sel = $("session");
+    const m = meetings.find(x => String(x.key) === $("meeting").value);
+    sel.hidden = !m;
+    if (!m) return;
+    sel.innerHTML = m.sessions.map(s => `<option value="${s.session_key}">${esc(sessName(s))} · ${fmtDay(s.date_start)}</option>`).join("");
+    if (key) sel.value = String(key);
+  }
+
+  // Rennen/Sprint: OpenF1 Runde für Runde; Training/Qualifying: Endstand aus dem F1-Archiv
+  function openSession(key) {
+    const s = sessions.find(x => x.session_key === key);
+    if (!s) return;
+    store.set("f1_session", String(key));
+    return s.session_type === "Race" ? loadSession(key) : loadArchive(s);
+  }
 
   // ---------- Live (F1-Feed über /api/f1-live) ----------
   function startLive() {
     stop(); stopLive();
+    mode = "live";
     race = null; liveLap = -1; liveBase = new Map(); lastPos = new Map();
     document.body.classList.add("is-live");
     $("note").hidden = true;
@@ -111,22 +145,21 @@
   }
   function stopLive() {
     clearTimeout(liveTimer); liveTimer = null;
-    document.body.classList.remove("is-live");
+    document.body.classList.remove("is-live", "single");
   }
   async function pollLive() {
     clearTimeout(liveTimer);
-    if ($("session").value !== "live") return;
+    if (mode !== "live") return;
     try {
       const res = await fetch("/api/f1-live", { cache: "no-store" });
       const d = await res.json();
       if (!d.ok) throw new Error(d.error || "offline");
-      if ($("session").value !== "live") return;
+      if (mode !== "live") return;
       const f = d.frame;
       // Pfeile ▲▼: Veränderung seit Beginn der laufenden Runde
       if (f.lap !== liveLap) { liveBase = lastPos; liveLap = f.lap; }
       lastPos = new Map(f.rows.map(r => [r.n, r]));
-      liveSession = d.session;
-      race = { live: true, drivers: new Map(d.drivers.map(x => [x.n, x])), laps: f.total, frames: [f] };
+      race = { live: true, session: d.session, drivers: new Map(d.drivers.map(x => [x.n, x])), laps: f.total, frames: [f] };
       if (Date.now() - d.updated > 60000) note("Der Live-Feed ist seit über einer Minute still – vermutlich Pause oder Session vorbei.", "soft");
       else $("note").hidden = true;
       show(0);
@@ -134,9 +167,9 @@
       if (!race) $("rows").innerHTML = `<li class="loading err">Live-Timing gerade nicht erreichbar – neuer Versuch läuft …</li>`;
       else note("Verbindung zum Live-Timing unterbrochen – neuer Versuch läuft …");
     }
-    if ($("session").value === "live") liveTimer = setTimeout(pollLive, document.hidden ? 15000 : LIVE_EVERY);
+    if (mode === "live") liveTimer = setTimeout(pollLive, document.hidden ? 15000 : LIVE_EVERY);
   }
-  document.addEventListener("visibilitychange", () => { if (!document.hidden && $("session").value === "live") pollLive(); });
+  document.addEventListener("visibilitychange", () => { if (!document.hidden && mode === "live") pollLive(); });
 
   function note(html, kind) {
     const n = $("note");
@@ -146,11 +179,17 @@
   const PARTS = [["drivers", "Fahrer"], ["session_result", "Ergebnis"], ["laps", "Runden"], ["position", "Positionen"],
     ["intervals", "Abstände"], ["stints", "Reifen"], ["pit", "Boxenstopps"], ["race_control", "Rennleitung"]];
 
-  async function loadSession(key) {
+  function loading(text) {
     stop(); stopLive();
     race = null;
-    $("rows").innerHTML = `<li class="loading"><span class="spinner"></span><span id="prog">Lade Daten …</span></li>`;
+    $("rows").innerHTML = `<li class="loading"><span class="spinner"></span><span id="prog">${esc(text)}</span></li>`;
+    $("tyre-rows").innerHTML = ""; $("tyre-info").textContent = "";
     $("fav").hidden = true; $("msgs").innerHTML = ""; $("more").hidden = true;
+  }
+
+  async function loadSession(key) {
+    loading("Lade Daten …");
+    mode = "race";
     const raw = {};
     try {
       // Nacheinander: OpenF1 erlaubt gratis nur 3 Anfragen pro Sekunde
@@ -170,13 +209,42 @@
     const p = $("prog"); if (p) p.textContent = "Lade Reifendaten …";
     try { raw.tyres = await get("archive", { year: new Date(sess ? sess.date_start : Date.now()).getFullYear(), session_key: key }); }
     catch (_) { raw.tyres = null; }
-    if (+$("session").value !== key) return;     // inzwischen anderes Rennen gewählt
-    store.set("f1_session", String(key));
+    if (+$("session").value !== key || mode !== "race") return;     // inzwischen anderes gewählt
     race = M.buildRace(raw);
+    race.session = { name: sess ? sessName(sess) : "Rennen", race: true };
     if (!race.frames.length) { $("rows").innerHTML = `<li class="loading err">Für diese Session gibt es noch keine Daten.</li>`; return; }
     const sl = $("slider");
     sl.max = String(race.frames.length - 1);
     show(race.frames.length - 1);
+  }
+
+  // Training/Qualifying: Endstand aus dem offiziellen F1-Archiv — dasselbe
+  // Format wie der Live-Feed, darum rechnet F1Model.fromLive auch hier.
+  const ARCHIVE_TOPICS = ["DriverList", "TimingData", "TimingAppData", "SessionInfo", "SessionStatus", "TrackStatus", "RaceControlMessages"];
+  async function loadArchive(s) {
+    loading(`Lade ${sessName(s)} …`);
+    mode = "archive";
+    const key = s.session_key, year = new Date(s.date_start).getFullYear();
+    const st = {};
+    try {
+      await Promise.all(ARCHIVE_TOPICS.map(async t => {
+        try { st[t] = await get("archive", { year, session_key: key, topic: t }); }
+        catch (e) { if (t === "TimingData" || t === "DriverList") throw e; }
+      }));
+    } catch (e) {
+      $("rows").innerHTML = `<li class="loading err">Für ${esc(sessName(s))} gibt es (noch) keine Daten im F1-Archiv.</li>`;
+      return;
+    }
+    if (+$("session").value !== key || mode !== "archive") return;
+    const L = M.fromLive(st);
+    L.frame.live = false; L.frame.final = true;
+    // Endstand: wer nach der Session in der Box steht, ist nicht „gerade in der Box“
+    L.frame.rows.forEach(r => { r.pitNow = false; });
+    L.session.name = sessName(s);
+    L.session.short = SHORT[s.session_name] || "";
+    race = { archive: true, session: L.session, drivers: new Map(L.drivers.map(x => [x.n, x])), laps: 0, frames: [L.frame] };
+    document.body.classList.add("single");     // ein Endstand → keine Abspielleiste
+    show(0);
   }
 
   // ---------- Darstellung ----------
@@ -190,7 +258,7 @@
     const f = race.frames[frame], prev = race.frames[frame - 1];
     return f.live ? liveBase : new Map(prev ? prev.rows.map(r => [r.n, r]) : []);
   }
-  const isTimed = () => race.frames[frame].live && liveSession && !liveSession.race;   // Training/Qualifying
+  const isTimed = () => !!race.frames[frame].timed;   // Training/Qualifying
   // Veränderung eines Abstands seit der Vorrunde (Sekunden, negativ = kleiner)
   function delta(r, key) {
     const f = race.frames[frame];
@@ -204,9 +272,9 @@
   function gapCell(r, i) {
     if (r.out) return `<span class="dnf">${r.status || "Aus"}</span>`;
     const f = race.frames[frame];
-    if (!f.live && f.lap === 0) return `<span class="muted">–</span>`;
-    const timed = f.live && !liveSession.race;          // Training/Qualifying
-    if (i === 0) return `<span class="lead">${timed ? "Bestzeit" : f.final ? "Sieger" : "Führt"}</span>`;
+    if (!f.live && !f.timed && f.lap === 0) return `<span class="muted">–</span>`;
+    const timed = !!f.timed;          // Training/Qualifying
+    if (i === 0 || (timed && r.fastest)) return `<span class="lead">${timed ? "Bestzeit" : f.final ? "Sieger" : "Führt"}</span>`;
     const v = gapMode === "leader" ? r.gap : r.interval;
     const txt = M.gapText(v);
     const close = !race.frames[frame].final && !isTimed() && gapMode === "interval" && typeof v === "number" && v < 1;   // DRS-Fenster
@@ -229,12 +297,12 @@
     const f = race.frames[frame], prev = race.frames[frame - 1];
     $("slider").value = String(frame);
     $("slider").style.setProperty("--p", (race.frames.length > 1 ? frame / (race.frames.length - 1) * 100 : 0) + "%");
-    const noLaps = f.live && !race.laps;      // Training/Qualifying: keine Rundenzahl
+    const noLaps = f.timed || (f.live && !race.laps);      // Training/Qualifying: keine Rundenzahl
     $("lapbox").classList.toggle("is-live", !!f.live);
-    $("lbl").textContent = noLaps ? liveSession.name || "Session" : "Runde";
-    $("lap").textContent = noLaps ? f.part || "Live" : f.lap === 0 ? "Start" : String(f.lap);
+    $("lbl").textContent = noLaps ? (f.live ? race.session.name || "Session" : "Session") : "Runde";
+    $("lap").textContent = noLaps ? (f.live && f.part) || race.session.short || "Live" : f.lap === 0 ? "Start" : String(f.lap);
     $("laps").textContent = noLaps || f.lap === 0 ? "" : "/" + race.laps;
-    const fl = $("flag"); fl.dataset.s = f.status; fl.textContent = f.final ? "Ergebnis" : STATUS[f.status] || "";
+    const fl = $("flag"); fl.dataset.s = f.status; fl.textContent = f.final ? (f.timed ? "Endstand" : "Ergebnis") : STATUS[f.status] || "";
     $("gapmode").textContent = gapMode === "leader" ? "Zum 1." : "Int.";
     $("gapmode").title = gapMode === "leader" ? "Abstand zum Führenden – tippen für Intervall" : "Abstand zum Vordermann – tippen für Abstand zum Führenden";
 
@@ -252,9 +320,9 @@
       const lastCls = timed ? (r.fastest ? "purple" : "") : r.lastPurple ? "purple" : r.lastPB ? "pb" : "";
       const zone = f.cut && !r.out && r.pos > f.cut ? " in-danger" : "";
       const line = f.cut && r.pos === f.cut ? " cutline" : "";
-      return `<li class="row${r.n === fav ? " is-fav" : ""}${r.out ? " is-out" : ""}${zone}${line}" style="--team:${esc(d.color)}" data-n="${r.n}" tabindex="0" role="button" aria-pressed="${r.n === fav}" aria-label="${esc(d.first + " " + d.last)}, Platz ${r.pos ?? "–"}">
+      return `<li class="row${r.n === fav ? " is-fav" : ""}${r.out ? " is-out" : ""}${r.knocked ? " is-knocked" : ""}${zone}${line}" style="--team:${esc(d.color)}" data-n="${r.n}" tabindex="0" role="button" aria-pressed="${r.n === fav}" aria-label="${esc(d.first + " " + d.last)}, Platz ${r.pos ?? "–"}">
         <span class="c-pos"><b>${r.pos ?? "–"}</b>${move}</span>
-        <span class="c-drv"><span class="bar"></span><b>${esc(d.abbr)}</b>${r.fastest ? '<i class="fl" title="Schnellste Runde"></i>' : ""}${f.final && r.points ? `<i class="pts">+${r.points}</i>` : ""}<small>${esc(d.team)}</small></span>
+        <span class="c-drv"><span class="bar"></span><b>${esc(d.abbr)}</b>${r.fastest ? '<i class="fl" title="Schnellste Runde"></i>' : ""}${f.final && r.points ? `<i class="pts">+${r.points}</i>` : ""}${r.knocked ? `<i class="qtag" title="ausgeschieden in ${esc(r.status)}">${esc(r.status)}</i>` : ""}<small>${esc(d.team)}</small></span>
         <span class="c-gap">${r.pitNow && !r.out ? '<span class="box">BOX</span>' : gapCell(r, i)}</span>
         <span class="c-tyre">${tyre(r.compound, r.tyreAge)}</span>
         <span class="c-stops">${r.pits}</span>
@@ -323,7 +391,7 @@
     if (i < 0) { box.hidden = true; return; }
     const r = f.rows[i], d = race.drivers.get(r.n);
     const ahead = f.rows[i - 1], behind = f.rows[i + 1];
-    const gapTo = (a, b) => (!a || !b || a.out || b.out || f.lap === 0) ? null :
+    const gapTo = (a, b) => (!a || !b || a.out || b.out || (f.lap === 0 && !f.timed)) ? null :
       (typeof b.interval === "number" ? b.interval : typeof a.gap === "number" && typeof b.gap === "number" ? b.gap - a.gap : null);
     const gA = gapTo(ahead, r), gB = gapTo(r, behind);
     // Trend je Runde: vorne kleiner = gut, hinten kleiner = Druck
@@ -349,7 +417,9 @@
         <div><span>Vordermann</span><b>${ahead && gA != null ? "−" + gA.toFixed(1) + " s" : "–"}${trend(dA, true)}</b><small>${ahead ? nm(ahead) : ""}</small></div>
         <div><span>Hintermann</span><b>${behind && gB != null ? "+" + gB.toFixed(1) + " s" : "–"}${trend(dB, false)}</b><small>${behind ? nm(behind) : ""}</small></div>
         <div><span>Reifen</span><b class="fav-tyre">${tyre(r.compound)} ${r.tyreAge ?? "–"} Rd.</b><small>${r.pits} ${r.pits === 1 ? "Stopp" : "Stopps"}</small></div>
-        <div><span>Letzte / Beste</span><b class="${r.lastPurple ? "purple" : r.lastPB ? "pb" : ""}">${M.lapTime(r.last)}</b><small>${M.lapTime(r.best)}</small></div>
+        ${f.timed
+          ? `<div><span>Bestzeit</span><b class="${r.fastest ? "purple" : ""}">${M.lapTime(r.best)}</b><small>${r.laps} Runden${r.knocked ? " · raus in " + esc(r.status) : ""}</small></div>`
+          : `<div><span>Letzte / Beste</span><b class="${r.lastPurple ? "purple" : r.lastPB ? "pb" : ""}">${M.lapTime(r.last)}</b><small>${M.lapTime(r.best)}</small></div>`}
       </div>${bar}`;
     box.querySelector(".unfav").addEventListener("click", () => setFav(null));
   }
@@ -358,7 +428,7 @@
     const all = f.msgs.slice().reverse();
     const list = showAll ? all : all.slice(0, 4);
     $("msgs").innerHTML = list.length ? list.map(m =>
-      `<li class="${m.driver && m.driver === fav ? "mine" : ""}"><span class="rl">R${m.lap ?? "–"}</span>${esc(m.text)}</li>`).join("")
+      `<li class="${m.driver && m.driver === fav ? "mine" : ""}"><span class="rl">${m.lap ? "R" + m.lap : isFinite(m.time) ? fmtClock(m.time) : "–"}</span>${esc(m.text)}</li>`).join("")
       : `<li class="muted">Noch keine Meldungen.</li>`;
     $("more").hidden = all.length <= 4;
     $("more").textContent = showAll ? "Weniger anzeigen" : `Alle ${all.length} Meldungen`;
@@ -381,7 +451,15 @@
   }
 
   // ---------- Ereignisse ----------
-  $("session").addEventListener("change", e => (e.target.value === "live" ? startLive() : loadSession(+e.target.value)));
+  $("meeting").addEventListener("change", e => {
+    if (e.target.value === "live") { fillSessions(); return startLive(); }
+    fillSessions();
+    const m = meetings.find(x => String(x.key) === e.target.value);
+    // Neues Wochenende: das Rennen (sonst die letzte Session) vorwählen
+    const s = m && ([...m.sessions].reverse().find(x => x.session_name === "Race") || m.sessions[m.sessions.length - 1]);
+    if (s) { $("session").value = String(s.session_key); openSession(s.session_key); }
+  });
+  $("session").addEventListener("change", e => openSession(+e.target.value));
   $("slider").addEventListener("input", e => { stop(); show(+e.target.value); });
   $("prev").addEventListener("click", () => { stop(); show(frame - 1); });
   $("next").addEventListener("click", () => { stop(); show(frame + 1); });
@@ -412,7 +490,7 @@
   $("rows").addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pickRow(e); } });
 
   loadCalendar().catch(() => {
-    $("session").innerHTML = "<option>Kalender nicht erreichbar</option>";
+    $("meeting").innerHTML = "<option>Kalender nicht erreichbar</option>";
     $("rows").innerHTML = `<li class="loading err">OpenF1 ist gerade nicht erreichbar. Bitte später nochmal probieren.</li>`;
   });
 })();
