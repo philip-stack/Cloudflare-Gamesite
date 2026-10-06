@@ -291,7 +291,19 @@
       });
     });
 
-    return { drivers, laps: total, frames, raceStart, plans };
+    // Rundenzeiten je Fahrer (Diagramm „Rundenzeiten“, Duell, Streckenkarte):
+    // [{ lap, s, t, end, pitIn, pitOut, c }] — t/end = Beginn/Ende in ms
+    const lapTimes = new Map();
+    for (const d of drivers.values()) {
+      const plan = plans.get(d.n) || [];
+      const inLaps = new Set((raw.pit || []).filter(x => x.driver_number === d.n).map(x => x.lap_number));
+      lapTimes.set(d.n, (laps.get(d.n) || []).map(l => {
+        const g = plan.find(x => l.lap_number >= x.from && l.lap_number <= x.to);
+        return { lap: l.lap_number, s: num(l.lap_duration), t: l.time, end: l.end, pitIn: inLaps.has(l.lap_number), pitOut: !!l.is_pit_out_lap, c: g ? g.c : null };
+      }));
+    }
+
+    return { drivers, laps: total, frames, raceStart, plans, lapTimes };
   }
 
   // Reifenmischung → Kürzel
@@ -445,10 +457,14 @@
     return {
       session: {
         key: info.Key || null, name: SESSION_DE[info.Name] || info.Name || "", type: info.Type || "", race: isRace, quali: isQuali,
+        circuit: (meet.Circuit || {}).Key || null, path: info.Path || null,
         meeting: (meet.Name || "").replace(/ Grand Prix$/i, " GP"), location: meet.Location || "",
         state: ss, start: info.StartDate || null,
       },
       drivers, wm,
+      // Boxenfunk: die letzten Clips (Datei relativ zum Session-Pfad im F1-Archiv)
+      radio: list((st.TeamRadio || {}).Captures).filter(c => c && c.Path).slice(-60)
+        .map(c => ({ n: +c.RacingNumber, utc: c.Utc, file: String(c.Path).replace(/^TeamRadio\//, "") })),
       frame: { lap: lc.CurrentLap || 0, total: lc.TotalLaps || 0, final: status === "fin", live: true, timed: !isRace, status, part, cut, rows, msgs },
     };
   }

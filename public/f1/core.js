@@ -184,7 +184,8 @@
       // Pfeile ▲▼: Veränderung seit Beginn der laufenden Runde
       if (f.lap !== liveLap) { liveBase = lastPos; liveLap = f.lap; }
       lastPos = new Map(f.rows.map(r => [r.n, r]));
-      race = { live: true, session: d.session, wm: d.wm, drivers: new Map(d.drivers.map(x => [x.n, x])), laps: f.total, frames: [f] };
+      race = { live: true, session: { ...d.session, year: d.session.start ? new Date(d.session.start).getFullYear() : new Date().getFullYear() },
+        wm: d.wm, pos: d.pos, radio: d.radio || [], drivers: new Map(d.drivers.map(x => [x.n, x])), laps: f.total, frames: [f] };
       if (d.session.race && f.lap > 0) liveHist.set(f.lap, { lap: f.lap, status: f.status, rows: f.rows.map(r => ({ n: r.n, pos: r.pos, pits: r.pits, out: r.out, gap: r.gap, interval: r.interval, compound: r.compound, tyreAge: r.tyreAge })) });
       // Rundenzeiten je Fahrer (Runde = abgeschlossene Runden des Fahrers)
       for (const r of f.rows) if (r.last != null && r.laps > 0) {
@@ -268,7 +269,7 @@
     catch (_) { raw.tyres = null; }
     if (+$("session").value !== key || mode !== "race") return;     // inzwischen anderes gewählt
     race = M.buildRace(raw);
-    race.session = { name: sess ? sessName(sess) : "Rennen", race: true };
+    race.session = { name: sess ? sessName(sess) : "Rennen", race: true, key, year: new Date(sess ? sess.date_start : Date.now()).getFullYear(), circuit: sess ? sess.circuit_key : null };
     if (!race.frames.length) { $("rows").innerHTML = `<li class="loading err">Für diese Session gibt es noch keine Daten.</li>`; return; }
     const sl = $("slider");
     sl.max = String(race.frames.length - 1);
@@ -299,6 +300,7 @@
     L.frame.rows.forEach(r => { r.pitNow = false; });
     L.session.name = sessName(s);
     L.session.short = SHORT[s.session_name] || "";
+    Object.assign(L.session, { key, year, circuit: s.circuit_key || L.session.circuit });
     race = { archive: true, session: L.session, drivers: new Map(L.drivers.map(x => [x.n, x])), laps: 0, frames: [L.frame] };
     document.body.classList.add("single");     // ein Endstand → keine Abspielleiste
     show(0);
@@ -397,7 +399,10 @@
   function setView(v) {
     if (!views[v]) v = "times";
     view = v; store.set("f1_view", v);
-    document.querySelectorAll(".tabs button").forEach(b => b.setAttribute("aria-selected", String(b.dataset.view === v)));
+    document.querySelectorAll(".tabs button").forEach(b => {
+      b.setAttribute("aria-selected", String(b.dataset.view === v));
+      if (b.dataset.view === v) { const t = b.parentElement; t.scrollLeft = b.offsetLeft - (t.clientWidth - b.clientWidth) / 2; }
+    });
     for (const [k, o] of Object.entries(views)) { const el = $(o.panel); if (el) el.hidden = k !== v; }
     document.body.classList.toggle("view-docs", !!views[v].noPlayer);
     emit("view", v);

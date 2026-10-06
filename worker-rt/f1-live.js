@@ -18,13 +18,26 @@ const HOST = "https://livetiming.formula1.com/signalrcore";
 const UA = "Rennticker/1.0 (+https://philip-stack.pages.dev/f1/; privat)";
 const RS = "\x1e";   // SignalR-Trennzeichen
 export const TOPICS = ["Heartbeat", "SessionInfo", "SessionStatus", "TrackStatus", "LapCount",
-  "DriverList", "TimingData", "TimingAppData", "RaceControlMessages", "ChampionshipPrediction"];
+  "DriverList", "TimingData", "TimingAppData", "RaceControlMessages", "ChampionshipPrediction", "TeamRadio", "Position.z"];
 const IDLE_MS = 5 * 60 * 1000;
 const PING_MS = 15 * 1000;
 const LOG_EVERY_MS = 10 * 60 * 1000;   // gleiche Störung höchstens alle 10 min ins error_log
 
 // Lastbalancer-Cookies aus der Negotiate-Antwort (die Verbindung muss am
 // selben Server landen).
+// Position.z: base64 + raw deflate → { Position: [{ Timestamp, Entries: { n: { X, Y, Status } } }] }
+// Nur der jüngste Eintrag zählt → { t, cars: { n: [x, y] } }
+export async function decodePositions(b64) {
+  const bin = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+  const txt = await new Response(new Blob([bin]).stream().pipeThrough(new DecompressionStream("deflate-raw"))).text();
+  const list = (JSON.parse(txt).Position || []);
+  const last = list[list.length - 1];
+  if (!last) return null;
+  const cars = {};
+  for (const [n, e] of Object.entries(last.Entries || {})) if (e && e.Status === "OnTrack" && (e.X || e.Y)) cars[n] = [e.X, e.Y];
+  return { t: last.Timestamp, cars };
+}
+
 export function lbCookies(h) {
   const raw = typeof h.getSetCookie === "function" ? h.getSetCookie().join(", ") : (h.get("set-cookie") || "");
   return (raw.match(/AWSALB(?:CORS)?=[^;,\s]+/g) || []).join("; ");
@@ -60,7 +73,9 @@ export class F1Live extends DurableObject {
     }
     if (!this.cache || Date.now() - this.cacheAt > 1000) {
       try {
-        this.cache = JSON.stringify({ ok: true, updated: this.lastMsg, ...F1.fromLive(this.state) });
+        let pos = null;
+      if (this.posRaw) { try { pos = await decodePositions(this.posRaw); } catch (_) { pos = null; } }
+      this.cache = JSON.stringify({ ok: true, updated: this.lastMsg, ...F1.fromLive(this.state), pos });
       } catch (e) {
         // Feed-Format geändert? Stand verwerfen, beim nächsten Abruf frisch abonnieren
         this.log("Auswertung fehlgeschlagen", e && e.stack || e);
@@ -81,7 +96,7 @@ export class F1Live extends DurableObject {
   drop() {
     clearInterval(this.ping); this.ping = null;
     try { this.ws && this.ws.close(1000, "idle"); } catch (_) {}
-    this.ws = null; this.state = null; this.ready = false; this.cache = null;
+    this.ws = null; this.state = null; this.ready = false; this.cache = null; this.posRaw = null;
   }
 
   connect() {
@@ -112,11 +127,15 @@ export class F1Live extends DurableObject {
           }
           if (m.type === 3 && m.invocationId === "1") {
             if (m.error) { this.error = m.error; this.log("Abo abgelehnt", m.error); continue; }
-            for (const [t, v] of Object.entries(m.result || {})) this.state[t] = v;
+            for (const [t, v] of Object.entries(m.result || {})) {
+              if (t === "Position.z") this.posRaw = typeof v === "string" ? v : null;   // erst bei Abfrage entpacken
+              else this.state[t] = v;
+            }
             this.ready = true; this.cache = null;
           } else if (m.type === 1 && m.target === "feed" && Array.isArray(m.arguments)) {
             const [topic, data] = m.arguments;
-            if (TOPICS.includes(topic)) { this.state[topic] = F1.mergeFeed(this.state[topic], data); this.cache = null; }
+            if (topic === "Position.z") { if (typeof data === "string") this.posRaw = data; this.cache = null; }
+            else if (TOPICS.includes(topic)) { this.state[topic] = F1.mergeFeed(this.state[topic], data); this.cache = null; }
           } else if (m.type === 7) {
             if (m.error) this.log("Feed hat getrennt", m.error);
             ws.close();

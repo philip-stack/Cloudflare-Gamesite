@@ -7,7 +7,7 @@ import path from "node:path";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
 const M = require(path.join(__dirname, "..", "public", "f1", "model.js"));
-const { buildUrl } = await import("file://" + path.join(__dirname, "..", "functions", "f1data", "[ep].js").replace(/\\/g, "/"));
+const { buildUrl, RADIO_FILE, SESSION_PATH } = await import("file://" + path.join(__dirname, "..", "functions", "f1data", "[ep].js").replace(/\\/g, "/"));
 
 let ok = true;
 const assert = (name, cond) => { if (cond) console.log("OK  ", name); else { console.log("FAIL", name); ok = false; } };
@@ -81,6 +81,15 @@ const texts = fz.msgs.map(m => m.text);
 assert("Track-Limits-Meldung ausgefiltert", !texts.some(t => /track limits|gestrichen/i.test(t)));
 assert("Strafe übersetzt", texts.includes("BBB: 5-Sekunden-Zeitstrafe (Kollision verursacht)"));
 assert("Safety Car übersetzt", texts.includes("Safety Car auf der Strecke"));
+
+// ---- Rundenzeiten je Fahrer (Diagramm, Duell, Karte) ----
+const lt = R.lapTimes.get(2);
+assert("Rundenzeiten: alle Runden mit Zeit & Reifen", lt.length === 3 && lt[0].s === 91 && lt[0].c === "SOFT" && lt[1].c === "HARD");
+assert("Rundenzeiten: Box-Runde markiert", lt[0].pitIn && !lt[1].pitIn && isFinite(lt[0].t) && lt[0].end > lt[0].t);
+const LR = M.fromLive({ SessionInfo: { Name: "Race", Type: "Race", Path: "2026/x/2026-10-04_Race/", Meeting: { Circuit: { Key: 12 } } },
+  TeamRadio: { Captures: [{ Utc: "2026-10-04T08:40:00Z", RacingNumber: "44", Path: "TeamRadio/HAM_44_20261004_164000.mp3" }] } });
+assert("Live: Funk + Strecke + Pfad", LR.radio.length === 1 && LR.radio[0].n === 44 && LR.radio[0].file === "HAM_44_20261004_164000.mp3"
+  && LR.session.circuit === 12 && LR.session.path === "2026/x/2026-10-04_Race/");
 
 // ---- Formatierung ----
 assert("lapTime", M.lapTime(98.22) === "1:38.220" && M.lapTime(null) === "–");
@@ -224,7 +233,12 @@ assert("Proxy: erlaubter Endpunkt", buildUrl("laps", "?session_key=11731") === "
 assert("Proxy: Kalender", buildUrl("sessions", "?year=2026&session_type=Race") === "https://api.openf1.org/v1/sessions?year=2026&session_type=Race");
 assert("Proxy: unbekannter Endpunkt", buildUrl("car_data", "?session_key=1") === null);
 assert("Proxy: Session-Daten ohne session_key", buildUrl("laps", "") === null);
-assert("Proxy: fremder Parameter", buildUrl("laps", "?session_key=1&driver_number=1") === null);
+assert("Proxy: fremder Parameter", buildUrl("laps", "?session_key=1&x=1") === null);
+assert("Proxy: location nur mit Zeitfenster ≤ 5 min", buildUrl("location", "?session_key=1&driver_number=3&from=2026-10-04T09:30:00Z&to=2026-10-04T09:31:30Z") === "https://api.openf1.org/v1/location?session_key=1&driver_number=3&date>=2026-10-04T09:30:00Z&date<=2026-10-04T09:31:30Z"
+  && buildUrl("location", "?session_key=1") === null && buildUrl("location", "?session_key=1&from=2026-10-04T09:30:00Z&to=2026-10-04T10:30:00Z") === null);
+assert("Proxy: kaputtes Zeitformat", buildUrl("location", "?session_key=1&from=gestern&to=heute") === null);
+assert("Funk: nur Clip-Dateinamen und Session-Pfade", RADIO_FILE.test("VER_3_20261004_143127.mp3") && !RADIO_FILE.test("../x.mp3")
+  && SESSION_PATH.test("2026/2026-10-04_Bahrain_Grand_Prix/2026-10-04_Race/") && !SESSION_PATH.test("http://evil/"));
 assert("Proxy: kaputter Wert", buildUrl("laps", "?session_key=1;drop") === null);
 assert("Proxy: Prototyp-Name", buildUrl("constructor", "?session_key=1") === null);
 

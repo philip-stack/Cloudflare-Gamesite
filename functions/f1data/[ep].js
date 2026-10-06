@@ -19,8 +19,10 @@ export const ENDPOINTS = {
   drivers: 3600, position: 3600, intervals: 3600, laps: 3600,
   stints: 3600, pit: 3600, race_control: 3600, session_result: 3600,
   championship_drivers: 3600, championship_teams: 3600,
+  location: 86400,          // Streckenkarte: x/y je Auto (nur mit Zeitfenster)
 };
-const PARAMS = { session_key: /^\d{1,6}$/, meeting_key: /^\d{1,6}$/, year: /^20\d\d$/, session_type: /^[A-Za-z]{1,20}$/ };
+const PARAMS = { session_key: /^\d{1,6}$/, meeting_key: /^\d{1,6}$/, year: /^20\d\d$/, session_type: /^[A-Za-z]{1,20}$/,
+  driver_number: /^\d{1,2}$/, from: /^20\d\d-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d{1,3})?Z?$/, to: /^20\d\d-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d{1,3})?Z?$/ };
 
 export function buildUrl(ep, search) {
   if (!Object.prototype.hasOwnProperty.call(ENDPOINTS, ep)) return null;
@@ -31,7 +33,14 @@ export function buildUrl(ep, search) {
   }
   // Session-Daten nur mit session_key — sonst käme die ganze Saison
   if (ep !== "sessions" && ep !== "meetings" && !q.has("session_key")) return null;
-  return BASE + ep + (q.toString() ? "?" + q : "");
+  // from/to → OpenF1-Zeitfilter (date>= / date<=). location gibt es nur mit
+  // Fenster von höchstens 5 Minuten (sonst Millionen Zeilen).
+  const from = q.get("from"), to = q.get("to");
+  q.delete("from"); q.delete("to");
+  if (ep === "location" && (!from || !to || Date.parse(to) - Date.parse(from) > 300000 || Date.parse(to) < Date.parse(from))) return null;
+  const range = (from ? `&date>=${from}` : "") + (to ? `&date<=${to}` : "");
+  const qs = q.toString() + range;
+  return BASE + ep + (qs ? "?" + qs.replace(/^&/, "") : "");
 }
 
 // Reifen aus dem offiziellen F1-Archiv (livetiming.formula1.com/static):
@@ -41,7 +50,7 @@ export function buildUrl(ep, search) {
 // liefert den Endstand eines Themas (Standard: TimingAppData = Reifen).
 // Training/Qualifying zeigt der Rennticker komplett aus dem Archiv.
 const ARCHIVE = "https://livetiming.formula1.com/static/";
-export const TOPICS = ["TimingAppData", "TimingData", "DriverList", "SessionInfo", "SessionStatus", "TrackStatus", "RaceControlMessages"];
+export const TOPICS = ["TimingAppData", "TimingData", "DriverList", "SessionInfo", "SessionStatus", "TrackStatus", "RaceControlMessages", "TeamRadio"];
 const stripBom = t => t.replace(/^﻿/, "");
 export async function archivePath(year, key, fetchJson) {
   const idx = await fetchJson(`${ARCHIVE}${year}/Index.json`);
@@ -70,8 +79,37 @@ async function archive(search) {
   }
 }
 
+// Boxenfunk: MP3 aus dem F1-Archiv, same-origin (CSP media-src 'self').
+//   GET /f1data/radio?path=2026/…/2026-10-04_Race/&file=VER_3_20261004_143127.mp3
+//   GET /f1data/radio?year=2026&session_key=11731&file=…   (Pfad über Index.json)
+export const RADIO_FILE = /^[A-Z]{3}[A-Z0-9]?_\d{1,2}_\d{8}_\d{6}\.mp3$/;
+export const SESSION_PATH = /^20\d\d\/[^?#\\]+\/$/;
+async function radio(search) {
+  const q = new URLSearchParams(search);
+  const file = q.get("file") || "";
+  let path = q.get("path");
+  if (!RADIO_FILE.test(file) || (path && (!SESSION_PATH.test(path) || path.includes("..")))) return new Response("bad request", { status: 400 });
+  try {
+    if (!path) {
+      const year = q.get("year"), key = q.get("session_key");
+      if (!PARAMS.year.test(year || "") || !PARAMS.session_key.test(key || "")) return new Response("bad request", { status: 400 });
+      path = await archivePath(year, +key, async url => {
+        const r = await fetch(url, { headers: { "User-Agent": UA }, cf: { cacheTtl: 3600, cacheEverything: true } });
+        return r.ok ? JSON.parse(stripBom(await r.text())) : null;
+      });
+      if (!path || path.includes("..")) return new Response("not found", { status: 404 });
+    }
+    const r = await fetch(ARCHIVE + encodeURI(path) + "TeamRadio/" + file, { headers: { "User-Agent": UA }, cf: { cacheTtl: 86400, cacheEverything: true } });
+    if (!r.ok) return new Response("not found", { status: r.status === 404 ? 404 : 502 });
+    return new Response(r.body, { headers: { "Content-Type": "audio/mpeg", "Cache-Control": "public, max-age=86400" } });
+  } catch (_) {
+    return new Response("fetch failed", { status: 502 });
+  }
+}
+
 export async function onRequestGet({ params, request }) {
   const ep = String(params.ep || "");
+  if (ep === "radio") return radio(new URL(request.url).search);
   if (ep === "archive") return archive(new URL(request.url).search);
   if (ep === "fia") return fiaList(new URL(request.url).search);
   if (ep === "fia-pdf") return fiaPdf(new URL(request.url).search);
