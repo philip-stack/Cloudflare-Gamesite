@@ -10,7 +10,7 @@
 (function () {
   "use strict";
   const { S, $, esc, store, get } = window.RT;
-  RT.view("map");
+  RT.view("map", { title: "Karte" });
   const iso = ms => new Date(ms).toISOString().replace(/\.\d+Z$/, "Z");
   let track = null;        // { circuit, pts: [[x,y]…], kind: "line"|"dots" }
   let trackLoading = "";

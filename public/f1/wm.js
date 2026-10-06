@@ -5,7 +5,7 @@
   "use strict";
   const { S, $, esc, store, get, M } = window.RT;
   const { gpName, sessName } = RT;
-  RT.view("wm", { noPlayer: true });
+  RT.view("wm", { title: "WM-Stand", noPlayer: true });
   let wmMode = store.get("f1_wmmode") === "teams" ? "teams" : "drivers";
   const wmCache = new Map();   // session_key → Promise<{ drivers, teams, names }>
   function wmSession() {

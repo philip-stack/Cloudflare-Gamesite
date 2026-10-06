@@ -7,7 +7,7 @@
   const TYRE_DE = { SOFT: "Soft", MEDIUM: "Medium", HARD: "Hard", INTERMEDIATE: "Intermediate", WET: "Regen" };
   RT.TYRE_DE = TYRE_DE;
   let tyreInfo = null;   // { n, i } angetippter Abschnitt
-  RT.view("tyres");
+  RT.view("tyres", { title: "Reifen" });
   function renderTyres(f) {
     if (S.view !== "tyres") return;
     // Skala: Renndistanz (live notfalls die längste bisherige Fahrt)

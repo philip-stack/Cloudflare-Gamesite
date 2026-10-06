@@ -5,7 +5,7 @@
 (function () {
   "use strict";
   const { S, $, esc, store, M } = window.RT;
-  RT.view("duel");
+  RT.view("duel", { title: "Duell" });
   let pair = (() => { try { return JSON.parse(store.get("f1_duel") || "null"); } catch (_) { return null; } })() || [];
 
   // Standard: Lieblingsfahrer gegen den Vordermann (als Führender: Hintermann)

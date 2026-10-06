@@ -4,7 +4,7 @@
 (function () {
   "use strict";
   const { S, $, esc, store, get, M } = window.RT;
-  RT.view("docs", { noPlayer: true });
+  RT.view("docs", { title: "FIA-Dokumente", noPlayer: true });
   const PDFJS = "./vendor/pdfjs-4.10.38/";
   const fmtDocDay = new Intl.DateTimeFormat("de-AT", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
   let docTarget = null, docsTagged = false;   // { year, name } — Grand Prix, dessen Dokumente gezeigt werden

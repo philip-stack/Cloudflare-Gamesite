@@ -4,7 +4,7 @@
 (function () {
   "use strict";
   const { S, $, esc, store, get, M } = window.RT;
-  RT.view("chart");
+  RT.view("chart", { title: "Verlauf" });
   let chartSel = new Set((() => { try { return JSON.parse(store.get("f1_chartsel") || "[]"); } catch (_) { return []; } })());
   let chartHover = null;   // Runde unter dem Finger/Mauszeiger
   const SVGNS = "http://www.w3.org/2000/svg";

@@ -24,7 +24,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="Rennticker" />
-  <link rel="stylesheet" href="style.css?v=f3734e0d" />
+  <link rel="stylesheet" href="style.css?v=8c748644" />
 </head>
 <body>
   <div id="app">
@@ -64,16 +64,13 @@
 
     <section class="fav" id="fav" hidden></section>
 
-    <div class="tabs" role="tablist" aria-label="Ansicht">
-      <button type="button" role="tab" data-view="times" aria-selected="true">Zeiten</button>
-      <button type="button" role="tab" data-view="tyres" aria-selected="false">Reifen</button>
-      <button type="button" role="tab" data-view="chart" aria-selected="false">Verlauf</button>
-      <button type="button" role="tab" data-view="duel" aria-selected="false">Duell</button>
-      <button type="button" role="tab" data-view="map" aria-selected="false">Karte</button>
-      <button type="button" role="tab" data-view="radio" aria-selected="false">Funk</button>
-      <button type="button" role="tab" data-view="wm" aria-selected="false">WM</button>
-      <button type="button" role="tab" data-view="docs" aria-selected="false">FIA</button>
-    </div>
+    <nav class="tabs" role="tablist" aria-label="Bereich">
+      <button type="button" role="tab" data-group="race" aria-selected="true"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5M10 2h4M12 2v3"/></svg><span>Rennen</span></button>
+      <button type="button" role="tab" data-group="analyse" aria-selected="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 20h18"/><path d="M4 16l5-6 4 3 7-8"/></svg><span>Analyse</span></button>
+      <button type="button" role="tab" data-group="track" aria-selected="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 18c-2-3 0-7 3-7h6c2 0 3-2 2-4s-4-2-5 0"/><circle cx="18" cy="17" r="3"/><path d="M8 18h7"/></svg><span>Strecke</span></button>
+      <button type="button" role="tab" data-group="info" aria-selected="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4h8v5a4 4 0 0 1-8 0z"/><path d="M8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4M12 13v4M8 20h8"/></svg><span>Infos</span></button>
+    </nav>
+    <div class="subtabs" id="subtabs" role="tablist" aria-label="Ansicht" hidden></div>
 
     <section class="board" id="board" aria-label="Zeitenliste">
       <div class="head">
@@ -195,15 +192,15 @@
   </nav>
 
   <script src="model.js?v=cbb7fe66"></script>
-  <script src="core.js?v=cb7393f5"></script>
+  <script src="core.js?v=3afb59c3"></script>
   <script src="push.js?v=00f72533"></script>
-  <script src="tyres.js?v=10344341"></script>
-  <script src="chart.js?v=35c538f0"></script>
-  <script src="wm.js?v=6191b52a"></script>
+  <script src="tyres.js?v=9e1da3c7"></script>
+  <script src="chart.js?v=270fe871"></script>
+  <script src="wm.js?v=1e6fafe8"></script>
   <script src="laps.js?v=38a15758"></script>
-  <script src="duel.js?v=45a3b2b1"></script>
-  <script src="radio.js?v=92338441"></script>
-  <script src="map.js?v=d46777fe"></script>
-  <script src="docs.js?v=989e4971"></script>
+  <script src="duel.js?v=7b6d6411"></script>
+  <script src="radio.js?v=268df605"></script>
+  <script src="map.js?v=727be6a0"></script>
+  <script src="docs.js?v=7a6cff2e"></script>
 </body>
 </html>

@@ -6,7 +6,7 @@
 (function () {
   "use strict";
   const { S, $, esc, get, fmtClock } = window.RT;
-  RT.view("radio");
+  RT.view("radio", { title: "Funk" });
   const audio = new Audio();
   audio.preload = "none";
   let clips = { key: "", list: null, error: false };

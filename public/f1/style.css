@@ -315,19 +315,25 @@ body.is-live { padding-bottom: env(safe-area-inset-bottom); }
   .row { height: 50px; }
 }
 
-/* ---------- Ansicht: Zeiten | Reifen ---------- */
-.tabs { display: flex; gap: 4px; margin: 14px 16px 0; padding: 4px; border-radius: 14px; background: var(--panel-2); border: 1px solid var(--line); }
+/* ---------- Navigation: 4 Bereiche + Unterleiste ---------- */
+.tabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin: 14px 16px 0; padding: 4px; border-radius: 16px; background: var(--panel-2); border: 1px solid var(--line); }
 .tabs button {
-  flex: 1; border: 0; background: transparent; padding: 8px; border-radius: 10px; cursor: pointer;
-  font-weight: 700; font-size: 14px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted);
+  display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 0;
+  border: 0; background: transparent; padding: 7px 2px 6px; border-radius: 12px; cursor: pointer; color: var(--muted);
+  font-weight: 700; font-size: 12px; letter-spacing: .03em;
 }
-/* 8 Reiter: wischbar statt gequetscht */
-.tabs { overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; scroll-snap-type: x proximity; }
-.tabs::-webkit-scrollbar { display: none; }
-.tabs button { flex: 1 0 auto; min-width: 72px; padding: 8px 10px; scroll-snap-align: start; font-size: 13px; letter-spacing: .05em; }
+.tabs svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .tabs button[aria-selected="true"] { background: var(--panel); color: var(--text); box-shadow: 0 2px 8px rgba(0,0,0,.18); }
-.tabs button[aria-selected="true"]::after { content: ""; display: block; height: 3px; width: 22px; margin: 4px auto -2px; border-radius: 2px; background: var(--red); transform: skewX(-24deg); }
-.tabs + .board { margin-top: 10px; }
+.tabs button[aria-selected="true"] svg { stroke: var(--red-2); }
+:root[data-theme="light"] .tabs button[aria-selected="true"] svg { stroke: var(--red); }
+.subtabs { display: flex; gap: 6px; margin: 10px 16px 0; }
+.subtabs[hidden] { display: none; }
+.subtabs button {
+  flex: 1; border: 1px solid var(--line); background: transparent; border-radius: 999px; padding: 7px 10px; cursor: pointer;
+  font-weight: 700; font-size: 13px; color: var(--muted);
+}
+.subtabs button[aria-selected="true"] { background: var(--text); border-color: var(--text); color: var(--bg); }
+.tabs + .subtabs[hidden] + .board, .tabs + .board { margin-top: 10px; }
 
 /* ---------- Reifen aller Fahrer ---------- */
 .tyres { margin: 10px 16px 0; background: var(--panel); border-radius: 18px; border: 1px solid var(--line); box-shadow: var(--shadow); padding: 12px 10px 4px 6px; }

@@ -26,8 +26,16 @@
   const handlers = {};
   const on = (e, fn) => { (handlers[e] = handlers[e] || []).push(fn); };
   const emit = (e, x) => { for (const fn of handlers[e] || []) { try { fn(x); } catch (err) { console.error(err); } } };
-  // Reiter: Name = data-view des Tabs = id des Abschnitts; "times" = Zeitenliste (#board)
-  const views = { times: { panel: "board" } };
+  // Reiter: Name = id des Abschnitts; "times" = Zeitenliste (#board).
+  // Oben stehen nur 4 Bereiche, darunter (bei mehreren) eine Unterleiste.
+  const views = { times: { panel: "board", title: "Zeiten" } };
+  const GROUPS = [
+    { id: "race", views: ["times"] },
+    { id: "analyse", views: ["tyres", "chart", "duel"] },
+    { id: "track", views: ["map", "radio"] },
+    { id: "info", views: ["wm", "docs"] },
+  ];
+  const groupOf = v => GROUPS.find(g => g.views.includes(v)) || GROUPS[0];
 
   // ---------- Theme ----------
   const SUN = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"/></svg>';
@@ -399,10 +407,13 @@
   function setView(v) {
     if (!views[v]) v = "times";
     view = v; store.set("f1_view", v);
-    document.querySelectorAll(".tabs button").forEach(b => {
-      b.setAttribute("aria-selected", String(b.dataset.view === v));
-      if (b.dataset.view === v) { const t = b.parentElement; t.scrollLeft = b.offsetLeft - (t.clientWidth - b.clientWidth) / 2; }
-    });
+    const g = groupOf(v);
+    store.set("f1_sub_" + g.id, v);
+    document.querySelectorAll(".tabs button").forEach(b => b.setAttribute("aria-selected", String(b.dataset.group === g.id)));
+    const subs = g.views.filter(k => views[k]);
+    const st = $("subtabs");
+    st.hidden = subs.length < 2;
+    st.innerHTML = subs.length < 2 ? "" : subs.map(k => `<button type="button" role="tab" data-view="${k}" aria-selected="${k === v}">${esc(views[k].title || k)}</button>`).join("");
     for (const [k, o] of Object.entries(views)) { const el = $(o.panel); if (el) el.hidden = k !== v; }
     document.body.classList.toggle("view-docs", !!views[v].noPlayer);
     emit("view", v);
@@ -505,7 +516,12 @@
     setFav(fav === n ? null : n);
   };
   $("rows").addEventListener("click", pickRow);
-  document.querySelectorAll(".tabs button").forEach(b => b.addEventListener("click", () => setView(b.dataset.view)));
+  document.querySelectorAll(".tabs button").forEach(b => b.addEventListener("click", () => {
+    const g = GROUPS.find(x => x.id === b.dataset.group);
+    const last = store.get("f1_sub_" + g.id);
+    setView(g.views.includes(last) && views[last] ? last : g.views.find(k => views[k]));
+  }));
+  $("subtabs").addEventListener("click", e => { const b = e.target.closest("button[data-view]"); if (b) setView(b.dataset.view); });
   $("rows").addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pickRow(e); } });
 
   // ---------- Schnittstelle für die Module ----------
@@ -523,9 +539,20 @@
   document.addEventListener("DOMContentLoaded", () => {
     setView(view);
     emit("start");
-    loadCalendar().catch(() => {
-      $("meeting").innerHTML = "<option>Kalender nicht erreichbar</option>";
-      $("rows").innerHTML = `<li class="loading err">OpenF1 ist gerade nicht erreichbar. Bitte später nochmal probieren.</li>`;
-    });
+    startCalendar();
   });
+  // OpenF1 hat gelegentlich kurze Aussetzer (404/5xx) → still nochmal versuchen,
+  // erst danach Fehler mit Knopf zeigen
+  async function startCalendar() {
+    for (let i = 0; i < 3; i++) {
+      try { return await loadCalendar(); }
+      catch (_) { await new Promise(r => setTimeout(r, 1500 * (i + 1))); }
+    }
+    $("meeting").innerHTML = "<option>Kalender nicht erreichbar</option>";
+    $("rows").innerHTML = `<li class="loading err">OpenF1 ist gerade nicht erreichbar.<button class="more" type="button" id="cal-retry">Nochmal versuchen</button></li>`;
+    $("cal-retry").addEventListener("click", () => {
+      $("rows").innerHTML = `<li class="loading"><span class="spinner"></span><span>Lade Kalender …</span></li>`;
+      startCalendar();
+    });
+  }
 })();
