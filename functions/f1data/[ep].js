@@ -31,8 +31,42 @@ export function buildUrl(ep, search) {
   return BASE + ep + (q.toString() ? "?" + q : "");
 }
 
+// Reifen aus dem offiziellen F1-Archiv (livetiming.formula1.com/static):
+// OpenF1-Stints sind teils verschoben, die F1-Stints stimmen. Die Session-
+// Schlüssel sind dieselben wie bei OpenF1.
+//   GET /f1data/archive?year=2026&session_key=11731 → TimingAppData (Endstand)
+const ARCHIVE = "https://livetiming.formula1.com/static/";
+const stripBom = t => t.replace(/^﻿/, "");
+export async function archivePath(year, key, fetchJson) {
+  const idx = await fetchJson(`${ARCHIVE}${year}/Index.json`);
+  for (const m of (idx && idx.Meetings) || []) for (const s of m.Sessions || []) if (s.Key === key && s.Path) return s.Path;
+  return null;
+}
+async function archive(search) {
+  const q = new URLSearchParams(search);
+  const year = q.get("year"), key = q.get("session_key");
+  if (!PARAMS.year.test(year || "") || !PARAMS.session_key.test(key || "")) return new Response("bad request", { status: 400 });
+  const fetchJson = async url => {
+    const r = await fetch(url, { headers: { "User-Agent": UA }, cf: { cacheTtl: 3600, cacheEverything: true } });
+    if (!r.ok) return null;
+    return JSON.parse(stripBom(await r.text()));
+  };
+  try {
+    const path = await archivePath(year, +key, fetchJson);
+    // Pfad kommt vom F1-Server; trotzdem kein Ausbrechen aus /static/ (z. B. São Paulo → encodeURI)
+    const data = path && !/\.\.|[?#\\]/.test(path) ? await fetchJson(ARCHIVE + encodeURI(path) + "TimingAppData.json") : null;
+    if (!data) return new Response(JSON.stringify({ error: 404 }), { status: 404, headers: { "Content-Type": "application/json" } });
+    return new Response(JSON.stringify(data), {
+      headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "public, max-age=600" },
+    });
+  } catch (_) {
+    return new Response(JSON.stringify({ error: "fetch" }), { status: 502, headers: { "Content-Type": "application/json" } });
+  }
+}
+
 export async function onRequestGet({ params, request }) {
   const ep = String(params.ep || "");
+  if (ep === "archive") return archive(new URL(request.url).search);
   const url = buildUrl(ep, new URL(request.url).search);
   if (!url) return new Response("bad request", { status: 400 });
   const ttl = ENDPOINTS[ep];

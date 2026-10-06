@@ -164,6 +164,12 @@
       $("rows").innerHTML = `<li class="loading err">Daten gerade nicht verfügbar${e.status === 403 ? " (Live-Session – nur für OpenF1-Sponsoren)" : ""}. Bitte später nochmal probieren.</li>`;
       return;
     }
+    // Reifen aus dem offiziellen F1-Archiv (OpenF1-Stints sind teils verschoben);
+    // fehlt es, rechnet das Modell mit OpenF1 weiter.
+    const sess = sessions.find(s => s.session_key === key);
+    const p = $("prog"); if (p) p.textContent = "Lade Reifendaten …";
+    try { raw.tyres = await get("archive", { year: new Date(sess ? sess.date_start : Date.now()).getFullYear(), session_key: key }); }
+    catch (_) { raw.tyres = null; }
     if (+$("session").value !== key) return;     // inzwischen anderes Rennen gewählt
     store.set("f1_session", String(key));
     race = M.buildRace(raw);
@@ -256,8 +262,59 @@
       </li>`;
     }).join("");
     $("hint").hidden = !!fav;
+    renderTyres(f);
     renderFav(f);
     renderMsgs(f);
+  }
+
+  // ---------- Reifen aller Fahrer ----------
+  const TYRE_DE = { SOFT: "Soft", MEDIUM: "Medium", HARD: "Hard", INTERMEDIATE: "Intermediate", WET: "Regen" };
+  let view = store.get("f1_view") === "tyres" ? "tyres" : "times";
+  let tyreInfo = null;   // { n, i } angetippter Abschnitt
+
+  function setView(v) {
+    view = v; store.set("f1_view", v);
+    document.querySelectorAll(".tabs button").forEach(b => b.setAttribute("aria-selected", String(b.dataset.view === v)));
+    $("board").hidden = v !== "times";
+    $("tyres").hidden = v !== "tyres";
+    if (race) show(frame);
+  }
+
+  function renderTyres(f) {
+    if (view !== "tyres") return;
+    // Skala: Renndistanz (live notfalls die längste bisherige Fahrt)
+    let total = race.laps || 0;
+    for (const r of f.rows) for (const g of r.stints || []) total = Math.max(total, g.from + g.laps - 1);
+    total = Math.max(total, 1);
+    const now = f.live ? f.lap : f.final ? total : f.lap;
+    const pct = x => (x / total * 100).toFixed(3) + "%";
+    const ticks = [1];
+    for (let k = 10; k < total; k += 10) ticks.push(k);
+    if (total > 1) ticks.push(total);
+    $("tyre-axis").innerHTML = ticks.map(k => `<span style="left:${pct(k - 0.5)}">${k}</span>`).join("");
+    $("tyre-rows").innerHTML = f.rows.map(r => {
+      const d = race.drivers.get(r.n);
+      const segs = (r.stints || []).map((g, i) => {
+        const k = M.TYRE[g.c] || "?";
+        const w = Math.max(g.laps, 0.35);     // frisch aufgezogen: schmaler Strich statt nichts
+        const sel = tyreInfo && tyreInfo.n === r.n && tyreInfo.i === i ? " sel" : "";
+        return `<button type="button" class="seg t-${k}${sel}" data-n="${r.n}" data-i="${i}" style="left:${pct(g.from - 1)};width:calc(${pct(w)} - 2px)" title="${esc(d.abbr)} · ${esc(TYRE_DE[g.c] || g.c)} · Runde ${g.from}–${g.from + Math.max(g.laps, 1) - 1}" aria-label="${esc(d.abbr)} ${esc(TYRE_DE[g.c] || g.c)}, ${g.laps} Runden">${g.laps >= 3 ? k : ""}${g.laps >= 7 ? `<small>${g.laps}</small>` : ""}</button>`;
+      }).join("");
+      return `<li class="trow${r.n === fav ? " is-fav" : ""}${r.out ? " is-out" : ""}" style="--team:${esc(d.color)}">
+        <span class="t-pos">${r.pos ?? "–"}</span><span class="bar"></span><b class="t-abbr">${esc(d.abbr)}</b>
+        <span class="track">${segs}${now > 0 && now < total ? `<i class="now" style="left:${pct(now)}"></i>` : ""}</span>
+      </li>`;
+    }).join("");
+    // Info zum angetippten Abschnitt
+    const box = $("tyre-info");
+    const r = tyreInfo && f.rows.find(x => x.n === tyreInfo.n);
+    const g = r && (r.stints || [])[tyreInfo.i];
+    if (!g) { box.textContent = "Tipp auf einen Abschnitt für Details."; box.classList.remove("on"); return; }
+    const d = race.drivers.get(r.n), to = g.from + Math.max(g.laps, 1) - 1;
+    box.classList.add("on");
+    box.innerHTML = `<span class="tyre t-${M.TYRE[g.c] || "?"}">${M.TYRE[g.c] || "?"}</span>
+      <b>${esc(d.abbr)}</b> · ${esc(TYRE_DE[g.c] || g.c)} · ${g.laps ? `Runde ${g.from}–${to} · ${g.laps} ${g.laps === 1 ? "Runde" : "Runden"}` : `ab Runde ${g.from}`}
+      · ${tyreInfo.i === 0 ? "Startreifen" : `nach Stopp ${tyreInfo.i}`}`;
   }
 
   function renderFav(f) {
@@ -343,6 +400,15 @@
     setFav(fav === n ? null : n);
   };
   $("rows").addEventListener("click", pickRow);
+  document.querySelectorAll(".tabs button").forEach(b => b.addEventListener("click", () => setView(b.dataset.view)));
+  $("tyre-rows").addEventListener("click", e => {
+    const s = e.target.closest(".seg");
+    if (!s) return;
+    const n = +s.dataset.n, i = +s.dataset.i;
+    tyreInfo = tyreInfo && tyreInfo.n === n && tyreInfo.i === i ? null : { n, i };
+    if (race) renderTyres(race.frames[frame]);
+  });
+  setView(view);
   $("rows").addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pickRow(e); } });
 
   loadCalendar().catch(() => {

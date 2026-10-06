@@ -120,7 +120,7 @@ assert("Live: Meldungen gefiltert & übersetzt", L.frame.msgs.length === 1 && L.
 const Q = M.fromLive({ ...liveState, SessionInfo: { Name: "Qualifying", Type: "Qualifying", Meeting: {} }, SessionStatus: { Status: "Finished" } });
 assert("Live Qualifying: Rückstand auf Bestzeit", Q.frame.rows[1].gap === 0.8 && Q.frame.status === "fin" && !Q.session.race);
 assert("Live: leerer Stand wirft nicht", M.fromLive({}).frame.rows.length === 0);
-assert("Live: Reifenverlauf aus Stints", JSON.stringify(lb.stints) === '[{"c":"MEDIUM","laps":9},{"c":"HARD","laps":0}]');
+assert("Live: Reifenverlauf aus Stints", JSON.stringify(lb.stints) === '[{"c":"MEDIUM","from":1,"laps":9},{"c":"HARD","from":10,"laps":0}]');
 const Q1 = M.fromLive({ ...liveState, SessionInfo: { Name: "Qualifying", Type: "Qualifying", Meeting: {} },
   TimingData: { ...liveState.TimingData, SessionPart: 1, NoEntries: [22, 16, 10] } });
 assert("Live Qualifying: Teil Q1, Grenze 16", Q1.frame.part === "Q1" && Q1.frame.cut === 16);
@@ -128,8 +128,28 @@ const Q3 = M.fromLive({ ...liveState, SessionInfo: { Name: "Sprint Qualifying", 
   TimingData: { ...liveState.TimingData, SessionPart: 3, NoEntries: [22, 16, 10] } });
 assert("Live Sprint-Qualifying: SQ3 ohne Grenze", Q3.frame.part === "SQ3" && Q3.frame.cut === null);
 assert("Live Rennen: keine Qualifying-Grenze", L.frame.part === null && L.frame.cut === null);
-assert("Nachschau: Reifenverlauf je Stopp", JSON.stringify(f2.rows[1].stints) === '[{"c":"SOFT","laps":1},{"c":"HARD","laps":0}]'
-  && JSON.stringify(fz.rows.find(r => r.n === 1).stints) === '[{"c":"MEDIUM","laps":3}]');
+assert("Nachschau: Reifenverlauf je Stopp", JSON.stringify(f2.rows[1].stints) === '[{"c":"SOFT","from":1,"laps":1},{"c":"HARD","from":2,"laps":0}]'
+  && JSON.stringify(fz.rows.find(r => r.n === 1).stints) === '[{"c":"MEDIUM","from":1,"laps":3}]');
+
+// ---- Reifenplan: Grenzen aus Stopps, Mischungen der Reihe nach ----
+const plan = (pits, total, src) => M.tyrePlan(pits, total, src).map(g => g.c[0] + (g.to - g.from + 1) + (g.age0 ? "u" + g.age0 : "")).join(" ");
+const S = c => ({ c, age0: 0 });
+// Kuala Lumpur 2026, VER: OpenF1-Spannen verschoben (I1 S1 S7 S46), Stopps 9/33/43
+assert("Reifenplan: Stopps setzen die Grenzen", plan([9, 33, 43], 55, [S("INTERMEDIATE"), S("SOFT"), S("SOFT"), S("SOFT")]) === "I9 S24 S10 S12");
+assert("Reifenplan: überzählige Stints am Ende fallen weg", plan([2, 9, 33, 45], 55, ["MEDIUM", "INTERMEDIATE", "HARD", "HARD", "MEDIUM", "HARD"].map(S)) === "M2 I7 H24 H12 M10");
+assert("Reifenplan: zu wenige Stints → letzte Mischung", plan([10], 20, [S("SOFT")]) === "S10 S10");
+assert("Reifenplan: gebrauchter Satz (Alter beim Aufziehen)", plan([5], 10, [S("SOFT"), { c: "SOFT", age0: 3 }]) === "S5 S5u3");
+assert("Reifenplan: Stopp in der letzten Runde zählt nicht", plan([20], 20, [S("HARD"), S("SOFT")]) === "H20");
+
+// ---- Archiv-Reifen haben Vorrang vor OpenF1 ----
+const RA = M.buildRace({ ...raw, tyres: { Lines: {
+  "1": { Stints: [{ Compound: "SOFT", New: "true", StartLaps: 0, TotalLaps: 3 }] },
+  "2": { Stints: { "0": { Compound: "MEDIUM", New: "true" }, "1": { Compound: "SOFT", New: "false", StartLaps: 2 } } },
+} } });
+const ra = n => RA.frames.at(-1).rows.find(r => r.n === n);
+assert("Archiv: Mischung von AAA aus dem F1-Archiv", ra(1).compound === "SOFT" && ra(1).tyreAge === 3);
+assert("Archiv: BBB gebraucht aufgezogen (2 + 2 Runden)", ra(2).compound === "SOFT" && ra(2).tyreAge === 4 && ra(2).stints[0].c === "MEDIUM");
+assert("Archiv fehlt für CCC → OpenF1", ra(3).compound === "SOFT");
 
 // ---- Proxy-Allowlist ----
 assert("Proxy: erlaubter Endpunkt", buildUrl("laps", "?session_key=11731") === "https://api.openf1.org/v1/laps?session_key=11731");

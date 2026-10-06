@@ -128,31 +128,28 @@
     (r.category === "Flag" && r.scope === "Track" && r.flag !== "GREEN") ||
     (r.category === "Other" && RELEVANT.test((r.message || "").toUpperCase()) && !NOISE.test((r.message || "").toUpperCase()));
 
-  // Bisherige Reifen-Abschnitte bis Runde `done` als [{ c, laps }]. Stopps
-  // mitten in einem Stint (fehlender neuer Stint bei OpenF1) teilen ihn.
-  function stintHistory(S, pitsSoFar, done) {
-    const out = [];
-    for (const s of S) {
-      // gerade aufgezogener Satz (Stopp schon da, noch keine Runde darauf) zählt mit
-      const fresh = s.lap_start === done + 1 && pitsSoFar.some(p => p.lap_number >= done);
-      if (s.lap_start > Math.max(done, 1) && !fresh) break;
-      const end = Math.min(s.lap_end == null ? done : s.lap_end, done);
-      let from = s.lap_start;
-      for (const p of pitsSoFar) {
-        if (p.lap_number >= from && p.lap_number < end) { out.push({ c: s.compound, laps: p.lap_number - from + 1 }); from = p.lap_number + 1; }
-      }
-      out.push({ c: s.compound, laps: Math.max(0, end - from + 1) });
-    }
-    return out;
+  // Reifenplan eines Fahrers: Die Grenzen der Stints kommen aus den
+  // Boxenstopps (verlässlich), die Mischungen der Reihe nach aus dem
+  // F1-Archiv (TimingAppData) bzw. ersatzweise aus OpenF1. OpenF1 führt die
+  // Runden-Spannen der Stints teils verschoben (Kuala Lumpur 2026: VER I1 S1
+  // S7 S46 statt I9 S24 S10 S12), die Reihenfolge der Mischungen stimmt aber.
+  //   → [{ c, from, to, age0 }] mit Runden from..to (to = Ziel/Ausfall)
+  function tyrePlan(pitLaps, totalLaps, src) {
+    const stops = [...new Set(pitLaps)].filter(l => l > 0 && l < totalLaps).sort((a, b) => a - b);
+    const segs = [];
+    let from = 1;
+    for (const l of stops.concat(totalLaps)) { segs.push({ from, to: Math.max(from - 1, l) }); from = l + 1; }
+    segs.forEach((g, i) => {
+      const t = src[Math.min(i, src.length - 1)];
+      g.c = t ? t.c : null;
+      g.age0 = t && i < src.length ? t.age0 || 0 : 0;
+    });
+    return segs;
   }
-
-  // Reifenalter in Runden. Fehlt nach einem Stopp ein neuer Stint (kommt bei
-  // OpenF1 vor), zählen wir ab dem Stopp neu.
-  function tyreAge(st, pitsSoFar, done) {
-    let from = st.lap_start, base = st.tyre_age_at_start || 0;
-    for (const p of pitsSoFar) if (p.lap_number >= st.lap_start && p.lap_number < done) { from = p.lap_number + 1; base = 0; }
-    return base + Math.max(0, done - from + 1);
-  }
+  // Archiv-Stints (F1 TimingAppData.Lines[n].Stints) → [{ c, age0 }]
+  const archiveSrc = line => (line && line.Stints ? (Array.isArray(line.Stints) ? line.Stints : Object.values(line.Stints)) : [])
+    .filter(x => x && x.Compound && x.Compound !== "UNKNOWN")
+    .map(x => ({ c: x.Compound, age0: x.New === "false" || x.New === false ? x.StartLaps || 0 : 0 }));
 
   // --- Hauptfunktion ----------------------------------------------------------
 
@@ -176,25 +173,13 @@
     const pos = byDriver(raw.position, r => ts(r.date));
     const ivl = byDriver(raw.intervals, r => ts(r.date));
     const pits = byDriver(raw.pit, r => ts(r.date));
-    const stints = new Map();
-    for (const s of raw.stints || []) {
-      if (!stints.has(s.driver_number)) stints.set(s.driver_number, []);
-      stints.get(s.driver_number).push(s);
+    const openSrc = new Map();
+    for (const st of (raw.stints || []).slice().sort((a, b) => a.stint_number - b.stint_number)) {
+      if (!openSrc.has(st.driver_number)) openSrc.set(st.driver_number, []);
+      // Nur die Reihenfolge zählt; überzählige Stücke am Ende fallen in tyrePlan weg
+      openSrc.get(st.driver_number).push({ c: st.compound, age0: st.tyre_age_at_start || 0 });
     }
-    // OpenF1 teilt Stints manchmal ohne Boxenstopp (gleiche Mischung, Alter
-    // springt auf 0) — solche Stücke wieder zusammenfügen.
-    for (const [n, l] of stints) {
-      l.sort((a, b) => a.stint_number - b.stint_number);
-      const P = (raw.pit || []).filter(p => p.driver_number === n).map(p => p.lap_number);
-      const merged = [];
-      for (const s of l) {
-        const prev = merged[merged.length - 1];
-        const pitted = P.some(x => Math.abs(x - (s.lap_start - 1)) <= 1);
-        if (prev && prev.compound === s.compound && !pitted) prev.lap_end = s.lap_end;
-        else merged.push({ ...s });
-      }
-      stints.set(n, merged);
-    }
+    const arch = (raw.tyres && raw.tyres.Lines) || null;
     const rc = (raw.race_control || []).map(r => ({ ...r, time: ts(r.date) })).filter(r => isFinite(r.time)).sort((a, b) => a.time - b.time);
     const result = new Map((raw.session_result || []).map(r => [r.driver_number, r]));
 
@@ -224,6 +209,16 @@
       times[times.length - 1] = lastEnd;
     }
 
+    // Reifenplan je Fahrer (einmal fürs ganze Rennen)
+    const plans = new Map();
+    for (const d of drivers.values()) {
+      const res = result.get(d.n);
+      const driven = Math.max(res && res.number_of_laps || 0, (laps.get(d.n) || []).length);
+      const a = arch ? archiveSrc(arch[d.n] || arch[String(d.n)]) : [];
+      plans.set(d.n, tyrePlan((raw.pit || []).filter(x => x.driver_number === d.n).map(x => x.lap_number),
+        Math.max(driven, 1), a.length ? a : openSrc.get(d.n) || []));
+    }
+
     let fastest = null;   // { s, n } schnellste Runde bis zum jeweiligen Frame
     const frames = [];
     const final = result.size > 0;
@@ -242,15 +237,13 @@
         }
         const p = lastBefore(pos.get(d.n) || [], t);
         const iv = k === 0 ? null : lastBefore(ivl.get(d.n) || [], t);
-        const cur = done.length + 1;    // Runde, die gerade gefahren wird
-        const S = stints.get(d.n) || [];
         const P = (pits.get(d.n) || []).filter(x => x.time <= t);
-        // Stint der laufenden Runde. Steht der Wagen am Rundenende erst vor dem
-        // Stopp (Box-Eintrag noch nicht da), gilt noch der alte Reifen.
-        const stintAt = lap => S.find(s => s.lap_start <= lap && (s.lap_end == null || lap <= s.lap_end)) ||
-          [...S].reverse().find(s => s.lap_start <= lap) || S[0];
-        const boxed = P.some(x => x.lap_number >= done.length);
-        const st = stintAt(done.length === 0 || boxed ? cur : done.length);
+        // Aktueller Satz = so viele Stopps wie bisher gemacht (am Rundenende
+        // ist der Wagen oft erst auf dem Weg in die Box → noch alter Reifen)
+        const plan = plans.get(d.n) || [];
+        const si = Math.min(P.length, plan.length - 1);
+        const st = plan[si];
+        const n = done.length;
         const res = result.get(d.n);
         // Ausfall: ab ein paar Minuten nach dem letzten Lebenszeichen (Rundenbeginn)
         const lastSeen = L.length ? Math.max(L[L.length - 1].time, isFinite(L[L.length - 1].end) ? L[L.length - 1].end : 0) : -Infinity;
@@ -267,9 +260,9 @@
           laps: done.length,
           last: last ? num(last.lap_duration) : null,
           best,
-          compound: st ? st.compound : null,
-          tyreAge: st ? tyreAge(st, P, done.length) : null,
-          stints: stintHistory(S, P, done.length),
+          compound: st ? st.c : null,
+          tyreAge: st ? st.age0 + Math.max(0, n - st.from + 1) : null,
+          stints: plan.slice(0, si + 1).map((g, i) => ({ c: g.c, from: g.from, laps: i < si ? g.to - g.from + 1 : Math.max(0, Math.min(n, g.to) - g.from + 1) })),
           pits: P.length,
           pitNow: P.some(x => x.time > prevT),
           out, status: res ? (res.dsq ? "DSQ" : res.dns ? "DNS" : res.dnf ? "DNF" : "") : "",
@@ -298,7 +291,7 @@
       });
     });
 
-    return { drivers, laps: total, frames, raceStart };
+    return { drivers, laps: total, frames, raceStart, plans };
   }
 
   // Reifenmischung → Kürzel
@@ -345,6 +338,17 @@
   const SESSION_DE = { Race: "Rennen", Sprint: "Sprint", Qualifying: "Qualifying", "Sprint Qualifying": "Sprint-Qualifying",
     "Sprint Shootout": "Sprint-Qualifying", "Practice 1": "1. Training", "Practice 2": "2. Training", "Practice 3": "3. Training" };
 
+  // Live-Stints → [{ c, from, laps }] (Startrunde fortlaufend gezählt)
+  function liveStints(stints) {
+    let from = 1;
+    return stints.filter(x => x && x.Compound && x.Compound !== "UNKNOWN").map(x => {
+      const laps = Math.max(0, (x.TotalLaps || 0) - (x.StartLaps || 0));
+      const g = { c: x.Compound, from, laps };
+      from += laps;
+      return g;
+    });
+  }
+
   // Gesamtstand des Feeds → { session, drivers: [...], frame } im selben
   // Format wie buildRace — damit die Oberfläche beides gleich zeichnet.
   function fromLive(st) {
@@ -374,7 +378,7 @@
         best: parseTime((t.BestLapTime || {}).Value),
         compound: cur && cur.Compound && cur.Compound !== "UNKNOWN" ? cur.Compound : null,
         tyreAge: cur ? cur.TotalLaps ?? null : null,
-        stints: stints.filter(x => x && x.Compound).map(x => ({ c: x.Compound, laps: Math.max(0, (x.TotalLaps || 0) - (x.StartLaps || 0)) })),
+        stints: liveStints(stints),
         pits: t.NumberOfPitStops || 0,
         pitNow: !!(t.InPit || t.PitOut),
         out: !!(t.Retired || t.Stopped || t.KnockedOut),
@@ -421,7 +425,7 @@
     };
   }
 
-  const api = { gapText, lapTime, trackStatus, msgText, isRelevantMsg, buildRace, TYRE, mergeFeed, parseGap, parseTime, fromLive };
+  const api = { gapText, lapTime, trackStatus, msgText, isRelevantMsg, buildRace, tyrePlan, TYRE, mergeFeed, parseGap, parseTime, fromLive };
   if (typeof module === "object" && module.exports) module.exports = api;
   else root.F1Model = api;
 })(typeof window !== "undefined" ? window : globalThis);
