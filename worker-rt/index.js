@@ -781,6 +781,8 @@ export default {
           // Tages-Briefing: entscheidet selbst, ob die Stunde passt und ob
           // heute schon eines geschrieben wurde.
           fetch(base + "/api/briefing/cron", { headers }),
+          // Rennticker: Session-Start, Flaggen, neue FIA-Entscheidungen
+          fetch(base + "/api/f1/cron", { headers }),
         ]);
       } catch (_) { /* nächster Lauf versucht es erneut */ }
     })());

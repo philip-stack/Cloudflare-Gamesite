@@ -173,8 +173,8 @@ export async function onRequestPost({ request, env }) {
       // und ohne auth). Vorher bekamen sie hier immer [] → der SW zeigte nur den
       // Platzhalter („Neuer Einsatz."), die echte Nachricht verfiel in der Queue.
       const alt = await env.DB.prepare(
-        "SELECT 1 FROM fire_alert WHERE endpoint = ? UNION ALL SELECT 1 FROM sprit_alert WHERE endpoint = ? LIMIT 1"
-      ).bind(endpoint, endpoint).first();
+        "SELECT 1 FROM fire_alert WHERE endpoint = ? UNION ALL SELECT 1 FROM sprit_alert WHERE endpoint = ? UNION ALL SELECT 1 FROM f1_alert WHERE endpoint = ? LIMIT 1"
+      ).bind(endpoint, endpoint, endpoint).first();
       if (!alt) return json({ messages: [] });
     }
     const msgs = (await env.DB.prepare("SELECT id, title, body, url FROM push_queue WHERE endpoint = ? ORDER BY id ASC LIMIT 10").bind(endpoint).all()).results;

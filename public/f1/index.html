@@ -17,8 +17,14 @@
   <meta name="robots" content="noindex" />
   <title>Rennticker</title>
   <meta name="description" content="Schlanke Zeitenliste für Formel-1-Rennen – nur die Werte, die zählen." />
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23e10600'/%3E%3Cpath d='M7 22 L15 10 H26 L24 13 H17 L15.5 15.5 H22 L20 18.5 H13.5 L11.5 22 Z' fill='%23fff'/%3E%3C/svg%3E" />
-  <link rel="stylesheet" href="style.css?v=ec64cc0e" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" type="image/png" sizes="32x32" href="icons/icon-32.png" />
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="icons/icon-180.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="Rennticker" />
+  <link rel="stylesheet" href="style.css?v=9fa39e5a" />
 </head>
 <body>
   <div id="app">
@@ -27,7 +33,10 @@
         <span class="stripes" aria-hidden="true"><i></i><i></i><i></i></span>
         <h1>Renn<span>ticker</span></h1>
       </div>
-      <button class="icon-btn" id="theme" type="button" title="Hellmodus" aria-label="Hellmodus"></button>
+      <div class="head-btns">
+        <button class="icon-btn" id="bell" type="button" title="Benachrichtigungen" aria-label="Benachrichtigungen"></button>
+        <button class="icon-btn" id="theme" type="button" title="Hellmodus" aria-label="Hellmodus"></button>
+      </div>
     </header>
 
     <section class="event">
@@ -46,6 +55,11 @@
         <div class="flag" id="flag" data-s="pre">–</div>
       </div>
       <p class="note" id="note" hidden></p>
+      <details class="plan" id="plan" hidden>
+        <summary><span class="plan-ico" aria-hidden="true">⏱</span><span class="plan-sum" id="plan-sum"></span></summary>
+        <ul class="plan-list" id="plan-list"></ul>
+        <p class="plan-tz">Zeiten in österreichischer Zeit</p>
+      </details>
     </section>
 
     <section class="fav" id="fav" hidden></section>
@@ -53,6 +67,8 @@
     <div class="tabs" role="tablist" aria-label="Ansicht">
       <button type="button" role="tab" data-view="times" aria-selected="true">Zeiten</button>
       <button type="button" role="tab" data-view="tyres" aria-selected="false">Reifen</button>
+      <button type="button" role="tab" data-view="chart" aria-selected="false">Verlauf</button>
+      <button type="button" role="tab" data-view="wm" aria-selected="false">WM</button>
       <button type="button" role="tab" data-view="docs" aria-selected="false">FIA</button>
     </div>
 
@@ -79,6 +95,26 @@
       <p class="tyre-info" id="tyre-info" aria-live="polite"></p>
     </section>
 
+    <section class="chart" id="chart" aria-label="Positionsverlauf" hidden>
+      <p class="chart-hint" id="chart-hint">Tipp auf ein Kürzel rechts, um einen Fahrer hervorzuheben.</p>
+      <div class="chart-box" id="chart-box"></div>
+      <p class="chart-info" id="chart-info" aria-live="polite"></p>
+      <div class="chart-legend" aria-hidden="true">
+        <span><i class="lg-sc"></i>Safety Car / VSC</span><span><i class="lg-red"></i>Rote Flagge</span><span><i class="lg-pit"></i>Boxenstopp</span>
+      </div>
+    </section>
+
+    <section class="wm" id="wm" aria-label="WM-Stand" hidden>
+      <div class="wm-tools">
+        <div class="seg2" role="group" aria-label="Wertung">
+          <button type="button" data-wm="drivers" aria-pressed="true">Fahrer</button>
+          <button type="button" data-wm="teams" aria-pressed="false">Teams</button>
+        </div>
+        <span class="wm-cap" id="wm-cap"></span>
+      </div>
+      <ol class="wm-list" id="wm-list"></ol>
+    </section>
+
     <section class="docs" id="docs" aria-label="FIA-Dokumente" hidden>
       <div class="docs-tools">
         <input type="search" id="doc-q" placeholder="Suchen, z. B. Strafe, Grid, 16 …" aria-label="Dokumente durchsuchen" />
@@ -100,6 +136,20 @@
     </footer>
   </div>
 
+  <div class="sheet" id="pushsheet" role="dialog" aria-modal="true" aria-labelledby="push-h" hidden>
+    <div class="sheet-card">
+      <header><h2 id="push-h">Benachrichtigungen</h2><button class="icon-btn" id="push-close" type="button" title="Schließen" aria-label="Schließen">✕</button></header>
+      <label class="sw-row main"><span><b>Meldungen aufs Handy</b><small id="push-state">aus</small></span><input type="checkbox" id="push-on" role="switch" /></label>
+      <fieldset id="push-opts" disabled>
+        <label class="sw-row"><span><b>Session beginnt</b><small>15 Minuten vor Training, Qualifying, Sprint und Rennen</small></span><input type="checkbox" id="push-start" checked /></label>
+        <label class="sw-row"><span><b>Safety Car, Rote Flagge, Ergebnis</b><small>während der Session</small></span><input type="checkbox" id="push-flags" checked /></label>
+        <label class="sw-row"><span><b>FIA-Entscheidungen</b><small id="push-fia-sub">zu deinem Lieblingsfahrer</small></span><input type="checkbox" id="push-fia" checked /></label>
+      </fieldset>
+      <p class="sheet-note" id="push-note"></p>
+      <button class="more" id="push-test" type="button" hidden>Testmeldung schicken</button>
+    </div>
+  </div>
+
   <div class="pdfview" id="pdfview" role="dialog" aria-modal="true" aria-labelledby="pdf-title" hidden>
     <header class="pdf-bar">
       <button class="icon-btn" id="pdf-close" type="button" title="Schließen" aria-label="Schließen">✕</button>
@@ -118,7 +168,7 @@
     <button class="icon-btn end" id="end" type="button" title="Zum Ergebnis">⏭</button>
   </nav>
 
-  <script src="model.js?v=ec1f0953"></script>
-  <script src="app.js?v=930ec7aa"></script>
+  <script src="model.js?v=4ec379fe"></script>
+  <script src="app.js?v=0e727218"></script>
 </body>
 </html>

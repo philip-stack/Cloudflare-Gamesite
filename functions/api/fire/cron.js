@@ -370,8 +370,8 @@ async function maintenance(env) {
   // Quiz-Fragen sind ausgenommen — die werden im Admin manuell abgearbeitet.
   await del("error_log_trim", "DELETE FROM error_log WHERE page IS NOT 'quiz-report' AND id <= (SELECT MAX(id) FROM error_log) - 3000");
   // Waisen in der Push-Queue (Sub existiert nicht mehr).
-  // Feuerwehr-/Sprit-Abos stehen NICHT in push_sub — deren Nachrichten sind keine Waisen.
-  await del("push_queue_orphan", "DELETE FROM push_queue WHERE endpoint NOT IN (SELECT endpoint FROM push_sub UNION SELECT endpoint FROM fire_alert UNION SELECT endpoint FROM sprit_alert)");
+  // Feuerwehr-/Sprit-/F1-Abos stehen NICHT in push_sub — deren Nachrichten sind keine Waisen.
+  await del("push_queue_orphan", "DELETE FROM push_queue WHERE endpoint NOT IN (SELECT endpoint FROM push_sub UNION SELECT endpoint FROM fire_alert UNION SELECT endpoint FROM sprit_alert UNION SELECT endpoint FROM f1_alert)");
   // Abschluss-Tracking: Einträge zu Einsätzen, die längst beendet/gelöscht sind
   // (normal beim Ende entfernt; das ist der Sicherheitsnetz-TTL).
   await del("fire_alert_sent_ttl", "DELETE FROM fire_alert_sent WHERE at < datetime('now','-3 days')");

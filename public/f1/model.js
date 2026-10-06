@@ -428,6 +428,13 @@
       .filter(isRelevantMsg)
       .map(r => ({ time: r.time, lap: r.lap_number, text: msgText(r), driver: r.driver_number }));
     const lc = st.LapCount || {};
+    // WM-Hochrechnung (nur im Rennen/Sprint): Stand vorher + wenn jetzt Schluss wäre
+    const cp = st.ChampionshipPrediction || {};
+    const wmD = Object.values(cp.Drivers || {}).filter(x => x && x.RacingNumber).map(x => ({
+      n: +x.RacingNumber, pos0: x.CurrentPosition ?? null, pos: x.PredictedPosition ?? null, pts0: x.CurrentPoints ?? 0, pts: x.PredictedPoints ?? 0 }));
+    const wmT = Object.values(cp.Teams || {}).filter(x => x && x.TeamName).map(x => ({
+      team: x.TeamName, pos0: x.CurrentPosition ?? null, pos: x.PredictedPosition ?? null, pts0: x.CurrentPoints ?? 0, pts: x.PredictedPoints ?? 0 }));
+    const wm = isRace && wmD.length ? { live: true, drivers: wmD.sort((a, b) => a.pos - b.pos), teams: wmT.sort((a, b) => a.pos - b.pos) } : null;
     // Qualifying: Teil (Q1–Q3) und wie viele weiterkommen (NoEntries = Autos je Teil)
     const tdAll = st.TimingData || {};
     const qp = !isRace && +tdAll.SessionPart || 0;
@@ -441,7 +448,7 @@
         meeting: (meet.Name || "").replace(/ Grand Prix$/i, " GP"), location: meet.Location || "",
         state: ss, start: info.StartDate || null,
       },
-      drivers,
+      drivers, wm,
       frame: { lap: lc.CurrentLap || 0, total: lc.TotalLaps || 0, final: status === "fin", live: true, timed: !isRace, status, part, cut, rows, msgs },
     };
   }

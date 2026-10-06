@@ -188,6 +188,37 @@ const pdfRes2 = await FIA.fiaPdf("?path=" + encodeURIComponent("/system/files/de
 assert("FIA-PDF: nur Entscheidungs-PDFs", pdfRes.status === 400 && pdfRes2.status === 400);
 assert("FIA: ungültiges Jahr", (await FIA.fiaList("?year=abc")).status === 400);
 
+// ---- Meldungen: Entscheidungslogik des Crons ----
+const LG = await import("file://" + path.join(__dirname, "..", "functions", "api", "f1", "_logic.js").replace(/\\/g, "/"));
+const T = Date.parse("2026-10-09T08:30:00Z");
+const sess = [
+  { session_key: 1, meeting_key: 9, session_name: "Practice 1", date_start: "2026-10-09T08:40:00Z", date_end: "2026-10-09T09:40:00Z" },
+  { session_key: 2, meeting_key: 9, session_name: "Practice 2", date_start: "2026-10-09T12:00:00Z", date_end: "2026-10-09T13:00:00Z" },
+  { session_key: 3, meeting_key: 9, session_name: "Race", date_start: "2026-10-11T12:00:00Z", date_end: "2026-10-11T14:00:00Z" },
+  { session_key: 4, meeting_key: 9, session_name: "Practice 3", date_start: "2026-10-09T08:35:00Z", date_end: "2026-10-09T09:35:00Z", is_cancelled: true },
+];
+assert("Start: 10 min vorher fällig, abgesagte nicht", LG.dueStarts(sess, T, []).map(s => s.session_key).join() === "1");
+assert("Start: schon gemeldet → nicht nochmal", LG.dueStarts(sess, T, [1]).length === 0);
+assert("Start: 3,5 h vorher noch nicht", LG.dueStarts(sess, Date.parse("2026-10-09T08:30:00Z"), []).every(s => s.session_key !== 2));
+assert("Live-Session mit Vorlauf", LG.liveSession(sess, Date.parse("2026-10-09T08:32:00Z")).session_key === 1 && LG.liveSession(sess, Date.parse("2026-10-10T08:00:00Z")) === null);
+assert("Rennwochenende: 2 Tage vorher aktiv", LG.currentMeeting(sess, Date.parse("2026-10-07T12:00:00Z")).key === 9 && LG.currentMeeting(sess, Date.parse("2026-10-01T12:00:00Z")) === null);
+const lbl = { label: "Singapore GP · Rennen", race: true, winner: "VER" };
+assert("Flagge: Grün → SC meldet", LG.flagEvent("green", "sc", lbl).title === "🟡 Safety Car");
+assert("Flagge: erster Blick (kein Vorher) → still", LG.flagEvent(null, "red", lbl) === null);
+assert("Flagge: SC bleibt SC → still", LG.flagEvent("sc", "sc", lbl) === null && LG.flagEvent("sc", "sc-end", lbl) === null);
+assert("Flagge: Ziel im Rennen → Sieger", LG.flagEvent("green", "fin", lbl).title === "🏁 Singapore GP · Rennen: VER gewinnt");
+assert("Flagge: Ende im Training → still", LG.flagEvent("green", "fin", { label: "x", winner: "VER" }) === null);
+assert("FIA: Startnummern im Titel", LG.carNumbers("Infringement - Car 5 - Causing a collision with Car 55").join() === "5,55"
+  && LG.carNumbers("Summons - Cars 23 and 81 - Incident").join() === "23,81" && LG.carNumbers("Final Race Classification").length === 0);
+const d1 = [{ path: "/a.pdf" }, { path: "/b.pdf" }];
+const first = LG.newDocs(null, "Singapore Grand Prix", d1);
+assert("FIA: erster Blick merkt nur", first.fresh.length === 0 && first.seen.length === 2);
+const next = LG.newDocs({ event: "Singapore Grand Prix", seen: first.seen }, "Singapore Grand Prix", [...d1, { path: "/c.pdf" }]);
+assert("FIA: danach nur Neues", next.fresh.map(d => d.path).join() === "/c.pdf" && next.seen.length === 3);
+assert("FIA: anderes Wochenende → wieder nur merken", LG.newDocs(next, "Japanese Grand Prix", d1).fresh.length === 0);
+assert("FIA-Event-Abgleich", LG.matchEvent(["Japanese Grand Prix", "Singapore Grand Prix"], "Singapore Grand Prix") === "Singapore Grand Prix"
+  && LG.matchEvent(["Mexico City Grand Prix", "Monaco Grand Prix"], "Mexico City GP") === "Mexico City Grand Prix");
+
 // ---- Proxy-Allowlist ----
 assert("Proxy: erlaubter Endpunkt", buildUrl("laps", "?session_key=11731") === "https://api.openf1.org/v1/laps?session_key=11731");
 assert("Proxy: Kalender", buildUrl("sessions", "?year=2026&session_type=Race") === "https://api.openf1.org/v1/sessions?year=2026&session_type=Race");

@@ -18,6 +18,7 @@ export const ENDPOINTS = {
   sessions: 1800, meetings: 1800,
   drivers: 3600, position: 3600, intervals: 3600, laps: 3600,
   stints: 3600, pit: 3600, race_control: 3600, session_result: 3600,
+  championship_drivers: 3600, championship_teams: 3600,
 };
 const PARAMS = { session_key: /^\d{1,6}$/, meeting_key: /^\d{1,6}$/, year: /^20\d\d$/, session_type: /^[A-Za-z]{1,20}$/ };
 

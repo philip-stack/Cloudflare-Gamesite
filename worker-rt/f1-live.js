@@ -18,7 +18,7 @@ const HOST = "https://livetiming.formula1.com/signalrcore";
 const UA = "Rennticker/1.0 (+https://philip-stack.pages.dev/f1/; privat)";
 const RS = "\x1e";   // SignalR-Trennzeichen
 export const TOPICS = ["Heartbeat", "SessionInfo", "SessionStatus", "TrackStatus", "LapCount",
-  "DriverList", "TimingData", "TimingAppData", "RaceControlMessages"];
+  "DriverList", "TimingData", "TimingAppData", "RaceControlMessages", "ChampionshipPrediction"];
 const IDLE_MS = 5 * 60 * 1000;
 const PING_MS = 15 * 1000;
 const LOG_EVERY_MS = 10 * 60 * 1000;   // gleiche Störung höchstens alle 10 min ins error_log

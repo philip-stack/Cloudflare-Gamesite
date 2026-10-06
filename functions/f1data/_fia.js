@@ -103,3 +103,14 @@ export async function fiaPdf(search) {
     return new Response("fetch failed", { status: 502 });
   }
 }
+
+// Für den Meldungs-Cron (/api/f1/cron): Dokumente eines Grand Prix nach Namen.
+// match(events, name) wählt das passende FIA-Event (siehe api/f1/_logic.js).
+export async function fiaDocsFor(year, name, match) {
+  const seasonId = parseSeasonId(await page(LIST, 86400), year);
+  if (!seasonId) return null;
+  const base = `${LIST}/season/${seasonId}`;
+  const event = match(parseEvents(await page(base, 3600), seasonId), name);
+  if (!event) return null;
+  return { event, docs: parseDocs(await page(`${base}/event/${encodeURIComponent(event)}`, 120)) };
+}
