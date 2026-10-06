@@ -18,7 +18,7 @@
   <title>Rennticker</title>
   <meta name="description" content="Schlanke Zeitenliste für Formel-1-Rennen – nur die Werte, die zählen." />
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23e10600'/%3E%3Cpath d='M7 22 L15 10 H26 L24 13 H17 L15.5 15.5 H22 L20 18.5 H13.5 L11.5 22 Z' fill='%23fff'/%3E%3C/svg%3E" />
-  <link rel="stylesheet" href="style.css?v=b881d890" />
+  <link rel="stylesheet" href="style.css?v=ec64cc0e" />
 </head>
 <body>
   <div id="app">
@@ -53,6 +53,7 @@
     <div class="tabs" role="tablist" aria-label="Ansicht">
       <button type="button" role="tab" data-view="times" aria-selected="true">Zeiten</button>
       <button type="button" role="tab" data-view="tyres" aria-selected="false">Reifen</button>
+      <button type="button" role="tab" data-view="docs" aria-selected="false">FIA</button>
     </div>
 
     <section class="board" id="board" aria-label="Zeitenliste">
@@ -78,6 +79,15 @@
       <p class="tyre-info" id="tyre-info" aria-live="polite"></p>
     </section>
 
+    <section class="docs" id="docs" aria-label="FIA-Dokumente" hidden>
+      <div class="docs-tools">
+        <input type="search" id="doc-q" placeholder="Suchen, z. B. Strafe, Grid, 16 …" aria-label="Dokumente durchsuchen" />
+        <button type="button" class="chip" id="doc-dec" aria-pressed="false" title="Nur Entscheidungen und Strafen">Entscheidungen</button>
+      </div>
+      <ul class="doc-list" id="doc-list"></ul>
+      <p class="doc-src">Quelle: fia.com · Dokumente der Rennleitung</p>
+    </section>
+
     <section class="rc" aria-label="Rennleitung">
       <h2>Rennleitung</h2>
       <ul id="msgs"></ul>
@@ -90,6 +100,16 @@
     </footer>
   </div>
 
+  <div class="pdfview" id="pdfview" role="dialog" aria-modal="true" aria-labelledby="pdf-title" hidden>
+    <header class="pdf-bar">
+      <button class="icon-btn" id="pdf-close" type="button" title="Schließen" aria-label="Schließen">✕</button>
+      <div class="pdf-title"><b id="pdf-title"></b><small id="pdf-sub"></small></div>
+      <button class="icon-btn" id="pdf-out" type="button" title="Verkleinern" aria-label="Verkleinern">−</button>
+      <button class="icon-btn" id="pdf-in" type="button" title="Vergrößern" aria-label="Vergrößern">+</button>
+    </header>
+    <div class="pdf-pages" id="pdf-pages"></div>
+  </div>
+
   <nav class="player" aria-label="Rennverlauf">
     <button class="icon-btn" id="prev" type="button" title="Runde zurück">◀</button>
     <button class="icon-btn play" id="play" type="button" title="Abspielen">▶</button>
@@ -99,6 +119,6 @@
   </nav>
 
   <script src="model.js?v=ec1f0953"></script>
-  <script src="app.js?v=7725ab47"></script>
+  <script src="app.js?v=930ec7aa"></script>
 </body>
 </html>

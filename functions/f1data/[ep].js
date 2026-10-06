@@ -8,6 +8,8 @@
 // 3 Anfragen/s — bei 429 einmal kurz warten und nochmal versuchen.
 // ====================================================================
 
+import { fiaList, fiaPdf } from "./_fia.js";
+
 const BASE = "https://api.openf1.org/v1/";
 const UA = "Rennticker/1.0 (+https://philip-stack.pages.dev/f1/; privat)";
 
@@ -70,6 +72,8 @@ async function archive(search) {
 export async function onRequestGet({ params, request }) {
   const ep = String(params.ep || "");
   if (ep === "archive") return archive(new URL(request.url).search);
+  if (ep === "fia") return fiaList(new URL(request.url).search);
+  if (ep === "fia-pdf") return fiaPdf(new URL(request.url).search);
   const url = buildUrl(ep, new URL(request.url).search);
   if (!url) return new Response("bad request", { status: 400 });
   const ttl = ENDPOINTS[ep];

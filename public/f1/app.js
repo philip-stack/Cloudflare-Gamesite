@@ -61,6 +61,7 @@
   let liveTimer = null, liveLap = -1, liveBase = new Map(), lastPos = new Map();
   let mode = "";          // "live" | "race" (OpenF1-Nachschau) | "archive" (Training/Qualifying)
   let meetings = [];      // [{ key, name, sessions: [...] }] neueste zuerst
+  let liveMeeting = null; // OpenF1-Session, die gerade live ist
   const LIVE_EVERY = 3000;
 
   const fmtDate = d => new Intl.DateTimeFormat("de-AT", { day: "numeric", month: "short", timeZone: "Europe/Vienna" }).format(new Date(d));
@@ -104,6 +105,9 @@
       : force ? `<option value="live">● LIVE · F1-Live-Timing</option>` : "") +
       meetings.map(m => `<option value="${m.key}">${esc(m.name)} · ${fmtDate(m.sessions[m.sessions.length - 1].date_start)}</option>`).join("");
     if (!live && next) note(`Nächstes: <b>${esc(gpName(next.meeting) || next.location)}</b> · ${esc(sessName(next))} am ${fmtDay(next.date_start)} um ${fmtClock(next.date_start)} Uhr`, "soft");
+    if (live) setDocTarget(live.meeting && live.meeting.meeting_name, live.date_start);
+    else if (force && meetings[0]) setDocTarget(meetings[0].sessions[0].meeting && meetings[0].sessions[0].meeting.meeting_name, meetings[0].sessions[0].date_start);
+    liveMeeting = live;
     if (live || force) { $("meeting").value = "live"; fillSessions(); return startLive(); }
     // Zuletzt angesehene Session, sonst die neueste
     const want = +store.get("f1_session");
@@ -128,6 +132,7 @@
   function openSession(key) {
     const s = sessions.find(x => x.session_key === key);
     if (!s) return;
+    setDocTarget(s.meeting && s.meeting.meeting_name, s.date_start);
     store.set("f1_session", String(key));
     return s.session_type === "Race" ? loadSession(key) : loadArchive(s);
   }
@@ -331,13 +336,14 @@
     }).join("");
     $("hint").hidden = !!fav;
     renderTyres(f);
+    if (view === "docs" && !docsTagged) { docsTagged = true; renderDocs(); }   // Fahrerkürzel nachtragen
     renderFav(f);
     renderMsgs(f);
   }
 
   // ---------- Reifen aller Fahrer ----------
   const TYRE_DE = { SOFT: "Soft", MEDIUM: "Medium", HARD: "Hard", INTERMEDIATE: "Intermediate", WET: "Regen" };
-  let view = store.get("f1_view") === "tyres" ? "tyres" : "times";
+  let view = ["tyres", "docs"].includes(store.get("f1_view")) ? store.get("f1_view") : "times";
   let tyreInfo = null;   // { n, i } angetippter Abschnitt
 
   function setView(v) {
@@ -345,6 +351,9 @@
     document.querySelectorAll(".tabs button").forEach(b => b.setAttribute("aria-selected", String(b.dataset.view === v)));
     $("board").hidden = v !== "times";
     $("tyres").hidden = v !== "tyres";
+    $("docs").hidden = v !== "docs";
+    document.body.classList.toggle("view-docs", v === "docs");
+    if (v === "docs") loadDocs();
     if (race) show(frame);
   }
 
@@ -383,6 +392,144 @@
     box.innerHTML = `<span class="tyre t-${M.TYRE[g.c] || "?"}">${M.TYRE[g.c] || "?"}</span>
       <b>${esc(d.abbr)}</b> · ${esc(TYRE_DE[g.c] || g.c)} · ${g.laps ? `Runde ${g.from}–${to} · ${g.laps} ${g.laps === 1 ? "Runde" : "Runden"}` : `ab Runde ${g.from}`}
       · ${tyreInfo.i === 0 ? "Startreifen" : `nach Stopp ${tyreInfo.i}`}`;
+  }
+
+  // ---------- FIA-Dokumente des Wochenendes ----------
+  const PDFJS = "./vendor/pdfjs-4.10.38/";
+  const fmtDocDay = new Intl.DateTimeFormat("de-AT", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
+  let docTarget = null, docsTagged = false;   // { year, name } — Grand Prix, dessen Dokumente gezeigt werden
+  let docs = { key: "", list: null, error: false };
+  const fiaEvents = new Map();   // Jahr → Promise<[Namen]>
+  const docClass = t => /infringement|offence|decision|summons|penalt|reprimand|investigation|protest|appeal/i.test(t) ? "dec"
+    : /classification|starting grid|championship points|lap chart|fastest laps/i.test(t) ? "res" : "";
+
+  function setDocTarget(meetingName, date) {
+    if (!meetingName) return;
+    docTarget = { name: meetingName, year: new Date(date || Date.now()).getFullYear() };
+    if (view === "docs") loadDocs();
+  }
+  // OpenF1-Name ↔ FIA-Event: meist identisch, sonst über gemeinsame Wörter
+  function matchEvent(events, name) {
+    const norm = s => s.toLowerCase().replace(/grand prix|\bgp\b|formula 1|\bthe\b|\bof\b/g, " ").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+    const exact = events.find(e => e.toLowerCase() === name.toLowerCase());
+    if (exact) return exact;
+    const want = new Set(norm(name).split(" ").filter(Boolean));
+    let best = null, score = 0;
+    for (const e of events) {
+      const sc = norm(e).split(" ").filter(w => want.has(w)).length;
+      if (sc > score) { best = e; score = sc; }
+    }
+    return best;
+  }
+  async function loadDocs(force) {
+    if (!docTarget) { renderDocs(); return; }
+    const key = docTarget.year + "|" + docTarget.name;
+    if (!force && docs.key === key && (docs.list || docs.error)) { renderDocs(); return; }
+    docs = { key, list: null, error: false };
+    $("doc-list").innerHTML = `<li class="doc-empty"><span class="spinner"></span></li>`;
+    try {
+      if (!fiaEvents.has(docTarget.year)) fiaEvents.set(docTarget.year, get("fia", { year: docTarget.year }).then(d => d.events || []));
+      const ev = matchEvent(await fiaEvents.get(docTarget.year), docTarget.name);
+      const list = ev ? (await get("fia", { year: docTarget.year, event: ev })).docs || [] : [];
+      if (docs.key === key) docs.list = list;
+    } catch (_) {
+      fiaEvents.delete(docTarget.year);
+      if (docs.key === key) docs.error = true;
+    }
+    renderDocs();
+  }
+  // „Car 5“ → „Car 5 BOR“ (Kürzel aus der geladenen Session)
+  const carTags = t => race ? t.replace(/\bCars? ([\d, and]+)/g, (m, nums) =>
+    m + nums.split(/\D+/).filter(Boolean).map(n => race.drivers.get(+n)).filter(Boolean).map(d => ` <i class="doc-car">${esc(d.abbr)}</i>`).join("")) : t;
+  function renderDocs() {
+    if (view !== "docs") return;
+    docsTagged = !!race;
+    const box = $("doc-list");
+    if (!docTarget) { box.innerHTML = `<li class="doc-empty">Kein Wochenende gewählt.</li>`; return; }
+    if (docs.error) { box.innerHTML = `<li class="doc-empty">fia.com ist gerade nicht erreichbar.</li>`; return; }
+    if (!docs.list) return;
+    const q = $("doc-q").value.trim().toLowerCase();
+    const onlyDec = $("doc-dec").getAttribute("aria-pressed") === "true";
+    const list = docs.list.filter(d => (!onlyDec || docClass(d.title) === "dec") &&
+      (!q || d.title.toLowerCase().includes(q) || String(d.no) === q));
+    if (!docs.list.length) { box.innerHTML = `<li class="doc-empty">Für ${esc(docTarget.name)} gibt es (noch) keine FIA-Dokumente.</li>`; return; }
+    if (!list.length) { box.innerHTML = `<li class="doc-empty">Nichts gefunden.</li>`; return; }
+    const fresh = Date.now() - 3 * 3600e3;
+    box.innerHTML = list.map(d => {
+      const c = docClass(d.title);
+      // FIA-Zeit ist Ortszeit Mitteleuropa → so anzeigen, wie sie dasteht
+      const when = d.date ? `${fmtDocDay.format(new Date(d.date + "Z"))} · ${d.date.slice(11, 16)}` : "";
+      const isNew = d.date && Date.parse(d.date) > fresh;
+      return `<li><button type="button" class="doc${isNew ? " doc-new" : ""}" data-path="${esc(d.path)}" data-title="${esc(d.title)}" data-no="${d.no ?? ""}">
+        <span class="doc-no">${d.no ?? "–"}</span>
+        <span class="doc-t"><b>${carTags(esc(d.title))}</b><small>${c ? `<span class="doc-tag ${c}">${c === "dec" ? "Entscheidung" : "Ergebnis"}</span>` : ""}${esc(when)}</small></span>
+        <span class="doc-go" aria-hidden="true">›</span>
+      </button></li>`;
+    }).join("");
+  }
+
+  // PDF-Betrachter: pdf.js (selbst gehostet), PDF same-origin über /f1data/fia-pdf
+  let pdfjs = null, pdfDoc = null, pdfZoom = 1, pdfRun = 0;
+  async function openPdf(path, title, no) {
+    const v = $("pdfview");
+    $("pdf-title").textContent = title;
+    $("pdf-sub").textContent = (no ? `Dokument ${no} · ` : "") + (docTarget ? docTarget.name : "");
+    $("pdf-pages").innerHTML = `<div class="loading"><span class="spinner"></span><span>Lade PDF …</span></div>`;
+    v.hidden = false; document.body.classList.add("pdf-open");
+    if (!history.state || !history.state.pdf) history.pushState({ pdf: true }, "");   // Zurück-Taste schließt
+    pdfZoom = 1;
+    const run = ++pdfRun;
+    try {
+      if (!pdfjs) {
+        pdfjs = await import(PDFJS + "pdf.min.mjs");
+        pdfjs.GlobalWorkerOptions.workerSrc = new URL(PDFJS + "pdf.worker.min.mjs", location.href).href;
+      }
+      if (pdfDoc) { pdfDoc.destroy(); pdfDoc = null; }
+      const doc = await pdfjs.getDocument({
+        url: "/f1data/fia-pdf?path=" + encodeURIComponent(path),
+        isEvalSupported: false,
+        standardFontDataUrl: new URL(PDFJS + "standard_fonts/", location.href).href,
+      }).promise;
+      if (run !== pdfRun) { doc.destroy(); return; }
+      pdfDoc = doc;
+      await renderPdf(run);
+    } catch (e) {
+      if (run === pdfRun) $("pdf-pages").innerHTML = `<div class="loading err">PDF konnte nicht geladen werden.</div>`;
+    }
+  }
+  async function renderPdf(run) {
+    const box = $("pdf-pages");
+    box.classList.toggle("fit", pdfZoom === 1);
+    const width = Math.min(box.clientWidth - 30, 900) * pdfZoom;     // 2 × 12 px Rand + Luft für Scrollbalken
+    const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+    const canvases = [];
+    for (let i = 1; i <= pdfDoc.numPages; i++) {
+      const page = await pdfDoc.getPage(i);
+      if (run !== pdfRun) return;
+      const base = page.getViewport({ scale: 1 });
+      const vp = page.getViewport({ scale: width / base.width * dpr });
+      const c = document.createElement("canvas");
+      c.width = Math.floor(vp.width); c.height = Math.floor(vp.height);
+      c.style.width = Math.floor(vp.width / dpr) + "px";
+      c.setAttribute("aria-label", `Seite ${i} von ${pdfDoc.numPages}`);
+      await page.render({ canvasContext: c.getContext("2d"), viewport: vp }).promise;
+      if (run !== pdfRun) return;
+      if (i === 1) box.innerHTML = "";
+      box.appendChild(c); canvases.push(c);
+    }
+  }
+  function closePdf(fromHistory) {
+    if ($("pdfview").hidden) return;
+    pdfRun++;
+    $("pdfview").hidden = true; document.body.classList.remove("pdf-open");
+    $("pdf-pages").innerHTML = "";
+    if (pdfDoc) { pdfDoc.destroy(); pdfDoc = null; }
+    if (!fromHistory && history.state && history.state.pdf) history.back();
+  }
+  function zoomPdf(f) {
+    if (!pdfDoc) return;
+    pdfZoom = Math.max(1, Math.min(3, +(pdfZoom * f).toFixed(2)));
+    renderPdf(++pdfRun);
   }
 
   function renderFav(f) {
@@ -452,7 +599,10 @@
 
   // ---------- Ereignisse ----------
   $("meeting").addEventListener("change", e => {
-    if (e.target.value === "live") { fillSessions(); return startLive(); }
+    if (e.target.value === "live") {
+      if (liveMeeting) setDocTarget(liveMeeting.meeting && liveMeeting.meeting.meeting_name, liveMeeting.date_start);
+      fillSessions(); return startLive();
+    }
     fillSessions();
     const m = meetings.find(x => String(x.key) === e.target.value);
     // Neues Wochenende: das Rennen (sonst die letzte Session) vorwählen
@@ -486,6 +636,19 @@
     tyreInfo = tyreInfo && tyreInfo.n === n && tyreInfo.i === i ? null : { n, i };
     if (race) renderTyres(race.frames[frame]);
   });
+  $("doc-q").addEventListener("input", renderDocs);
+  $("doc-dec").addEventListener("click", e => {
+    const b = e.currentTarget; b.setAttribute("aria-pressed", String(b.getAttribute("aria-pressed") !== "true")); renderDocs();
+  });
+  $("doc-list").addEventListener("click", e => {
+    const b = e.target.closest(".doc");
+    if (b) openPdf(b.dataset.path, b.dataset.title, b.dataset.no);
+  });
+  $("pdf-close").addEventListener("click", () => closePdf());
+  $("pdf-in").addEventListener("click", () => zoomPdf(1.5));
+  $("pdf-out").addEventListener("click", () => zoomPdf(1 / 1.5));
+  window.addEventListener("popstate", () => closePdf(true));
+  document.addEventListener("keydown", e => { if (e.key === "Escape") closePdf(); });
   setView(view);
   $("rows").addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pickRow(e); } });
 

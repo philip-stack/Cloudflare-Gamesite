@@ -167,6 +167,27 @@ assert("Quali: Q2-Aus mit Q2-Zeit, Rückstand auf Q2-Schnellsten", qr(2).best ==
 assert("Quali: Q1-Aus mit Q1-Zeit, Rückstand auf Q1-Schnellsten", qr(3).best === 91 && qr(3).gap === 0.5 && qr(3).status === "Q1");
 assert("Quali: Frame ist Zeitsession", QL.frame.timed && QL.session.quali && QL.frame.status === "fin");
 
+// ---- FIA-Dokumente: HTML der fia.com-Liste auslesen ----
+const FIA = await import("file://" + path.join(__dirname, "..", "functions", "f1data", "_fia.js").replace(/\\/g, "/"));
+const row = (no, title, file, date) => `<li class="document-row key-${no}"><div class="node"><a href="/system/files/decision-document/${file}" download target="_blank">
+  <div class="title"><div class="field field-name-title-field field-type-text"><div class="field-items"><div class="field-item even">${title}</div></div></div></div>
+  <div class="published"><div class="field-item even">Published on <span  class="date-display-single">${date}</span> CET</div></div></a></div></li>`;
+const fiaHtml = `<select><option value="/documents/championships/fia-formula-one-world-championship-14/season/season-2026-2072/event/Bahrain%20Grand%20Prix">Bahrain Grand Prix</option>
+  <option value="/documents/championships/fia-formula-one-world-championship-14/season/season-2026-2072/event/S%C3%A3o%20Paulo%20Grand%20Prix">x</option></select>
+  ${row(61, "Doc 61 - Championship Points", "2026_bahrain_-_championship_points.pdf", "04.10.26 15:55")}
+  ${row(52, "Doc 52 - Infringement - Car 5 - Causing a collision &amp; more", "2026_bahrain_-_infringement.pdf", "04.10.26 12:22")}
+  ${row(9, "Evil", "../../etc/passwd.pdf", "04.10.26 12:22")}`;
+assert("FIA: Saison-Kennung", FIA.parseSeasonId(fiaHtml, 2026) === "season-2026-2072" && FIA.parseSeasonId(fiaHtml, 2019) === null);
+assert("FIA: Events (inkl. Umlaute)", JSON.stringify(FIA.parseEvents(fiaHtml, "season-2026-2072")) === '["Bahrain Grand Prix","São Paulo Grand Prix"]');
+const fd = FIA.parseDocs(fiaHtml);
+assert("FIA: Dokumente mit Nummer, Titel, Datum", fd.length === 2 && fd[0].no === 61 && fd[0].title === "Championship Points" && fd[0].date === "2026-10-04T15:55");
+assert("FIA: HTML-Entities im Titel", fd[1].title === "Infringement - Car 5 - Causing a collision & more");
+assert("FIA: Pfad-Ausbruch wird verworfen", !fd.some(d => d.path.includes("..") || d.path.includes("passwd")));
+const pdfRes = await FIA.fiaPdf("?path=/etc/passwd");
+const pdfRes2 = await FIA.fiaPdf("?path=" + encodeURIComponent("/system/files/decision-document/../../x.pdf"));
+assert("FIA-PDF: nur Entscheidungs-PDFs", pdfRes.status === 400 && pdfRes2.status === 400);
+assert("FIA: ungültiges Jahr", (await FIA.fiaList("?year=abc")).status === 400);
+
 // ---- Proxy-Allowlist ----
 assert("Proxy: erlaubter Endpunkt", buildUrl("laps", "?session_key=11731") === "https://api.openf1.org/v1/laps?session_key=11731");
 assert("Proxy: Kalender", buildUrl("sessions", "?year=2026&session_type=Race") === "https://api.openf1.org/v1/sessions?year=2026&session_type=Race");

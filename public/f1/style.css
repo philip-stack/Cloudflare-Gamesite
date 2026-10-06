@@ -305,6 +305,54 @@ body.is-live { padding-bottom: env(safe-area-inset-bottom); }
 .tyre-info.on { color: var(--text); }
 .tyre-info .tyre { width: 20px; height: 20px; border-width: 2.5px; font-size: 9px; }
 
+/* ---------- FIA-Dokumente ---------- */
+.docs { margin: 10px 16px 0; background: var(--panel); border-radius: 18px; border: 1px solid var(--line); box-shadow: var(--shadow); overflow: hidden; }
+.docs-tools { display: flex; gap: 8px; padding: 10px; border-bottom: 1px solid var(--line); background: var(--panel-2); }
+.docs-tools input {
+  flex: 1; min-width: 0; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel);
+  font-size: 15px; outline: none;
+}
+.docs-tools input:focus { border-color: var(--red); }
+.chip { border: 1px solid var(--line); background: var(--panel); border-radius: 10px; padding: 0 10px; font-size: 13px; font-weight: 700; color: var(--muted); cursor: pointer; white-space: nowrap; }
+.chip[aria-pressed="true"] { background: var(--red); border-color: var(--red); color: #fff; }
+.doc-list { list-style: none; margin: 0; padding: 0; }
+.doc-list li + li { border-top: 1px solid var(--line); }
+.doc {
+  width: 100%; display: grid; grid-template-columns: 40px 1fr auto; align-items: center; gap: 10px;
+  padding: 10px 12px 10px 10px; border: 0; background: transparent; text-align: left; cursor: pointer;
+}
+.doc:hover { background: var(--panel-2); }
+.doc-no { display: grid; place-items: center; height: 30px; border-radius: 8px; background: var(--panel-2); border: 1px solid var(--line); font-weight: 700; font-size: 13px; color: var(--muted); }
+.doc-t { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.doc-t b { font-size: 14.5px; font-weight: 600; line-height: 1.25; }
+.doc-t small { font-size: 12px; color: var(--muted); display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.doc-tag { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; padding: 1px 5px; border-radius: 4px; }
+.doc-tag.dec { background: color-mix(in srgb, var(--red) 18%, var(--panel)); color: var(--red-2); }
+.doc-tag.res { background: color-mix(in srgb, var(--pb) 18%, var(--panel)); color: var(--pb); }
+.doc-new .doc-no { border-color: var(--red); color: var(--red-2); }
+.doc-go { color: var(--muted); font-size: 18px; }
+.doc-car { font-style: normal; font-size: 11px; font-weight: 700; padding: 0 4px; border-radius: 4px; background: var(--panel-2); border: 1px solid var(--line); color: var(--text); vertical-align: 1px; }
+body.view-docs .player { display: none; }
+body.view-docs { padding-bottom: env(safe-area-inset-bottom); }
+.doc-empty { padding: 28px 16px; text-align: center; color: var(--muted); }
+.doc-src { margin: 0; padding: 8px 12px; font-size: 11px; color: var(--muted); border-top: 1px solid var(--line); text-align: center; }
+
+.pdfview { position: fixed; inset: 0; z-index: 20; display: flex; flex-direction: column; background: color-mix(in srgb, var(--bg) 96%, #000); }
+.pdfview[hidden] { display: none; }
+.pdf-bar {
+  display: flex; align-items: center; gap: 8px; padding: calc(8px + env(safe-area-inset-top)) 10px 8px;
+  background: var(--carbon), linear-gradient(180deg, #0b0b10, #15151e); color: #fff;
+}
+.pdf-bar .icon-btn { color: #fff; flex: none; font-size: 20px; font-weight: 700; }
+.pdf-title { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.2; }
+.pdf-title b { font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pdf-title small { font-size: 12px; color: #b9b9c6; }
+.pdf-pages { flex: 1; overflow: auto; padding: 12px 12px calc(16px + env(safe-area-inset-bottom)); -webkit-overflow-scrolling: touch; }
+.pdf-pages.fit { overflow-x: hidden; }
+.pdf-pages canvas { display: block; margin: 0 auto 12px; background: #fff; border-radius: 4px; box-shadow: 0 4px 18px rgba(0,0,0,.35); }
+.pdf-pages .loading { color: var(--muted); }
+body.pdf-open { overflow: hidden; }
+
 /* ---------- Rennleitung ---------- */
 .rc { margin: 18px 16px 0; }
 .rc h2 { margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); font-weight: 700; display: flex; align-items: center; gap: 8px; }
