@@ -116,8 +116,80 @@ async function radio(search) {
   }
 }
 
-export async function onRequestGet({ params, request }) {
+// OpenF1 abrufen, bei 429 kurz warten und nochmal (Gratis-Stufe: 3/s)
+async function openf1(url, ttl) {
+  let res;
+  for (let i = 0; i < 3; i++) {
+    res = await fetch(url, {
+      headers: { "User-Agent": UA, "Accept": "application/json" },
+      cf: { cacheTtl: ttl, cacheEverything: true, cacheTtlByStatus: { "200-299": ttl, "400-599": 0 } },
+    });
+    if (res.status !== 429) break;
+    await new Promise(r => setTimeout(r, 1100));
+  }
+  return res;
+}
+
+// Ganzes Rennen in EINER Antwort (Nachschau): statt 10 Anfragen nacheinander
+// aus dem Browser holt der Server alles, setzt es als Text zusammen (kein
+// Parsen → kaum CPU) und legt das Paket in den Edge-Cache. Jeder weitere
+// Aufruf derselben Session kommt sofort.
+//   GET /f1data/bundle?session_key=11731&year=2026&end=2026-10-04T10:00:00Z
+//   → { drivers, session_result, laps, position, intervals, stints, pit, race_control, weather, tyres }
+// end = Sessionende: knapp danach ändert OpenF1 noch (Ergebnis), darum dann
+// nur kurz cachen, später eine Woche.
+export const BUNDLE_PARTS = ["drivers", "session_result", "laps", "position", "intervals", "stints", "pit", "race_control", "weather"];
+const BUNDLE_OPTIONAL = new Set(["weather"]);
+const ISO = /^20\d\d-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d{1,6})?(Z|[+-]\d\d:\d\d)?$/;
+export function bundleTtl(end, now) {
+  const t = Date.parse(end || "");
+  return isFinite(t) && now - t > 3 * 3600e3 ? 7 * 86400 : 600;
+}
+async function bundle(search, waitUntil) {
+  const q = new URLSearchParams(search);
+  const key = q.get("session_key") || "", year = q.get("year") || "", end = q.get("end") || "";
+  if (!PARAMS.session_key.test(key) || !PARAMS.year.test(year) || (end && !ISO.test(end))) return new Response("bad request", { status: 400 });
+  const cache = typeof caches !== "undefined" ? caches.default : null;
+  const ckey = new Request(`https://f1-bundle.cache/v1/${key}`);
+  if (cache) { const hit = await cache.match(ckey); if (hit) return hit; }
+  const parts = {};
+  try {
+    // Höchstens 3 gleichzeitig, dann mind. 1 s Pause (OpenF1-Grenze)
+    for (let i = 0; i < BUNDLE_PARTS.length; i += 3) {
+      const t0 = Date.now();
+      await Promise.all(BUNDLE_PARTS.slice(i, i + 3).map(async ep => {
+        const res = await openf1(buildUrl(ep, "?session_key=" + key), ENDPOINTS[ep]);
+        const txt = res.ok ? (await res.text()).trim() : "";
+        if (res.ok && txt.startsWith("[")) parts[ep] = txt;
+        else if (res.status === 404 || BUNDLE_OPTIONAL.has(ep)) parts[ep] = "[]";
+        else throw Object.assign(new Error(ep), { status: res.status });
+      }));
+      const wait = 1050 - (Date.now() - t0);
+      if (i + 3 < BUNDLE_PARTS.length && wait > 0) await new Promise(r => setTimeout(r, wait));
+    }
+  } catch (e) {
+    const st = e && e.status;
+    return new Response(JSON.stringify({ error: st || "fetch" }), { status: st === 401 || st === 403 ? 403 : 502, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+  }
+  // Reifen aus dem F1-Archiv (fehlt es, rechnet das Modell mit OpenF1)
+  let tyres = "null";
+  try {
+    const t = await archive(`?year=${year}&session_key=${key}`);
+    if (t.ok) tyres = await t.text();
+  } catch (_) { tyres = "null"; }
+  const body = "{" + BUNDLE_PARTS.map(k => JSON.stringify(k) + ":" + parts[k]).join(",") + ',"tyres":' + tyres + "}";
+  const ttl = bundleTtl(end, Date.now());
+  const res = new Response(body, { headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": `public, max-age=${Math.min(ttl, 3600)}` } });
+  if (cache) {
+    const put = cache.put(ckey, new Response(body, { headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": `public, max-age=${ttl}` } }));
+    if (waitUntil) waitUntil(put); else await put;
+  }
+  return res;
+}
+
+export async function onRequestGet({ params, request, waitUntil }) {
   const ep = String(params.ep || "");
+  if (ep === "bundle") return bundle(new URL(request.url).search, waitUntil);
   if (ep === "radio") return radio(new URL(request.url).search);
   if (ep === "archive") return archive(new URL(request.url).search);
   if (ep === "fia") return fiaList(new URL(request.url).search);
@@ -126,15 +198,7 @@ export async function onRequestGet({ params, request }) {
   if (!url) return new Response("bad request", { status: 400 });
   const ttl = ENDPOINTS[ep];
   try {
-    let res;
-    for (let i = 0; i < 3; i++) {
-      res = await fetch(url, {
-        headers: { "User-Agent": UA, "Accept": "application/json" },
-        cf: { cacheTtl: ttl, cacheEverything: true, cacheTtlByStatus: { "200-299": ttl, "400-599": 0 } },
-      });
-      if (res.status !== 429) break;
-      await new Promise(r => setTimeout(r, 1100));
-    }
+    const res = await openf1(url, ttl);
     if (!res.ok) {
       // 401/403 = Live-Session (nur für OpenF1-Sponsoren), 404 = keine Daten
       return new Response(JSON.stringify({ error: res.status }), {

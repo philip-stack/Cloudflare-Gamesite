@@ -52,9 +52,7 @@
     const L = loss();
     const k = SC_FACTOR[f.status] || 1;
     const eff = +(L.s * k).toFixed(1);
-    const div = document.createElement("div");
-    div.className = "fav-pit";
-    let body;
+    let body, short = "";
     if (me.pitNow) body = `<p class="fav-pit-r muted">Gerade in der Box.</p>`;
     else {
       const p = M.pitRejoin(f.rows, S.fav, eff);
@@ -63,9 +61,13 @@
       else {
         const traffic = p.ahead && p.ahead.d < 1.5;
         const tag = traffic ? `<em class="pit-tag bad">im Verkehr</em>` : p.behind && p.behind.d < 1 ? `<em class="pit-tag warn">knapp</em>` : `<em class="pit-tag ok">freie Fahrt</em>`;
+        short = ` <b>P${p.pos}</b>`;
         body = `<p class="fav-pit-r">→ <b class="pit-pos">P${p.pos}</b>${p.ahead ? ` · ${p.ahead.d.toFixed(1)} s hinter <b>${nm(p.ahead.n)}</b>` : ""}${p.behind ? ` · ${p.behind.d.toFixed(1)} s vor <b>${nm(p.behind.n)}</b>` : ""} ${tag}</p>`;
       }
     }
+    const div = RT.favSlot("pit", "Box" + short);
+    if (!div) return;
+    div.classList.add("fav-pit");
     div.innerHTML = `<div class="fav-laps-head"><span>Boxenstopp jetzt</span>
         <small class="pit-loss">Verlust
           <button type="button" data-pitd="-1" aria-label="Boxenverlust verringern">−</button><b title="${esc(L.src)}">${eff.toFixed(1)} s</b><button type="button" data-pitd="1" aria-label="Boxenverlust erhöhen">+</button>
@@ -73,7 +75,6 @@
         </small></div>
       ${body}
       <p class="pit-src">${k < 1 ? `${f.status.startsWith("vsc") ? "VSC" : "Safety Car"}: Stopp billiger (normal ${L.s.toFixed(1)} s) · ` : ""}${esc(L.src)}</p>`;
-    box.appendChild(div);
   });
 
   $("fav").addEventListener("click", e => {

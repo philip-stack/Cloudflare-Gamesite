@@ -92,10 +92,11 @@
     if (box.hidden || !S.fav || f.timed) return;
     const series = lapSeries(S.fav);
     const cl = clean(series);
-    const w = Math.max(260, box.clientWidth - 26);
+    const w = Math.max(260, box.clientWidth - 34);
     const svg = lapSvg([{ series }], { width: w, height: 96, maxLap: S.race.live ? 0 : S.race.laps, label: "Rundenzeiten" });
-    const div = document.createElement("div");
-    div.className = "fav-laps";
+    const div = RT.favSlot("laps", "Runden");
+    if (!div) return;
+    div.classList.add("fav-laps");
     if (!svg) {
       div.innerHTML = `<p class="fav-laps-empty">${S.race.live ? "Rundenzeiten sammeln sich ab jetzt." : "Noch zu wenige Runden für ein Diagramm."}</p>`;
     } else {
@@ -104,6 +105,5 @@
       div.innerHTML = `<div class="fav-laps-head"><span>Rundenzeiten</span>
           <small>${avg ? `Ø letzte ${last5.length}: <b>${M.lapTime(avg)}</b>` : ""}${t != null ? ` · Abbau <b class="${t > 0.05 ? "tr-out" : t < -0.05 ? "tr-in" : ""}">${t >= 0 ? "+" : "−"}${Math.abs(t).toFixed(2)} s/Rd.</b>` : ""}</small></div>${svg}`;
     }
-    box.appendChild(div);
   });
 })();

@@ -7,7 +7,7 @@ import path from "node:path";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
 const M = require(path.join(__dirname, "..", "public", "f1", "model.js"));
-const { buildUrl, RADIO_FILE, SESSION_PATH } = await import("file://" + path.join(__dirname, "..", "functions", "f1data", "[ep].js").replace(/\\/g, "/"));
+const { buildUrl, RADIO_FILE, SESSION_PATH, bundleTtl, BUNDLE_PARTS } = await import("file://" + path.join(__dirname, "..", "functions", "f1data", "[ep].js").replace(/\\/g, "/"));
 
 let ok = true;
 const assert = (name, cond) => { if (cond) console.log("OK  ", name); else { console.log("FAIL", name); ok = false; } };
@@ -324,6 +324,13 @@ assert("Funk: Übersetzung Zeile für Zeile", JSON.stringify(TX.parseTranslation
   && TX.parseTranslation("1| Box, box.", 2) === null && TX.parseTranslation(null, 1) === null && TX.translateInput(sg) === "1| Box, box.\n2| Copy.");
 assert("Funk: Name im Prompt nur, wenn harmlos", TX.whisperPrompt("Max Verstappen").includes("Max Verstappen.") && !TX.whisperPrompt("<script>").includes("<script>"));
 assert("Funk: Base64", TX.toBase64(new TextEncoder().encode("Box box").buffer) === "Qm94IGJveA==");
+
+// ---- Rennen als ein Paket ----
+const NOW = Date.parse("2026-10-04T20:00:00Z");
+assert("Paket: kurz nach dem Rennen nur kurz cachen, später eine Woche", bundleTtl("2026-10-04T18:30:00+00:00", NOW) === 600
+  && bundleTtl("2026-10-04T10:00:00Z", NOW) === 7 * 86400 && bundleTtl("", NOW) === 600);
+assert("Paket: enthält alle Teile der Nachschau", ["drivers", "laps", "intervals", "pit", "race_control", "weather"].every(k => BUNDLE_PARTS.includes(k))
+  && BUNDLE_PARTS.every(k => buildUrl(k, "?session_key=1")));
 
 if (!ok) process.exit(1);
 console.log("f1: alle Tests grün");

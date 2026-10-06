@@ -69,8 +69,9 @@
     }
     if (!mine || !mine.some(Boolean)) return;
     const refAbbr = ref ? esc((race.drivers.get(ref.n) || {}).abbr || "") : "";
-    const div = document.createElement("div");
-    div.className = "fav-sec";
+    const div = RT.favSlot("sec", "Sektoren");
+    if (!div) return;
+    div.classList.add("fav-sec");
     div.innerHTML = `<div class="fav-laps-head"><span>${title}</span>${ref && theirs ? `<small>vs. <b>${refAbbr}</b> (P${ref.pos ?? "–"})</small>` : ""}</div>
       <div class="secs">${[0, 1, 2].map(k => {
         const c = mine[k], o = theirs && theirs[k];
@@ -78,6 +79,5 @@
         const cls = c ? (c.ob ? "ob" : c.pb ? "pb" : "") : "";
         return `<div class="sec ${cls}"><span>S${k + 1}</span><b>${fmt(c && c.v)}</b>${d != null ? `<small class="${d > 0.0005 ? "tr-out" : d < -0.0005 ? "tr-in" : ""}">${dfmt(d)}</small>` : "<small>&nbsp;</small>"}</div>`;
       }).join("")}</div>${extra}`;
-    box.appendChild(div);
   });
 })();

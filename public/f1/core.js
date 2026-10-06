@@ -256,9 +256,17 @@
   async function loadSession(key) {
     loading("Lade Daten …");
     mode = "race";
-    const raw = {};
+    let raw = {};
+    const sess = sessions.find(s => s.session_key === key);
+    const year = new Date(sess ? sess.date_start : Date.now()).getFullYear();
+    // Schnellweg: ganzes Rennen als ein Paket vom Server (im Edge-Cache)
     try {
-      // Nacheinander: OpenF1 erlaubt gratis nur 3 Anfragen pro Sekunde
+      raw = await get("bundle", { session_key: key, year, ...(sess && sess.date_end ? { end: sess.date_end } : {}) });
+    } catch (_) { raw = null; }
+    if (raw) return finishSession(key, sess, raw);
+    raw = {};
+    try {
+      // Notweg: einzeln nacheinander (OpenF1 erlaubt gratis nur 3 Anfragen pro Sekunde)
       for (let i = 0; i < PARTS.length; i++) {
         const [ep, label] = PARTS[i];
         const p = $("prog"); if (p) p.textContent = `Lade ${label} … (${i + 1}/${PARTS.length})`;
@@ -272,10 +280,12 @@
     }
     // Reifen aus dem offiziellen F1-Archiv (OpenF1-Stints sind teils verschoben);
     // fehlt es, rechnet das Modell mit OpenF1 weiter.
-    const sess = sessions.find(s => s.session_key === key);
     const p = $("prog"); if (p) p.textContent = "Lade Reifendaten …";
-    try { raw.tyres = await get("archive", { year: new Date(sess ? sess.date_start : Date.now()).getFullYear(), session_key: key }); }
+    try { raw.tyres = await get("archive", { year, session_key: key }); }
     catch (_) { raw.tyres = null; }
+    finishSession(key, sess, raw);
+  }
+  function finishSession(key, sess, raw) {
     if (+$("session").value !== key || mode !== "race") return;     // inzwischen anderes gewählt
     race = M.buildRace(raw);
     // Wetter je Minute (OpenF1) → passend zur gewählten Runde
@@ -418,10 +428,47 @@
       </li>`;
     }).join("");
     $("hint").hidden = !!fav;
+    favSlots = [];
     renderFav(f);
     renderMsgs(f);
     emit("show", f);
+    finishFav();
   }
+
+  // ---------- Details auf der Lieblingsfahrer-Karte ----------
+  // Boxenstopp, Sektoren, Rundenzeiten … hängen sich je Stand über
+  // RT.favSlot(id, label) ein. Sichtbar ist immer nur eines (Umschalter
+  // darunter), nochmal tippen klappt zu. Die Wahl bleibt gemerkt.
+  let favSlots = [];
+  function favSlot(id, label) {
+    const panes = $("fav-panes");
+    if ($("fav").hidden || !panes) return null;
+    const el = document.createElement("div");
+    el.className = "fav-pane";
+    el.dataset.pane = id;
+    panes.appendChild(el);
+    favSlots.push({ id, label, el });
+    return el;
+  }
+  function finishFav() {
+    const tabs = $("fav-tabs");
+    if (!tabs) return;
+    tabs.hidden = !favSlots.length;
+    let open = store.get("f1_favpane");
+    if (open == null) open = favSlots[0] ? favSlots[0].id : "";
+    // "none" = bewusst zugeklappt; ein gemerkter Bereich, den es gerade nicht
+    // gibt (z. B. Box im Training), fällt auf den ersten zurück
+    if (open !== "none" && !favSlots.some(s => s.id === open)) open = favSlots[0] ? favSlots[0].id : "";
+    tabs.innerHTML = favSlots.map(s => `<button type="button" role="tab" class="fav-tab" data-pane="${s.id}" aria-selected="${s.id === open}">${s.label}</button>`).join("");
+    for (const s of favSlots) s.el.hidden = s.id !== open;
+  }
+  $("fav").addEventListener("click", e => {
+    const b = e.target.closest(".fav-tab");
+    if (!b) return;
+    const id = b.getAttribute("aria-selected") === "true" ? "none" : b.dataset.pane;
+    store.set("f1_favpane", id);
+    finishFav();
+  });
 
   // ---------- Reiter ----------
   let view = store.get("f1_view") || "times";
@@ -475,7 +522,7 @@
         ${f.timed
           ? `<div><span>Bestzeit</span><b class="${r.fastest ? "purple" : ""}">${M.lapTime(r.best)}</b><small>${r.laps} Runden${r.knocked ? " · raus in " + esc(r.status) : ""}</small></div>`
           : `<div><span>Letzte / Beste</span><b class="${r.lastPurple ? "purple" : r.lastPB ? "pb" : ""}">${M.lapTime(r.last)}</b><small>${M.lapTime(r.best)}</small></div>`}
-      </div>${bar}${stewLines((f.stew || {})[r.n])}`;
+      </div>${bar}${stewLines((f.stew || {})[r.n])}<div class="fav-tabs" id="fav-tabs" role="tablist" aria-label="Details" hidden></div><div id="fav-panes"></div>`;
     box.querySelector(".unfav").addEventListener("click", () => setFav(null));
   }
 
@@ -552,7 +599,7 @@
   }
   window.RT = {
     S, on, emit, $, esc, store, get, M, fmtClock, fmtDay, gpName, sessName, tyre, delta, TREND_MIN,
-    show: k => show(k == null ? frame : k), setView, setFav, note,
+    show: k => show(k == null ? frame : k), setView, setFav, note, favSlot,
     view(name, opts) { views[name] = { panel: name, ...(opts || {}) }; },
   };
 

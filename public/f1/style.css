@@ -406,7 +406,7 @@ body.is-live { padding-bottom: env(safe-area-inset-bottom); }
 :root[data-theme="light"] .lapsvg .lapdot { stroke: rgba(0,0,0,.25); stroke-width: .6; }
 
 /* Rundenzeiten auf der Lieblingsfahrer-Karte */
-.fav-laps { padding: 4px 12px 12px 20px; border-top: 1px solid var(--line); }
+.fav-laps { padding: 4px 12px 12px 20px; }
 .fav-laps-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; flex-wrap: wrap; padding: 6px 0 2px; }
 .fav-laps-head span { font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; }
 .fav-laps-head small { font-size: 12px; color: var(--muted); }
@@ -603,7 +603,15 @@ body.pdf-open { overflow: hidden; }
 .fav-stw .noted b { background: var(--panel-2); color: var(--muted); }
 
 /* ---------- Boxenstopp-Rechner + Sektoren (Lieblingsfahrer-Karte) ---------- */
-.fav-pit, .fav-sec { padding: 4px 12px 10px 20px; border-top: 1px solid var(--line); }
+.fav-pit, .fav-sec { padding: 4px 12px 10px 20px; }
+.fav-tabs { display: flex; gap: 6px; padding: 8px 12px 8px 20px; border-top: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; }
+.fav-tabs[hidden] { display: none; }
+.fav-tab { flex: none; border: 1px solid var(--line); background: transparent; border-radius: 999px; padding: 5px 12px; font-size: 12.5px; font-weight: 700; color: var(--muted); cursor: pointer; }
+.fav-tab b { color: var(--text); }
+.fav-tab[aria-selected="true"] { background: var(--text); border-color: var(--text); color: var(--bg); }
+.fav-tab[aria-selected="true"] b { color: var(--bg); }
+.fav-pane[hidden] { display: none; }
+.fav-pane .fav-laps-head:first-child { padding-top: 0; }
 .fav-pit-r { margin: 4px 0 0; font-size: 14px; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px; }
 .fav-pit-r.muted { color: var(--muted); }
 .pit-pos { font-size: 18px; font-weight: 900; font-style: italic; }
