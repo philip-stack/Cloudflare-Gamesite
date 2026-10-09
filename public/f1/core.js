@@ -193,7 +193,9 @@
       if (f.lap !== liveLap) { liveBase = lastPos; liveLap = f.lap; }
       lastPos = new Map(f.rows.map(r => [r.n, r]));
       race = { live: true, session: { ...d.session, year: d.session.start ? new Date(d.session.start).getFullYear() : new Date().getFullYear() },
-        wm: d.wm, pos: d.pos, radio: d.radio || [], weather: d.weather, drivers: new Map(d.drivers.map(x => [x.n, x])), laps: f.total, frames: [f] };
+        wm: d.wm, pos: d.pos, radio: d.radio || [], weather: d.weather,
+        // Liefert der Feed überhaupt Positionen? (die F1 gibt Position.z teils nur angemeldet heraus)
+        posFeed: !Array.isArray(d.topics) || d.topics.includes("Position.z"), drivers: new Map(d.drivers.map(x => [x.n, x])), laps: f.total, frames: [f] };
       if (d.session.race && f.lap > 0) liveHist.set(f.lap, { lap: f.lap, status: f.status, rows: f.rows.map(r => ({ n: r.n, pos: r.pos, pits: r.pits, out: r.out, gap: r.gap, interval: r.interval, compound: r.compound, tyreAge: r.tyreAge })) });
       // Rundenzeiten je Fahrer (Runde = abgeschlossene Runden des Fahrers)
       for (const r of f.rows) if (r.last != null && r.laps > 0) {
@@ -614,13 +616,37 @@
   async function startCalendar() {
     for (let i = 0; i < 3; i++) {
       try { return await loadCalendar(); }
-      catch (_) { await new Promise(r => setTimeout(r, 1500 * (i + 1))); }
+      catch (e) {
+        // OpenF1 sperrt während einer laufenden Session ALLES für Gratis-Nutzer
+        // (auch den Kalender) → direkt an den F1-Feed hängen
+        if (e && e.status === 403 && await liveFallback()) return;
+        await new Promise(r => setTimeout(r, 1500 * (i + 1)));
+      }
     }
+    if (await liveFallback()) return;
     $("meeting").innerHTML = "<option>Kalender nicht erreichbar</option>";
     $("rows").innerHTML = `<li class="loading err">OpenF1 ist gerade nicht erreichbar.<button class="more" type="button" id="cal-retry">Nochmal versuchen</button></li>`;
     $("cal-retry").addEventListener("click", () => {
       $("rows").innerHTML = `<li class="loading"><span class="spinner"></span><span>Lade Kalender …</span></li>`;
       startCalendar();
     });
+  }
+  // Ohne Kalender: läuft gerade eine Session im F1-Feed? Dann live zeigen
+  // (Nachschau ist während der Sperre ohnehin nicht abrufbar).
+  async function liveFallback() {
+    try {
+      const res = await fetch("/api/f1-live", { cache: "no-store" });
+      const d = await res.json();
+      if (!d.ok || !d.session || Date.now() - d.updated > 30 * 60000) return false;
+      const s = d.session;
+      $("meeting").innerHTML = `<option value="live">● LIVE · ${esc(s.meeting || s.location || "F1")} · ${esc(s.name || "Session")}</option>`;
+      $("meeting").value = "live";
+      $("session").hidden = true;
+      $("plan").hidden = true;
+      if (s.meeting) emitMeeting(s.meeting.replace(/ GP$/, " Grand Prix"), s.start);
+      startLive();
+      note("Vergangene Sessions sind erst nach dem Ende wieder abrufbar (OpenF1 sperrt sie während einer Live-Session).", "soft");
+      return true;
+    } catch (_) { return false; }
   }
 })();

@@ -85,6 +85,11 @@
 
   function draw() {
     const race = S.race, f = race.frames[S.frame], box = $("map-box");
+    if (race.live && race.posFeed === false) {
+      box.innerHTML = `<p class="chart-empty">Live-Positionen der Autos gibt die Formel 1 im freien Feed derzeit nicht heraus (nur mit F1-TV-Anmeldung).<br>Nach der Session ist die Karte in der Nachschau Runde für Runde verfügbar.</p>`;
+      $("map-info").textContent = "";
+      return;
+    }
     let cars = race.live ? (race.pos && race.pos.cars) || {} : framePositions();
     // Live ohne gemerkten Verlauf: aus den Autopositionen mitwachsen lassen
     if (race.live && cars && (!track || track.kind !== "line")) {

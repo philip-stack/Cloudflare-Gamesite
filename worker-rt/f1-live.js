@@ -76,7 +76,7 @@ export class F1Live extends DurableObject {
       try {
         let pos = null;
       if (this.posRaw) { try { pos = await decodePositions(this.posRaw); } catch (_) { pos = null; } }
-      this.cache = JSON.stringify({ ok: true, updated: this.lastMsg, ...F1.fromLive(this.state), pos });
+      this.cache = JSON.stringify({ ok: true, updated: this.lastMsg, ...F1.fromLive(this.state), pos, topics: this.topicsGot || [], posSeen: !!this.posRaw });
       } catch (e) {
         // Feed-Format geändert? Stand verwerfen, beim nächsten Abruf frisch abonnieren
         this.log("Auswertung fehlgeschlagen", e && e.stack || e);
@@ -128,6 +128,7 @@ export class F1Live extends DurableObject {
           }
           if (m.type === 3 && m.invocationId === "1") {
             if (m.error) { this.error = m.error; this.log("Abo abgelehnt", m.error); continue; }
+            this.topicsGot = Object.keys(m.result || {});
             for (const [t, v] of Object.entries(m.result || {})) {
               if (t === "Position.z") this.posRaw = typeof v === "string" ? v : null;   // erst bei Abfrage entpacken
               else this.state[t] = v;
@@ -135,6 +136,14 @@ export class F1Live extends DurableObject {
             this.ready = true; this.cache = null;
           } else if (m.type === 1 && m.target === "feed" && Array.isArray(m.arguments)) {
             const [topic, data] = m.arguments;
+            // Neue Session (z. B. Training → Sprint-Qualifying) auf derselben
+            // Leitung: alten Stand NICHT weiterführen (Stints, Runden, Meldungen
+            // der vorigen Session blieben sonst hängen) → neu abonnieren
+            const oldPath = (this.state.SessionInfo || {}).Path;
+            if (topic === "SessionInfo" && data && data.Path && oldPath && data.Path !== oldPath) {
+              this.drop();
+              return;
+            }
             if (topic === "Position.z") { if (typeof data === "string") this.posRaw = data; this.cache = null; }
             else if (TOPICS.includes(topic)) { this.state[topic] = F1.mergeFeed(this.state[topic], data); this.cache = null; }
           } else if (m.type === 7) {

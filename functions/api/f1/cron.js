@@ -1,6 +1,7 @@
 import { json, logError } from "../_util.js";
 import { pushToEndpoint } from "../push.js";
 import { fiaDocsFor } from "../../f1data/_fia.js";
+import { F1_LIVE_NAME } from "../f1-live.js";
 import { SESSION_DE, gpShort, dueStarts, liveSession, currentMeeting, flagEvent, carNumbers, newDocs, matchEvent } from "./_logic.js";
 
 // ====================================================================
@@ -60,10 +61,23 @@ export async function onRequestGet({ request, env }) {
   };
 
   try {
-    const [sessions, meetings] = await Promise.all([
+    let [sessions, meetings] = await Promise.all([
       fetchJson(`https://api.openf1.org/v1/sessions?year=${year}`, 1800),
       fetchJson(`https://api.openf1.org/v1/meetings?year=${year}`, 1800),
     ]);
+    // OpenF1 sperrt während einer Live-Session alles für Gratis-Nutzer (401) —
+    // genau dann braucht es den Kalender für die Flaggen. Darum den letzten
+    // guten Stand in app_config merken und bei Sperre den nehmen.
+    if (Array.isArray(sessions) && sessions.length && Array.isArray(meetings)) {
+      const slim = {
+        sessions: sessions.map(s => ({ session_key: s.session_key, session_name: s.session_name, date_start: s.date_start, date_end: s.date_end, meeting_key: s.meeting_key, location: s.location, is_cancelled: s.is_cancelled })),
+        meetings: meetings.map(m => ({ meeting_key: m.meeting_key, meeting_name: m.meeting_name })),
+      };
+      await env.DB.prepare("INSERT INTO app_config (k, v) VALUES ('f1_calendar', ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v").bind(JSON.stringify(slim)).run();
+    } else {
+      const c = await env.DB.prepare("SELECT v FROM app_config WHERE k = 'f1_calendar'").first();
+      try { const j = JSON.parse(c && c.v || "null"); if (j) { sessions = j.sessions; meetings = j.meetings; } } catch (_) { /* kein Stand */ }
+    }
     const mName = new Map((meetings || []).map(m => [m.meeting_key, m.meeting_name]));
 
     // 1. Session-Start
@@ -78,9 +92,12 @@ export async function onRequestGet({ request, env }) {
     state.started = [...(state.started || []), ...due.map(s => s.session_key)].slice(-40);
 
     // 2. Flaggen — nur während einer Session und nur, wenn jemand sie will
-    const live = liveSession(sessions, now);
+    // Ganz ohne Kalender (Sperre und noch kein gemerkter Stand): trotzdem den
+    // Live-Feed fragen — die Sperre heißt ja gerade, dass eine Session läuft
+    const noCal = !Array.isArray(sessions) || !sessions.length;
+    const live = liveSession(noCal ? [] : sessions, now) || (noCal ? { meeting_key: null } : null);
     if (live && env.F1_LIVE && subs.some(x => x.flags)) {
-      const res = await env.F1_LIVE.get(env.F1_LIVE.idFromName("live")).fetch("https://f1-live/state");
+      const res = await env.F1_LIVE.get(env.F1_LIVE.idFromName(F1_LIVE_NAME)).fetch("https://f1-live/state");
       const d = res.ok ? await res.json() : null;
       if (d && d.ok && d.session && d.frame) {
         const key = d.session.key, status = d.frame.status;
