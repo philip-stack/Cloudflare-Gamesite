@@ -52,6 +52,17 @@ export class F1Live extends DurableObject {
     this.cache = null; this.cacheAt = 0; this.error = "";
     this.logged = new Map();
     this.prog = {};      // Live-Karte: je Auto letzter Mini-Sektor { s, k, t, lapAt }
+    this.hist = null;    // Live-Verlauf der Session (F1Model.histStep), höchstens alle 2 s fortgeschrieben
+    this.histAt = 0;
+  }
+
+  // Verlauf fortschreiben — aus dem Feed, unabhängig davon, ob gerade jemand schaut
+  snap() {
+    const now = Date.now();
+    if (now - this.histAt < 2000 || !this.ready) return;
+    this.histAt = now;
+    try { this.hist = F1.histStep(this.hist, F1.fromLive(this.state), now); }
+    catch (e) { this.log("Verlauf fehlgeschlagen", e && e.stack || e); }
   }
 
   // Störungen ins gemeinsame error_log (Admin-Dashboard), gedrosselt je Art —
@@ -63,8 +74,9 @@ export class F1Live extends DurableObject {
     this.ctx.waitUntil(rtLogError(this.env, "F1-Live: " + kind, "f1-live", detail == null ? null : String(detail)));
   }
 
-  async fetch() {
+  async fetch(request) {
     this.lastPoll = Date.now();
+    const wantHist = request && new URL(request.url).pathname === "/hist";
     if (!(await this.ctx.storage.getAlarm())) await this.ctx.storage.setAlarm(Date.now() + 60000);
     try { await this.connect(); } catch (e) { this.error = String(e && e.message || e); this.log("Verbindung fehlgeschlagen", this.error); }
     // Erster Gesamtstand kommt kurz nach dem Abo
@@ -72,6 +84,14 @@ export class F1Live extends DurableObject {
     if (!this.ready) {
       if (this.ws) this.log("kein Gesamtstand nach Abo", this.error || "Timeout 5 s");
       return Response.json({ ok: false, error: this.error || "connecting" }, { status: 503 });
+    }
+    // Ganzer Verlauf (einmal beim Öffnen der Seite)
+    if (wantHist) {
+      this.snap();
+      const h = this.hist || { key: "", hist: {}, laps: {}, events: [] };
+      const laps = {};
+      for (const [n, m] of Object.entries(h.laps)) laps[n] = Object.values(m);
+      return Response.json({ ok: true, key: h.key, hist: Object.values(h.hist), laps, events: h.events }, { headers: { "Cache-Control": "no-store" } });
     }
     if (!this.cache || Date.now() - this.cacheAt > 1000) {
       try {
@@ -110,6 +130,7 @@ export class F1Live extends DurableObject {
     clearInterval(this.ping); this.ping = null;
     try { this.ws && this.ws.close(1000, "idle"); } catch (_) {}
     this.ws = null; this.state = null; this.ready = false; this.cache = null; this.posRaw = null; this.prog = {};
+    this.hist = null; this.histAt = 0;
   }
 
   connect() {
@@ -167,6 +188,7 @@ export class F1Live extends DurableObject {
                 for (const [n, l] of Object.entries(data.Lines)) this.prog[n] = F1.segStep(this.prog[n], l, now);
               }
               this.state[topic] = F1.mergeFeed(this.state[topic], data); this.cache = null;
+              if (topic === "TimingData" || topic === "LapCount" || topic === "TrackStatus") this.snap();
             }
           } else if (m.type === 7) {
             if (m.error) this.log("Feed hat getrennt", m.error);

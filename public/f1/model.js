@@ -247,6 +247,43 @@
     return { s: +out[out.length >> 1].toFixed(1), stops: out.length };
   }
 
+  // --- Live-Verlauf (im DO mitgeschrieben, damit die Seite beim Öffnen mitten
+  // im Rennen gleich alles hat): Stand je Runde, Rundenzeiten je Fahrer,
+  // Ereignisse. L = fromLive(...), now = ms. Neue Session → neuer Verlauf.
+  //   h = { key, hist: { lap: {lap,t,status,rows} }, laps: { n: { lap: {lap,s,compound,pit,t} } }, events: [...], prev, pitAt }
+  function histStep(h, L, now) {
+    const ses = (L && L.session) || {}, f = L && L.frame;
+    const key = String(ses.path || ses.key || "");
+    if (!h || h.key !== key) h = { key, hist: {}, laps: {}, events: [], prev: null, pitAt: {} };
+    if (!f) return h;
+    if (ses.race && f.lap > 0) {
+      const old = h.hist[f.lap];
+      h.hist[f.lap] = { lap: f.lap, t: old ? old.t : now, status: f.status,
+        rows: f.rows.map(r => ({ n: r.n, pos: r.pos, pits: r.pits, out: r.out, gap: r.gap, interval: r.interval, compound: r.compound, tyreAge: r.tyreAge })) };
+    }
+    for (const r of f.rows) if (r.last != null && r.laps > 0) {
+      const m = h.laps[r.n] || (h.laps[r.n] = {});
+      const old = m[r.laps];
+      m[r.laps] = { lap: r.laps, s: r.last, compound: r.compound, pit: r.pitNow, t: old ? old.t : now };
+    }
+    for (const r of f.rows) if (r.pitNow) h.pitAt[r.n] = now;
+    if (h.prev && ses.race) {
+      // Kurz nach einem Stopp sortiert der Feed die Plätze noch um → keine „Überholung“
+      const fresh = n => h.pitAt[n] != null && now - h.pitAt[n] < 90000;
+      for (const e of frameEvents(h.prev, f, false)) {
+        if (e.k === "pass") {
+          if (f.lap <= 1 || fresh(e.n) || /sc|vsc|red/.test(f.status)) continue;
+          e.o = e.o.filter(o => !fresh(o));
+          if (!e.o.length) continue;
+        }
+        h.events.push({ ...e, lap: f.lap, t: now });
+      }
+      if (h.events.length > 300) h.events.splice(0, h.events.length - 300);
+    }
+    h.prev = { rows: f.rows.map(r => ({ n: r.n, pos: r.pos, pits: r.pits, out: r.out, pitNow: r.pitNow, compound: r.compound, best: r.best, fastest: r.fastest, status: r.status })) };
+    return h;
+  }
+
   // --- Live-Karte: letzter erreichter Mini-Sektor je Auto -------------------
   // line = TimingData.Lines[n] (Änderung aus dem Feed), p = bisheriger Stand
   // { s, k, t, lapAt }. Nur Vorwärtsschritte zählen (der Feed färbt ältere
@@ -630,7 +667,7 @@
   }
 
   const api = { gapText, lapTime, trackStatus, msgText, isRelevantMsg, buildRace, tyrePlan, TYRE, mergeFeed, parseGap, parseTime, fromLive,
-    stewards, frameEvents, pitRejoin, pitLoss, weather, segStep };
+    stewards, frameEvents, pitRejoin, pitLoss, weather, segStep, histStep };
   if (typeof module === "object" && module.exports) module.exports = api;
   else root.F1Model = api;
 })(typeof window !== "undefined" ? window : globalThis);

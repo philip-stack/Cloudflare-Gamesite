@@ -170,6 +170,7 @@
     stop(); stopLive();
     mode = "live";
     race = null; liveLap = -1; liveBase = new Map(); lastPos = new Map(); liveHist = new Map(); liveLaps = new Map();
+    liveBuf = []; liveShown = null; histKey = "";
     document.body.classList.add("is-live");
     $("note").hidden = true;
     $("rows").innerHTML = `<li class="loading"><span class="spinner"></span><span>Verbinde mit dem Live-Timing …</span></li>`;
@@ -180,6 +181,12 @@
     clearTimeout(liveTimer); liveTimer = null;
     document.body.classList.remove("is-live", "single");
   }
+
+  // TV-Verzögerung: Jede Abfrage kommt in einen Puffer; gezeigt wird der
+  // jüngste Stand, der mindestens tvDelay Sekunden alt ist (wie das TV-Bild).
+  let tvDelay = Math.max(0, Math.min(90, +store.get("f1_tvdelay") || 0));
+  let liveBuf = [], liveShown = null;
+  const KEEP_MS = 100000;
   async function pollLive() {
     clearTimeout(liveTimer);
     if (mode !== "live") return;
@@ -188,32 +195,111 @@
       const d = await res.json();
       if (!d.ok) throw new Error(d.error || "offline");
       if (mode !== "live") return;
-      const f = d.frame;
-      // Pfeile ▲▼: Veränderung seit Beginn der laufenden Runde
-      if (f.lap !== liveLap) { liveBase = lastPos; liveLap = f.lap; }
-      lastPos = new Map(f.rows.map(r => [r.n, r]));
-      race = { live: true, session: { ...d.session, year: d.session.start ? new Date(d.session.start).getFullYear() : new Date().getFullYear() },
-        wm: d.wm, pos: d.pos, radio: d.radio || [], weather: d.weather,
-        // Liefert der Feed überhaupt Positionen? (die F1 gibt Position.z teils nur angemeldet heraus)
-        posFeed: !Array.isArray(d.topics) || d.topics.includes("Position.z"),
-        // Live-Karte ohne GPS: letzter Mini-Sektor je Auto [s, k, Alter ms], Empfangszeit
-        prog: d.prog || null, progAt: Date.now(), drivers: new Map(d.drivers.map(x => [x.n, x])), laps: f.total, frames: [f] };
-      if (d.session.race && f.lap > 0) liveHist.set(f.lap, { lap: f.lap, status: f.status, rows: f.rows.map(r => ({ n: r.n, pos: r.pos, pits: r.pits, out: r.out, gap: r.gap, interval: r.interval, compound: r.compound, tyreAge: r.tyreAge })) });
-      // Rundenzeiten je Fahrer (Runde = abgeschlossene Runden des Fahrers)
-      for (const r of f.rows) if (r.last != null && r.laps > 0) {
-        if (!liveLaps.has(r.n)) liveLaps.set(r.n, new Map());
-        liveLaps.get(r.n).set(r.laps, { lap: r.laps, s: r.last, compound: r.compound, pit: r.pitNow });
-      }
-      if (Date.now() - d.updated > 60000) note("Der Live-Feed ist seit über einer Minute still – vermutlich Pause oder Session vorbei.", "soft");
-      else $("note").hidden = true;
-      show(0);
+      const now = Date.now();
+      liveBuf.push({ at: now, d });
+      while (liveBuf.length > 2 && liveBuf[1].at < now - KEEP_MS) liveBuf.shift();
+      applyLive();
+      loadLiveHist(d);
     } catch (e) {
       if (!race) $("rows").innerHTML = `<li class="loading err">Live-Timing gerade nicht erreichbar – neuer Versuch läuft …</li>`;
       else note("Verbindung zum Live-Timing unterbrochen – neuer Versuch läuft …");
     }
     if (mode === "live") liveTimer = setTimeout(pollLive, document.hidden ? 15000 : LIVE_EVERY);
   }
-  document.addEventListener("visibilitychange", () => { if (!document.hidden && mode === "live") pollLive(); });
+  // Den passenden (verzögerten) Stand anzeigen — läuft auch zwischen den Abfragen
+  function applyLive() {
+    if (mode !== "live" || !liveBuf.length) return;
+    const due = Date.now() - tvDelay * 1000;
+    let item = null;
+    for (const x of liveBuf) if (x.at <= due) item = x;
+    if (!item) {
+      // Noch nichts alt genug: beim Start einmal den ältesten zeigen, sonst warten
+      if (race) return;
+      item = liveBuf[0];
+    }
+    if (item === liveShown) return;
+    liveShown = item;
+    takeLive(item.d, item.at);
+  }
+  setInterval(() => { if (tvDelay) applyLive(); }, 1000);
+  function takeLive(d, at) {
+    const f = d.frame;
+    // Pfeile ▲▼: Veränderung seit Beginn der laufenden Runde
+    if (f.lap !== liveLap) { liveBase = lastPos; liveLap = f.lap; }
+    lastPos = new Map(f.rows.map(r => [r.n, r]));
+    race = { live: true, session: { ...d.session, year: d.session.start ? new Date(d.session.start).getFullYear() : new Date().getFullYear() },
+      wm: d.wm, pos: d.pos, radio: d.radio || [], weather: d.weather,
+      // Liefert der Feed überhaupt Positionen? (die F1 gibt Position.z teils nur angemeldet heraus)
+      posFeed: !Array.isArray(d.topics) || d.topics.includes("Position.z"),
+      // Live-Karte ohne GPS: letzter Mini-Sektor je Auto [s, k, Alter ms]; „empfangen“ um die Verzögerung später
+      prog: d.prog || null, progAt: at + tvDelay * 1000, drivers: new Map(d.drivers.map(x => [x.n, x])), laps: f.total, frames: [f] };
+    if (d.session.race && f.lap > 0) liveHist.set(f.lap, { lap: f.lap, status: f.status, rows: f.rows.map(r => ({ n: r.n, pos: r.pos, pits: r.pits, out: r.out, gap: r.gap, interval: r.interval, compound: r.compound, tyreAge: r.tyreAge })) });
+    // Rundenzeiten je Fahrer (Runde = abgeschlossene Runden des Fahrers)
+    for (const r of f.rows) if (r.last != null && r.laps > 0) {
+      if (!liveLaps.has(r.n)) liveLaps.set(r.n, new Map());
+      liveLaps.get(r.n).set(r.laps, { lap: r.laps, s: r.last, compound: r.compound, pit: r.pitNow });
+    }
+    if (at - d.updated > 60000) note("Der Live-Feed ist seit über einer Minute still – vermutlich Pause oder Session vorbei.", "soft");
+    else $("note").hidden = true;
+    tvLabel();
+    show(0);
+  }
+
+  // Verlauf vom Server (DO schreibt ihn die ganze Session mit): einmal je
+  // Session und nach längerer Pause (App gewechselt) holen — nur, was die
+  // TV-Verzögerung schon „gesendet“ hat.
+  let histKey = "";
+  async function loadLiveHist(d, force) {
+    const key = String(d.session.path || d.session.key || "");
+    if (!force && histKey === key) return;
+    histKey = key;
+    try {
+      const res = await fetch("/api/f1-live?hist=1", { cache: "no-store" });
+      const h = await res.json();
+      if (!h.ok || mode !== "live" || String(h.key) !== key) return;
+      const due = Date.now() - tvDelay * 1000;
+      for (const x of h.hist || []) if (x.t <= due && !liveHist.has(x.lap)) liveHist.set(x.lap, { lap: x.lap, status: x.status, rows: x.rows });
+      for (const [n, list] of Object.entries(h.laps || {})) {
+        if (!liveLaps.has(+n)) liveLaps.set(+n, new Map());
+        const m = liveLaps.get(+n);
+        for (const x of list) if (x.t <= due && !m.has(x.lap)) m.set(x.lap, { lap: x.lap, s: x.s, compound: x.compound, pit: x.pit });
+      }
+      emit("livehist", { key, events: (h.events || []).filter(e => e.t <= due) });
+      if (race) show(frame);
+    } catch (_) { histKey = ""; }
+  }
+  let hiddenAt = 0;
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) { hiddenAt = Date.now(); return; }
+    if (mode !== "live") return;
+    pollLive();
+    // länger weg (Handy gesperrt, App gewechselt): Lücke im Verlauf auffüllen
+    if (hiddenAt && Date.now() - hiddenAt > 20000 && liveShown) loadLiveHist(liveShown.d, true);
+  });
+
+  // ---------- TV-Verzögerung (Regler) ----------
+  function tvLabel() {
+    const b = $("tvbtn");
+    b.textContent = tvDelay ? `TV +${tvDelay} s` : "TV";
+    b.classList.toggle("on", tvDelay > 0);
+    b.title = tvDelay ? `Anzeige ${tvDelay} s verzögert (wie das TV-Bild)` : "TV-Verzögerung einstellen";
+  }
+  function setTvDelay(v) {
+    tvDelay = Math.max(0, Math.min(90, Math.round(v)));
+    store.set("f1_tvdelay", String(tvDelay));
+    $("tv-range").value = String(tvDelay);
+    $("tv-val").textContent = tvDelay ? `${tvDelay} s` : "aus";
+    const have = liveBuf.length ? Math.round((Date.now() - liveBuf[0].at) / 1000) : 0;
+    $("tv-note").textContent = tvDelay > have && mode === "live" ? `Die Anzeige bleibt ${tvDelay - have} s stehen, bis die Verzögerung erreicht ist.` : "";
+    tvLabel();
+    applyLive();
+  }
+  $("tvbtn").addEventListener("click", () => { $("tvsheet").hidden = false; setTvDelay(tvDelay); });
+  $("tv-close").addEventListener("click", () => { $("tvsheet").hidden = true; });
+  $("tvsheet").addEventListener("click", e => { if (e.target.id === "tvsheet") $("tvsheet").hidden = true; });
+  $("tv-range").addEventListener("input", e => setTvDelay(+e.target.value));
+  document.querySelectorAll("[data-tvd]").forEach(b => b.addEventListener("click", () => setTvDelay(tvDelay + +b.dataset.tvd)));
+  tvLabel();
 
   // ---------- Zeitplan mit Countdown ----------
   let planSessions = [];

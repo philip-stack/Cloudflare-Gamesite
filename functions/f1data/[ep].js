@@ -164,6 +164,32 @@ async function stream(search) {
   } catch (_) { return new Response("fetch failed", { status: 502 }); }
 }
 
+// Ersatzkopie: Jede gute OpenF1-Antwort (und jedes Rennpaket) liegt zusätzlich
+// 30 Tage im Edge-Cache. Sperrt OpenF1 (während jeder Live-Session für
+// Gratis-Nutzer) oder fällt es aus, kommt diese Kopie — so bleiben Kalender
+// und schon einmal geladene Sessions auch während eines Rennens abrufbar.
+const STALE_TTL = 30 * 86400;
+const staleKey = id => new Request("https://f1-stale.cache/v1/" + encodeURIComponent(id));
+function staleCache() { return typeof caches !== "undefined" ? caches.default : null; }
+async function staleGet(id) {
+  const c = staleCache();
+  if (!c) return null;
+  try {
+    const hit = await c.match(staleKey(id));
+    if (!hit) return null;
+    const r = new Response(hit.body, hit);
+    r.headers.set("Cache-Control", "no-store");
+    r.headers.set("X-Rennticker-Stale", "1");
+    return r;
+  } catch (_) { return null; }
+}
+function stalePut(id, body, waitUntil) {
+  const c = staleCache();
+  if (!c) return;
+  const p = c.put(staleKey(id), new Response(body, { headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": `public, max-age=${STALE_TTL}` } })).catch(() => {});
+  if (waitUntil) waitUntil(p);
+}
+
 // OpenF1 abrufen, bei 429 kurz warten und nochmal (Gratis-Stufe: 3/s)
 async function openf1(url, ttl) {
   let res;
@@ -217,6 +243,8 @@ async function bundle(search, waitUntil) {
     }
   } catch (e) {
     const st = e && e.status;
+    const old = await staleGet("bundle/" + key);
+    if (old) return old;
     return new Response(JSON.stringify({ error: st || "fetch" }), { status: st === 401 || st === 403 ? 403 : 502, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
   }
   // Reifen aus dem F1-Archiv (fehlt es, rechnet das Modell mit OpenF1)
@@ -228,6 +256,7 @@ async function bundle(search, waitUntil) {
   const body = "{" + BUNDLE_PARTS.map(k => JSON.stringify(k) + ":" + parts[k]).join(",") + ',"tyres":' + tyres + "}";
   const ttl = bundleTtl(end, Date.now());
   const res = new Response(body, { headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": `public, max-age=${Math.min(ttl, 3600)}` } });
+  stalePut("bundle/" + key, body, waitUntil);
   if (cache) {
     const put = cache.put(ckey, new Response(body, { headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": `public, max-age=${ttl}` } }));
     if (waitUntil) waitUntil(put); else await put;
@@ -251,17 +280,22 @@ export async function onRequestGet({ params, request, waitUntil }) {
     const res = await openf1(url, ttl);
     if (!res.ok) {
       // 401/403 = Live-Session (nur für OpenF1-Sponsoren), 404 = keine Daten
+      if (res.status !== 404) { const old = await staleGet(url); if (old) return old; }
       return new Response(JSON.stringify({ error: res.status }), {
         status: res.status === 404 ? 404 : res.status === 401 || res.status === 403 ? 403 : 502,
         headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
       });
     }
-    const r = new Response(res.body, res);
+    const body = await res.arrayBuffer();
+    stalePut(url, body, waitUntil);
+    const r = new Response(body, res);
     r.headers.set("Content-Type", "application/json; charset=utf-8");
     r.headers.set("Cache-Control", `public, max-age=${Math.min(ttl, 600)}`);
     r.headers.delete("set-cookie");
     return r;
   } catch (_) {
+    const old = await staleGet(url);
+    if (old) return old;
     return new Response(JSON.stringify({ error: "fetch" }), { status: 502, headers: { "Content-Type": "application/json" } });
   }
 }

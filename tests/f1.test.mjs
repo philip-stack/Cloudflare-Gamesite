@@ -361,5 +361,17 @@ const idxPrev = { Meetings: [{ Circuit: { Key: 61 }, Sessions: [{ Name: "Race", 
 const srcs = trackSources(idxNow, idxPrev, "2026/2026-10-11_Singapore_Grand_Prix/2026-10-09_Sprint_Qualifying/", 61);
 assert("Strecke: Quellen = gleiches Wochenende, dann Vorjahr", srcs.join() === "2026/2026-10-11_Singapore_Grand_Prix/2026-10-09_Practice_1/,2025/2025-10-05_Singapore_Grand_Prix/2025-10-05_Race/");
 
+// ---- Live-Verlauf im DO ----
+const LF = (lap, rows) => ({ session: { path: "2026/x/race/", race: true }, frame: { lap, status: "green", rows } });
+const R0 = (n, pos, extra) => ({ n, pos, pits: 0, out: false, pitNow: false, gap: pos - 1, interval: 1, compound: "MEDIUM", tyreAge: 3, laps: 0, last: null, best: null, fastest: false, ...(extra || {}) });
+let H = M.histStep(null, LF(4, [R0(1, 1, { laps: 4, last: 90.1 }), R0(2, 2, { laps: 4, last: 90.5 })]), 1000);
+H = M.histStep(H, LF(5, [R0(2, 1, { laps: 5, last: 89.0 }), R0(1, 2, { laps: 5, last: 91.0 })]), 4000);
+assert("Verlauf: Stand je Runde, Rundenzeiten, Überholung", H.hist[4].rows[0].n === 1 && H.hist[5].rows[0].n === 2 && H.hist[4].t === 1000
+  && H.laps[2][5].s === 89 && H.laps[1][4].s === 90.1 && H.events.some(e => e.k === "pass" && e.n === 2 && e.o.join() === "1"));
+H = M.histStep(H, LF(5, [R0(2, 1, { laps: 5, last: 89.2 }), R0(1, 2, { laps: 5, last: 91.0 })]), 6000);
+assert("Verlauf: gleiche Runde überschreibt, Zeitpunkt bleibt", H.laps[2][5].s === 89.2 && H.laps[2][5].t === 4000 && H.hist[5].t === 4000);
+const H2 = M.histStep(H, { session: { path: "2026/x/sprint/", race: true }, frame: { lap: 1, status: "green", rows: [] } }, 7000);
+assert("Verlauf: neue Session beginnt leer", H2.key === "2026/x/sprint/" && !H2.hist[4] && !Object.keys(H2.laps).length && !H2.events.length);
+
 if (!ok) process.exit(1);
 console.log("f1: alle Tests grün");

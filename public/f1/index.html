@@ -24,7 +24,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="Rennticker" />
-  <link rel="stylesheet" href="style.css?v=1a0bdea9" />
+  <link rel="stylesheet" href="style.css?v=bacae02e" />
 </head>
 <body>
   <div id="app">
@@ -53,6 +53,7 @@
       <div class="statusbar">
         <div class="lapbox" id="lapbox"><span class="live-dot" aria-hidden="true"></span><span class="lbl" id="lbl">Runde</span><b id="lap">–</b><span class="of" id="laps"></span></div>
         <div class="flag" id="flag" data-s="pre">–</div>
+        <button class="tv-btn" id="tvbtn" type="button" title="TV-Verzögerung einstellen">TV</button>
       </div>
       <div class="wx" id="wx" aria-label="Wetter" hidden></div>
       <p class="note" id="note" hidden></p>
@@ -181,6 +182,21 @@
     </div>
   </div>
 
+  <div class="sheet" id="tvsheet" role="dialog" aria-modal="true" aria-labelledby="tv-h" hidden>
+    <div class="sheet-card">
+      <header><h2 id="tv-h">TV-Verzögerung</h2><button class="icon-btn" id="tv-close" type="button" title="Schließen" aria-label="Schließen">✕</button></header>
+      <p class="tv-intro">Das Live-Timing ist dem Fernsehbild oft 10–40 Sekunden voraus. Verzögere die Anzeige, bis sie zum TV passt – dann verrät der Ticker nichts vorab.</p>
+      <div class="tv-row">
+        <button class="icon-btn" type="button" data-tvd="-5" aria-label="5 Sekunden weniger">−5</button>
+        <input type="range" id="tv-range" min="0" max="90" step="1" value="0" aria-label="Verzögerung in Sekunden" />
+        <button class="icon-btn" type="button" data-tvd="5" aria-label="5 Sekunden mehr">+5</button>
+      </div>
+      <p class="tv-val"><b id="tv-val">aus</b></p>
+      <p class="sheet-note" id="tv-note"></p>
+      <p class="sheet-note">Tipp: Warte auf eine Zielflagge, ein Überholmanöver oder „Box“ im TV und stell den Regler so, dass der Ticker es im selben Moment zeigt. Push-Meldungen kommen weiterhin sofort.</p>
+    </div>
+  </div>
+
   <div class="pdfview" id="pdfview" role="dialog" aria-modal="true" aria-labelledby="pdf-title" hidden>
     <header class="pdf-bar">
       <button class="icon-btn" id="pdf-close" type="button" title="Schließen" aria-label="Schließen">✕</button>
@@ -199,8 +215,8 @@
     <button class="icon-btn end" id="end" type="button" title="Zum Ergebnis">⏭</button>
   </nav>
 
-  <script src="model.js?v=34ad964e"></script>
-  <script src="core.js?v=f55c8c50"></script>
+  <script src="model.js?v=3df9eb77"></script>
+  <script src="core.js?v=d0d5a592"></script>
   <script src="push.js?v=00f72533"></script>
   <script src="tyres.js?v=9e1da3c7"></script>
   <script src="chart.js?v=270fe871"></script>
@@ -214,6 +230,6 @@
   <script src="trackcal.js?v=c823f3a8"></script>
   <script src="map.js?v=8dd3129e"></script>
   <script src="docs.js?v=7a6cff2e"></script>
-  <script src="events.js?v=64d66e6a"></script>
+  <script src="events.js?v=8fa1f4f5"></script>
 </body>
 </html>

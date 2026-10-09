@@ -13,8 +13,9 @@ import { SESSION_DE, gpShort, dueStarts, liveSession, currentMeeting, flagEvent,
 //     Live-DO F1Live; der Cron hält es während der Session nebenbei verbunden)
 //  3. Neues FIA-Dokument nennt die Startnummer des Lieblingsfahrers → „fia“
 //
-// Was schon gemeldet ist, steht in app_config (f1_push_state). Ohne Abos
-// passiert gar nichts (kein Abruf bei OpenF1/FIA).
+// Was schon gemeldet ist, steht in app_config (f1_push_state). Der Kalender
+// (OpenF1, edge-gecacht) wird immer gelesen und in app_config.f1_calendar
+// gemerkt; FIA nur mit passenden Abos.
 // ====================================================================
 
 const UA = "Rennticker/1.0 (+https://philip-stack.pages.dev/f1/; privat)";
@@ -37,8 +38,10 @@ export async function onRequestGet({ request, env }) {
   if (!keyEq(got, env.CRON_TOKEN)) return json({ error: "forbidden" }, 403);
   if (!env.DB) return json({ error: "nicht verfügbar" }, 503);
 
+  // Auch ohne Abos weiterlaufen: während einer Session hält der Cron das DO
+  // F1Live verbunden, damit es den Live-Verlauf vollständig mitschreibt
+  // (Seite mitten im Rennen geöffnet → Diagramme ab Runde 1).
   const subs = (await env.DB.prepare("SELECT endpoint, fav, start, flags, fia FROM f1_alert").all()).results || [];
-  if (!subs.length) return json({ ok: true, subs: 0 });
 
   const row = await env.DB.prepare("SELECT v FROM app_config WHERE k = ?").bind(STATE_KEY).first();
   let state = {};
@@ -91,12 +94,12 @@ export async function onRequestGet({ request, env }) {
     }
     state.started = [...(state.started || []), ...due.map(s => s.session_key)].slice(-40);
 
-    // 2. Flaggen — nur während einer Session und nur, wenn jemand sie will
+    // 2. Flaggen (und DO wachhalten) — nur während einer Session
     // Ganz ohne Kalender (Sperre und noch kein gemerkter Stand): trotzdem den
     // Live-Feed fragen — die Sperre heißt ja gerade, dass eine Session läuft
     const noCal = !Array.isArray(sessions) || !sessions.length;
     const live = liveSession(noCal ? [] : sessions, now) || (noCal ? { meeting_key: null } : null);
-    if (live && env.F1_LIVE && subs.some(x => x.flags)) {
+    if (live && env.F1_LIVE) {
       const res = await env.F1_LIVE.get(env.F1_LIVE.idFromName(F1_LIVE_NAME)).fetch("https://f1-live/state");
       const d = res.ok ? await res.json() : null;
       if (d && d.ok && d.session && d.frame) {

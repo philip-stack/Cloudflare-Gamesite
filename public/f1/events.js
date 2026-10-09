@@ -2,7 +2,8 @@
 // Rennticker — Ereignisse unter der Zeitenliste: Überholmanöver, Boxenstopps,
 // Ausfälle, schnellste Runden und Strafen als kurze Zeitleiste (neueste oben).
 // Nachschau: aus den Runden-Ständen bis zur gewählten Runde (kein Spoiler).
-// Live: Vergleich von Abfrage zu Abfrage, ab dem Öffnen der Seite.
+// Live: was vor dem Öffnen war, kommt aus dem Verlauf des Servers (DO), ab
+// dann Vergleich von Abfrage zu Abfrage.
 // ====================================================================
 (function () {
   "use strict";
@@ -11,6 +12,7 @@
   let all = false, onlyFav = false;
   let cache = { race: null, list: [] };
   let live = { key: null, prev: null, list: [], pitAt: new Map() };
+  let srv = { key: null, list: [] };   // Ereignisse vom Server (vor dem Öffnen)
   const PEN = /Strafe|Stop-and-Go|Durchfahrt/;
 
   function replayList(race) {
@@ -69,7 +71,9 @@
     const race = S.race, f = race && race.frames[S.frame];
     if (!f || S.view !== "times" || f.timed) { sec.hidden = true; return; }
     if (race.live) liveStep(race, f);
-    let list = race.live ? live.list.slice() : replayList(race).filter(e => e.lap <= f.lap || f.final);
+    // Server-Ereignisse nur bis zum ersten eigenen (keine doppelten)
+    const first = live.list.length ? live.list[0].t : Infinity;
+    let list = race.live ? srv.list.filter(e => e.t < first).concat(live.list) : replayList(race).filter(e => e.lap <= f.lap || f.final);
     // Strafen aus der Rennleitung (stehen dort schon zeitlich gefiltert)
     for (const m of f.msgs) if (PEN.test(m.text) && !/keine Strafe|abgesessen/.test(m.text)) {
       list.push({ k: "pen", n: m.driver, text: m.text, lap: m.lap, t: m.time });
@@ -93,8 +97,9 @@
   }
 
   RT.on("show", render);
+  RT.on("livehist", h => { srv = { key: h.key, list: h.events || [] }; });
   RT.on("view", () => { if (!S.race) $("events").hidden = true; });
-  RT.on("loading", () => { $("events").hidden = true; all = false; });
+  RT.on("loading", () => { $("events").hidden = true; all = false; srv = { key: null, list: [] }; });
   $("ev-more").addEventListener("click", () => { all = !all; render(); });
   $("ev-fav").addEventListener("click", () => { onlyFav = !onlyFav; render(); });
 })();
