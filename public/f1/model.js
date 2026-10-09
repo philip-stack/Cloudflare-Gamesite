@@ -105,6 +105,7 @@
     if (/DRIVE THROUGH/.test(U)) return `${who}: Durchfahrtsstrafe` + reason(U);
     if (/NO FURTHER (ACTION|INVESTIGATION)/.test(U)) return `${incident(U)}: keine Strafe` + reason(U);
     if (/AFTER THE RACE/.test(U)) return `${incident(U)}: Untersuchung nach dem Rennen` + reason(U);
+    if (/AFTER THE SESSION/.test(U)) return `${incident(U)}: Untersuchung nach der Session` + reason(U);
     if (/UNDER INVESTIGATION/.test(U)) return `${incident(U)}: wird untersucht` + reason(U);
     if (/NOTED/.test(U)) return `${incident(U)}: notiert` + reason(U);
     if (/^RACE START/.test(U)) return "Rennstart";
@@ -119,7 +120,7 @@
   }
   function reason(U) {
     const R = { "CAUSING A COLLISION": "Kollision verursacht", "UNSAFE RELEASE": "unsicherer Boxenstopp",
-      "FALSE START": "Frühstart", "DRIVING ERRATICALLY": "unberechenbares Fahren", "LEAVING THE TRACK": "Strecke verlassen",
+      "FALSE START": "Frühstart", "YELLOW FLAG INFRINGEMENT": "Gelbe Flagge missachtet", "IMPEDING": "behindert", "DRIVING ERRATICALLY": "unberechenbares Fahren", "LEAVING THE TRACK": "Strecke verlassen",
       "SPEEDING IN THE PIT LANE": "zu schnell in der Boxengasse", "FORCING ANOTHER DRIVER OFF THE TRACK": "von der Strecke gedrängt" };
     for (const k in R) if (U.includes(k)) return ` (${R[k]})`;
     return "";
@@ -244,6 +245,29 @@
     if (!out.length) return null;
     out.sort((a, b) => a - b);
     return { s: +out[out.length >> 1].toFixed(1), stops: out.length };
+  }
+
+  // --- Live-Karte: letzter erreichter Mini-Sektor je Auto -------------------
+  // line = TimingData.Lines[n] (Änderung aus dem Feed), p = bisheriger Stand
+  // { s, k, t, lapAt }. Nur Vorwärtsschritte zählen (der Feed färbt ältere
+  // Segmente teils nachträglich um), nach der Ziellinie geht es bei 0/0 neu los.
+  function segStep(p, line, now) {
+    p = p || { s: -1, k: -1, t: 0, lapAt: 0 };
+    if (!line || typeof line !== "object") return p;
+    if (line.NumberOfLaps != null) p = { ...p, lapAt: now };
+    let best = null;
+    const ent = v => (Array.isArray(v) ? v.map((x, i) => [i, x]) : v && typeof v === "object" ? Object.entries(v) : []);
+    for (const [si, sec] of ent(line.Sectors)) for (const [ki, sg] of ent(sec && sec.Segments)) {
+      if (!sg || !sg.Status || +si > 5 || +ki > 30) continue;
+      if (!best || +si > best[0] || (+si === best[0] && +ki > best[1])) best = [+si, +ki];
+    }
+    if (!best) return p;
+    const [s, k] = best;
+    // Kurz nach der Ziellinie: Nachzügler der alten Runde ignorieren
+    if (now - p.lapAt < 2500 && !(s === 0 && k === 0)) return p;
+    const fwd = s > p.s || (s === p.s && k > p.k);
+    const wrap = p.s >= 2 && s === 0;                      // vom letzten Sektor in die neue Runde
+    return fwd || wrap ? { ...p, s, k, t: now } : p;
   }
 
   // --- Wetter: F1-Feed (WeatherData, Texte) bzw. OpenF1 (Zahlen) → ein Format --
@@ -606,7 +630,7 @@
   }
 
   const api = { gapText, lapTime, trackStatus, msgText, isRelevantMsg, buildRace, tyrePlan, TYRE, mergeFeed, parseGap, parseTime, fromLive,
-    stewards, frameEvents, pitRejoin, pitLoss, weather };
+    stewards, frameEvents, pitRejoin, pitLoss, weather, segStep };
   if (typeof module === "object" && module.exports) module.exports = api;
   else root.F1Model = api;
 })(typeof window !== "undefined" ? window : globalThis);

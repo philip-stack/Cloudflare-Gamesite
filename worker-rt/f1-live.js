@@ -51,6 +51,7 @@ export class F1Live extends DurableObject {
     this.connecting = null; this.lastPoll = 0; this.lastMsg = 0; this.ping = null;
     this.cache = null; this.cacheAt = 0; this.error = "";
     this.logged = new Map();
+    this.prog = {};      // Live-Karte: je Auto letzter Mini-Sektor { s, k, t, lapAt }
   }
 
   // Störungen ins gemeinsame error_log (Admin-Dashboard), gedrosselt je Art —
@@ -76,7 +77,18 @@ export class F1Live extends DurableObject {
       try {
         let pos = null;
       if (this.posRaw) { try { pos = await decodePositions(this.posRaw); } catch (_) { pos = null; } }
-      this.cache = JSON.stringify({ ok: true, updated: this.lastMsg, ...F1.fromLive(this.state), pos, topics: this.topicsGot || [], posSeen: !!this.posRaw });
+      // Mini-Sektor je Auto mit Alter in ms (Karte schätzt daraus die Position)
+      const now = Date.now(), prog = {};
+      for (const [n, p] of Object.entries(this.prog)) if (p.s >= 0) prog[n] = [p.s, p.k, now - p.t];
+      // Mini-Sektoren je Sektor (aus dem Stand eines beliebigen Autos)
+      let segN = null;
+      for (const l of Object.values((this.state.TimingData || {}).Lines || {})) {
+        const S = l && l.Sectors ? Object.values(l.Sectors) : [];
+        const c = S.map(x => (x && x.Segments ? Object.keys(x.Segments).length : 0));
+        if (c.length && c.every(Boolean)) { segN = c; break; }
+      }
+      prog._n = segN;
+      this.cache = JSON.stringify({ ok: true, updated: this.lastMsg, ...F1.fromLive(this.state), pos, prog, topics: this.topicsGot || [], posSeen: !!this.posRaw });
       } catch (e) {
         // Feed-Format geändert? Stand verwerfen, beim nächsten Abruf frisch abonnieren
         this.log("Auswertung fehlgeschlagen", e && e.stack || e);
@@ -97,7 +109,7 @@ export class F1Live extends DurableObject {
   drop() {
     clearInterval(this.ping); this.ping = null;
     try { this.ws && this.ws.close(1000, "idle"); } catch (_) {}
-    this.ws = null; this.state = null; this.ready = false; this.cache = null; this.posRaw = null;
+    this.ws = null; this.state = null; this.ready = false; this.cache = null; this.posRaw = null; this.prog = {};
   }
 
   connect() {
@@ -133,6 +145,10 @@ export class F1Live extends DurableObject {
               if (t === "Position.z") this.posRaw = typeof v === "string" ? v : null;   // erst bei Abfrage entpacken
               else this.state[t] = v;
             }
+            // Startstand der Mini-Sektoren (ohne Rundenzähler, sonst greift die Nachzügler-Sperre)
+            const now0 = Date.now();
+            this.prog = {};
+            for (const [n, l] of Object.entries((this.state.TimingData || {}).Lines || {})) this.prog[n] = F1.segStep(null, { Sectors: l && l.Sectors }, now0);
             this.ready = true; this.cache = null;
           } else if (m.type === 1 && m.target === "feed" && Array.isArray(m.arguments)) {
             const [topic, data] = m.arguments;
@@ -145,7 +161,13 @@ export class F1Live extends DurableObject {
               return;
             }
             if (topic === "Position.z") { if (typeof data === "string") this.posRaw = data; this.cache = null; }
-            else if (TOPICS.includes(topic)) { this.state[topic] = F1.mergeFeed(this.state[topic], data); this.cache = null; }
+            else if (TOPICS.includes(topic)) {
+              if (topic === "TimingData" && data && data.Lines) {
+                const now = Date.now();
+                for (const [n, l] of Object.entries(data.Lines)) this.prog[n] = F1.segStep(this.prog[n], l, now);
+              }
+              this.state[topic] = F1.mergeFeed(this.state[topic], data); this.cache = null;
+            }
           } else if (m.type === 7) {
             if (m.error) this.log("Feed hat getrennt", m.error);
             ws.close();

@@ -5,6 +5,9 @@
 //    Verlauf wächst er aus den Positionen der Autos mit.
 //  · Positionen: Nachschau = OpenF1 /location zum Frame-Zeitpunkt,
 //    live = Position.z aus dem F1-Feed (über /api/f1-live, alle 3 s).
+//  · Gibt der Feed keine Positionen heraus: GESCHÄTZT aus der Zeitmessung —
+//    letzter Mini-Sektor je Auto, Strecke und Lage der Mini-Sektoren aus einer
+//    früheren Session (F1Track in trackcal.js, einmal je Strecke gemerkt).
 // Koordinaten wie im F1-Feed (1/10 m), y zeigt nach oben → im SVG gespiegelt.
 // ====================================================================
 (function () {
@@ -17,6 +20,68 @@
   const posCache = new Map();   // "<key>|<frame>" → { n: [x,y] }
   let posRun = 0, posTimer = null;
   let liveDots = new Map();     // Raster-Zelle → [x,y] (Live-Aufbau des Verlaufs)
+  const T = window.F1Track;
+  let cal = null, calFor = "", calState = "";   // Eichung der Strecke für die Schätzung
+  let tick = null;
+
+  // ---------- Geschätzte Live-Positionen ----------
+  const calKey = c => "f1_trackcal_v1_" + c;
+  async function inflate(b64) {
+    const bin = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+    return new Response(new Blob([bin]).stream().pipeThrough(new DecompressionStream("deflate-raw"))).text();
+  }
+  async function ensureCal() {
+    const ses = S.race.session || {};
+    const circuit = ses.circuit || "x";
+    if (calFor === circuit && (cal || calState === "load")) return;
+    calFor = circuit; cal = null;
+    try { const c = JSON.parse(store.get(calKey(circuit)) || "null"); if (c && c.pts && c.segF) { cal = c; return; } } catch (_) { /* neu bauen */ }
+    if (!ses.path || typeof DecompressionStream === "undefined") { calState = "fail"; return; }
+    calState = "load";
+    try {
+      const src = await get("tracksrc", { path: ses.path, ...(ses.circuit ? { circuit: ses.circuit } : {}) });
+      for (const path of src.paths || []) {
+        const td = await fetch("/f1data/stream?" + new URLSearchParams({ path, topic: "TimingData" }));
+        if (!td.ok) continue;
+        const lap = T.pickLap(T.timingLaps(await td.text()));
+        if (!lap) continue;
+        const ps = await fetch("/f1data/stream?" + new URLSearchParams({ path, topic: "Position.z" }));
+        if (!ps.ok) continue;
+        const c = T.buildCal(await T.trackOf(await ps.text(), String(lap.n), lap.t0, lap.t1, inflate), lap);
+        if (!c) continue;
+        c.from = path.split("/")[2] || "";
+        cal = c;
+        store.set(calKey(circuit), JSON.stringify(c));
+        break;
+      }
+      calState = cal ? "" : "fail";
+    } catch (_) { calState = "fail"; }
+    if (S.view === "map") draw();
+  }
+  // Ohne Eichung: schematischer Kreis, Mini-Sektoren gleichmäßig verteilt
+  function ringCal(counts) {
+    counts = counts && counts.length ? counts : [8, 8, 8];
+    const N = counts.reduce((a, b) => a + b, 0), R = 10000, pts = [], cum = [];
+    for (let i = 0; i <= 180; i++) { const a = Math.PI / 2 - i / 180 * 2 * Math.PI; pts.push([Math.round(R * Math.cos(a)), Math.round(R * Math.sin(a))]); cum.push(Math.round(i / 180 * 2 * Math.PI * R)); }
+    return { pts, cum, len: cum[cum.length - 1], segF: [...Array(N).keys()].map(g => (g + 1) / N), segDur: Array(N).fill(90 / N), counts, lap: 90, ring: true };
+  }
+  // { n: [x, y] } jetzt, + wer in der Box steht
+  function estCars(c) {
+    const race = S.race, f = race.frames[0], prog = race.prog || {}, cars = {}, box = [];
+    const base = c.counts.map((_, i) => c.counts.slice(0, i).reduce((a, b) => a + b, 0));
+    const since = (Date.now() - (race.progAt || Date.now())) / 1000;
+    for (const r of f.rows) {
+      const p = prog[r.n];
+      if (r.out) continue;
+      if (r.pitNow) { box.push(r.n); continue; }
+      if (!p || p[0] >= c.counts.length) continue;
+      const g = base[p[0]] + p[1];
+      const pace = r.last && c.lap ? Math.max(0.9, Math.min(1.8, r.last / c.lap)) : 1;
+      const fr = T.fracOf(c, g, p[2] / 1000 + since, pace);
+      if (fr != null) cars[r.n] = T.pointAt(c, fr);
+    }
+    return { cars, box };
+  }
 
   const trackKey = c => "f1_track_" + c;
   function loadStored(circuit) {
@@ -85,12 +150,21 @@
 
   function draw() {
     const race = S.race, f = race.frames[S.frame], box = $("map-box");
+    // Live ohne GPS aus dem Feed: aus der Zeitmessung schätzen
+    let est = null;
     if (race.live && race.posFeed === false) {
-      box.innerHTML = `<p class="chart-empty">Live-Positionen der Autos gibt die Formel 1 im freien Feed derzeit nicht heraus (nur mit F1-TV-Anmeldung).<br>Nach der Session ist die Karte in der Nachschau Runde für Runde verfügbar.</p>`;
-      $("map-info").textContent = "";
-      return;
+      if (!race.prog || !T) { box.innerHTML = `<p class="chart-empty">Warte auf die Zeitmessung …</p>`; return; }
+      if (!cal && calState !== "fail") {
+        ensureCal();
+        box.innerHTML = `<p class="chart-empty"><span class="spinner"></span><br>Strecke wird vorbereitet … (einmalig, aus einer früheren Session)</p>`;
+        $("map-info").textContent = "";
+        return;
+      }
+      const c = cal || ringCal(race.prog._n);
+      track = { circuit: race.session.circuit, pts: c.pts, kind: "line" };
+      est = { c, ...estCars(c) };
     }
-    let cars = race.live ? (race.pos && race.pos.cars) || {} : framePositions();
+    let cars = est ? est.cars : race.live ? (race.pos && race.pos.cars) || {} : framePositions();
     // Live ohne gemerkten Verlauf: aus den Autopositionen mitwachsen lassen
     if (race.live && cars && (!track || track.kind !== "line")) {
       for (const p of Object.values(cars)) liveDots.set(Math.round(p[0] / 60) + ":" + Math.round(p[1] / 60), p);
@@ -124,7 +198,7 @@
         if (p) g.style.transform = `translate(${p[0]}px,${-p[1]}px)`;
         seen.add(g.dataset.n);
       }
-      if (cars && Object.keys(cars).every(n => seen.has(n))) { info(cars, f); return; }
+      if (cars && Object.keys(cars).every(n => seen.has(n))) { info(cars, f, est); return; }
     }
     let s = `<svg viewBox="${vb.map(v => v.toFixed(0)).join(" ")}" class="mapsvg" data-sig="${sig}" role="img" aria-label="Streckenkarte">`;
     if (track && track.kind === "line") s += `<path class="trk" d="M${pts.map(p => p[0] + "," + -p[1]).join("L")}Z" style="stroke-width:${(span * 0.022).toFixed(0)}"/><path class="trk-in" d="M${pts.map(p => p[0] + "," + -p[1]).join("L")}Z" style="stroke-width:${(span * 0.008).toFixed(0)}"/>`;
@@ -140,17 +214,30 @@
         ${big ? `<text y="${(-r * 1.9).toFixed(0)}" style="font-size:${fs.toFixed(0)}px">${esc(d.abbr)}</text>` : ""}</g>`;
     }
     box.innerHTML = s + "</svg>";
-    box.classList.toggle("live", !!race.live);
-    info(cars, f);
+    box.classList.toggle("live", !!race.live && !est);
+    box.classList.toggle("est", !!est);
+    info(cars, f, est);
   }
-  function info(cars, f) {
+  function info(cars, f, est) {
     const race = S.race;
     const n = cars ? Object.keys(cars).length : 0;
+    if (est) {
+      const nm = x => (race.drivers.get(x) || { abbr: "#" + x }).abbr;
+      $("map-info").textContent = `${n} Autos auf der Strecke${est.box.length ? " · Box: " + est.box.map(nm).join(", ") : ""} · Positionen geschätzt aus der Zeitmessung${est.c.ring ? " (schematisch, Strecke noch unbekannt)" : ""}`;
+      return;
+    }
     $("map-info").textContent = race.live ? `${n} Autos auf der Strecke${track && track.kind === "dots" ? " · Streckenverlauf baut sich aus den Positionen auf" : ""}`
       : cars ? `Stand: Runde ${f.lap}${f.final ? " (Ziel)" : ""}` : "Lade Positionen …";
   }
 
-  RT.on("show", render);
-  RT.on("loading", () => { posCache.clear(); liveDots = new Map(); });
+  // Geschätzte Positionen gleiten: 4× pro Sekunde neu setzen, solange die Karte offen ist
+  function syncTick() {
+    const on = S.view === "map" && S.race && S.race.live && S.race.posFeed === false;
+    if (on && !tick) tick = setInterval(() => { if (!document.hidden) draw(); }, 250);
+    if (!on && tick) { clearInterval(tick); tick = null; }
+  }
+  RT.on("show", () => { render(); syncTick(); });
+  RT.on("view", syncTick);
+  RT.on("loading", () => { posCache.clear(); liveDots = new Map(); syncTick(); });
   window.addEventListener("resize", () => { if (S.view === "map") draw(); });
 })();

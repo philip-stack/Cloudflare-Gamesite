@@ -1,5 +1,5 @@
 // Name der DO-Instanz; bei Bedarf hochzählen, um eine hängende Instanz zu ersetzen
-export const F1_LIVE_NAME = "live-2";
+export const F1_LIVE_NAME = "live-3";
 // Rennticker live: aktueller Stand aus dem F1-Live-Feed. Das DO F1Live
 // (Worker worker-rt/) hält die Verbindung zum Feed, solange jemand abfragt.
 //   GET /api/f1-live  →  { ok, updated, session, drivers, frame }

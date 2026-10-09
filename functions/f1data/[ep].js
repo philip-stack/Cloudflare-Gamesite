@@ -116,6 +116,54 @@ async function radio(search) {
   }
 }
 
+// Live-Karte: Für die geschätzten Positionen braucht die Seite die Strecke und
+// wo die Mini-Sektoren liegen. Beides baut sie aus einer früheren Session
+// (gleiches Wochenende, sonst Vorjahr auf derselben Strecke) — Positionen +
+// Zeitmessung aus dem F1-Archiv, beide sind dort nach der Session frei.
+//   GET /f1data/tracksrc?path=2026/…/2026-10-09_Sprint_Qualifying/&circuit=61
+//     → { paths: ["2026/…/2026-10-09_Practice_1/", …] }  (neueste zuerst)
+//   GET /f1data/stream?path=…&topic=Position.z|TimingData   (jsonStream, durchgereicht)
+export function trackSources(idx, prevIdx, path, circuit) {
+  const folder = path.split("/").slice(0, 2).join("/") + "/";
+  const out = [];
+  for (const m of (idx && idx.Meetings) || []) {
+    const ss = (m.Sessions || []).filter(s => s.Path && s.Path.startsWith(folder) && s.Path !== path);
+    out.push(...ss.sort((a, b) => String(b.StartDate).localeCompare(String(a.StartDate))).map(s => s.Path));
+  }
+  for (const m of (prevIdx && prevIdx.Meetings) || []) {
+    if (!circuit || !m.Circuit || +m.Circuit.Key !== +circuit) continue;
+    const ss = (m.Sessions || []).filter(s => s.Path && /Race|Qualifying|Practice/.test(s.Name || ""));
+    out.push(...ss.sort((a, b) => String(b.StartDate).localeCompare(String(a.StartDate))).map(s => s.Path));
+  }
+  return out.filter(p => SESSION_PATH.test(p) && !p.includes("..")).slice(0, 6);
+}
+async function trackSrc(search) {
+  const q = new URLSearchParams(search);
+  const path = q.get("path") || "", circuit = q.get("circuit") || "";
+  if (!SESSION_PATH.test(path) || path.includes("..") || (circuit && !/^\d{1,4}$/.test(circuit))) return new Response("bad request", { status: 400 });
+  const year = +path.slice(0, 4);
+  const fetchJson = async url => {
+    const r = await fetch(url, { headers: { "User-Agent": UA }, cf: { cacheTtl: 600, cacheEverything: true } });
+    return r.ok ? JSON.parse(stripBom(await r.text())) : null;
+  };
+  try {
+    const [idx, prev] = await Promise.all([fetchJson(`${ARCHIVE}${year}/Index.json`), circuit ? fetchJson(`${ARCHIVE}${year - 1}/Index.json`) : null]);
+    return new Response(JSON.stringify({ paths: trackSources(idx, prev, path, circuit) }), { headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "public, max-age=600" } });
+  } catch (_) {
+    return new Response(JSON.stringify({ error: "fetch" }), { status: 502, headers: { "Content-Type": "application/json" } });
+  }
+}
+async function stream(search) {
+  const q = new URLSearchParams(search);
+  const path = q.get("path") || "", topic = q.get("topic") || "";
+  if (!SESSION_PATH.test(path) || path.includes("..") || !["Position.z", "TimingData"].includes(topic)) return new Response("bad request", { status: 400 });
+  try {
+    const r = await fetch(ARCHIVE + encodeURI(path) + topic + ".jsonStream", { headers: { "User-Agent": UA }, cf: { cacheTtl: 86400, cacheEverything: true } });
+    if (!r.ok) return new Response("not found", { status: r.status === 404 || r.status === 403 ? 404 : 502 });
+    return new Response(r.body, { headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "public, max-age=86400" } });
+  } catch (_) { return new Response("fetch failed", { status: 502 }); }
+}
+
 // OpenF1 abrufen, bei 429 kurz warten und nochmal (Gratis-Stufe: 3/s)
 async function openf1(url, ttl) {
   let res;
@@ -190,6 +238,8 @@ async function bundle(search, waitUntil) {
 export async function onRequestGet({ params, request, waitUntil }) {
   const ep = String(params.ep || "");
   if (ep === "bundle") return bundle(new URL(request.url).search, waitUntil);
+  if (ep === "tracksrc") return trackSrc(new URL(request.url).search);
+  if (ep === "stream") return stream(new URL(request.url).search);
   if (ep === "radio") return radio(new URL(request.url).search);
   if (ep === "archive") return archive(new URL(request.url).search);
   if (ep === "fia") return fiaList(new URL(request.url).search);

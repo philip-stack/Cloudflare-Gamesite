@@ -195,7 +195,9 @@
       race = { live: true, session: { ...d.session, year: d.session.start ? new Date(d.session.start).getFullYear() : new Date().getFullYear() },
         wm: d.wm, pos: d.pos, radio: d.radio || [], weather: d.weather,
         // Liefert der Feed überhaupt Positionen? (die F1 gibt Position.z teils nur angemeldet heraus)
-        posFeed: !Array.isArray(d.topics) || d.topics.includes("Position.z"), drivers: new Map(d.drivers.map(x => [x.n, x])), laps: f.total, frames: [f] };
+        posFeed: !Array.isArray(d.topics) || d.topics.includes("Position.z"),
+        // Live-Karte ohne GPS: letzter Mini-Sektor je Auto [s, k, Alter ms], Empfangszeit
+        prog: d.prog || null, progAt: Date.now(), drivers: new Map(d.drivers.map(x => [x.n, x])), laps: f.total, frames: [f] };
       if (d.session.race && f.lap > 0) liveHist.set(f.lap, { lap: f.lap, status: f.status, rows: f.rows.map(r => ({ n: r.n, pos: r.pos, pits: r.pits, out: r.out, gap: r.gap, interval: r.interval, compound: r.compound, tyreAge: r.tyreAge })) });
       // Rundenzeiten je Fahrer (Runde = abgeschlossene Runden des Fahrers)
       for (const r of f.rows) if (r.last != null && r.laps > 0) {

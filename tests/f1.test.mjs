@@ -7,7 +7,7 @@ import path from "node:path";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
 const M = require(path.join(__dirname, "..", "public", "f1", "model.js"));
-const { buildUrl, RADIO_FILE, SESSION_PATH, bundleTtl, BUNDLE_PARTS } = await import("file://" + path.join(__dirname, "..", "functions", "f1data", "[ep].js").replace(/\\/g, "/"));
+const { buildUrl, RADIO_FILE, SESSION_PATH, bundleTtl, BUNDLE_PARTS, trackSources } = await import("file://" + path.join(__dirname, "..", "functions", "f1data", "[ep].js").replace(/\\/g, "/"));
 
 let ok = true;
 const assert = (name, cond) => { if (cond) console.log("OK  ", name); else { console.log("FAIL", name); ok = false; } };
@@ -331,6 +331,35 @@ assert("Paket: kurz nach dem Rennen nur kurz cachen, später eine Woche", bundle
   && bundleTtl("2026-10-04T10:00:00Z", NOW) === 7 * 86400 && bundleTtl("", NOW) === 600);
 assert("Paket: enthält alle Teile der Nachschau", ["drivers", "laps", "intervals", "pit", "race_control", "weather"].every(k => BUNDLE_PARTS.includes(k))
   && BUNDLE_PARTS.every(k => buildUrl(k, "?session_key=1")));
+
+// ---- Live-Karte aus der Zeitmessung ----
+const seg = (s, k, st) => ({ Sectors: { [s]: { Segments: { [k]: { Status: st } } } } });
+let sp = M.segStep(null, seg(0, 3, 2048), 1000);
+sp = M.segStep(sp, seg(1, 2, 2049), 5000);
+assert("Mini-Sektor: vorwärts", sp.s === 1 && sp.k === 2 && sp.t === 5000);
+assert("Mini-Sektor: Umfärben eines alten Segments zählt nicht", M.segStep(sp, seg(0, 5, 2051), 6000).s === 1);
+sp = M.segStep(sp, seg(2, 7, 2048), 9000);
+const lapMsg = { NumberOfLaps: 6, ...seg(2, 7, 2049) };
+sp = M.segStep(sp, lapMsg, 9100);
+assert("Mini-Sektor: Nachzügler nach der Linie ignoriert", M.segStep(sp, seg(1, 5, 2049), 9300).s === 2);
+sp = M.segStep(sp, seg(0, 0, 2048), 11900);
+assert("Mini-Sektor: neue Runde beginnt bei 0/0", sp.s === 0 && sp.k === 0 && sp.t === 11900);
+const TR = require(path.join(__dirname, "..", "public", "f1", "trackcal.js"));
+const ring = { pts: [[0, 0], [100, 0], [100, 100], [0, 100], [0, 0]], cum: [0, 100, 200, 300, 400], len: 400, segF: [0.25, 0.5, 0.75, 1], segDur: [10, 10, 10, 10], counts: [2, 2], lap: 40 };
+const pa = TR.pointAt(ring, 0.375);
+assert("Strecke: Punkt bei Anteil", pa[0] === 100 && pa[1] === 50);
+assert("Strecke: gleitet zur nächsten Grenze, bleibt davor stehen", Math.abs(TR.fracOf(ring, 0, 5) - 0.375) < 1e-9 && TR.fracOf(ring, 0, 60) < 0.5 && TR.fracOf(ring, 0, 60) > 0.49);
+const tds = ["00:00:01.000{\"Lines\":{\"7\":{\"NumberOfLaps\":1}}}"];
+for (let g = 0; g < 4; g++) tds.push(`00:00:${String(10 + g * 20).padStart(2, "0")}.000{"Lines":{"7":{"Sectors":{"${g >> 1}":{"Segments":{"${g & 1}":{"Status":2048}}}}${g === 3 ? ',"NumberOfLaps":2' : ""}}}}`);
+const tl = TR.timingLaps(tds.join("\n"));
+assert("Strecke: saubere Runde aus der Zeitmessung", tl.length === 1 && tl[0].n === 7 && tl[0].seg.join() === "10,30,50,70" && tl[0].counts.join() === "2,2");
+const idxNow = { Meetings: [{ Sessions: [
+  { Name: "Practice 1", StartDate: "2026-10-09T16:30:00", Path: "2026/2026-10-11_Singapore_Grand_Prix/2026-10-09_Practice_1/" },
+  { Name: "Sprint Qualifying", StartDate: "2026-10-09T20:30:00", Path: "2026/2026-10-11_Singapore_Grand_Prix/2026-10-09_Sprint_Qualifying/" }] },
+  { Sessions: [{ Name: "Race", Path: "2026/2026-10-04_Bahrain_Grand_Prix/2026-10-04_Race/" }] }] };
+const idxPrev = { Meetings: [{ Circuit: { Key: 61 }, Sessions: [{ Name: "Race", StartDate: "2025-10-05T20:00:00", Path: "2025/2025-10-05_Singapore_Grand_Prix/2025-10-05_Race/" }] }] };
+const srcs = trackSources(idxNow, idxPrev, "2026/2026-10-11_Singapore_Grand_Prix/2026-10-09_Sprint_Qualifying/", 61);
+assert("Strecke: Quellen = gleiches Wochenende, dann Vorjahr", srcs.join() === "2026/2026-10-11_Singapore_Grand_Prix/2026-10-09_Practice_1/,2025/2025-10-05_Singapore_Grand_Prix/2025-10-05_Race/");
 
 if (!ok) process.exit(1);
 console.log("f1: alle Tests grün");
