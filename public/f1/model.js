@@ -284,6 +284,37 @@
     return h;
   }
 
+  // --- Qualifying/Training live: Ist das Auto auf einer schnellen Runde, und
+  // wo landet sie? Erkennbar ab Sektor 1: S1 dieser Runde höchstens 1 s über
+  // der persönlich besten S1 (Aus-/Einfahrrunden sind viel langsamer), keine
+  // Boxengassen-Segmente. Hochrechnung = fertige Sektoren dieser Runde +
+  // persönlich beste Restsektoren.
+  //   r = Zeile aus fromLive (sec, bsec, segs, best, qpart), p = prog [s, k, Alter ms]
+  //   ctx = { rows, part (1–3 | 0), cut }  →  { proj, delta, rank, inCut, s } | null
+  const PIT_SEG = 2064;
+  function flyingLap(r, p, ctx) {
+    if (!r || !p || r.out || r.knocked || r.pitNow) return null;
+    const s = p[0];
+    if (!(s >= 1) || p[2] > 60000) return null;
+    const sec = r.sec || [], b = r.bsec || [];
+    if (b.length < 3 || b.some(x => !x || x.v == null)) return null;
+    if ((r.segs || []).includes(PIT_SEG)) return null;
+    let done = 0;
+    for (let i = 0; i < s; i++) {
+      const v = sec[i] && sec[i].v;
+      if (v == null || v > b[i].v + 1.0) return null;
+      done += v;
+    }
+    const proj = +(done + b.slice(s).reduce((a, x) => a + x.v, 0)).toFixed(3);
+    // Runde schon fertig (alle Mini-Sektoren gefärbt; der Feed setzt sie kurz
+    // nach der Linie zurück) → nichts mehr hochzurechnen
+    if (s >= 3 || ((r.segs || []).length && r.segs.every(x => x))) return null;
+    const part = ctx.part || 0;
+    const others = (ctx.rows || []).filter(o => o.n !== r.n && !o.out && !o.knocked && o.best != null && (!part || o.qpart === part));
+    const rank = others.filter(o => o.best < proj).length + 1;
+    return { proj, delta: r.best != null ? +(proj - r.best).toFixed(3) : null, rank, inCut: ctx.cut ? rank <= ctx.cut : null, s };
+  }
+
   // --- Live-Karte: letzter erreichter Mini-Sektor je Auto -------------------
   // line = TimingData.Lines[n] (Änderung aus dem Feed), p = bisheriger Stand
   // { s, k, t, lapAt }. Nur Vorwärtsschritte zählen (der Feed färbt ältere
@@ -589,6 +620,8 @@
         qtimes: isQuali ? list(t.BestLapTimes).map(x => parseTime(x && x.Value)) : null,
         // Sektoren der laufenden/letzten Runde und die besten der Session
         sec: list(t.Sectors).map(x => (x && typeof x === "object" ? { v: parseTime(x.Value), ob: !!x.OverallFastest, pb: !!x.PersonalFastest } : null)),
+        // Mini-Sektoren der laufenden Runde (Status: 2048 gelb, 2049 grün, 2051 lila, 2064 Boxengasse)
+        segs: [].concat(...list(t.Sectors).map(x => list(x && x.Segments).map(sg => (sg && sg.Status) || 0))),
         bsec: list((tsl[k] || {}).BestSectors).map(x => ({ v: parseTime(x && x.Value), rank: x && x.Position ? +x.Position : null })),
         pits: t.NumberOfPitStops || 0,
         pitNow: !!(t.InPit || t.PitOut),
@@ -670,7 +703,7 @@
   }
 
   const api = { gapText, lapTime, trackStatus, msgText, isRelevantMsg, buildRace, tyrePlan, TYRE, mergeFeed, parseGap, parseTime, fromLive,
-    stewards, frameEvents, pitRejoin, pitLoss, weather, segStep, histStep };
+    stewards, frameEvents, pitRejoin, pitLoss, weather, segStep, histStep, flyingLap };
   if (typeof module === "object" && module.exports) module.exports = api;
   else root.F1Model = api;
 })(typeof window !== "undefined" ? window : globalThis);

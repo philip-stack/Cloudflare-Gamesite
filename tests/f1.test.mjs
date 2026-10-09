@@ -381,5 +381,19 @@ const { flagEvent } = await import("file://" + path.join(__dirname, "..", "funct
 assert("Push: keine Pole-Meldung in der Pause nach SQ1", flagEvent("green", "break", { label: "x", quali: true, winner: "NOR" }) === null
   && /Pole/.test(flagEvent("green", "fin", { label: "x", quali: true, winner: "NOR" }).title));
 
+// ---- Schnelle Runde im Qualifying ----
+const fq = (n, best, qpart, extra) => ({ n, best, qpart, out: false, knocked: false, pitNow: false, segs: [2049, 2051, 0], bsec: [{ v: 27.4 }, { v: 39.3 }, { v: 26.3 }], sec: [null, 44, 29], ...(extra || {}) });
+const fqrows = [fq(1, 93.0, 2), fq(2, 93.6, 2), fq(3, 94.2, 1, { sec: [{ v: 27.5 }, null, null] })];
+const fl1 = M.flyingLap(fqrows[2], [1, 3, 2000], { rows: fqrows, part: 2, cut: 2 });
+assert("Schnelle Runde: Hochrechnung, Platz, Weiterkommen", fl1 && fl1.proj === 93.1 && fl1.rank === 2 && fl1.inCut === true && fl1.delta === -1.1);
+assert("Schnelle Runde: fertige Runde (alle Mini-Sektoren gefärbt) → nein", M.flyingLap({ ...fqrows[2], segs: [2049, 2051, 2048] }, [2, 7, 500], { rows: fqrows, part: 2 }) === null);
+assert("Schnelle Runde: Ausfahrrunde (S1 zu langsam) / Boxengasse / noch in S1 → nein",
+  M.flyingLap(fq(4, 94, 1, { sec: [{ v: 31 }, null, null] }), [1, 2, 1000], { rows: fqrows, part: 2 }) === null
+  && M.flyingLap(fq(4, 94, 1, { sec: [{ v: 27.5 }, null, null], segs: [2064, 2048] }), [1, 2, 1000], { rows: fqrows, part: 2 }) === null
+  && M.flyingLap(fqrows[2], [0, 5, 1000], { rows: fqrows, part: 2 }) === null);
+const lvS = M.fromLive({ SessionInfo: { Name: "Qualifying", Type: "Qualifying" }, DriverList: { "1": { RacingNumber: "1" } },
+  TimingData: { Lines: { "1": { Position: "1", Sectors: [{ Segments: [{ Status: 2049 }, { Status: 2051 }] }, { Segments: [{ Status: 0 }] }] } } } });
+assert("Live: Mini-Sektoren der Runde je Auto", lvS.frame.rows[0].segs.join() === "2049,2051,0");
+
 if (!ok) process.exit(1);
 console.log("f1: alle Tests grün");
