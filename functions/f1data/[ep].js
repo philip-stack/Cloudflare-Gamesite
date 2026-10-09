@@ -190,6 +190,41 @@ function stalePut(id, body, waitUntil) {
   if (waitUntil) waitUntil(p);
 }
 
+// Dauerhafte Kopie in D1 (Tabelle f1_cache, gzip): Der Edge-Cache gilt nur je
+// Rechenzentrum und verfällt; D1 ist überall gleich. Der Cron füllt sie von
+// selbst (Kalender + jedes fertige Rennen/Sprint), sobald OpenF1 frei ist.
+async function gzip(text) {
+  return new Response(new Blob([text]).stream().pipeThrough(new CompressionStream("gzip"))).arrayBuffer();
+}
+export async function dbPut(env, k, text) {
+  if (!env || !env.DB) return false;
+  try {
+    const body = await gzip(text);
+    await env.DB.prepare("INSERT INTO f1_cache (k, body, at) VALUES (?, ?, datetime('now')) ON CONFLICT(k) DO UPDATE SET body = excluded.body, at = excluded.at")
+      .bind(k, body).run();
+    return true;
+  } catch (_) { return false; }
+}
+export async function dbHas(env, k, maxAgeSec) {
+  if (!env || !env.DB) return false;
+  try {
+    const r = await env.DB.prepare("SELECT 1 AS x FROM f1_cache WHERE k = ? AND at > datetime('now', ?)").bind(k, `-${maxAgeSec || 315360000} seconds`).first();
+    return !!r;
+  } catch (_) { return false; }
+}
+export async function dbGet(env, k) {
+  if (!env || !env.DB) return null;
+  try {
+    const r = await env.DB.prepare("SELECT body FROM f1_cache WHERE k = ?").bind(k).first();
+    if (!r || !r.body) return null;
+    const bin = r.body instanceof ArrayBuffer ? r.body : new Uint8Array(r.body).buffer;
+    const text = await new Response(new Blob([bin]).stream().pipeThrough(new DecompressionStream("gzip"))).text();
+    return new Response(text, { headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", "X-Rennticker-Stale": "db" } });
+  } catch (_) { return null; }
+}
+// Schlüssel für den Kalender (dieselben URLs, die der Proxy abruft)
+export const calKey = url => "openf1/" + url;
+
 // OpenF1 abrufen, bei 429 kurz warten und nochmal (Gratis-Stufe: 3/s)
 async function openf1(url, ttl) {
   let res;
@@ -219,33 +254,22 @@ export function bundleTtl(end, now) {
   const t = Date.parse(end || "");
   return isFinite(t) && now - t > 3 * 3600e3 ? 7 * 86400 : 600;
 }
-async function bundle(search, waitUntil) {
-  const q = new URLSearchParams(search);
-  const key = q.get("session_key") || "", year = q.get("year") || "", end = q.get("end") || "";
-  if (!PARAMS.session_key.test(key) || !PARAMS.year.test(year) || (end && !ISO.test(end))) return new Response("bad request", { status: 400 });
-  const cache = typeof caches !== "undefined" ? caches.default : null;
-  const ckey = new Request(`https://f1-bundle.cache/v1/${key}`);
-  if (cache) { const hit = await cache.match(ckey); if (hit) return hit; }
+// Rennpaket bauen (auch der Cron nutzt das zum Vorwärmen). Wirft bei Fehler
+// mit e.status (401/403 = OpenF1-Sperre während einer Live-Session).
+export async function buildBundle(key, year) {
   const parts = {};
-  try {
-    // Höchstens 3 gleichzeitig, dann mind. 1 s Pause (OpenF1-Grenze)
-    for (let i = 0; i < BUNDLE_PARTS.length; i += 3) {
-      const t0 = Date.now();
-      await Promise.all(BUNDLE_PARTS.slice(i, i + 3).map(async ep => {
-        const res = await openf1(buildUrl(ep, "?session_key=" + key), ENDPOINTS[ep]);
-        const txt = res.ok ? (await res.text()).trim() : "";
-        if (res.ok && txt.startsWith("[")) parts[ep] = txt;
-        else if (res.status === 404 || BUNDLE_OPTIONAL.has(ep)) parts[ep] = "[]";
-        else throw Object.assign(new Error(ep), { status: res.status });
-      }));
-      const wait = 1050 - (Date.now() - t0);
-      if (i + 3 < BUNDLE_PARTS.length && wait > 0) await new Promise(r => setTimeout(r, wait));
-    }
-  } catch (e) {
-    const st = e && e.status;
-    const old = await staleGet("bundle/" + key);
-    if (old) return old;
-    return new Response(JSON.stringify({ error: st || "fetch" }), { status: st === 401 || st === 403 ? 403 : 502, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+  // Höchstens 3 gleichzeitig, dann mind. 1 s Pause (OpenF1-Grenze)
+  for (let i = 0; i < BUNDLE_PARTS.length; i += 3) {
+    const t0 = Date.now();
+    await Promise.all(BUNDLE_PARTS.slice(i, i + 3).map(async ep => {
+      const res = await openf1(buildUrl(ep, "?session_key=" + key), ENDPOINTS[ep]);
+      const txt = res.ok ? (await res.text()).trim() : "";
+      if (res.ok && txt.startsWith("[")) parts[ep] = txt;
+      else if (res.status === 404 || BUNDLE_OPTIONAL.has(ep)) parts[ep] = "[]";
+      else throw Object.assign(new Error(ep), { status: res.status });
+    }));
+    const wait = 1050 - (Date.now() - t0);
+    if (i + 3 < BUNDLE_PARTS.length && wait > 0) await new Promise(r => setTimeout(r, wait));
   }
   // Reifen aus dem F1-Archiv (fehlt es, rechnet das Modell mit OpenF1)
   let tyres = "null";
@@ -253,8 +277,27 @@ async function bundle(search, waitUntil) {
     const t = await archive(`?year=${year}&session_key=${key}`);
     if (t.ok) tyres = await t.text();
   } catch (_) { tyres = "null"; }
-  const body = "{" + BUNDLE_PARTS.map(k => JSON.stringify(k) + ":" + parts[k]).join(",") + ',"tyres":' + tyres + "}";
+  return "{" + BUNDLE_PARTS.map(k => JSON.stringify(k) + ":" + parts[k]).join(",") + ',"tyres":' + tyres + "}";
+}
+async function bundle(search, waitUntil, env) {
+  const q = new URLSearchParams(search);
+  const key = q.get("session_key") || "", year = q.get("year") || "", end = q.get("end") || "";
+  if (!PARAMS.session_key.test(key) || !PARAMS.year.test(year) || (end && !ISO.test(end))) return new Response("bad request", { status: 400 });
+  const cache = typeof caches !== "undefined" ? caches.default : null;
+  const ckey = new Request(`https://f1-bundle.cache/v1/${key}`);
+  if (cache) { const hit = await cache.match(ckey); if (hit) return hit; }
+  let body;
+  try {
+    body = await buildBundle(key, year);
+  } catch (e) {
+    const st = e && e.status;
+    const old = (await staleGet("bundle/" + key)) || (await dbGet(env, "bundle/" + key));
+    if (old) return old;
+    return new Response(JSON.stringify({ error: st || "fetch" }), { status: st === 401 || st === 403 ? 403 : 502, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+  }
   const ttl = bundleTtl(end, Date.now());
+  // Abgeschlossenes Rennen (Daten endgültig) dauerhaft in D1 merken
+  if (ttl > 3600 && env) { const p = dbPut(env, "bundle/" + key, body); if (waitUntil) waitUntil(p); }
   const res = new Response(body, { headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": `public, max-age=${Math.min(ttl, 3600)}` } });
   stalePut("bundle/" + key, body, waitUntil);
   if (cache) {
@@ -264,9 +307,9 @@ async function bundle(search, waitUntil) {
   return res;
 }
 
-export async function onRequestGet({ params, request, waitUntil }) {
+export async function onRequestGet({ params, request, waitUntil, env }) {
   const ep = String(params.ep || "");
-  if (ep === "bundle") return bundle(new URL(request.url).search, waitUntil);
+  if (ep === "bundle") return bundle(new URL(request.url).search, waitUntil, env);
   if (ep === "tracksrc") return trackSrc(new URL(request.url).search);
   if (ep === "stream") return stream(new URL(request.url).search);
   if (ep === "radio") return radio(new URL(request.url).search);
@@ -280,7 +323,7 @@ export async function onRequestGet({ params, request, waitUntil }) {
     const res = await openf1(url, ttl);
     if (!res.ok) {
       // 401/403 = Live-Session (nur für OpenF1-Sponsoren), 404 = keine Daten
-      if (res.status !== 404) { const old = await staleGet(url); if (old) return old; }
+      if (res.status !== 404) { const old = (await staleGet(url)) || (await dbGet(env, calKey(url))); if (old) return old; }
       return new Response(JSON.stringify({ error: res.status }), {
         status: res.status === 404 ? 404 : res.status === 401 || res.status === 403 ? 403 : 502,
         headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
@@ -294,7 +337,7 @@ export async function onRequestGet({ params, request, waitUntil }) {
     r.headers.delete("set-cookie");
     return r;
   } catch (_) {
-    const old = await staleGet(url);
+    const old = (await staleGet(url)) || (await dbGet(env, calKey(url)));
     if (old) return old;
     return new Response(JSON.stringify({ error: "fetch" }), { status: 502, headers: { "Content-Type": "application/json" } });
   }

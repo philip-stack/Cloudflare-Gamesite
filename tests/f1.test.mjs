@@ -7,7 +7,7 @@ import path from "node:path";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
 const M = require(path.join(__dirname, "..", "public", "f1", "model.js"));
-const { buildUrl, RADIO_FILE, SESSION_PATH, bundleTtl, BUNDLE_PARTS, trackSources } = await import("file://" + path.join(__dirname, "..", "functions", "f1data", "[ep].js").replace(/\\/g, "/"));
+const { buildUrl, RADIO_FILE, SESSION_PATH, bundleTtl, BUNDLE_PARTS, trackSources, dbPut, dbGet, dbHas, calKey } = await import("file://" + path.join(__dirname, "..", "functions", "f1data", "[ep].js").replace(/\\/g, "/"));
 
 let ok = true;
 const assert = (name, cond) => { if (cond) console.log("OK  ", name); else { console.log("FAIL", name); ok = false; } };
@@ -404,6 +404,19 @@ const back = TR.follow({ f: 0.6 }, 0.55, 0.01, 0.1);
 assert("Nachführung: nie rückwärts, großer Abstand → springen", back.f >= 0.6 && TR.follow({ f: 0.1 }, 0.5, 0.01, 0.1).f === 0.5);
 assert("Nachführung: über die Ziellinie", TR.follow({ f: 0.999 }, 0.002, 0.01, 0.1).f < 0.01);
 assert("Tempo je Mini-Sektor", Math.abs(TR.speedAt(ring, 0, 1) - 0.025) < 1e-9 && Math.abs(TR.speedAt(ring, 0, 2) - 0.0125) < 1e-9);
+
+// ---- Dauerhafte Kopie in D1 (gzip) ----
+const mem = new Map();
+const fakeDB = { prepare: sql => ({ bind: (...a) => ({
+  run: async () => { if (/INSERT INTO f1_cache/.test(sql)) mem.set(a[0], a[1]); return {}; },
+  first: async () => (/SELECT body/.test(sql) ? (mem.has(a[0]) ? { body: [...new Uint8Array(mem.get(a[0]))] } : null) : (mem.has(a[0]) ? { x: 1 } : null)),
+}) }) };
+const big = JSON.stringify({ laps: Array.from({ length: 2000 }, (_, i) => ({ lap: i, s: 90 + i / 1000 })) });
+await dbPut({ DB: fakeDB }, "bundle/1", big);
+const dbBack = await dbGet({ DB: fakeDB }, "bundle/1");
+assert("D1-Kopie: komprimiert gespeichert, unverändert zurück", mem.get("bundle/1").byteLength < big.length / 3 && (await dbBack.text()) === big && dbBack.headers.get("X-Rennticker-Stale") === "db");
+assert("D1-Kopie: vorhanden / fehlt", (await dbHas({ DB: fakeDB }, "bundle/1")) && !(await dbHas({ DB: fakeDB }, "bundle/2")) && (await dbGet({ DB: fakeDB }, "bundle/2")) === null);
+assert("D1-Kopie: Kalender-Schlüssel = Proxy-URL", calKey(buildUrl("sessions", "?year=2026")) === "openf1/https://api.openf1.org/v1/sessions?year=2026");
 
 if (!ok) process.exit(1);
 console.log("f1: alle Tests grün");

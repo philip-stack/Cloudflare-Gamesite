@@ -2,6 +2,7 @@ import { json, logError } from "../_util.js";
 import { pushToEndpoint } from "../push.js";
 import { fiaDocsFor } from "../../f1data/_fia.js";
 import { F1_LIVE_NAME } from "../f1-live.js";
+import { buildUrl, buildBundle, dbPut, calKey } from "../../f1data/[ep].js";
 import { SESSION_DE, gpShort, dueStarts, liveSession, currentMeeting, flagEvent, carNumbers, newDocs, matchEvent } from "./_logic.js";
 
 // ====================================================================
@@ -32,6 +33,31 @@ const fetchJson = async (url, ttl) => {
   return r.ok ? r.json() : null;
 };
 const clock = d => new Intl.DateTimeFormat("de-AT", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Vienna" }).format(new Date(d));
+
+// Vorwärmen für die OpenF1-Sperre (läuft nur, wenn OpenF1 gerade frei ist):
+// Kalender höchstens alle 6 h als Kopie, dazu je Lauf EIN fertiges Rennen
+// bzw. Sprint (≥ 3 h vorbei = Daten endgültig), das noch fehlt — neueste zuerst.
+// So liegt nach gut einer Stunde die ganze Saison in D1, und jedes neue
+// Rennen kurz nach dem Ende. Der Proxy (/f1data) greift darauf zurück.
+async function warm(env, year, sessions, meetings, now) {
+  try {
+    const have = new Set(((await env.DB.prepare("SELECT k FROM f1_cache WHERE k LIKE 'bundle/%' OR (k LIKE 'openf1/%' AND at > datetime('now', '-6 hours'))").all()).results || []).map(r => r.k));
+    for (const [ep, data] of [["sessions", sessions], ["meetings", meetings]]) {
+      const k = calKey(buildUrl(ep, "?year=" + year));
+      if (!have.has(k)) await dbPut(env, k, JSON.stringify(data));
+    }
+    const todo = sessions
+      .filter(s => s.session_type === "Race" && !s.is_cancelled && Date.parse(s.date_end) + 3 * 3600e3 < now && !have.has("bundle/" + s.session_key))
+      .sort((a, b) => Date.parse(b.date_start) - Date.parse(a.date_start));
+    if (todo.length) {
+      const s = todo[0];
+      await dbPut(env, "bundle/" + s.session_key, await buildBundle(String(s.session_key), String(year)));
+    }
+  } catch (e) {
+    // 401/403 = OpenF1 gerade gesperrt → nächster Lauf
+    if (!(e && (e.status === 401 || e.status === 403))) await logError(env, "f1-cron: Vorwärmen fehlgeschlagen", "f1-cron", e && (e.stack || e.message) || e);
+  }
+}
 
 export async function onRequestGet({ request, env }) {
   const got = request.headers.get("x-cron-key") || new URL(request.url).searchParams.get("key") || "";
@@ -77,6 +103,7 @@ export async function onRequestGet({ request, env }) {
         meetings: meetings.map(m => ({ meeting_key: m.meeting_key, meeting_name: m.meeting_name })),
       };
       await env.DB.prepare("INSERT INTO app_config (k, v) VALUES ('f1_calendar', ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v").bind(JSON.stringify(slim)).run();
+      await warm(env, year, sessions, meetings, now);
     } else {
       const c = await env.DB.prepare("SELECT v FROM app_config WHERE k = 'f1_calendar'").first();
       try { const j = JSON.parse(c && c.v || "null"); if (j) { sessions = j.sessions; meetings = j.meetings; } } catch (_) { /* kein Stand */ }
