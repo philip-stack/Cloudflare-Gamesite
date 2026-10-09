@@ -155,7 +155,28 @@
     return (a + k * (b - a)) % 1;
   }
 
-  const api = { timingLaps, pickLap, trackOf, buildCal, pointAt, fracOf };
+  // Weiche Nachführung für die Anzeige (läuft je Bild): Das Auto fährt mit
+  // seinem geschätzten Tempo weiter und wird sanft zur Schätzung gezogen —
+  // kein Stehenbleiben an der Grenze, nie rückwärts. Nur bei großem Abstand
+  // (Box, Neustart) wird gesprungen.  st = { f } (Anteil 0..1), speed = Anteil/s
+  const wrapD = d => ((d % 1) + 1.5) % 1 - 0.5;
+  function follow(st, target, speed, dt) {
+    if (target == null) return st;
+    if (!st || Math.abs(wrapD(target - st.f)) > 0.12) return { f: target };
+    const pred = st.f + speed * dt;
+    let corr = wrapD(target - pred) * Math.min(1, dt * 1.2);
+    if (corr < -speed * dt) corr = -speed * dt;            // höchstens stehen bleiben
+    return { f: (((pred + corr) % 1) + 1) % 1 };
+  }
+  // Tempo zwischen Grenze g und der nächsten (Anteil/s)
+  function speedAt(cal, g, pace) {
+    const N = cal.segF.length, nx = (g + 1) % N;
+    let d = cal.segF[nx] - cal.segF[g];
+    if (d < 0) d += 1;
+    return d / ((cal.segDur[nx] || 1) * (pace || 1));
+  }
+
+  const api = { timingLaps, pickLap, trackOf, buildCal, pointAt, fracOf, follow, speedAt };
   if (typeof module === "object" && module.exports) module.exports = api;
   else root.F1Track = api;
 })(typeof window !== "undefined" ? window : globalThis);

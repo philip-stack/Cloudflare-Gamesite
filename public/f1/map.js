@@ -22,7 +22,6 @@
   let liveDots = new Map();     // Raster-Zelle → [x,y] (Live-Aufbau des Verlaufs)
   const T = window.F1Track;
   let cal = null, calFor = "", calState = "";   // Eichung der Strecke für die Schätzung
-  let tick = null;
 
   // ---------- Geschätzte Live-Positionen ----------
   const calKey = c => "f1_trackcal_v1_" + c;
@@ -65,22 +64,53 @@
     for (let i = 0; i <= 180; i++) { const a = Math.PI / 2 - i / 180 * 2 * Math.PI; pts.push([Math.round(R * Math.cos(a)), Math.round(R * Math.sin(a))]); cum.push(Math.round(i / 180 * 2 * Math.PI * R)); }
     return { pts, cum, len: cum[cum.length - 1], segF: [...Array(N).keys()].map(g => (g + 1) / N), segDur: Array(N).fill(90 / N), counts, lap: 90, ring: true };
   }
-  // { n: [x, y] } jetzt, + wer in der Box steht
+  // Je Auto: letzte Grenze g, wann erreicht (arr, ms), gelerntes Tempo
+  // (pace = Faktor zur Eichrunde) und die weich nachgeführte Anzeige st.
+  const sm = new Map();
+  // Neuer Stand aus der Abfrage → Ziele aktualisieren; { n: [x, y] } + wer in der Box steht
   function estCars(c) {
     const race = S.race, f = race.frames[0], prog = race.prog || {}, cars = {}, box = [];
     const base = c.counts.map((_, i) => c.counts.slice(0, i).reduce((a, b) => a + b, 0));
-    const since = (Date.now() - (race.progAt || Date.now())) / 1000;
+    const N = c.segF.length, seen = new Set();
     for (const r of f.rows) {
       const p = prog[r.n];
       if (r.out) continue;
       if (r.pitNow) { box.push(r.n); continue; }
       if (!p || p[0] >= c.counts.length) continue;
-      const g = base[p[0]] + p[1];
-      const pace = r.last && c.lap ? Math.max(0.9, Math.min(1.8, r.last / c.lap)) : 1;
-      const fr = T.fracOf(c, g, p[2] / 1000 + since, pace);
+      const g = base[p[0]] + p[1], arr = (race.progAt || Date.now()) - p[2];
+      let s = sm.get(r.n);
+      if (!s) s = { g, arr, st: null, pace: r.last && c.lap ? Math.max(0.95, Math.min(1.6, r.last / c.lap)) : 1 };
+      else if (s.g !== g) {
+        // Tempo lernen: wie lange hat das Auto für den letzten Mini-Sektor gebraucht?
+        if (g === (s.g + 1) % N && arr > s.arr) s.pace = 0.6 * s.pace + 0.4 * Math.max(0.8, Math.min(3, (arr - s.arr) / 1000 / (c.segDur[g] || 1)));
+        s.g = g; s.arr = arr;
+      }
+      sm.set(r.n, s); seen.add(r.n);
+      const fr = s.st ? s.st.f : T.fracOf(c, g, (Date.now() - arr) / 1000, s.pace);
       if (fr != null) cars[r.n] = T.pointAt(c, fr);
     }
+    for (const n of [...sm.keys()]) if (!seen.has(n)) sm.delete(n);
     return { cars, box };
+  }
+  // Je Bild: Anzeige weich zur Schätzung führen und die Autos verschieben
+  let raf = 0, lastTs = 0;
+  function frameLoop(ts) {
+    raf = 0;
+    const c = cal || (S.race && S.race.prog ? ringCal(S.race.prog._n) : null);
+    const svg = $("map-box").querySelector("svg.mapsvg");
+    if (!c || !svg || S.view !== "map") return;
+    const dt = lastTs ? Math.min(0.1, (ts - lastTs) / 1000) : 0;
+    lastTs = ts;
+    const now = Date.now();
+    for (const g of svg.querySelectorAll("g.car")) {
+      const s = sm.get(+g.dataset.n);
+      if (!s) continue;
+      const target = T.fracOf(c, s.g, (now - s.arr) / 1000, s.pace);
+      s.st = T.follow(s.st, target, T.speedAt(c, s.g, s.pace), dt);
+      const p = T.pointAt(c, s.st.f);
+      g.style.transform = `translate(${p[0].toFixed(0)}px,${(-p[1]).toFixed(0)}px)`;
+    }
+    raf = requestAnimationFrame(frameLoop);
   }
 
   const trackKey = c => "f1_track_" + c;
@@ -230,11 +260,11 @@
       : cars ? `Stand: Runde ${f.lap}${f.final ? " (Ziel)" : ""}` : "Lade Positionen …";
   }
 
-  // Geschätzte Positionen gleiten: 4× pro Sekunde neu setzen, solange die Karte offen ist
+  // Geschätzte Positionen: Bild für Bild (requestAnimationFrame), solange die Karte offen ist
   function syncTick() {
     const on = S.view === "map" && S.race && S.race.live && S.race.posFeed === false;
-    if (on && !tick) tick = setInterval(() => { if (!document.hidden) draw(); }, 250);
-    if (!on && tick) { clearInterval(tick); tick = null; }
+    if (on && !raf) { lastTs = 0; raf = requestAnimationFrame(frameLoop); }
+    if (!on && raf) { cancelAnimationFrame(raf); raf = 0; }
   }
   RT.on("show", () => { render(); syncTick(); });
   RT.on("view", syncTick);

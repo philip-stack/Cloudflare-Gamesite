@@ -395,5 +395,15 @@ const lvS = M.fromLive({ SessionInfo: { Name: "Qualifying", Type: "Qualifying" }
   TimingData: { Lines: { "1": { Position: "1", Sectors: [{ Segments: [{ Status: 2049 }, { Status: 2051 }] }, { Segments: [{ Status: 0 }] }] } } } });
 assert("Live: Mini-Sektoren der Runde je Auto", lvS.frame.rows[0].segs.join() === "2049,2051,0");
 
+// ---- Karte: weiche Nachführung ----
+let fst = TR.follow(null, 0.5, 0.01, 1 / 60);
+assert("Nachführung: erster Wert direkt", fst.f === 0.5);
+fst = TR.follow(fst, 0.5, 0.01, 0.1);
+assert("Nachführung: fährt mit eigenem Tempo weiter, auch wenn das Ziel steht", fst.f > 0.5 && fst.f < 0.5011);
+const back = TR.follow({ f: 0.6 }, 0.55, 0.01, 0.1);
+assert("Nachführung: nie rückwärts, großer Abstand → springen", back.f >= 0.6 && TR.follow({ f: 0.1 }, 0.5, 0.01, 0.1).f === 0.5);
+assert("Nachführung: über die Ziellinie", TR.follow({ f: 0.999 }, 0.002, 0.01, 0.1).f < 0.01);
+assert("Tempo je Mini-Sektor", Math.abs(TR.speedAt(ring, 0, 1) - 0.025) < 1e-9 && Math.abs(TR.speedAt(ring, 0, 2) - 0.0125) < 1e-9);
+
 if (!ok) process.exit(1);
 console.log("f1: alle Tests grün");

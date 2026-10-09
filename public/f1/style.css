@@ -464,7 +464,7 @@ body.is-live .tv-btn { display: block; }
 .mapsvg .car text { fill: var(--text); font-weight: 700; text-anchor: middle; paint-order: stroke; stroke: var(--panel); stroke-width: 18; font-family: "Titillium", system-ui, sans-serif; }
 .mapsvg .car.fav circle { stroke: var(--text); stroke-width: 18; }
 .map-box.live .car { transition: transform 2.9s linear, opacity .5s; }
-.map-box.est .car { transition: transform .25s linear, opacity .5s; }
+.map-box.est .car { transition: opacity .5s; }
 
 /* Funk */
 .radio-h { flex: 1; font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 700; align-self: center; }
