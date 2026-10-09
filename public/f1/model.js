@@ -650,7 +650,10 @@
     const entries = list(tdAll.NoEntries).map(Number);
     const sprintQ = /sprint/i.test(info.Name || "") || /sprint/i.test(info.Type || "");
     const part = qp ? (sprintQ ? "SQ" : "Q") + qp : null;
-    const cut = qp && status !== "fin" && entries[qp] > 0 ? entries[qp] : null;
+    // Nach Q1/Q2 meldet der Feed „Finished“ — das ist nur die Pause bis zum
+    // nächsten Abschnitt, nicht das Ende (sonst „Endstand“ und Pole-Push nach Q1)
+    if (isQuali && qp && qp < 3 && status === "fin") status = "break";
+    const cut = qp && status !== "fin" && status !== "break" && entries[qp] > 0 ? entries[qp] : null;
     return {
       session: {
         key: info.Key || null, name: SESSION_DE[info.Name] || info.Name || "", type: info.Type || "", race: isRace, quali: isQuali,

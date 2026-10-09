@@ -420,7 +420,7 @@
   // ---------- Darstellung ----------
   const STATUS = {
     pre: "Vor dem Start", green: "Grün", sc: "Safety Car", "sc-end": "SC kommt rein",
-    vsc: "Virtuelles SC", "vsc-end": "VSC endet", red: "Rote Flagge", fin: "Zielflagge",
+    vsc: "Virtuelles SC", "vsc-end": "VSC endet", red: "Rote Flagge", fin: "Zielflagge", break: "Pause",
   };
 
   // Vergleichszeilen: Nachschau = Vorrunde, live = Stand zu Beginn der Runde

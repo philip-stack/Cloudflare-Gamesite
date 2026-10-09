@@ -373,5 +373,13 @@ assert("Verlauf: gleiche Runde überschreibt, Zeitpunkt bleibt", H.laps[2][5].s 
 const H2 = M.histStep(H, { session: { path: "2026/x/sprint/", race: true }, frame: { lap: 1, status: "green", rows: [] } }, 7000);
 assert("Verlauf: neue Session beginnt leer", H2.key === "2026/x/sprint/" && !H2.hist[4] && !Object.keys(H2.laps).length && !H2.events.length);
 
+// ---- Qualifying: „Finished“ nach Q1/Q2 ist nur Pause ----
+const qf = part => M.fromLive({ SessionInfo: { Name: "Sprint Qualifying", Type: "Qualifying" }, SessionStatus: { Status: "Finished" },
+  TimingData: { SessionPart: part, NoEntries: [22, 16, 10], Lines: { "1": { Position: "1" } } }, DriverList: { "1": { RacingNumber: "1", Tla: "NOR" } } }).frame;
+assert("Quali: nach SQ1 Pause statt Endstand, nach SQ3 Ende", qf(1).status === "break" && !qf(1).final && qf(1).cut === null && qf(3).status === "fin" && qf(3).final);
+const { flagEvent } = await import("file://" + path.join(__dirname, "..", "functions", "api", "f1", "_logic.js").replace(/\\/g, "/"));
+assert("Push: keine Pole-Meldung in der Pause nach SQ1", flagEvent("green", "break", { label: "x", quali: true, winner: "NOR" }) === null
+  && /Pole/.test(flagEvent("green", "fin", { label: "x", quali: true, winner: "NOR" }).title));
+
 if (!ok) process.exit(1);
 console.log("f1: alle Tests grün");
