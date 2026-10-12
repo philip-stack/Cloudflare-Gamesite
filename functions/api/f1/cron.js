@@ -3,6 +3,8 @@ import { pushToEndpoint } from "../push.js";
 import { fiaDocsFor } from "../../f1data/_fia.js";
 import { F1_LIVE_NAME } from "../f1-live.js";
 import { buildUrl, buildBundle, dbPut, calKey } from "../../f1data/[ep].js";
+import { compactResult, DUEL_SESSIONS } from "../../f1data/_duel.js";
+import { generateReport } from "./_gen-report.js";
 import { SESSION_DE, gpShort, dueStarts, liveSession, currentMeeting, flagEvent, carNumbers, newDocs, matchEvent } from "./_logic.js";
 
 // ====================================================================
@@ -41,27 +43,54 @@ const clock = d => new Intl.DateTimeFormat("de-AT", { hour: "2-digit", minute: "
 // Rennen kurz nach dem Ende. Der Proxy (/f1data) greift darauf zurück.
 async function warm(env, year, sessions, meetings, now, state) {
   const failed = state.warmFail = Object.fromEntries(Object.entries(state.warmFail || {}).filter(([, t]) => now - t < 6 * 3600e3));
-  let s = null;
+  const newest = (a, b) => Date.parse(b.date_start) - Date.parse(a.date_start);
+  let have;
   try {
-    const have = new Set(((await env.DB.prepare("SELECT k FROM f1_cache WHERE k LIKE 'bundle/%' OR (k LIKE 'openf1/%' AND at > datetime('now', '-6 hours'))").all()).results || []).map(r => r.k));
+    have = new Set(((await env.DB.prepare("SELECT k FROM f1_cache WHERE k LIKE 'bundle/%' OR k LIKE 'result/%' OR k LIKE 'report/%' OR (k LIKE 'openf1/%' AND at > datetime('now', '-6 hours'))").all()).results || []).map(r => r.k));
+  } catch (e) { await logError(env, "f1-cron: f1_cache nicht lesbar", "f1-cron", e && e.message); return; }
+  // Fehler eines Schritts: 401/403 = OpenF1 gesperrt → nächster Lauf; sonst
+  // diesen Eintrag 6 h zurückstellen (die anderen kommen weiter dran) und einmal melden
+  const fail = async (what, id, e) => {
+    if (e && (e.status === 401 || e.status === 403)) return;
+    if (id) failed[id] = now;
+    await logError(env, "f1-cron: " + what + " fehlgeschlagen", "f1-cron", (id ? `${id} (6 h zurückgestellt): ` : "") + (e && (e.stack || e.message) || e));
+  };
+
+  // 1. Kalender
+  try {
     for (const [ep, data] of [["sessions", sessions], ["meetings", meetings]]) {
       const k = calKey(buildUrl(ep, "?year=" + year));
       if (!have.has(k)) await dbPut(env, k, JSON.stringify(data));
     }
-    const todo = sessions
-      .filter(x => x.session_type === "Race" && !x.is_cancelled && Date.parse(x.date_end) + 3 * 3600e3 < now && !have.has("bundle/" + x.session_key) && !failed[x.session_key])
-      .sort((a, b) => Date.parse(b.date_start) - Date.parse(a.date_start));
-    if (todo.length) {
-      s = todo[0];
-      await dbPut(env, "bundle/" + s.session_key, await buildBundle(String(s.session_key), String(year)));
-    }
-  } catch (e) {
-    // 401/403 = OpenF1 gerade gesperrt → nächster Lauf. Sonst dieses Rennen
-    // 6 h zurückstellen (die anderen kommen weiter dran) und einmal melden.
-    if (!(e && (e.status === 401 || e.status === 403))) {
-      if (s) failed[s.session_key] = now;
-      await logError(env, "f1-cron: Vorwärmen fehlgeschlagen", "f1-cron", (s ? `Session ${s.session_key} (6 h zurückgestellt): ` : "") + (e && (e.stack || e.message) || e));
-    }
+  } catch (e) { await fail("Kalender sichern", null, e); }
+
+  // 2. KI-Rennbericht, sobald OpenF1 die Daten freigibt (~40 min nach dem
+  // Ende, höchstens 3 Tage zurück). Ein Bericht je Lauf; dann sind die
+  // übrigen Schritte erst beim nächsten Lauf dran (Lauf nicht überladen).
+  const rep = env.AI && sessions.filter(x => x.session_type === "Race" && !x.is_cancelled && Date.parse(x.date_end) + 40 * 60000 < now && Date.parse(x.date_end) + 3 * 86400e3 > now
+    && !have.has("report/" + x.session_key) && !failed["p" + x.session_key]).sort(newest)[0];
+  if (rep) {
+    try { await generateReport(env, rep.session_key, year, null); return; }
+    catch (e) { await fail("Rennbericht", "p" + rep.session_key, e); }
+  }
+
+  // 3. Ein fertiges Rennen/Sprint als Paket (≥ 3 h vorbei = Daten endgültig)
+  const race = sessions.filter(x => x.session_type === "Race" && !x.is_cancelled && Date.parse(x.date_end) + 3 * 3600e3 < now && !have.has("bundle/" + x.session_key) && !failed["b" + x.session_key]).sort(newest)[0];
+  if (race) {
+    try { await dbPut(env, "bundle/" + race.session_key, await buildBundle(String(race.session_key), String(year))); }
+    catch (e) { await fail("Vorwärmen", "b" + race.session_key, e); }
+  }
+
+  // 4. Bis zu zwei Ergebnisse (Rennen, Sprint, Qualifying) fürs Teamduell
+  const res = sessions.filter(x => DUEL_SESSIONS.test(x.session_name) && !x.is_cancelled && Date.parse(x.date_end) + 3 * 3600e3 < now && !have.has(`result/${year}/${x.session_key}`) && !failed["r" + x.session_key]).sort(newest).slice(0, 2);
+  for (const x of res) {
+    try {
+      const results = await fetchJson(`https://api.openf1.org/v1/session_result?session_key=${x.session_key}`, 3600);
+      const drivers = await fetchJson(`https://api.openf1.org/v1/drivers?session_key=${x.session_key}`, 3600);
+      if (!Array.isArray(results) || !Array.isArray(drivers)) break;      // gesperrt/ausgefallen → nächster Lauf
+      if (!results.length) { failed["r" + x.session_key] = now; continue; }
+      await dbPut(env, `result/${year}/${x.session_key}`, JSON.stringify(compactResult(x, results, drivers)));
+    } catch (e) { await fail("Ergebnis sichern", "r" + x.session_key, e); }
   }
 }
 

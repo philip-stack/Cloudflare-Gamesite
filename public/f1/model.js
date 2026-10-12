@@ -338,6 +338,34 @@
     return fwd || wrap ? { ...p, s, k, t: now } : p;
   }
 
+  // --- Boxenfenster: wann ist der nächste Stopp fällig? ----------------------
+  // Haltbarkeit je Mischung aus den schon gefahrenen Stints DIESES Rennens
+  // (60-%-Wert, ab 3 Stints), sonst als Anteil der Renndistanz. Starker
+  // Abbau (s/Runde aus den Rundenzeiten) zieht das Fenster vor. Gegen 17 Rennen
+  // 2026 geprüft: Stopp liegt in gut der Hälfte der Fälle im Fenster ±3 Runden
+  // (Safety Car und Taktik verschieben viele Stopps) — darum nur „Prognose“.
+  //   o = { c, age, lap, total, pits, used: [Mischungen], slope, samples: { c: [Längen] } }
+  //   → { kind: "window", from, to, life, src, late } | { kind: "end" } | { kind: "must", by } | null
+  // Anteil der Renndistanz, gemessen über die Saison 2026 (75-%-Wert fertiger Stints, 17 Rennen)
+  const STINT_SHARE = { SOFT: 0.40, MEDIUM: 0.43, HARD: 0.40, INTERMEDIATE: 0.16, WET: 0.16 };
+  function pitWindow(o) {
+    const { c, lap, total } = o || {};
+    if (!c || !(total > 0) || !(lap >= 1) || lap >= total) return null;
+    const age = o.age || 0, left = total - lap;
+    const done = ((o.samples || {})[c] || []).filter(x => x >= 4).sort((a, b) => a - b);
+    const shares = o.shares || STINT_SHARE;
+    let life = done.length >= 3 ? done[Math.floor((done.length - 1) * (o.q ?? 0.6))] : Math.round((shares[c] || 0.45) * total);
+    if (o.slope != null && o.slope > 0.12) life -= Math.min(6, Math.round((o.slope - 0.12) * 30));
+    const due = life - age;
+    const used = new Set([...(o.used || []), c]);
+    // Trocken müssen zwei Mischungen gefahren werden (mit Regenreifen nicht)
+    const ruleOk = used.size >= 2 || used.has("INTERMEDIATE") || used.has("WET");
+    if (ruleOk && due >= left - (o.endMargin ?? 2)) return { kind: "end" };
+    const from = lap + Math.max(1, due - 2);
+    if (from >= total - 1) return ruleOk ? { kind: "end" } : { kind: "must", by: total - 1 };
+    return { kind: "window", from, to: Math.min(total - 1, lap + Math.max(3, due + 2)), life, src: done.length >= 3 ? done.length : 0, late: due < -2 };
+  }
+
   // --- Wetter: F1-Feed (WeatherData, Texte) bzw. OpenF1 (Zahlen) → ein Format --
   function weather(w) {
     if (!w || typeof w !== "object") return null;
@@ -691,7 +719,7 @@
       session: {
         key: info.Key || null, name: SESSION_DE[info.Name] || info.Name || "", type: info.Type || "", race: isRace, quali: isQuali,
         circuit: (meet.Circuit || {}).Key || null, path: info.Path || null,
-        meeting: (meet.Name || "").replace(/ Grand Prix$/i, " GP"), location: meet.Location || "",
+        meeting: (meet.Name || "").replace(/ Grand Prix$/i, " GP"), location: meet.Location || "", country: (meet.Country || {}).Name || "",
         state: ss, start: info.StartDate || null,
       },
       drivers, wm, weather: weather(st.WeatherData),
@@ -703,7 +731,7 @@
   }
 
   const api = { gapText, lapTime, trackStatus, msgText, isRelevantMsg, buildRace, tyrePlan, TYRE, mergeFeed, parseGap, parseTime, fromLive,
-    stewards, frameEvents, pitRejoin, pitLoss, weather, segStep, histStep, flyingLap };
+    stewards, frameEvents, pitRejoin, pitLoss, weather, segStep, histStep, flyingLap, pitWindow };
   if (typeof module === "object" && module.exports) module.exports = api;
   else root.F1Model = api;
 })(typeof window !== "undefined" ? window : globalThis);

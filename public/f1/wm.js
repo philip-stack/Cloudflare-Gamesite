@@ -1,12 +1,14 @@
 // ====================================================================
-// Rennticker — Reiter „WM“: Fahrer- und Teamwertung
+// Rennticker — Reiter „WM“: Fahrer- und Teamwertung, Teamduell der Saison
+// (Teamkollegen im direkten Vergleich: Qualifying, Rennen, Punkte)
 // ====================================================================
 (function () {
   "use strict";
   const { S, $, esc, store, get, M } = window.RT;
   const { gpName, sessName } = RT;
   RT.view("wm", { title: "WM-Stand", noPlayer: true });
-  let wmMode = store.get("f1_wmmode") === "teams" ? "teams" : "drivers";
+  let wmMode = ["teams", "duel"].includes(store.get("f1_wmmode")) ? store.get("f1_wmmode") : "drivers";
+  const duelCache = new Map();   // Jahr → { at, p }
   const wmCache = new Map();   // session_key → Promise<{ drivers, teams, names }>
   function wmSession() {
     // Rennen/Sprint, das zum gewählten Stand passt: die gewählte Session selbst
@@ -29,11 +31,50 @@
     return wmCache.get(key);
   }
   let wmRun = 0;
+  // ---------- Teamduell ----------
+  function loadDuel(year) {
+    const c = duelCache.get(year);
+    if (c && Date.now() - c.at < 10 * 60000) return c.p;
+    const p = get("teamduel", { year }).catch(e => { duelCache.delete(year); throw e; });
+    duelCache.set(year, { at: Date.now(), p });
+    return p;
+  }
+  const duelBar = (label, v, n) => {
+    const tot = v[0] + v[1];
+    const pa = tot ? v[0] / tot * 100 : 50;
+    return `<div class="td-line"><b class="${v[0] > v[1] ? "win" : ""}">${Math.round(v[0] * 10) / 10}</b>
+      <span class="td-bar" title="${label}${n ? ` · ${n} Vergleiche` : ""}"><i style="width:${pa.toFixed(1)}%"></i><em>${label}</em></span>
+      <b class="${v[1] > v[0] ? "win" : ""}">${Math.round(v[1] * 10) / 10}</b></div>`;
+  };
+  async function renderDuel(run) {
+    const list = $("wm-list"), cap = $("wm-cap");
+    const cur = S.sessions.find(s => s.session_key === +$("session").value);
+    const year = cur ? new Date(cur.date_start).getFullYear() : new Date().getFullYear();
+    if (list.dataset.key !== "duel" + year) list.innerHTML = `<li class="doc-empty"><span class="spinner"></span></li>`;
+    let d;
+    try { d = await loadDuel(year); } catch (_) { if (run === wmRun) list.innerHTML = `<li class="doc-empty">Teamduell gerade nicht verfügbar.</li>`; return; }
+    if (run !== wmRun || wmMode !== "duel") return;
+    list.dataset.key = "duel" + year;
+    cap.textContent = d.sessions ? `Saison ${year} · aus ${d.sessions} Sessions` : "";
+    const favN = S.fav;
+    list.innerHTML = (d.teams || []).map(t => {
+      const nm = x => esc(x ? x.abbr : "?");
+      const mine = favN && ((t.a && t.a.n === favN) || (t.b && t.b.n === favN));
+      return `<li class="td-card${mine ? " is-fav" : ""}" style="--team:${esc(t.color)}">
+        <div class="td-head"><span class="bar"></span><b>${esc(t.team)}</b>${t.others.length ? `<small>auch: ${t.others.map(nm).join(", ")}</small>` : ""}</div>
+        <div class="td-names"><span>${nm(t.a)} <small>${esc(t.a ? t.a.last : "")}</small></span><span>${nm(t.b)} <small>${esc(t.b ? t.b.last : "")}</small></span></div>
+        ${duelBar("Quali", t.quali, t.n.quali)}${duelBar("Rennen", t.race, t.n.race)}${duelBar("Punkte", t.pts)}
+      </li>`;
+    }).join("") || `<li class="doc-empty">Die Ergebnisse der Saison werden gerade gesammelt – in etwa einer Stunde ist alles da.</li>`;
+  }
+
   async function renderWM() {
     if (S.view !== "wm") return;
     document.querySelectorAll(".seg2 button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.wm === wmMode)));
     const list = $("wm-list"), cap = $("wm-cap");
     const run = ++wmRun;
+    list.classList.toggle("td-list", wmMode === "duel");
+    if (wmMode === "duel") return renderDuel(run);
     let data, names = S.race ? S.race.drivers : new Map();
     if (S.race && S.race.live && S.race.wm) {
       data = S.race.wm;
@@ -57,7 +98,7 @@
       const mv = x.pos0 && x.pos ? x.pos0 - x.pos : 0;
       const gain = Math.round((x.pts - x.pts0) * 10) / 10;
       const mine = wmMode === "drivers" ? x.n === S.fav : x.team === favTeam;
-      return `<li class="wm-row${mine ? " is-S.fav" : ""}" style="--team:${esc(color)}">
+      return `<li class="wm-row${mine ? " is-fav" : ""}" style="--team:${esc(color)}">
         <span class="wm-pos"><b>${x.pos ?? "–"}</b>${mv > 0 ? `<i class="up">▲${mv}</i>` : mv < 0 ? `<i class="down">▼${-mv}</i>` : ""}</span>
         <span class="bar"></span>
         <span class="wm-name"><b>${esc(d ? d.last || d.abbr : x.team)}</b><small>${esc(d ? d.team : "")}</small></span>

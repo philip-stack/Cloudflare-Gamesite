@@ -20,6 +20,7 @@
     for (let k = 10; k < total; k += 10) ticks.push(k);
     if (total > 1) ticks.push(total);
     $("tyre-axis").innerHTML = ticks.map(k => `<span style="left:${pct(k - 0.5)}">${k}</span>`).join("");
+    const live = !!f.live, samples = RT.pitSamples ? RT.pitSamples(f) : {};
     $("tyre-rows").innerHTML = f.rows.map(r => {
       const d = S.race.drivers.get(r.n);
       const segs = (r.stints || []).map((g, i) => {
@@ -28,9 +29,12 @@
         const sel = tyreInfo && tyreInfo.n === r.n && tyreInfo.i === i ? " sel" : "";
         return `<button type="button" class="seg t-${k}${sel}" data-n="${r.n}" data-i="${i}" style="left:${pct(g.from - 1)};width:calc(${pct(w)} - 2px)" title="${esc(d.abbr)} · ${esc(TYRE_DE[g.c] || g.c)} · Runde ${g.from}–${g.from + Math.max(g.laps, 1) - 1}" aria-label="${esc(d.abbr)} ${esc(TYRE_DE[g.c] || g.c)}, ${g.laps} Runden">${g.laps >= 3 ? k : ""}${g.laps >= 7 ? `<small>${g.laps}</small>` : ""}</button>`;
       }).join("");
-      return `<li class="trow${r.n === S.fav ? " is-S.fav" : ""}${r.out ? " is-out" : ""}" style="--team:${esc(d.color)}">
+      // Boxenfenster als gestrichelter Bereich auf der Spur
+      const w = live || !f.final ? RT.pitWin && RT.pitWin(r, f, samples) : null;
+      const win = w && w.kind === "window" ? `<i class="pwin${w.late ? " late" : ""}" style="left:${pct(w.from - 1)};width:${pct(w.to - w.from + 1)}" title="Boxenfenster Runde ${w.from}–${w.to}"></i>` : "";
+      return `<li class="trow${r.n === S.fav ? " is-fav" : ""}${r.out ? " is-out" : ""}" style="--team:${esc(d.color)}">
         <span class="t-pos">${r.pos ?? "–"}</span><span class="bar"></span><b class="t-abbr">${esc(d.abbr)}</b>
-        <span class="track">${segs}${now > 0 && now < total ? `<i class="now" style="left:${pct(now)}"></i>` : ""}</span>
+        <span class="track">${win}${segs}${now > 0 && now < total ? `<i class="now" style="left:${pct(now)}"></i>` : ""}</span>
       </li>`;
     }).join("");
     // Info zum angetippten Abschnitt

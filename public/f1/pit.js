@@ -43,6 +43,40 @@
     return { s: DEFAULT, src: "Schätzwert" };
   }
 
+  // ---------- Boxenfenster (F1Model.pitWindow) ----------
+  // Fertige Stintlängen dieses Rennens je Mischung (alle Fahrer, ohne den laufenden Stint)
+  function samplesOf(f) {
+    const s = {};
+    for (const r of f.rows) (r.stints || []).slice(0, -1).forEach(g => { if (g.c && g.laps) (s[g.c] = s[g.c] || []).push(g.laps); });
+    return s;
+  }
+  RT.pitWin = (r, f, samples) => {
+    if (!r || r.out || f.timed || f.final || !S.race) return null;
+    const series = RT.lapSeries ? RT.lapSeries(r.n) : [];
+    const slope = RT.lapTrend && series.length ? RT.lapTrend(RT.lapClean(series)) : null;
+    return M.pitWindow({ c: r.compound, age: r.tyreAge, lap: f.lap, total: S.race.laps || f.total, pits: r.pits,
+      used: (r.stints || []).slice(0, -1).map(g => g.c), slope, samples: samples || samplesOf(f) });
+  };
+  RT.pitSamples = samplesOf;
+  const TYRE_NAME = { SOFT: "Soft", MEDIUM: "Medium", HARD: "Hard", INTERMEDIATE: "Inter", WET: "Regen" };
+  function windowLine(me, f) {
+    const w = RT.pitWin(me, f);
+    if (!w) return "";
+    if (w.kind === "end") return `<p class="pit-win"><b>Boxenfenster</b> Reifen reichen bis ins Ziel</p>`;
+    if (w.kind === "must") return `<p class="pit-win late"><b>Boxenfenster</b> Pflichtstopp noch offen (bis Runde ${w.by})</p>`;
+    return `<p class="pit-win${w.late ? " late" : ""}"><b>Boxenfenster</b> Prognose Runde ${w.from}–${w.to}${w.late ? " · überfällig" : ""}
+      <small>${esc(TYRE_NAME[me.compound] || me.compound)} hält ≈ ${w.life} Rd. (${w.src ? `aus ${w.src} Stints dieses Rennens` : "Schätzung"})</small></p>`;
+  }
+  // Undercut: knapp hinter einem Auto auf alten Reifen, dessen Fenster schon offen ist
+  function undercut(me, f) {
+    const i = f.rows.indexOf(me), a = f.rows[i - 1];
+    if (!a || a.out || a.pitNow || typeof me.interval !== "number" || me.interval > 2.0 || (a.tyreAge || 0) < 10) return "";
+    const w = RT.pitWin(a, f);
+    if (!w || w.kind !== "window" || f.lap < w.from - 2) return "";
+    const d = S.race.drivers.get(a.n);
+    return `<p class="pit-win uc"><b>Undercut-Chance</b> auf ${esc(d ? d.abbr : "#" + a.n)} (${me.interval.toFixed(1)} s, Reifen ${a.tyreAge} Rd. alt)</p>`;
+  }
+
   RT.on("show", f => {
     const box = $("fav");
     const race = S.race;
@@ -74,6 +108,7 @@
           ${L.manual ? `<button type="button" data-pitd="0" title="Wieder automatisch" aria-label="Boxenverlust automatisch">↺</button>` : ""}
         </small></div>
       ${body}
+      ${windowLine(me, f)}${undercut(me, f)}
       <p class="pit-src">${k < 1 ? `${f.status.startsWith("vsc") ? "VSC" : "Safety Car"}: Stopp billiger (normal ${L.s.toFixed(1)} s) · ` : ""}${esc(L.src)}</p>`;
   });
 

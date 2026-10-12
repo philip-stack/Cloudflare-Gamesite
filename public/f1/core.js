@@ -30,7 +30,7 @@
   // Oben stehen nur 4 Bereiche, darunter (bei mehreren) eine Unterleiste.
   const views = { times: { panel: "board", title: "Zeiten" } };
   const GROUPS = [
-    { id: "race", views: ["times"] },
+    { id: "race", views: ["times", "grid", "report"] },
     { id: "analyse", views: ["tyres", "chart", "duel"] },
     { id: "track", views: ["map", "radio"] },
     { id: "info", views: ["wm", "docs"] },

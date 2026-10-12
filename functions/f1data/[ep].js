@@ -9,6 +9,7 @@
 // ====================================================================
 
 import { fiaList, fiaPdf } from "./_fia.js";
+import { teamDuel } from "./_duel.js";
 
 const BASE = "https://api.openf1.org/v1/";
 const UA = "Rennticker/1.0 (+https://philip-stack.pages.dev/f1/; privat)";
@@ -57,6 +58,11 @@ export async function archivePath(year, key, fetchJson) {
   const idx = await fetchJson(`${ARCHIVE}${year}/Index.json`);
   for (const m of (idx && idx.Meetings) || []) for (const s of m.Sessions || []) if (s.Key === key && s.Path) return s.Path;
   return null;
+}
+// Ein Thema einer Session aus dem F1-Archiv als Objekt (für den Rennbericht)
+export async function archiveTopic(year, key, topic) {
+  const r = await archive(`?year=${year}&session_key=${key}&topic=${topic}`);
+  return r.ok ? r.json() : null;
 }
 async function archive(search) {
   const q = new URLSearchParams(search);
@@ -215,6 +221,53 @@ export async function dbGet(env, k) {
 // Schlüssel für den Kalender (dieselben URLs, die der Proxy abruft)
 export const calKey = url => "openf1/" + url;
 
+// Regenradar für die Strecke (Open-Meteo, gratis, ohne Schlüssel):
+//   GET /f1data/rain?place=Marina Bay&country=Singapore
+//   → { place, country, slots: [{ t, mm, p }] }  je 15 min, die nächsten 2 h
+// Ort aus dem Kalender (location + Land) → Koordinaten per Geocoding (30 Tage gecacht).
+const PLACE = /^[\p{L}\p{M} .'\-]{2,60}$/u;
+export function pickPlace(results, country) {
+  const c = String(country || "").toLowerCase();
+  const list = Array.isArray(results) ? results : [];
+  return list.find(r => c && String(r.country || "").toLowerCase() === c) || list[0] || null;
+}
+export function rainSlots(fc) {
+  const m = (fc && fc.minutely_15) || {};
+  return (m.time || []).map((t, i) => ({ t: Date.parse(t + "Z"), mm: +(m.precipitation || [])[i] || 0, p: +(m.precipitation_probability || [])[i] || 0 }))
+    .filter(x => isFinite(x.t));
+}
+async function rain(search) {
+  const q = new URLSearchParams(search);
+  const place = (q.get("place") || "").trim(), country = (q.get("country") || "").trim();
+  if (!PLACE.test(place) || (country && !PLACE.test(country))) return new Response("bad request", { status: 400 });
+  const j = async (url, ttl) => { const r = await fetch(url, { headers: { "User-Agent": UA }, cf: { cacheTtl: ttl, cacheEverything: true } }); return r.ok ? r.json() : null; };
+  try {
+    const geo = await j(`https://geocoding-api.open-meteo.com/v1/search?${new URLSearchParams({ name: place, count: "10", language: "en" })}`, 30 * 86400);
+    const g = pickPlace(geo && geo.results, country);
+    if (!g) return new Response(JSON.stringify({ error: 404 }), { status: 404, headers: { "Content-Type": "application/json" } });
+    const fc = await j(`https://api.open-meteo.com/v1/forecast?${new URLSearchParams({ latitude: g.latitude.toFixed(3), longitude: g.longitude.toFixed(3), minutely_15: "precipitation,precipitation_probability", forecast_minutely_15: "9", timezone: "UTC" })}`, 600);
+    if (!fc) throw new Error("forecast");
+    return new Response(JSON.stringify({ place: g.name, country: g.country, slots: rainSlots(fc) }), { headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "public, max-age=600" } });
+  } catch (_) {
+    return new Response(JSON.stringify({ error: "fetch" }), { status: 502, headers: { "Content-Type": "application/json" } });
+  }
+}
+
+// Teamduell der Saison aus den gemerkten Ergebnissen (der Cron sammelt sie)
+//   GET /f1data/teamduel?year=2026  →  { sessions, teams: [...] }
+async function duel(search, env) {
+  const year = new URLSearchParams(search).get("year") || "";
+  if (!PARAMS.year.test(year) || !env || !env.DB) return new Response("bad request", { status: 400 });
+  try {
+    const rows = (await env.DB.prepare("SELECT k FROM f1_cache WHERE k LIKE ?").bind(`result/${year}/%`).all()).results || [];
+    const list = [];
+    for (const r of rows) { const res = await dbGet(env, r.k); if (res) { try { list.push(JSON.parse(await res.text())); } catch (_) { /* kaputt → weglassen */ } } }
+    return new Response(JSON.stringify({ sessions: list.length, teams: teamDuel(list) }), { headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "public, max-age=600" } });
+  } catch (_) {
+    return new Response(JSON.stringify({ error: "db" }), { status: 502, headers: { "Content-Type": "application/json" } });
+  }
+}
+
 // OpenF1 abrufen, bei 429 kurz warten und nochmal (Gratis-Stufe: 3/s)
 async function openf1(url, ttl) {
   let res;
@@ -301,6 +354,8 @@ export async function onRequestGet({ params, request, waitUntil, env }) {
   const ep = String(params.ep || "");
   if (ep === "bundle") return bundle(new URL(request.url).search, waitUntil, env);
   if (ep === "tracksrc") return trackSrc(new URL(request.url).search);
+  if (ep === "rain") return rain(new URL(request.url).search);
+  if (ep === "teamduel") return duel(new URL(request.url).search, env);
   if (ep === "radio") return radio(new URL(request.url).search);
   if (ep === "archive") return archive(new URL(request.url).search);
   if (ep === "fia") return fiaList(new URL(request.url).search);

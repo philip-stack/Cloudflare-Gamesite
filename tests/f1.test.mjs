@@ -7,7 +7,7 @@ import path from "node:path";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
 const M = require(path.join(__dirname, "..", "public", "f1", "model.js"));
-const { buildUrl, RADIO_FILE, SESSION_PATH, bundleTtl, BUNDLE_PARTS, trackSources, dbPut, dbGet, dbHas, calKey } = await import("file://" + path.join(__dirname, "..", "functions", "f1data", "[ep].js").replace(/\\/g, "/"));
+const { buildUrl, RADIO_FILE, SESSION_PATH, bundleTtl, BUNDLE_PARTS, trackSources, dbPut, dbGet, dbHas, calKey, pickPlace, rainSlots } = await import("file://" + path.join(__dirname, "..", "functions", "f1data", "[ep].js").replace(/\\/g, "/"));
 
 let ok = true;
 const assert = (name, cond) => { if (cond) console.log("OK  ", name); else { console.log("FAIL", name); ok = false; } };
@@ -417,6 +417,39 @@ const dbBack = await dbGet({ DB: fakeDB }, "bundle/1");
 assert("D1-Kopie: komprimiert gespeichert, unverändert zurück", mem.get("bundle/1").byteLength < big.length / 3 && (await dbBack.text()) === big && dbBack.headers.get("X-Rennticker-Stale") === "db");
 assert("D1-Kopie: vorhanden / fehlt", (await dbHas({ DB: fakeDB }, "bundle/1")) && !(await dbHas({ DB: fakeDB }, "bundle/2")) && (await dbGet({ DB: fakeDB }, "bundle/2")) === null);
 assert("D1-Kopie: Kalender-Schlüssel = Proxy-URL", calKey(buildUrl("sessions", "?year=2026")) === "openf1/https://api.openf1.org/v1/sessions?year=2026");
+
+// ---- Boxenfenster ----
+const pwA = M.pitWindow({ c: "MEDIUM", age: 10, lap: 20, total: 60, pits: 0, used: [], slope: null, samples: { MEDIUM: [24, 26, 28, 30] } });
+assert("Boxenfenster: aus den Stints dieses Rennens", pwA.kind === "window" && pwA.life === 26 && pwA.from === 34 && pwA.to === 38 && pwA.src === 4);
+const pwB = M.pitWindow({ c: "HARD", age: 5, lap: 50, total: 60, pits: 1, used: ["MEDIUM"], samples: {} });
+assert("Boxenfenster: Reifen reichen bis ins Ziel", pwB.kind === "end");
+const pwC = M.pitWindow({ c: "MEDIUM", age: 50, lap: 58, total: 60, pits: 0, used: [], samples: {} });
+assert("Boxenfenster: Pflichtstopp offen (nur eine Mischung)", pwC.kind === "must" && pwC.by === 59);
+const pwD = M.pitWindow({ c: "SOFT", age: 10, lap: 20, total: 60, pits: 0, used: [], slope: 0.3, samples: { SOFT: [20, 20, 20] } });
+assert("Boxenfenster: starker Abbau zieht vor", pwD.life === 15);
+
+// ---- Teamduell ----
+const DU = await import("file://" + path.join(__dirname, "..", "functions", "f1data", "_duel.js").replace(/\\/g, "/"));
+const drv = [{ driver_number: 1, name_acronym: "AAA", team_name: "Rot", team_colour: "FF0000" }, { driver_number: 2, name_acronym: "BBB", team_name: "Rot", team_colour: "FF0000" }];
+const sq = DU.compactResult({ session_key: 1, session_name: "Qualifying", date_start: "2026-01-01" }, [{ driver_number: 1, position: 2 }, { driver_number: 2, position: 1 }], drv);
+const sr = DU.compactResult({ session_key: 2, session_name: "Race", date_start: "2026-01-02" }, [{ driver_number: 1, position: 1, points: 25 }, { driver_number: 2, position: null, dnf: true }], drv);
+const sr2 = DU.compactResult({ session_key: 3, session_name: "Race", date_start: "2026-01-09" }, [{ driver_number: 1, position: 4 }, { driver_number: 2, position: 3 }], drv);
+const td = DU.teamDuel([sr2, sq, sr]);
+assert("Teamduell: Quali, Rennen (Ausfall zählt hinten), Punkte aus Tabelle", td.length === 1 && td[0].quali.join() === "0,1" && td[0].race.join() === "1,1" && td[0].pts.join() === "37,15" && td[0].a.abbr === "AAA");
+
+// ---- Regenradar ----
+assert("Regen: Ort im richtigen Land", pickPlace([{ name: "Marina Park", country: "United States" }, { name: "Marina Bay", country: "Singapore" }], "Singapore").name === "Marina Bay"
+  && pickPlace([{ name: "X", country: "Y" }], "").name === "X" && pickPlace([], "Z") === null);
+const rs = rainSlots({ minutely_15: { time: ["2026-10-12T11:00", "2026-10-12T11:15"], precipitation: [0, 0.4], precipitation_probability: [20, 70] } });
+assert("Regen: 15-Minuten-Werte", rs.length === 2 && rs[1].mm === 0.4 && rs[1].p === 70 && rs[0].t === Date.parse("2026-10-12T11:00Z"));
+
+// ---- Rennbericht ----
+const RP = await import("file://" + path.join(__dirname, "..", "functions", "api", "f1", "_report.js").replace(/\\/g, "/"));
+const facts = RP.reportFacts(R, { title: "Test GP 2026 · Rennen" }, [{ n: 1, lap: 2, de: "Box, box." }]);
+assert("Bericht: Faktenblatt mit Ergebnis, Führung, Strategie, Funk", /Rennen: Test GP 2026/.test(facts.text) && /Ergebnis: 1\. AAA/.test(facts.text) && /Führung: /.test(facts.text)
+  && /Strategie Top 5:/.test(facts.text) && /„Box, box\.“/.test(facts.text) && facts.drivers.has(1) && /Start P/.test(facts.drivers.get(1)));
+const rpt = RP.parseReport("# Verstappen siegt souverän\n\n" + "Wort ".repeat(130), 110);
+assert("Bericht: Überschrift + Absätze, zu kurz → null", rpt && rpt.title === "Verstappen siegt souverän" && rpt.body.length === 1 && RP.parseReport("Titel\nzu kurz", 110) === null);
 
 if (!ok) process.exit(1);
 console.log("f1: alle Tests grün");

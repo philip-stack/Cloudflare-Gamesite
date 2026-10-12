@@ -85,7 +85,7 @@
     } catch (_) { pushNote("Test fehlgeschlagen.", true); }
   });
   // Lieblingsfahrer geändert → Abo aktualisieren
-  RT.on("S.fav", () => {
+  RT.on("fav", () => {
     if (pushPrefs.on && canPush) getSub(false).then(sub => sub && alertApi({ action: "subscribe", subscription: sub.toJSON(), fav: S.fav || null, start: pushPrefs.start, flags: pushPrefs.flags, fia: pushPrefs.fia })).catch(() => {});
   });
 })();
