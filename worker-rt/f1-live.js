@@ -12,6 +12,7 @@
 // ====================================================================
 import { DurableObject } from "cloudflare:workers";
 import F1 from "../public/f1/model.js";
+import F1Track from "../public/f1/trackcal.js";
 import { rtLogError } from "./rt-db.js";
 
 const HOST = "https://livetiming.formula1.com/signalrcore";
@@ -23,6 +24,27 @@ export const TOPICS = ["Heartbeat", "SessionInfo", "SessionStatus", "TrackStatus
 const IDLE_MS = 5 * 60 * 1000;
 const PING_MS = 15 * 1000;
 const LOG_EVERY_MS = 10 * 60 * 1000;   // gleiche Störung höchstens alle 10 min ins error_log
+const HIST_SAVE_MS = 60 * 1000;        // Live-Verlauf so oft in D1 sichern (überlebt Neustart/Deploy)
+const ARCHIVE = "https://livetiming.formula1.com/static/";
+const SESSION_PATH = /^20\d\d\/[^?#\\]+\/$/;
+
+// Kleine D1-Ablage in f1_cache (gzip), dieselbe Tabelle wie der Proxy
+async function cachePut(env, k, text) {
+  if (!env || !env.DB) return;
+  const body = await new Response(new Blob([text]).stream().pipeThrough(new CompressionStream("gzip"))).arrayBuffer();
+  await env.DB.prepare("INSERT INTO f1_cache (k, body, at) VALUES (?, ?, datetime('now')) ON CONFLICT(k) DO UPDATE SET body = excluded.body, at = excluded.at").bind(k, body).run();
+}
+async function cacheGet(env, k) {
+  if (!env || !env.DB) return null;
+  const r = await env.DB.prepare("SELECT body FROM f1_cache WHERE k = ?").bind(k).first();
+  if (!r || !r.body) return null;
+  const bin = r.body instanceof ArrayBuffer ? r.body : new Uint8Array(r.body).buffer;
+  return new Response(new Blob([bin]).stream().pipeThrough(new DecompressionStream("gzip"))).text();
+}
+async function inflateB64(b64) {
+  const bin = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+  return new Response(new Blob([bin]).stream().pipeThrough(new DecompressionStream("deflate-raw"))).text();
+}
 
 // Lastbalancer-Cookies aus der Negotiate-Antwort (die Verbindung muss am
 // selben Server landen).
@@ -53,7 +75,62 @@ export class F1Live extends DurableObject {
     this.logged = new Map();
     this.prog = {};      // Live-Karte: je Auto letzter Mini-Sektor { s, k, t, lapAt }
     this.hist = null;    // Live-Verlauf der Session (F1Model.histStep), höchstens alle 2 s fortgeschrieben
-    this.histAt = 0;
+    this.histAt = 0; this.histSavedAt = 0;
+    this.calFail = new Map();   // Strecke → Zeitpunkt der letzten gescheiterten Eichung
+  }
+
+  // Verlauf in D1 sichern / nach Neustart zurückholen (Schlüssel = Session-Pfad)
+  saveHist(now) {
+    const h = this.hist;
+    if (!h || !h.key || now - this.histSavedAt < HIST_SAVE_MS || (!Object.keys(h.hist).length && !Object.keys(h.laps).length)) return;
+    this.histSavedAt = now;
+    const { prev, ...keep } = h;
+    this.ctx.waitUntil(cachePut(this.env, "hist/" + h.key, JSON.stringify(keep)).catch(e => this.log("Verlauf sichern fehlgeschlagen", e && e.message)));
+  }
+  async restoreHist() {
+    const path = (this.state && this.state.SessionInfo || {}).Path;
+    if (!path) return;
+    try {
+      const txt = await cacheGet(this.env, "hist/" + path);
+      if (!txt || !this.state || (this.state.SessionInfo || {}).Path !== path) return;
+      const old = JSON.parse(txt);
+      const h = this.hist && this.hist.key === path ? this.hist : { key: path, hist: {}, laps: {}, events: [], prev: null, pitAt: {} };
+      // Gesicherter Stand ergänzt, was die neue Verbindung noch nicht kennt
+      h.hist = { ...old.hist, ...h.hist };
+      for (const [n, m] of Object.entries(old.laps || {})) h.laps[n] = { ...m, ...(h.laps[n] || {}) };
+      const seen = new Set(h.events.map(e => e.t));
+      h.events = (old.events || []).filter(e => !seen.has(e.t)).concat(h.events).sort((a, b) => a.t - b.t).slice(-300);
+      h.pitAt = { ...(old.pitAt || {}), ...h.pitAt };
+      this.hist = h;
+    } catch (e) { this.log("Verlauf laden fehlgeschlagen", e && e.message); }
+  }
+
+  // Strecke für die Live-Karte eichen (einmal je Strecke, Ergebnis in D1):
+  // GPS-Spur + Mini-Sektor-Grenzen aus einer früheren Session (F1Track).
+  async trackCal(circuit, paths) {
+    const k = "trackcal/" + circuit;
+    const have = await cacheGet(this.env, k).catch(() => null);
+    if (have) return have;
+    if (Date.now() - (this.calFail.get(circuit) || 0) < 10 * 60 * 1000) return null;
+    for (const path of paths) {
+      try {
+        const get = async t => { const r = await fetch(ARCHIVE + encodeURI(path) + t + ".jsonStream", { headers: { "User-Agent": UA } }); return r.ok ? r.text() : null; };
+        const td = await get("TimingData");
+        if (!td) continue;
+        const lap = F1Track.pickLap(F1Track.timingLaps(td));
+        if (!lap) continue;
+        const pos = await get("Position.z");
+        if (!pos) continue;
+        const cal = F1Track.buildCal(await F1Track.trackOf(pos, String(lap.n), lap.t0, lap.t1, inflateB64), lap);
+        if (!cal) continue;
+        cal.from = path.split("/")[2] || "";
+        const txt = JSON.stringify(cal);
+        await cachePut(this.env, k, txt);
+        return txt;
+      } catch (e) { this.log("Strecke eichen fehlgeschlagen", e && e.message); }
+    }
+    this.calFail.set(circuit, Date.now());
+    return null;
   }
 
   // Verlauf fortschreiben — aus dem Feed, unabhängig davon, ob gerade jemand schaut
@@ -61,7 +138,7 @@ export class F1Live extends DurableObject {
     const now = Date.now();
     if (now - this.histAt < 2000 || !this.ready) return;
     this.histAt = now;
-    try { this.hist = F1.histStep(this.hist, F1.fromLive(this.state), now); }
+    try { this.hist = F1.histStep(this.hist, F1.fromLive(this.state), now); this.saveHist(now); }
     catch (e) { this.log("Verlauf fehlgeschlagen", e && e.stack || e); }
   }
 
@@ -75,8 +152,18 @@ export class F1Live extends DurableObject {
   }
 
   async fetch(request) {
+    const url = request ? new URL(request.url) : null;
+    // Streckeneichung braucht keine Live-Verbindung
+    if (url && url.pathname === "/trackcal") {
+      const circuit = url.searchParams.get("circuit") || "";
+      const paths = (url.searchParams.get("paths") || "").split(",").filter(p => SESSION_PATH.test(p) && !p.includes("..")).slice(0, 6);
+      if (!/^\d{1,4}$/.test(circuit)) return Response.json({ ok: false, error: "bad request" }, { status: 400 });
+      const txt = await this.trackCal(circuit, paths);
+      return txt ? new Response(txt, { headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" } })
+        : Response.json({ ok: false, error: "keine Eichung" }, { status: 404 });
+    }
     this.lastPoll = Date.now();
-    const wantHist = request && new URL(request.url).pathname === "/hist";
+    const wantHist = url && url.pathname === "/hist";
     if (!(await this.ctx.storage.getAlarm())) await this.ctx.storage.setAlarm(Date.now() + 60000);
     try { await this.connect(); } catch (e) { this.error = String(e && e.message || e); this.log("Verbindung fehlgeschlagen", this.error); }
     // Erster Gesamtstand kommt kurz nach dem Abo
@@ -130,7 +217,7 @@ export class F1Live extends DurableObject {
     clearInterval(this.ping); this.ping = null;
     try { this.ws && this.ws.close(1000, "idle"); } catch (_) {}
     this.ws = null; this.state = null; this.ready = false; this.cache = null; this.posRaw = null; this.prog = {};
-    this.hist = null; this.histAt = 0;
+    this.hist = null; this.histAt = 0; this.histSavedAt = 0;
   }
 
   connect() {
@@ -149,9 +236,11 @@ export class F1Live extends DurableObject {
       this.ws = ws; this.ready = false; this.state = {}; this.error = "";
       let handshaken = false;
       ws.addEventListener("message", ev => {
+        // Nachzügler einer schon getrennten Leitung nicht in den neuen Stand mischen
+        if (this.ws !== ws) return;
         this.lastMsg = Date.now();
         for (const part of String(ev.data).split(RS)) {
-          if (!part) continue;
+          if (!part || this.ws !== ws) continue;
           let m; try { m = JSON.parse(part); } catch (_) { continue; }
           if (!handshaken) {
             handshaken = true;
@@ -171,6 +260,7 @@ export class F1Live extends DurableObject {
             this.prog = {};
             for (const [n, l] of Object.entries((this.state.TimingData || {}).Lines || {})) this.prog[n] = F1.segStep(null, { Sectors: l && l.Sectors }, now0);
             this.ready = true; this.cache = null;
+            this.ctx.waitUntil(this.restoreHist());
           } else if (m.type === 1 && m.target === "feed" && Array.isArray(m.arguments)) {
             const [topic, data] = m.arguments;
             // Neue Session (z. B. Training → Sprint-Qualifying) auf derselben

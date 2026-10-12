@@ -122,7 +122,7 @@ async function radio(search) {
 // Zeitmessung aus dem F1-Archiv, beide sind dort nach der Session frei.
 //   GET /f1data/tracksrc?path=2026/…/2026-10-09_Sprint_Qualifying/&circuit=61
 //     → { paths: ["2026/…/2026-10-09_Practice_1/", …] }  (neueste zuerst)
-//   GET /f1data/stream?path=…&topic=Position.z|TimingData   (jsonStream, durchgereicht)
+//   Die Eichung selbst rechnet der Live-Worker (worker-rt/f1-live.js, /trackcal).
 export function trackSources(idx, prevIdx, path, circuit) {
   const folder = path.split("/").slice(0, 2).join("/") + "/";
   const out = [];
@@ -152,16 +152,6 @@ async function trackSrc(search) {
   } catch (_) {
     return new Response(JSON.stringify({ error: "fetch" }), { status: 502, headers: { "Content-Type": "application/json" } });
   }
-}
-async function stream(search) {
-  const q = new URLSearchParams(search);
-  const path = q.get("path") || "", topic = q.get("topic") || "";
-  if (!SESSION_PATH.test(path) || path.includes("..") || !["Position.z", "TimingData"].includes(topic)) return new Response("bad request", { status: 400 });
-  try {
-    const r = await fetch(ARCHIVE + encodeURI(path) + topic + ".jsonStream", { headers: { "User-Agent": UA }, cf: { cacheTtl: 86400, cacheEverything: true } });
-    if (!r.ok) return new Response("not found", { status: r.status === 404 || r.status === 403 ? 404 : 502 });
-    return new Response(r.body, { headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "public, max-age=86400" } });
-  } catch (_) { return new Response("fetch failed", { status: 502 }); }
 }
 
 // Ersatzkopie: Jede gute OpenF1-Antwort (und jedes Rennpaket) liegt zusätzlich
@@ -311,7 +301,6 @@ export async function onRequestGet({ params, request, waitUntil, env }) {
   const ep = String(params.ep || "");
   if (ep === "bundle") return bundle(new URL(request.url).search, waitUntil, env);
   if (ep === "tracksrc") return trackSrc(new URL(request.url).search);
-  if (ep === "stream") return stream(new URL(request.url).search);
   if (ep === "radio") return radio(new URL(request.url).search);
   if (ep === "archive") return archive(new URL(request.url).search);
   if (ep === "fia") return fiaList(new URL(request.url).search);

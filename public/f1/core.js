@@ -170,7 +170,7 @@
     stop(); stopLive();
     mode = "live";
     race = null; liveLap = -1; liveBase = new Map(); lastPos = new Map(); liveHist = new Map(); liveLaps = new Map();
-    liveBuf = []; liveShown = null; histKey = "";
+    liveBuf = []; liveShown = null; histKey = ""; histTry = 0;
     document.body.classList.add("is-live");
     $("note").hidden = true;
     $("rows").innerHTML = `<li class="loading"><span class="spinner"></span><span>Verbinde mit dem Live-Timing …</span></li>`;
@@ -213,9 +213,13 @@
     let item = null;
     for (const x of liveBuf) if (x.at <= due) item = x;
     if (!item) {
-      // Noch nichts alt genug: beim Start einmal den ältesten zeigen, sonst warten
-      if (race) return;
-      item = liveBuf[0];
+      // Noch nichts alt genug: warten (der Echtzeit-Stand wäre genau der Spoiler,
+      // den die Verzögerung verhindern soll)
+      if (!race) {
+        const wait = Math.max(1, Math.ceil((liveBuf[0].at + tvDelay * 1000 - Date.now()) / 1000));
+        $("rows").innerHTML = `<li class="loading"><span class="spinner"></span><span>TV-Verzögerung ${tvDelay} s – Anzeige startet in ${wait} s …</span></li>`;
+      }
+      return;
     }
     if (item === liveShown) return;
     liveShown = item;
@@ -248,11 +252,13 @@
   // Verlauf vom Server (DO schreibt ihn die ganze Session mit): einmal je
   // Session und nach längerer Pause (App gewechselt) holen — nur, was die
   // TV-Verzögerung schon „gesendet“ hat.
-  let histKey = "";
+  let histKey = "", histTry = 0;
   async function loadLiveHist(d, force) {
     const key = String(d.session.path || d.session.key || "");
-    if (!force && histKey === key) return;
-    histKey = key;
+    // Geholt wird, bis es einmal geklappt hat (DO kann gerade neu verbinden) —
+    // höchstens alle 15 s ein Versuch
+    if (!force && (histKey === key || Date.now() - histTry < 15000)) return;
+    histTry = Date.now();
     try {
       const res = await fetch("/api/f1-live?hist=1", { cache: "no-store" });
       const h = await res.json();
@@ -265,8 +271,9 @@
         for (const x of list) if (x.t <= due && !m.has(x.lap)) m.set(x.lap, { lap: x.lap, s: x.s, compound: x.compound, pit: x.pit });
       }
       emit("livehist", { key, events: (h.events || []).filter(e => e.t <= due) });
+      histKey = key;
       if (race) show(frame);
-    } catch (_) { histKey = ""; }
+    } catch (_) { /* nächster Versuch beim nächsten Abruf */ }
   }
   let hiddenAt = 0;
   document.addEventListener("visibilitychange", () => {

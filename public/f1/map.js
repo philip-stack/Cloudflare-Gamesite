@@ -21,40 +21,30 @@
   let posRun = 0, posTimer = null;
   let liveDots = new Map();     // Raster-Zelle → [x,y] (Live-Aufbau des Verlaufs)
   const T = window.F1Track;
-  let cal = null, calFor = "", calState = "";   // Eichung der Strecke für die Schätzung
+  // Eichung der Strecke für die Schätzung — gilt je Strecke (calFor);
+  // calState: "" | "load" | "fail" (Fehlschlag nach 5 min erneut versuchen)
+  let cal = null, calFor = "", calState = "", calFailAt = 0;
 
   // ---------- Geschätzte Live-Positionen ----------
+  // Die Eichung rechnet der Live-Worker einmal je Strecke und legt sie in D1
+  // ab; hier wird nur das Ergebnis (~7 KB) geholt und lokal gemerkt.
   const calKey = c => "f1_trackcal_v1_" + c;
-  async function inflate(b64) {
-    const bin = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
-    return new Response(new Blob([bin]).stream().pipeThrough(new DecompressionStream("deflate-raw"))).text();
-  }
+  const calNeeded = circuit => calFor !== circuit || (!cal && calState !== "load" && !(calState === "fail" && Date.now() - calFailAt < 5 * 60000));
   async function ensureCal() {
     const ses = S.race.session || {};
-    const circuit = ses.circuit || "x";
-    if (calFor === circuit && (cal || calState === "load")) return;
-    calFor = circuit; cal = null;
-    try { const c = JSON.parse(store.get(calKey(circuit)) || "null"); if (c && c.pts && c.segF) { cal = c; return; } } catch (_) { /* neu bauen */ }
-    if (!ses.path || typeof DecompressionStream === "undefined") { calState = "fail"; return; }
+    const circuit = String(ses.circuit || "x");
+    if (!calNeeded(circuit)) return;
+    if (calFor !== circuit) { calFor = circuit; cal = null; calState = ""; }
+    try { const c = JSON.parse(store.get(calKey(circuit)) || "null"); if (c && c.pts && c.segF) { cal = c; return; } } catch (_) { /* vom Server holen */ }
+    if (!ses.path || !ses.circuit) { calState = "fail"; calFailAt = Date.now(); return; }
     calState = "load";
     try {
-      const src = await get("tracksrc", { path: ses.path, ...(ses.circuit ? { circuit: ses.circuit } : {}) });
-      for (const path of src.paths || []) {
-        const td = await fetch("/f1data/stream?" + new URLSearchParams({ path, topic: "TimingData" }));
-        if (!td.ok) continue;
-        const lap = T.pickLap(T.timingLaps(await td.text()));
-        if (!lap) continue;
-        const ps = await fetch("/f1data/stream?" + new URLSearchParams({ path, topic: "Position.z" }));
-        if (!ps.ok) continue;
-        const c = T.buildCal(await T.trackOf(await ps.text(), String(lap.n), lap.t0, lap.t1, inflate), lap);
-        if (!c) continue;
-        c.from = path.split("/")[2] || "";
-        cal = c;
-        store.set(calKey(circuit), JSON.stringify(c));
-        break;
-      }
-      calState = cal ? "" : "fail";
-    } catch (_) { calState = "fail"; }
+      const src = await get("tracksrc", { path: ses.path, circuit: ses.circuit });
+      const res = await fetch("/api/f1-live?" + new URLSearchParams({ trackcal: 1, circuit: ses.circuit, paths: (src.paths || []).join(",") }));
+      const c = res.ok ? await res.json() : null;
+      if (calFor === circuit && c && c.pts && c.segF) { cal = c; store.set(calKey(circuit), JSON.stringify(c)); }
+    } catch (_) { /* unten als Fehlschlag */ }
+    if (calFor === circuit) { calState = cal ? "" : "fail"; if (!cal) calFailAt = Date.now(); }
     if (S.view === "map") draw();
   }
   // Ohne Eichung: schematischer Kreis, Mini-Sektoren gleichmäßig verteilt
@@ -184,26 +174,28 @@
     let est = null;
     if (race.live && race.posFeed === false) {
       if (!race.prog || !T) { box.innerHTML = `<p class="chart-empty">Warte auf die Zeitmessung …</p>`; return; }
-      if (!cal && calState !== "fail") {
-        ensureCal();
+      ensureCal();
+      if (!cal && calState === "load") {
         box.innerHTML = `<p class="chart-empty"><span class="spinner"></span><br>Strecke wird vorbereitet … (einmalig, aus einer früheren Session)</p>`;
         $("map-info").textContent = "";
         return;
       }
       const c = cal || ringCal(race.prog._n);
-      track = { circuit: race.session.circuit, pts: c.pts, kind: "line" };
-      est = { c, ...estCars(c) };
+      est = { c, trk: { circuit: race.session.circuit, pts: c.pts, kind: "line" }, ...estCars(c) };
     }
     let cars = est ? est.cars : race.live ? (race.pos && race.pos.cars) || {} : framePositions();
     // Live ohne gemerkten Verlauf: aus den Autopositionen mitwachsen lassen
-    if (race.live && cars && (!track || track.kind !== "line")) {
+    if (!est && race.live && cars && (!track || track.kind !== "line")) {
       for (const p of Object.values(cars)) liveDots.set(Math.round(p[0] / 60) + ":" + Math.round(p[1] / 60), p);
       if (liveDots.size > 80) {
         track = { circuit: race.session.circuit, pts: [...liveDots.values()], kind: "dots" };
         if (liveDots.size % 50 === 0) store.set(trackKey(race.session.circuit), JSON.stringify({ pts: thin(track.pts, 1), kind: "dots" }));
       }
     }
-    const pts = (track && track.pts) || [];
+    // Geschätzte Ansicht zeichnet ihre eigene Strecke (Eichung bzw. Kreis), ohne
+    // den gemerkten Verlauf für die Nachschau zu überschreiben
+    const trk = est ? est.trk : track;
+    const pts = (trk && trk.pts) || [];
     const all = pts.concat(Object.values(cars || {}));
     if (all.length < 2) {
       box.innerHTML = `<p class="chart-empty">${race.live ? "Warte auf Positionen der Autos …" : "Lade Strecke …"}</p>`;
@@ -217,7 +209,7 @@
     const vb = [minX - pad, -(maxY + pad), maxX - minX + 2 * pad, maxY - minY + 2 * pad];
     const r = span * 0.016, fs = span * 0.03;
     const hi = new Set([S.fav, ...f.rows.slice(0, 3).map(x => x.n)]);
-    const sig = vb.map(v => v.toFixed(0)).join(" ") + "|" + (track ? track.kind + pts.length : "") + "|" + [...hi].join(",");
+    const sig = vb.map(v => v.toFixed(0)).join(" ") + "|" + (trk ? trk.kind + pts.length : "") + "|" + [...hi].join(",");
     // Gleiche Strecke & Hervorhebung → nur die Autos verschieben (CSS-Übergang)
     const old = box.querySelector("svg.mapsvg");
     if (old && old.dataset.sig === sig) {
@@ -231,7 +223,7 @@
       if (cars && Object.keys(cars).every(n => seen.has(n))) { info(cars, f, est); return; }
     }
     let s = `<svg viewBox="${vb.map(v => v.toFixed(0)).join(" ")}" class="mapsvg" data-sig="${sig}" role="img" aria-label="Streckenkarte">`;
-    if (track && track.kind === "line") s += `<path class="trk" d="M${pts.map(p => p[0] + "," + -p[1]).join("L")}Z" style="stroke-width:${(span * 0.022).toFixed(0)}"/><path class="trk-in" d="M${pts.map(p => p[0] + "," + -p[1]).join("L")}Z" style="stroke-width:${(span * 0.008).toFixed(0)}"/>`;
+    if (trk && trk.kind === "line") s += `<path class="trk" d="M${pts.map(p => p[0] + "," + -p[1]).join("L")}Z" style="stroke-width:${(span * 0.022).toFixed(0)}"/><path class="trk-in" d="M${pts.map(p => p[0] + "," + -p[1]).join("L")}Z" style="stroke-width:${(span * 0.008).toFixed(0)}"/>`;
     else for (const p of pts) s += `<circle class="trk-dot" cx="${p[0]}" cy="${-p[1]}" r="${(span * 0.006).toFixed(0)}"/>`;
     // Autos: erst die anderen, dann Lieblingsfahrer & Top 3 obenauf
     const order = f.rows.slice().sort((a, b) => hi.has(a.n) - hi.has(b.n));

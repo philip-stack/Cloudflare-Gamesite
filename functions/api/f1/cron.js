@@ -39,7 +39,9 @@ const clock = d => new Intl.DateTimeFormat("de-AT", { hour: "2-digit", minute: "
 // bzw. Sprint (≥ 3 h vorbei = Daten endgültig), das noch fehlt — neueste zuerst.
 // So liegt nach gut einer Stunde die ganze Saison in D1, und jedes neue
 // Rennen kurz nach dem Ende. Der Proxy (/f1data) greift darauf zurück.
-async function warm(env, year, sessions, meetings, now) {
+async function warm(env, year, sessions, meetings, now, state) {
+  const failed = state.warmFail = Object.fromEntries(Object.entries(state.warmFail || {}).filter(([, t]) => now - t < 6 * 3600e3));
+  let s = null;
   try {
     const have = new Set(((await env.DB.prepare("SELECT k FROM f1_cache WHERE k LIKE 'bundle/%' OR (k LIKE 'openf1/%' AND at > datetime('now', '-6 hours'))").all()).results || []).map(r => r.k));
     for (const [ep, data] of [["sessions", sessions], ["meetings", meetings]]) {
@@ -47,15 +49,19 @@ async function warm(env, year, sessions, meetings, now) {
       if (!have.has(k)) await dbPut(env, k, JSON.stringify(data));
     }
     const todo = sessions
-      .filter(s => s.session_type === "Race" && !s.is_cancelled && Date.parse(s.date_end) + 3 * 3600e3 < now && !have.has("bundle/" + s.session_key))
+      .filter(x => x.session_type === "Race" && !x.is_cancelled && Date.parse(x.date_end) + 3 * 3600e3 < now && !have.has("bundle/" + x.session_key) && !failed[x.session_key])
       .sort((a, b) => Date.parse(b.date_start) - Date.parse(a.date_start));
     if (todo.length) {
-      const s = todo[0];
+      s = todo[0];
       await dbPut(env, "bundle/" + s.session_key, await buildBundle(String(s.session_key), String(year)));
     }
   } catch (e) {
-    // 401/403 = OpenF1 gerade gesperrt → nächster Lauf
-    if (!(e && (e.status === 401 || e.status === 403))) await logError(env, "f1-cron: Vorwärmen fehlgeschlagen", "f1-cron", e && (e.stack || e.message) || e);
+    // 401/403 = OpenF1 gerade gesperrt → nächster Lauf. Sonst dieses Rennen
+    // 6 h zurückstellen (die anderen kommen weiter dran) und einmal melden.
+    if (!(e && (e.status === 401 || e.status === 403))) {
+      if (s) failed[s.session_key] = now;
+      await logError(env, "f1-cron: Vorwärmen fehlgeschlagen", "f1-cron", (s ? `Session ${s.session_key} (6 h zurückgestellt): ` : "") + (e && (e.stack || e.message) || e));
+    }
   }
 }
 
@@ -102,8 +108,10 @@ export async function onRequestGet({ request, env }) {
         sessions: sessions.map(s => ({ session_key: s.session_key, session_name: s.session_name, date_start: s.date_start, date_end: s.date_end, meeting_key: s.meeting_key, location: s.location, is_cancelled: s.is_cancelled })),
         meetings: meetings.map(m => ({ meeting_key: m.meeting_key, meeting_name: m.meeting_name })),
       };
-      await env.DB.prepare("INSERT INTO app_config (k, v) VALUES ('f1_calendar', ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v").bind(JSON.stringify(slim)).run();
-      await warm(env, year, sessions, meetings, now);
+      const v = JSON.stringify(slim);
+      const old = await env.DB.prepare("SELECT v FROM app_config WHERE k = 'f1_calendar'").first();
+      if (!old || old.v !== v) await env.DB.prepare("INSERT INTO app_config (k, v) VALUES ('f1_calendar', ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v").bind(v).run();
+      await warm(env, year, sessions, meetings, now, state);
     } else {
       const c = await env.DB.prepare("SELECT v FROM app_config WHERE k = 'f1_calendar'").first();
       try { const j = JSON.parse(c && c.v || "null"); if (j) { sessions = j.sessions; meetings = j.meetings; } } catch (_) { /* kein Stand */ }
@@ -172,7 +180,11 @@ export async function onRequestGet({ request, env }) {
     await logError(env, "f1-cron: " + (e && e.message || e), "f1-cron");
   }
 
-  await env.DB.prepare("INSERT INTO app_config (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v")
-    .bind(STATE_KEY, JSON.stringify(state)).run();
+  // Nur schreiben, wenn sich etwas geändert hat (der Cron läuft alle 2 min)
+  const next = JSON.stringify(state);
+  if (!row || row.v !== next) {
+    await env.DB.prepare("INSERT INTO app_config (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v")
+      .bind(STATE_KEY, next).run();
+  }
   return json({ ok: true, subs: subs.length, sent });
 }

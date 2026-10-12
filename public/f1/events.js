@@ -48,6 +48,14 @@
     live.prev = { src: f, rows: f.rows.map(r => ({ ...r })) };
   }
 
+  // Server und Seite erkennen dieselben Ereignisse (gleiche Rechnung) → einmal zeigen
+  const evKey = e => [e.k, e.n, e.lap, (e.o || []).join("."), e.stop || "", e.s || ""].join("|");
+  function mergeLive(a, b) {
+    const seen = new Set(), out = [];
+    for (const e of a.concat(b)) { const k = evKey(e); if (!seen.has(k)) { seen.add(k); out.push(e); } }
+    return out;
+  }
+
   function text(e, nm) {
     switch (e.k) {
       case "pass": return `<b>${nm(e.n)}</b> überholt ${e.o.map(o => `<b>${nm(o)}</b>`).join(", ")} · P${e.pos}`;
@@ -71,9 +79,7 @@
     const race = S.race, f = race && race.frames[S.frame];
     if (!f || S.view !== "times" || f.timed) { sec.hidden = true; return; }
     if (race.live) liveStep(race, f);
-    // Server-Ereignisse nur bis zum ersten eigenen (keine doppelten)
-    const first = live.list.length ? live.list[0].t : Infinity;
-    let list = race.live ? srv.list.filter(e => e.t < first).concat(live.list) : replayList(race).filter(e => e.lap <= f.lap || f.final);
+    let list = race.live ? mergeLive(srv.list, live.list) : replayList(race).filter(e => e.lap <= f.lap || f.final);
     // Strafen aus der Rennleitung (stehen dort schon zeitlich gefiltert)
     for (const m of f.msgs) if (PEN.test(m.text) && !/keine Strafe|abgesessen/.test(m.text)) {
       list.push({ k: "pen", n: m.driver, text: m.text, lap: m.lap, t: m.time });
