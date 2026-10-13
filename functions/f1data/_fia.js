@@ -35,18 +35,24 @@ export function parseEvents(html, seasonId) {
   return [...out];
 }
 
-// Dokumentenliste: je <li class="document-row"> Link, Titel, Veröffentlichung
+// Titel aus dem Dateinamen, falls die FIA das Markup wieder umbaut
+const fileTitle = path => decode(path.split("/").pop().replace(/\.pdf$/i, "").replace(/^\d{4}_.*?_grand_prix_-_/i, "")
+  .replace(/_-_/g, " - ").replace(/_/g, " ")).replace(/^./, c => c.toUpperCase());
+
+// Dokumentenliste: je <li class="document-row"> Link, Titel, Veröffentlichung.
+// Die FIA liefert zwei Markups (alt: Drupal-Felder, ab Okt. 2026 auch nackt:
+// <div class="title"> Doc 91 - … </div>) → Titel = Text zwischen „title“ und „published“.
 export function parseDocs(html) {
   const docs = [];
   for (const part of html.split(/<li class="document-row/).slice(1)) {
     const href = /href="([^"]+\.pdf)"/i.exec(part);
-    const title = /field-name-title-field[\s\S]*?field-item[^>]*>([\s\S]*?)<\/div>/.exec(part);
+    const title = /class="title"[^>]*>([\s\S]*?)(?:class="published"|<\/a>)/.exec(part);
     const date = /date-display-single[^>]*>([^<]+)</.exec(part);
-    if (!href || !title) continue;
+    if (!href) continue;
     let path = href[1];
     try { path = decodeURI(new URL(path, FIA).pathname); } catch (_) { continue; }
     if (!PDF_PATH.test(path)) continue;
-    const t = decode(title[1].replace(/<[^>]+>/g, ""));
+    const t = (title && decode(title[1].replace(/<[^>]*$/, "").replace(/<[^>]+>/g, " "))) || fileTitle(path);
     const no = /^Doc\s+(\d+)\s*[-–]\s*/i.exec(t);
     // „04.10.26 15:55“ (MEZ/MESZ der FIA, so übernommen)
     const d = date && /(\d\d)\.(\d\d)\.(\d\d)\s+(\d\d):(\d\d)/.exec(date[1]);

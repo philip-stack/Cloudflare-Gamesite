@@ -191,7 +191,16 @@ assert("FIA: Events (inkl. Umlaute)", JSON.stringify(FIA.parseEvents(fiaHtml, "s
 const fd = FIA.parseDocs(fiaHtml);
 assert("FIA: Dokumente mit Nummer, Titel, Datum", fd.length === 2 && fd[0].no === 61 && fd[0].title === "Championship Points" && fd[0].date === "2026-10-04T15:55");
 assert("FIA: HTML-Entities im Titel", fd[1].title === "Infringement - Car 5 - Causing a collision & more");
-assert("FIA: Pfad-Ausbruch wird verworfen", !fd.some(d => d.path.includes("..") || d.path.includes("passwd")));
+const fdNew = FIA.parseDocs(`<li class="document-row key-91">  <a href="/system/files/decision-document/2026_singapore_grand_prix_-_championship_points.pdf" download target="_blank">
+  <div class="file-type"><div class="pdf"></div></div>
+  <div class="title">
+  Doc 91 - Championship Points
+  </div>
+  <div class="published">Published on <span  class="date-display-single">11.10.26 17:55</span> CET  </div></a></li>
+  <li class="document-row key-90"><a href="/system/files/decision-document/2026_singapore_grand_prix_-_final_race_classification.pdf"><div class="published"></div></a></li>`);
+assert("FIA: neues Markup (Titel ohne Drupal-Felder)", fdNew.length === 2 && fdNew[0].no === 91 && fdNew[0].title === "Championship Points" && fdNew[0].date === "2026-10-11T17:55");
+assert("FIA: ohne Titel → aus dem Dateinamen", fdNew[1].title === "Final race classification" && fdNew[1].no === null);
+assert("FIA: Pfad-Ausbruch wird verworfen",!fd.some(d => d.path.includes("..") || d.path.includes("passwd")));
 const pdfRes = await FIA.fiaPdf("?path=/etc/passwd");
 const pdfRes2 = await FIA.fiaPdf("?path=" + encodeURIComponent("/system/files/decision-document/../../x.pdf"));
 assert("FIA-PDF: nur Entscheidungs-PDFs", pdfRes.status === 400 && pdfRes2.status === 400);
