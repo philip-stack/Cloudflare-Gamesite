@@ -24,7 +24,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="Rennticker" />
-  <link rel="stylesheet" href="style.css?v=01d8dbce" />
+  <link rel="stylesheet" href="style.css?v=a791cf4e" />
 </head>
 <body>
   <div id="app">
@@ -55,7 +55,7 @@
         <div class="flag" id="flag" data-s="pre">–</div>
         <button class="tv-btn" id="tvbtn" type="button" title="TV-Verzögerung einstellen">TV</button>
       </div>
-      <div class="wx" id="wx" aria-label="Wetter" hidden></div>
+      <div class="wx" id="wx" role="button" tabindex="0" aria-label="Wetter – Verlauf und Regenradar öffnen" aria-haspopup="dialog" hidden></div>
       <p class="note" id="note" hidden></p>
       <details class="plan" id="plan" hidden>
         <summary><span class="plan-ico" aria-hidden="true">⏱</span><span class="plan-sum" id="plan-sum"></span></summary>
@@ -207,6 +207,22 @@
     </div>
   </div>
 
+  <div class="sheet" id="wxsheet" role="dialog" aria-modal="true" aria-labelledby="wx-h" hidden>
+    <div class="sheet-card wx-card">
+      <header><div><h2 id="wx-h">Wetter</h2><p class="wx-sub" id="wx-sub"></p></div><button class="icon-btn" id="wx-close" type="button" title="Schließen" aria-label="Schließen">✕</button></header>
+      <h3 class="wx-h3">Verlauf</h3>
+      <p class="wx-legend"><span class="lg track"></span>Strecke <span class="lg air"></span>Luft <span class="lg rain"></span>Regen</p>
+      <div class="wx-chart" id="wx-chart"></div>
+      <p class="wx-info" id="wx-info" aria-live="polite"></p>
+      <div id="wx-live" hidden>
+        <h3 class="wx-h3">Regen in den nächsten 2 Stunden</h3>
+        <div class="wx-chart" id="wx-fc"></div>
+        <h3 class="wx-h3">Regenradar</h3>
+        <div id="wx-radar"></div>
+      </div>
+    </div>
+  </div>
+
   <div class="pdfview" id="pdfview" role="dialog" aria-modal="true" aria-labelledby="pdf-title" hidden>
     <header class="pdf-bar">
       <button class="icon-btn" id="pdf-close" type="button" title="Schließen" aria-label="Schließen">✕</button>
@@ -225,13 +241,13 @@
     <button class="icon-btn end" id="end" type="button" title="Zum Ergebnis">⏭</button>
   </nav>
 
-  <script src="model.js?v=1b07af24"></script>
-  <script src="core.js?v=63510d3f"></script>
+  <script src="model.js?v=73639867"></script>
+  <script src="core.js?v=0bda12d4"></script>
   <script src="push.js?v=d339aa43"></script>
   <script src="tyres.js?v=814bf36b"></script>
   <script src="chart.js?v=270fe871"></script>
   <script src="wm.js?v=693e1855"></script>
-  <script src="weather.js?v=9072280f"></script>
+  <script src="weather.js?v=c89c0d96"></script>
   <script src="pit.js?v=d39e9a5c"></script>
   <script src="sectors.js?v=ede3c66c"></script>
   <script src="laps.js?v=1d847a61"></script>

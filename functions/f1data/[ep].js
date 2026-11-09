@@ -271,9 +271,52 @@ async function rain(search) {
     if (!g) return new Response(JSON.stringify({ error: 404 }), { status: 404, headers: { "Content-Type": "application/json" } });
     const fc = await j(`https://api.open-meteo.com/v1/forecast?${new URLSearchParams({ latitude: g.latitude.toFixed(3), longitude: g.longitude.toFixed(3), minutely_15: "precipitation,precipitation_probability", forecast_minutely_15: "9", timezone: "UTC" })}`, 600);
     if (!fc) throw new Error("forecast");
-    return new Response(JSON.stringify({ place: g.name, country: g.country, slots: rainSlots(fc) }), { headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "public, max-age=600" } });
+    return new Response(JSON.stringify({ place: g.name, country: g.country, lat: +g.latitude.toFixed(4), lon: +g.longitude.toFixed(4), slots: rainSlots(fc) }), { headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "public, max-age=600" } });
   } catch (_) {
     return new Response(JSON.stringify({ error: "fetch" }), { status: 502, headers: { "Content-Type": "application/json" } });
+  }
+}
+
+// Regenradar-Karte (Wetter-Fenster, live): Radarbilder der letzten 2 h von
+// RainViewer (gratis, Kacheln bis Zoom 7), Grundkarte von OpenStreetMap
+// (geringe private Nutzung, eigener User-Agent, 30 Tage gecacht — wie es die
+// OSM-Kachelregeln verlangen; CARTO will inzwischen einen API-Schlüssel).
+// Die CSP erlaubt nur Bilder von uns → Kacheln über den Proxy, am Edge gecacht.
+//   GET /f1data/radar  → { frames: [{ t, id }] }  (alle 10 min, älteste zuerst)
+//   GET /f1data/tile?k=base|radar&z=7&x=…&y=…[&id=…]
+const RADAR_ID = /^[0-9a-f]{6,24}$/;
+export function radarFrames(maps) {
+  return ((maps && maps.radar && maps.radar.past) || [])
+    .map(f => ({ t: f.time * 1000, id: String(f.path || "").split("/").pop() }))
+    .filter(f => isFinite(f.t) && RADAR_ID.test(f.id));
+}
+async function radar() {
+  try {
+    const r = await fetch("https://api.rainviewer.com/public/weather-maps.json", { headers: { "User-Agent": UA }, cf: { cacheTtl: 300, cacheEverything: true } });
+    if (!r.ok) throw new Error("rainviewer " + r.status);
+    return new Response(JSON.stringify({ frames: radarFrames(await r.json()) }), { headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "public, max-age=300" } });
+  } catch (_) {
+    return new Response(JSON.stringify({ error: "fetch" }), { status: 502, headers: { "Content-Type": "application/json" } });
+  }
+}
+export function tileUrl(search) {
+  const q = new URLSearchParams(search);
+  const k = q.get("k"), z = +q.get("z"), x = +q.get("x"), y = +q.get("y"), id = q.get("id") || "";
+  const n = 2 ** z;
+  if (!Number.isInteger(z) || z < 3 || z > 7 || !Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0 || x >= n || y >= n) return null;
+  if (k === "base") return { url: `https://tile.openstreetmap.org/${z}/${x}/${y}.png`, ttl: 30 * 86400 };
+  if (k === "radar" && RADAR_ID.test(id)) return { url: `https://tilecache.rainviewer.com/v2/radar/${id}/256/${z}/${x}/${y}/2/1_1.png`, ttl: 86400 };
+  return null;
+}
+async function tile(search) {
+  const t = tileUrl(search);
+  if (!t) return new Response("bad request", { status: 400 });
+  try {
+    const r = await fetch(t.url, { headers: { "User-Agent": UA }, cf: { cacheTtl: t.ttl, cacheEverything: true } });
+    if (!r.ok) return new Response("not found", { status: r.status === 404 ? 404 : 502 });
+    return new Response(r.body, { headers: { "Content-Type": "image/png", "Cache-Control": `public, max-age=${t.ttl}` } });
+  } catch (_) {
+    return new Response("fetch failed", { status: 502 });
   }
 }
 
@@ -378,6 +421,8 @@ export async function onRequestGet({ params, request, waitUntil, env }) {
   const ep = String(params.ep || "");
   if (ep === "bundle") return bundle(new URL(request.url).search, waitUntil, env);
   if (ep === "rain") return rain(new URL(request.url).search);
+  if (ep === "radar") return radar();
+  if (ep === "tile") return tile(new URL(request.url).search);
   if (ep === "teamduel") return duel(new URL(request.url).search, env);
   if (ep === "radio") return radio(new URL(request.url).search, env);
   if (ep === "archive") return archive(new URL(request.url).search, env, waitUntil);

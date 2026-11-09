@@ -300,7 +300,7 @@
         const m = liveLaps.get(+n);
         for (const x of list) if (x.t <= due && !m.has(x.lap)) m.set(x.lap, { lap: x.lap, s: x.s, compound: x.compound, pit: x.pit });
       }
-      emit("livehist", { key, events: (h.events || []).filter(e => e.t <= due) });
+      emit("livehist", { key, events: (h.events || []).filter(e => e.t <= due), wx: (h.wx || []).filter(x => x.t <= due) });
       histKey = key;
       if (race) show(frame);
     } catch (_) { /* nächster Versuch beim nächsten Abruf */ }

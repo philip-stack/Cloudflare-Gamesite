@@ -692,6 +692,52 @@ body.pdf-open { overflow: hidden; }
 .g-diff { font-style: normal; font-size: 11px; font-weight: 800; }
 .g-diff.down { color: var(--red-2); } .g-diff.up { color: var(--pb); }
 
+/* ---------- Wetter-Fenster ---------- */
+:root { --wx-track: #df6420; --wx-air: #1898cc; }
+:root[data-theme="light"] { --wx-track: #d4580a; --wx-air: #0a7fb5; }
+.wx { cursor: pointer; border-radius: 12px; }
+.wx:focus-visible { outline: 2px solid var(--red); outline-offset: 2px; }
+.wx-more { flex: none; align-self: center; padding: 0 6px 0 2px; font-size: 12px; font-weight: 700; color: var(--muted); white-space: nowrap; }
+.wx-card { max-height: 92vh; overflow-y: auto; }
+.wx-sub { margin: 2px 0 0; font-size: 12.5px; color: var(--muted); }
+.wx-h3 { margin: 16px 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 700; }
+.wx-legend { display: flex; align-items: center; gap: 6px; margin: 0 0 4px; font-size: 12px; color: var(--muted); }
+.wx-legend .lg { display: inline-block; width: 14px; height: 3px; border-radius: 2px; margin-left: 6px; }
+.wx-legend .lg:first-child { margin-left: 0; }
+.wx-legend .lg.track { background: var(--wx-track); }
+.wx-legend .lg.air { background: var(--wx-air); }
+.wx-legend .lg.rain { height: 10px; width: 12px; background: repeating-linear-gradient(45deg, color-mix(in srgb, var(--muted) 55%, transparent) 0 1.5px, transparent 1.5px 4px); border-radius: 2px; }
+.wx-chart { touch-action: pan-y; }
+.wxsvg { display: block; width: 100%; height: auto; overflow: visible; }
+.wxsvg .grid { stroke: var(--line); stroke-width: 1; }
+.wxsvg .ax { fill: var(--muted); font-size: 10px; font-weight: 600; }
+.wxsvg .hatch { stroke: color-mix(in srgb, var(--muted) 55%, transparent); stroke-width: 1.5; }
+.wxsvg .wx-rain { fill: url(#wx-hatch); }
+.wxsvg .wx-ln { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.wxsvg .wx-ln.track, .wxsvg .wx-end.track { stroke: var(--wx-track); }
+.wxsvg .wx-ln.air, .wxsvg .wx-end.air { stroke: var(--wx-air); }
+.wxsvg .wx-end { fill: var(--panel); stroke-width: 2; }
+.wxsvg .wx-lab { fill: var(--text); font-size: 11px; font-weight: 700; }
+.wxsvg .cross { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; }
+.wxsvg .fc-bar { fill: color-mix(in srgb, var(--wx-air) 45%, transparent); }
+.wxsvg .fc-bar.wet { fill: var(--wx-air); }
+.wxsvg .fc-val { fill: var(--text); font-size: 10px; font-weight: 700; }
+.wx-info { margin: 6px 0 0; font-size: 13px; color: var(--muted); min-height: 1.3em; }
+.wx-info b { color: var(--text); }
+.wx-info .wx-r { color: var(--text); font-weight: 700; }
+.radar { position: relative; overflow: hidden; border-radius: 14px; border: 1px solid var(--line); background: var(--panel-2); }
+.radar img { position: absolute; width: 256px; height: 256px; max-width: none; user-select: none; -webkit-user-drag: none; }
+:root[data-theme="dark"] .radar .r-base { filter: invert(1) hue-rotate(180deg) brightness(.85) contrast(.9) saturate(.6); }
+.radar .r-frame { position: absolute; inset: 0; opacity: 0; transition: opacity .25s; }
+.radar .r-frame.on { opacity: .8; }
+.r-rings { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.r-rings circle { fill: none; stroke: color-mix(in srgb, var(--text) 45%, transparent); stroke-width: 1; stroke-dasharray: 4 4; }
+.r-rings text { fill: var(--text); font-size: 10px; font-weight: 700; paint-order: stroke; stroke: var(--panel); stroke-width: 3px; }
+.r-rings .r-me { fill: var(--red); stroke: #fff; stroke-width: 2; stroke-dasharray: none; }
+.r-bar { position: absolute; left: 8px; bottom: 8px; display: flex; align-items: center; gap: 8px; padding: 4px 10px 4px 4px; border-radius: 12px; background: color-mix(in srgb, var(--panel) 88%, transparent); font-size: 12.5px; font-weight: 700; }
+.r-bar .icon-btn { width: 32px; height: 32px; font-size: 12px; }
+.r-src { font-size: 11px; }
+
 /* ---------- Rennbericht ---------- */
 .rep { padding: 14px 16px 4px; }
 .rep-t { margin: 0 0 8px; font-size: 19px; line-height: 1.25; font-style: italic; font-weight: 900; }

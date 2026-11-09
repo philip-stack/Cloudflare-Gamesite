@@ -7,7 +7,7 @@ import path from "node:path";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
 const M = require(path.join(__dirname, "..", "public", "f1", "model.js"));
-const { buildUrl, RADIO_FILE, SESSION_PATH, bundleTtl, BUNDLE_PARTS, dbPut, dbGet, dbHas, calKey, pickPlace, rainSlots } = await import("file://" + path.join(__dirname, "..", "functions", "f1data", "[ep].js").replace(/\\/g, "/"));
+const { buildUrl, RADIO_FILE, SESSION_PATH, bundleTtl, BUNDLE_PARTS, radarFrames, tileUrl, dbPut, dbGet, dbHas, calKey, pickPlace, rainSlots } = await import("file://" + path.join(__dirname, "..", "functions", "f1data", "[ep].js").replace(/\\/g, "/"));
 
 let ok = true;
 const assert = (name, cond) => { if (cond) console.log("OK  ", name); else { console.log("FAIL", name); ok = false; } };
@@ -411,6 +411,18 @@ assert("Nachbau: Reifen, Wetter, Rennleitung", srow(1).stints.map(x => x.c + x.l
 assert("Nachbau: Funk mit Session-Pfad", synth.SessionInfo.Path === "2026/2026-11-08_São_Paulo_Grand_Prix/2026-11-07_Qualifying/"
   && SL.radio.length === 1 && SL.radio[0].file === "NOR_1_20261107_151022.mp3" && SL.radio[0].utc === "2026-11-07T18:10:22.430");
 assert("Nachbau: Pfad nur aus F1-Funk-URLs", ST.pathFromRadio("https://x/static/2026/../TeamRadio/a.mp3") === null && ST.pathFromRadio("") === null);
+
+// ---- Wetter-Fenster ----
+assert("Radar: Bilder mit Zeit und Kennung, Fremdes verworfen", JSON.stringify(radarFrames({ radar: { past: [{ time: 1794219000, path: "/v2/radar/1ed160d6efe0" }, { time: 1, path: "/v2/radar/../x" }] } }))
+  === '[{"t":1794219000000,"id":"1ed160d6efe0"}]' && radarFrames(null).length === 0);
+assert("Kacheln: nur Grundkarte/Radar, Zoom 3–7, Koordinaten im Raster", tileUrl("?k=base&z=7&x=45&y=72").url === "https://tile.openstreetmap.org/7/45/72.png"
+  && /\/v2\/radar\/1ed160d6efe0\/256\/7\/45\/72\//.test(tileUrl("?k=radar&id=1ed160d6efe0&z=7&x=45&y=72").url)
+  && tileUrl("?k=base&z=9&x=1&y=1") === null && tileUrl("?k=base&z=7&x=128&y=0") === null && tileUrl("?k=radar&id=../x&z=7&x=1&y=1") === null && tileUrl("?k=osm&z=7&x=1&y=1") === null);
+const WL = (air, rain) => ({ session: { path: "2026/x/race/", race: true }, weather: { air, track: air + 10, rain }, frame: { lap: 3, status: "green", rows: [] } });
+let HW = M.histStep(null, WL(20, false), 1000);
+HW = M.histStep(HW, WL(21, false), 30000);
+HW = M.histStep(HW, WL(19, true), 62000);
+assert("Live-Verlauf: Wetter je Minute", HW.wx.length === 2 && HW.wx[0].air === 20 && HW.wx[1].rain && HW.wx[1].t === 62000);
 
 // ---- Startaufstellung live aus dem Feed ----
 const GL = M.fromLive({ SessionInfo: { Name: "Race", Type: "Race" }, TimingData: { Lines: { "1": { Position: "3" }, "4": { Position: "1" } } },

@@ -115,13 +115,15 @@ export class F1Live extends DurableObject {
       const txt = await cacheGet(this.env, "hist/" + path);
       if (!txt || !this.state || (this.state.SessionInfo || {}).Path !== path) return;
       const old = JSON.parse(txt);
-      const h = this.hist && this.hist.key === path ? this.hist : { key: path, hist: {}, laps: {}, events: [], prev: null, pitAt: {} };
+      const h = this.hist && this.hist.key === path ? this.hist : { key: path, hist: {}, laps: {}, events: [], prev: null, pitAt: {}, wx: [] };
       // Gesicherter Stand ergänzt, was die neue Verbindung noch nicht kennt
       h.hist = { ...old.hist, ...h.hist };
       for (const [n, m] of Object.entries(old.laps || {})) h.laps[n] = { ...m, ...(h.laps[n] || {}) };
       const seen = new Set(h.events.map(e => e.t));
       h.events = (old.events || []).filter(e => !seen.has(e.t)).concat(h.events).sort((a, b) => a.t - b.t).slice(-300);
       h.pitAt = { ...(old.pitAt || {}), ...h.pitAt };
+      const have = new Set((h.wx || []).map(x => x.t));
+      h.wx = (old.wx || []).filter(x => !have.has(x.t)).concat(h.wx || []).sort((a, b) => a.t - b.t).slice(-400);
       this.hist = h;
     } catch (e) { this.log("Verlauf laden fehlgeschlagen", e && e.message); }
   }
@@ -203,10 +205,10 @@ export class F1Live extends DurableObject {
     // Ganzer Verlauf (einmal beim Öffnen der Seite)
     if (wantHist) {
       this.snap();
-      const h = this.hist || { key: "", hist: {}, laps: {}, events: [] };
+      const h = this.hist || { key: "", hist: {}, laps: {}, events: [], wx: [] };
       const laps = {};
       for (const [n, m] of Object.entries(h.laps)) laps[n] = Object.values(m);
-      return Response.json({ ok: true, key: h.key, hist: Object.values(h.hist), laps, events: h.events }, { headers: { "Cache-Control": "no-store" } });
+      return Response.json({ ok: true, key: h.key, hist: Object.values(h.hist), laps, events: h.events, wx: h.wx || [] }, { headers: { "Cache-Control": "no-store" } });
     }
     if (!this.cache || Date.now() - this.cacheAt > 1000) {
       try {

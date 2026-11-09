@@ -254,8 +254,11 @@
   function histStep(h, L, now) {
     const ses = (L && L.session) || {}, f = L && L.frame;
     const key = String(ses.path || ses.key || "");
-    if (!h || h.key !== key) h = { key, hist: {}, laps: {}, events: [], prev: null, pitAt: {} };
+    if (!h || h.key !== key) h = { key, hist: {}, laps: {}, events: [], prev: null, pitAt: {}, wx: [] };
     if (!f) return h;
+    // Wetter je Minute (Wetter-Fenster: Verlauf der Session)
+    const w = L.weather, wl = (h.wx = h.wx || [])[h.wx.length - 1];
+    if (w && (!wl || now - wl.t >= 60000)) { h.wx.push({ t: now, ...w }); if (h.wx.length > 400) h.wx.shift(); }
     if (ses.race && f.lap > 0) {
       const old = h.hist[f.lap];
       h.hist[f.lap] = { lap: f.lap, t: old ? old.t : now, status: f.status,
