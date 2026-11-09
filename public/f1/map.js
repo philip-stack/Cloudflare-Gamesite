@@ -6,8 +6,8 @@
 //  · Positionen: Nachschau = OpenF1 /location zum Frame-Zeitpunkt,
 //    live = Position.z aus dem F1-Feed (über /api/f1-live, alle 3 s).
 //  · Gibt der Feed keine Positionen heraus: GESCHÄTZT aus der Zeitmessung —
-//    letzter Mini-Sektor je Auto, Strecke und Lage der Mini-Sektoren aus einer
-//    früheren Session (F1Track in trackcal.js, einmal je Strecke gemerkt).
+//    letzter Mini-Sektor je Auto, Strecke und Lage der Mini-Sektoren aus der
+//    Eichung (trackcal.js; der Cron legt sie an, das Live-DO schärft nach).
 // Koordinaten wie im F1-Feed (1/10 m), y zeigt nach oben → im SVG gespiegelt.
 // ====================================================================
 (function () {
@@ -23,28 +23,35 @@
   const T = window.F1Track;
   // Eichung der Strecke für die Schätzung — gilt je Strecke (calFor);
   // calState: "" | "load" | "fail" (Fehlschlag nach 5 min erneut versuchen)
-  let cal = null, calFor = "", calState = "", calFailAt = 0;
+  let cal = null, calFor = "", calState = "", calAt = 0;
 
   // ---------- Geschätzte Live-Positionen ----------
-  // Die Eichung rechnet der Live-Worker einmal je Strecke und legt sie in D1
-  // ab; hier wird nur das Ergebnis (~7 KB) geholt und lokal gemerkt.
-  const calKey = c => "f1_trackcal_v1_" + c;
-  const calNeeded = circuit => calFor !== circuit || (!cal && calState !== "load" && !(calState === "fail" && Date.now() - calFailAt < 5 * 60000));
+  // Die Eichung (~10 KB) liegt in D1; hier wird sie geholt. Eine genäherte
+  // schärft das Live-DO während der Session nach → alle 10 min neu holen;
+  // nur eine fertige wird lokal gemerkt.
+  const calKey = c => "f1_trackcal_v2_" + c;
+  const done = c => c && (!c.approx || c.refined >= 40);
+  const calNeeded = circuit => calFor !== circuit || (calState !== "load" && !done(cal)
+    && Date.now() - calAt > (cal ? 10 * 60000 : calState === "fail" ? 5 * 60000 : 0));
   async function ensureCal() {
     const ses = S.race.session || {};
     const circuit = String(ses.circuit || "x");
     if (!calNeeded(circuit)) return;
-    if (calFor !== circuit) { calFor = circuit; cal = null; calState = ""; }
-    try { const c = JSON.parse(store.get(calKey(circuit)) || "null"); if (c && c.pts && c.segF) { cal = c; return; } } catch (_) { /* vom Server holen */ }
-    if (!ses.path || !ses.circuit) { calState = "fail"; calFailAt = Date.now(); return; }
+    if (calFor !== circuit) {
+      calFor = circuit; cal = null; calState = ""; calAt = 0;
+      try { const c = JSON.parse(store.get(calKey(circuit)) || "null"); if (c && c.pts && c.segF) { cal = c; return; } } catch (_) { /* vom Server holen */ }
+    }
+    if (!ses.circuit) { calState = "fail"; calAt = Date.now(); return; }
     calState = "load";
+    let c = null;
     try {
-      const src = await get("tracksrc", { path: ses.path, circuit: ses.circuit });
-      const res = await fetch("/api/f1-live?" + new URLSearchParams({ trackcal: 1, circuit: ses.circuit, paths: (src.paths || []).join(",") }));
-      const c = res.ok ? await res.json() : null;
-      if (calFor === circuit && c && c.pts && c.segF) { cal = c; store.set(calKey(circuit), JSON.stringify(c)); }
+      const res = await fetch("/api/f1-live?" + new URLSearchParams({ trackcal: 1, circuit: ses.circuit }));
+      c = res.ok ? await res.json() : null;
     } catch (_) { /* unten als Fehlschlag */ }
-    if (calFor === circuit) { calState = cal ? "" : "fail"; if (!cal) calFailAt = Date.now(); }
+    if (calFor !== circuit) return;
+    calAt = Date.now();
+    if (c && c.pts && c.segF) { cal = c; if (done(c)) store.set(calKey(circuit), JSON.stringify(c)); }
+    calState = cal ? "" : "fail";
     if (S.view === "map") draw();
   }
   // Ohne Eichung: schematischer Kreis, Mini-Sektoren gleichmäßig verteilt
@@ -245,7 +252,7 @@
     const n = cars ? Object.keys(cars).length : 0;
     if (est) {
       const nm = x => (race.drivers.get(x) || { abbr: "#" + x }).abbr;
-      $("map-info").textContent = `${n} Autos auf der Strecke${est.box.length ? " · Box: " + est.box.map(nm).join(", ") : ""} · Positionen geschätzt aus der Zeitmessung${est.c.ring ? " (schematisch, Strecke noch unbekannt)" : ""}`;
+      $("map-info").textContent = `${n} Autos auf der Strecke${est.box.length ? " · Box: " + est.box.map(nm).join(", ") : ""} · Positionen geschätzt aus der Zeitmessung${est.c.ring ? " (schematisch, Strecke noch unbekannt)" : est.c.approx && !est.c.refined ? " (wird in den ersten Runden genauer)" : ""}`;
       return;
     }
     $("map-info").textContent = race.live ? `${n} Autos auf der Strecke${track && track.kind === "dots" ? " · Streckenverlauf baut sich aus den Positionen auf" : ""}`

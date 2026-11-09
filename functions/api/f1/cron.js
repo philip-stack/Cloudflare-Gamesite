@@ -5,6 +5,7 @@ import { F1_LIVE_NAME } from "../f1-live.js";
 import { buildUrl, buildBundle, dbPut, calKey } from "../../f1data/[ep].js";
 import { compactResult, DUEL_SESSIONS } from "../../f1data/_duel.js";
 import { generateReport } from "./_gen-report.js";
+import { buildTrackCal } from "./_trackcal.js";
 import { SESSION_DE, gpShort, dueStarts, liveSession, currentMeeting, flagEvent, carNumbers, newDocs, matchEvent } from "./_logic.js";
 
 // ====================================================================
@@ -46,7 +47,7 @@ async function warm(env, year, sessions, meetings, now, state) {
   const newest = (a, b) => Date.parse(b.date_start) - Date.parse(a.date_start);
   let have;
   try {
-    have = new Set(((await env.DB.prepare("SELECT k FROM f1_cache WHERE k LIKE 'bundle/%' OR k LIKE 'result/%' OR k LIKE 'report/%' OR (k LIKE 'openf1/%' AND at > datetime('now', '-6 hours'))").all()).results || []).map(r => r.k));
+    have = new Set(((await env.DB.prepare("SELECT k FROM f1_cache WHERE k LIKE 'bundle/%' OR k LIKE 'result/%' OR k LIKE 'report/%' OR k LIKE 'trackcal/%' OR (k LIKE 'openf1/%' AND at > datetime('now', '-6 hours'))").all()).results || []).map(r => r.k));
   } catch (e) { await logError(env, "f1-cron: f1_cache nicht lesbar", "f1-cron", e && e.message); return; }
   // Fehler eines Schritts: 401/403 = OpenF1 gesperrt → nächster Lauf; sonst
   // diesen Eintrag 6 h zurückstellen (die anderen kommen weiter dran) und einmal melden
@@ -64,6 +65,18 @@ async function warm(env, year, sessions, meetings, now, state) {
     }
   } catch (e) { await fail("Kalender sichern", null, e); }
 
+  // 1b. Strecke für die Live-Karte, sobald ein Wochenende in ≤ 14 Tagen ansteht
+  // (oder läuft) und noch keine Eichung da ist — eine Strecke je Lauf
+  const circuit = sessions.filter(x => !x.is_cancelled && x.circuit_key && Date.parse(x.date_end) + 3600e3 > now && Date.parse(x.date_start) - 14 * 86400e3 < now
+    && !have.has("trackcal/" + x.circuit_key) && !failed["c" + x.circuit_key]).map(x => x.circuit_key)[0];
+  if (circuit) {
+    try {
+      const cal = await buildTrackCal(fetchJson, circuit, now);
+      if (cal) await dbPut(env, "trackcal/" + circuit, JSON.stringify(cal));
+      else failed["c" + circuit] = now - 5 * 3600e3;    // gesperrt/keine Daten → in 1 h nochmal
+    } catch (e) { await fail("Strecke eichen", "c" + circuit, e); }
+  }
+
   // 2. KI-Rennbericht, sobald OpenF1 die Daten freigibt (~40 min nach dem
   // Ende, höchstens 3 Tage zurück). Ein Bericht je Lauf; dann sind die
   // übrigen Schritte erst beim nächsten Lauf dran (Lauf nicht überladen).
@@ -71,13 +84,17 @@ async function warm(env, year, sessions, meetings, now, state) {
     && !have.has("report/" + x.session_key) && !failed["p" + x.session_key]).sort(newest)[0];
   if (rep) {
     try { await generateReport(env, rep.session_key, year, null); return; }
-    catch (e) { await fail("Rennbericht", "p" + rep.session_key, e); }
+    catch (e) {
+      await fail("Rennbericht", "p" + rep.session_key, e);
+      // Modell hat Unbrauchbares geliefert → das ist Zufall, in 30 min nochmal (nicht erst in 6 h)
+      if (/unbrauchbar/.test(e && e.message || "")) failed["p" + rep.session_key] = now - 5.5 * 3600e3;
+    }
   }
 
   // 3. Ein fertiges Rennen/Sprint als Paket (≥ 3 h vorbei = Daten endgültig)
   const race = sessions.filter(x => x.session_type === "Race" && !x.is_cancelled && Date.parse(x.date_end) + 3 * 3600e3 < now && !have.has("bundle/" + x.session_key) && !failed["b" + x.session_key]).sort(newest)[0];
   if (race) {
-    try { await dbPut(env, "bundle/" + race.session_key, await buildBundle(String(race.session_key), String(year))); }
+    try { await dbPut(env, "bundle/" + race.session_key, await buildBundle(String(race.session_key), String(year), env)); }
     catch (e) { await fail("Vorwärmen", "b" + race.session_key, e); }
   }
 

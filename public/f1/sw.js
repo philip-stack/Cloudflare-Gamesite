@@ -1,7 +1,7 @@
 // Service Worker des Renntickers (PWA, Scope /f1/). Netz zuerst, Cache als
 // Fallback für die App-Hülle. Renndaten (/f1data/, /api/) gehen nie in den
 // Cache — sie sind groß bzw. müssen frisch sein.
-const CACHE = "f1-v7";
+const CACHE = "f1-v8";
 // CacheStorage ist pro Origin — nur eigene Caches (gleicher Präfix) aufräumen,
 // sonst verschwinden die Hüllen von Hub, Sprit-Radar und Feuerwehr.
 const PREFIX = CACHE.replace(/-v\d+$/, "-");

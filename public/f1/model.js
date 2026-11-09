@@ -645,6 +645,8 @@
         compound: cur && cur.Compound && cur.Compound !== "UNKNOWN" ? cur.Compound : null,
         tyreAge: cur ? cur.TotalLaps ?? null : null,
         stints: liveStints(stints),
+        // Startplatz laut Feed (Rennen/Sprint, inkl. Strafen und Boxengasse)
+        grid: isRace && +(ta[k] || {}).GridPos > 0 ? +ta[k].GridPos : null,
         qtimes: isQuali ? list(t.BestLapTimes).map(x => parseTime(x && x.Value)) : null,
         // Sektoren der laufenden/letzten Runde und die besten der Session
         sec: list(t.Sectors).map(x => (x && typeof x === "object" ? { v: parseTime(x.Value), ob: !!x.OverallFastest, pb: !!x.PersonalFastest } : null)),

@@ -134,9 +134,12 @@
     if (live) emitMeeting(live.meeting && live.meeting.meeting_name, live.date_start);
     else if (force && meetings[0]) emitMeeting(meetings[0].sessions[0].meeting && meetings[0].sessions[0].meeting.meeting_name, meetings[0].sessions[0].date_start);
     liveMeeting = live;
+    newestKey = newestDone(sessions);
     if (live || force) { $("meeting").value = "live"; fillSessions(); return startLive(); }
-    // Zuletzt angesehene Session, sonst die neueste
-    const want = +store.get("f1_session");
+    // Immer die neueste Session — die zuletzt angesehene nur, solange seither
+    // nichts Neueres dazugekommen ist (gemerkt als „Session:neueste damals“)
+    const [w, seen] = String(store.get("f1_session") || "").split(":").map(Number);
+    const want = seen && seen === newestKey ? w : newestKey;
     const m = meetings.find(x => x.sessions.some(s => s.session_key === want)) || meetings[0];
     if (!m) return;
     $("meeting").value = String(m.key);
@@ -144,6 +147,33 @@
     fillSessions(s.session_key);
     await openSession(s.session_key);
   }
+  const newestDone = list => (list.slice().sort((a, b) => Date.parse(b.date_end) - Date.parse(a.date_end))[0] || {}).session_key || null;
+
+  // Läuft die Seite länger (PWA im Hintergrund, Handy gesperrt): Beginnt eine
+  // Live-Session, ist sie vorbei oder gibt es eine neuere Nachschau, von selbst
+  // dorthin wechseln. Eine neue Nachschau nur nach einer Pause (nicht mitten
+  // im Durchspulen), Live-Beginn/-Ende sofort.
+  let newestKey = null;
+  async function recheck(resumed) {
+    if (!mode || new URLSearchParams(location.search).has("live")) return;
+    try {
+      const now = Date.now();
+      const ss = (await get("sessions", { year: new Date().getFullYear() })).filter(s => !s.is_cancelled);
+      const live = ss.find(s => Date.parse(s.date_start) - 3600e3 <= now && Date.parse(s.date_end) + 3600e3 > now);
+      const newest = newestDone(ss.filter(s => Date.parse(s.date_end) + DONE_AFTER < now));
+      const liveStarted = live && (!liveMeeting || live.session_key !== liveMeeting.session_key);
+      // (Rote Flagge kann über das geplante Ende hinausziehen → nur wenn der Feed still ist)
+      const feedQuiet = !liveBuf.length || now - liveBuf[liveBuf.length - 1].d.updated > 10 * 60000;
+      const liveEnded = !live && mode === "live" && feedQuiet;
+      if (liveStarted || liveEnded || (resumed && newest && newest !== newestKey)) await startCalendar();
+    } catch (_) { /* OpenF1 gesperrt/weg → beim nächsten Mal */ }
+  }
+  setInterval(() => { if (!document.hidden) recheck(false); }, 5 * 60000);
+  let awayAt = 0;
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) { awayAt = Date.now(); return; }
+    if (awayAt && Date.now() - awayAt > 5 * 60000) recheck(true);
+  });
 
   const emitMeeting = (name, date) => { if (name) emit("meeting", { name, date }); };
 
@@ -161,7 +191,7 @@
     const s = sessions.find(x => x.session_key === key);
     if (!s) return;
     emitMeeting(s.meeting && s.meeting.meeting_name, s.date_start);
-    store.set("f1_session", String(key));
+    store.set("f1_session", key + ":" + newestKey);
     return s.session_type === "Race" ? loadSession(key) : loadArchive(s);
   }
 
@@ -394,21 +424,21 @@
     show(race.frames.length - 1);
   }
 
-  // Training/Qualifying: Endstand aus dem offiziellen F1-Archiv — dasselbe
-  // Format wie der Live-Feed, darum rechnet F1Model.fromLive auch hier.
-  const ARCHIVE_TOPICS = ["DriverList", "TimingData", "TimingAppData", "TimingStats", "SessionInfo", "SessionStatus", "TrackStatus", "RaceControlMessages", "WeatherData"];
+  // Training/Qualifying: Endstand im Format des Live-Feeds (früher F1-Archiv) —
+  // darum rechnet F1Model.fromLive auch hier.
   async function loadArchive(s) {
     loading(`Lade ${sessName(s)} …`);
     mode = "archive";
     const key = s.session_key, year = new Date(s.date_start).getFullYear();
-    const st = {};
+    // Endstand in einer Antwort (Server: D1 vom Live-DO → F1-Archiv → OpenF1)
+    let st;
     try {
-      await Promise.all(ARCHIVE_TOPICS.map(async t => {
-        try { st[t] = await get("archive", { year, session_key: key, topic: t }); }
-        catch (e) { if (t === "TimingData" || t === "DriverList") throw e; }
-      }));
+      // Server schon am OpenF1-Limit (429/502)? einmal kurz warten und nochmal
+      st = await get("archive", { year, session_key: key, topic: "all" })
+        .catch(e => (e.status >= 429 && e.status !== 403 ? new Promise(r => setTimeout(r, 3000)).then(() => get("archive", { year, session_key: key, topic: "all" })) : Promise.reject(e)));
+      if (!st || !st.TimingData || !st.DriverList) throw Object.assign(new Error("leer"), { status: 404 });
     } catch (e) {
-      $("rows").innerHTML = `<li class="loading err">Für ${esc(sessName(s))} gibt es (noch) keine Daten im F1-Archiv.</li>`;
+      $("rows").innerHTML = `<li class="loading err">${e.status === 404 ? `Für ${esc(sessName(s))} gibt es (noch) keine Daten.` : "Daten gerade nicht erreichbar – später nochmal versuchen."}</li>`;
       return;
     }
     if (+$("session").value !== key || mode !== "archive") return;

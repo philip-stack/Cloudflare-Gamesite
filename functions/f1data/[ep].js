@@ -10,6 +10,7 @@
 
 import { fiaList, fiaPdf } from "./_fia.js";
 import { teamDuel } from "./_duel.js";
+import { synthState, SYNTH_PARTS } from "./_state.js";
 
 const BASE = "https://api.openf1.org/v1/";
 const UA = "Rennticker/1.0 (+https://philip-stack.pages.dev/f1/; privat)";
@@ -21,6 +22,7 @@ export const ENDPOINTS = {
   stints: 3600, pit: 3600, race_control: 3600, session_result: 3600,
   championship_drivers: 3600, championship_teams: 3600,
   weather: 3600,          // Wetter je Minute
+  team_radio: 3600,       // Funk-Clips (Ersatz fürs F1-Archiv)
   location: 86400,          // Streckenkarte: x/y je Auto (nur mit Zeitfenster)
 };
 const PARAMS = { session_key: /^\d{1,6}$/, meeting_key: /^\d{1,6}$/, year: /^20\d\d$/, session_type: /^[A-Za-z]{1,20}$/,
@@ -45,12 +47,12 @@ export function buildUrl(ep, search) {
   return BASE + ep + (qs ? "?" + qs.replace(/^&/, "") : "");
 }
 
-// Reifen aus dem offiziellen F1-Archiv (livetiming.formula1.com/static):
-// OpenF1-Stints sind teils verschoben, die F1-Stints stimmen. Die Session-
-// Schlüssel sind dieselben wie bei OpenF1.
-//   GET /f1data/archive?year=2026&session_key=11731[&topic=TimingData]
-// liefert den Endstand eines Themas (Standard: TimingAppData = Reifen).
-// Training/Qualifying zeigt der Rennticker komplett aus dem Archiv.
+// Endstand einer Session im Feed-Format (Training/Qualifying, Funk,
+// Startaufstellung, Reifen). Die Session-Schlüssel sind dieselben wie bei OpenF1.
+//   GET /f1data/archive?year=2026&session_key=11731[&topic=TimingData|all]
+// liefert ein Thema (Standard: TimingAppData = Reifen) bzw. alle (topic=all).
+// Quelle: D1 (vom Live-DO mitgeschrieben) → F1-Archiv → aus OpenF1 nachgebaut
+// (das F1-Archiv ist seit Okt. 2026 nur noch angemeldet abrufbar, siehe _state.js).
 const ARCHIVE = "https://livetiming.formula1.com/static/";
 export const TOPICS = ["TimingAppData", "TimingData", "DriverList", "SessionInfo", "SessionStatus", "TrackStatus", "RaceControlMessages", "TeamRadio", "WeatherData", "TimingStats"];
 const stripBom = t => t.replace(/^﻿/, "");
@@ -59,41 +61,103 @@ export async function archivePath(year, key, fetchJson) {
   for (const m of (idx && idx.Meetings) || []) for (const s of m.Sessions || []) if (s.Key === key && s.Path) return s.Path;
   return null;
 }
-// Ein Thema einer Session aus dem F1-Archiv als Objekt (für den Rennbericht)
-export async function archiveTopic(year, key, topic) {
-  const r = await archive(`?year=${year}&session_key=${key}&topic=${topic}`);
-  return r.ok ? r.json() : null;
+const archiveJson = async url => {
+  const r = await fetch(url, { headers: { "User-Agent": UA }, cf: { cacheTtl: 3600, cacheEverything: true } });
+  if (!r.ok) return null;
+  return JSON.parse(stripBom(await r.text()));
+};
+// Je Schub 2 OpenF1-Abrufe, dazwischen 1 s (Gratis-Grenze 3/s, die sich der
+// Cron mit uns teilt). Bei 429 kurz warten und nur das Fehlende nachholen.
+// Wirft mit e.status (401/403 = Sperre während einer Live-Session).
+async function openf1All(reqs) {
+  const out = {};
+  for (let round = 0; ; round++) {
+    const todo = reqs.filter(([k]) => !(k in out));
+    let busy = null;
+    for (let i = 0; i < todo.length; i += 2) {
+      const t0 = Date.now();
+      await Promise.all(todo.slice(i, i + 2).map(async ([k, ep, qs]) => {
+        const res = await openf1(buildUrl(ep, qs), ENDPOINTS[ep]);
+        if (res.ok) out[k] = await res.json();
+        else if (res.status === 404) out[k] = [];
+        else if (res.status === 429) busy = Object.assign(new Error(ep), { status: 429 });
+        else throw Object.assign(new Error(ep), { status: res.status });
+      }));
+      const wait = 1050 - (Date.now() - t0);
+      if (i + 2 < todo.length && wait > 0) await new Promise(r => setTimeout(r, wait));
+    }
+    if (!busy) return out;
+    if (round >= 2) throw busy;
+    await new Promise(r => setTimeout(r, 2500));
+  }
 }
-async function archive(search) {
+// → Feed-Stand { SessionInfo, TimingData, … } oder null; o.synth = false: nicht aus OpenF1 nachbauen
+export async function sessionState(env, year, key, o = {}) {
+  const k = "state/" + key;
+  const cache = typeof caches !== "undefined" ? caches.default : null;
+  const ckey = new Request("https://f1-state.cache/v1/" + key);
+  if (cache) { try { const hit = await cache.match(ckey); if (hit) return await hit.json(); } catch (_) { /* weiter */ } }
+  const keep = (st, final) => {
+    const txt = JSON.stringify(st);
+    const jobs = [];
+    if (cache) jobs.push(cache.put(ckey, new Response(txt, { headers: { "Content-Type": "application/json", "Cache-Control": "public, max-age=600" } })).catch(() => {}));
+    if (final) jobs.push(dbPut(env, k, txt));
+    if (o.waitUntil) jobs.forEach(j => o.waitUntil(j));
+    return st;
+  };
+  // 1. vom Live-DO mitgeschrieben
+  const db = await dbGet(env, k);
+  if (db) { try { return keep(await db.json(), false); } catch (_) { /* kaputt → weiter */ } }
+  // 2. F1-Archiv
+  try {
+    const path = await archivePath(year, +key, archiveJson);
+    if (path && !/\.\.|[?#\\]/.test(path)) {
+      const st = {};
+      await Promise.all(TOPICS.map(async t => { try { st[t] = await archiveJson(ARCHIVE + encodeURI(path) + t + ".json"); } catch (_) { st[t] = null; } }));
+      if (st.TimingData && st.DriverList) return keep(st, true);
+    }
+  } catch (_) { /* weiter mit OpenF1 */ }
+  if (o.synth === false) return null;
+  // 3. aus OpenF1 nachbauen
+  const qs = "?session_key=" + key;
+  const p = await openf1All([["sessions", "sessions", qs], ...SYNTH_PARTS.map(ep => [ep, ep, qs])]);
+  const session = (p.sessions || [])[0];
+  if (!session || !(p.session_result || []).length) return null;
+  const mt = await openf1(buildUrl("meetings", "?meeting_key=" + session.meeting_key), ENDPOINTS.meetings);
+  p.meeting = mt.ok ? ((await mt.json()) || [])[0] : null;
+  p.session = session;
+  // Endgültig erst ein paar Stunden nach dem Ende (OpenF1 korrigiert noch)
+  return keep(synthState(p), Date.now() - Date.parse(session.date_end) > 3 * 3600e3);
+}
+// Ein Thema einer Session als Objekt (für Rennbericht und Abschriften)
+export async function archiveTopic(year, key, topic, env) {
+  try { const st = await sessionState(env, year, key); return st ? st[topic] ?? null : null; } catch (_) { return null; }
+}
+async function archive(search, env, waitUntil) {
   const q = new URLSearchParams(search);
   const year = q.get("year"), key = q.get("session_key"), topic = q.get("topic") || "TimingAppData";
-  if (!PARAMS.year.test(year || "") || !PARAMS.session_key.test(key || "") || !TOPICS.includes(topic)) return new Response("bad request", { status: 400 });
-  const fetchJson = async url => {
-    const r = await fetch(url, { headers: { "User-Agent": UA }, cf: { cacheTtl: 3600, cacheEverything: true } });
-    if (!r.ok) return null;
-    return JSON.parse(stripBom(await r.text()));
-  };
+  if (!PARAMS.year.test(year || "") || !PARAMS.session_key.test(key || "") || !(topic === "all" || TOPICS.includes(topic))) return new Response("bad request", { status: 400 });
   try {
-    const path = await archivePath(year, +key, fetchJson);
-    // Pfad kommt vom F1-Server; trotzdem kein Ausbrechen aus /static/ (z. B. São Paulo → encodeURI)
-    const data = path && !/\.\.|[?#\\]/.test(path) ? await fetchJson(ARCHIVE + encodeURI(path) + topic + ".json") : null;
+    const st = await sessionState(env, year, key, { waitUntil });
+    const data = st && (topic === "all" ? st : st[topic]);
     if (!data) return new Response(JSON.stringify({ error: 404 }), { status: 404, headers: { "Content-Type": "application/json" } });
     return new Response(JSON.stringify(data), {
       headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "public, max-age=600" },
     });
-  } catch (_) {
-    return new Response(JSON.stringify({ error: "fetch" }), { status: 502, headers: { "Content-Type": "application/json" } });
+  } catch (e) {
+    const st = e && e.status;
+    return new Response(JSON.stringify({ error: st || "fetch" }), { status: st === 401 || st === 403 ? 403 : 502, headers: { "Content-Type": "application/json" } });
   }
 }
 
 // Boxenfunk: MP3 aus dem F1-Archiv, same-origin (CSP media-src 'self').
 //   GET /f1data/radio?path=2026/…/2026-10-04_Race/&file=VER_3_20261004_143127.mp3
-//   GET /f1data/radio?year=2026&session_key=11731&file=…   (Pfad über Index.json)
+//   GET /f1data/radio?year=2026&session_key=11731&file=…   (Pfad aus dem Endstand der Session)
 export const RADIO_FILE = /^[A-Z]{3}[A-Z0-9]?_\d{1,2}_\d{8}_\d{6}\.mp3$/;
 export const SESSION_PATH = /^20\d\d\/[^?#\\]+\/$/;
 // Quelle eines Funk-Clips im F1-Archiv (auch für /api/f1/transcript)
 //   → { url, file } | { status } (400 = ungültig, 404 = Session unbekannt)
-export async function radioSource(search) {
+export async function radioSource(search, env) {
   const q = new URLSearchParams(search);
   const file = q.get("file") || "";
   let path = q.get("path");
@@ -101,62 +165,22 @@ export async function radioSource(search) {
   if (!path) {
     const year = q.get("year"), key = q.get("session_key");
     if (!PARAMS.year.test(year || "") || !PARAMS.session_key.test(key || "")) return { status: 400 };
-    path = await archivePath(year, +key, async url => {
-      const r = await fetch(url, { headers: { "User-Agent": UA }, cf: { cacheTtl: 3600, cacheEverything: true } });
-      return r.ok ? JSON.parse(stripBom(await r.text())) : null;
-    });
-    if (!path || path.includes("..")) return { status: 404 };
+    const info = await archiveTopic(year, key, "SessionInfo", env);
+    path = info && info.Path;
+    if (!path || !SESSION_PATH.test(path) || path.includes("..")) return { status: 404 };
   }
   return { url: ARCHIVE + encodeURI(path) + "TeamRadio/" + file, file };
 }
 export const RADIO_UA = UA;
-async function radio(search) {
+async function radio(search, env) {
   try {
-    const src = await radioSource(search);
+    const src = await radioSource(search, env);
     if (!src.url) return new Response(src.status === 400 ? "bad request" : "not found", { status: src.status });
     const r = await fetch(src.url, { headers: { "User-Agent": UA }, cf: { cacheTtl: 86400, cacheEverything: true } });
     if (!r.ok) return new Response("not found", { status: r.status === 404 ? 404 : 502 });
     return new Response(r.body, { headers: { "Content-Type": "audio/mpeg", "Cache-Control": "public, max-age=86400" } });
   } catch (_) {
     return new Response("fetch failed", { status: 502 });
-  }
-}
-
-// Live-Karte: Für die geschätzten Positionen braucht die Seite die Strecke und
-// wo die Mini-Sektoren liegen. Beides baut sie aus einer früheren Session
-// (gleiches Wochenende, sonst Vorjahr auf derselben Strecke) — Positionen +
-// Zeitmessung aus dem F1-Archiv, beide sind dort nach der Session frei.
-//   GET /f1data/tracksrc?path=2026/…/2026-10-09_Sprint_Qualifying/&circuit=61
-//     → { paths: ["2026/…/2026-10-09_Practice_1/", …] }  (neueste zuerst)
-//   Die Eichung selbst rechnet der Live-Worker (worker-rt/f1-live.js, /trackcal).
-export function trackSources(idx, prevIdx, path, circuit) {
-  const folder = path.split("/").slice(0, 2).join("/") + "/";
-  const out = [];
-  for (const m of (idx && idx.Meetings) || []) {
-    const ss = (m.Sessions || []).filter(s => s.Path && s.Path.startsWith(folder) && s.Path !== path);
-    out.push(...ss.sort((a, b) => String(b.StartDate).localeCompare(String(a.StartDate))).map(s => s.Path));
-  }
-  for (const m of (prevIdx && prevIdx.Meetings) || []) {
-    if (!circuit || !m.Circuit || +m.Circuit.Key !== +circuit) continue;
-    const ss = (m.Sessions || []).filter(s => s.Path && /Race|Qualifying|Practice/.test(s.Name || ""));
-    out.push(...ss.sort((a, b) => String(b.StartDate).localeCompare(String(a.StartDate))).map(s => s.Path));
-  }
-  return out.filter(p => SESSION_PATH.test(p) && !p.includes("..")).slice(0, 6);
-}
-async function trackSrc(search) {
-  const q = new URLSearchParams(search);
-  const path = q.get("path") || "", circuit = q.get("circuit") || "";
-  if (!SESSION_PATH.test(path) || path.includes("..") || (circuit && !/^\d{1,4}$/.test(circuit))) return new Response("bad request", { status: 400 });
-  const year = +path.slice(0, 4);
-  const fetchJson = async url => {
-    const r = await fetch(url, { headers: { "User-Agent": UA }, cf: { cacheTtl: 600, cacheEverything: true } });
-    return r.ok ? JSON.parse(stripBom(await r.text())) : null;
-  };
-  try {
-    const [idx, prev] = await Promise.all([fetchJson(`${ARCHIVE}${year}/Index.json`), circuit ? fetchJson(`${ARCHIVE}${year - 1}/Index.json`) : null]);
-    return new Response(JSON.stringify({ paths: trackSources(idx, prev, path, circuit) }), { headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "public, max-age=600" } });
-  } catch (_) {
-    return new Response(JSON.stringify({ error: "fetch" }), { status: 502, headers: { "Content-Type": "application/json" } });
   }
 }
 
@@ -299,7 +323,7 @@ export function bundleTtl(end, now) {
 }
 // Rennpaket bauen (auch der Cron nutzt das zum Vorwärmen). Wirft bei Fehler
 // mit e.status (401/403 = OpenF1-Sperre während einer Live-Session).
-export async function buildBundle(key, year) {
+export async function buildBundle(key, year, env) {
   const parts = {};
   // Höchstens 3 gleichzeitig, dann mind. 1 s Pause (OpenF1-Grenze)
   for (let i = 0; i < BUNDLE_PARTS.length; i += 3) {
@@ -314,11 +338,11 @@ export async function buildBundle(key, year) {
     const wait = 1050 - (Date.now() - t0);
     if (i + 3 < BUNDLE_PARTS.length && wait > 0) await new Promise(r => setTimeout(r, wait));
   }
-  // Reifen aus dem F1-Archiv (fehlt es, rechnet das Modell mit OpenF1)
+  // Reifen aus dem Feed-Stand (D1 vom Live-DO bzw. F1-Archiv); fehlt er, rechnet das Modell mit OpenF1
   let tyres = "null";
   try {
-    const t = await archive(`?year=${year}&session_key=${key}`);
-    if (t.ok) tyres = await t.text();
+    const st = await sessionState(env, year, key, { synth: false });
+    if (st && st.TimingAppData) tyres = JSON.stringify(st.TimingAppData);
   } catch (_) { tyres = "null"; }
   return "{" + BUNDLE_PARTS.map(k => JSON.stringify(k) + ":" + parts[k]).join(",") + ',"tyres":' + tyres + "}";
 }
@@ -331,7 +355,7 @@ async function bundle(search, waitUntil, env) {
   if (cache) { const hit = await cache.match(ckey); if (hit) return hit; }
   let body;
   try {
-    body = await buildBundle(key, year);
+    body = await buildBundle(key, year, env);
   } catch (e) {
     const st = e && e.status;
     const old = (await staleGet("bundle/" + key)) || (await dbGet(env, "bundle/" + key));
@@ -353,11 +377,10 @@ async function bundle(search, waitUntil, env) {
 export async function onRequestGet({ params, request, waitUntil, env }) {
   const ep = String(params.ep || "");
   if (ep === "bundle") return bundle(new URL(request.url).search, waitUntil, env);
-  if (ep === "tracksrc") return trackSrc(new URL(request.url).search);
   if (ep === "rain") return rain(new URL(request.url).search);
   if (ep === "teamduel") return duel(new URL(request.url).search, env);
-  if (ep === "radio") return radio(new URL(request.url).search);
-  if (ep === "archive") return archive(new URL(request.url).search);
+  if (ep === "radio") return radio(new URL(request.url).search, env);
+  if (ep === "archive") return archive(new URL(request.url).search, env, waitUntil);
   if (ep === "fia") return fiaList(new URL(request.url).search);
   if (ep === "fia-pdf") return fiaPdf(new URL(request.url).search);
   const url = buildUrl(ep, new URL(request.url).search);

@@ -54,7 +54,7 @@ export async function onRequestGet({ request, env }) {
 
   // 2. Neu: erst prüfen, dann drosseln, dann Kosten
   let src;
-  try { src = await radioSource(search); } catch (_) { src = { status: 502 }; }
+  try { src = await radioSource(search, env); } catch (_) { src = { status: 502 }; }
   if (!src.url) return json({ error: src.status === 400 ? "ungültiger Clip" : "Clip nicht gefunden" }, src.status || 502);
   if (!(await rateLimit(env, `f1tr:${clientIp(request)}`, 15, 60))) return json({ error: "Zu viele Anfragen – kurz warten" }, 429);
   try {

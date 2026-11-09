@@ -7,7 +7,7 @@ import path from "node:path";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
 const M = require(path.join(__dirname, "..", "public", "f1", "model.js"));
-const { buildUrl, RADIO_FILE, SESSION_PATH, bundleTtl, BUNDLE_PARTS, trackSources, dbPut, dbGet, dbHas, calKey, pickPlace, rainSlots } = await import("file://" + path.join(__dirname, "..", "functions", "f1data", "[ep].js").replace(/\\/g, "/"));
+const { buildUrl, RADIO_FILE, SESSION_PATH, bundleTtl, BUNDLE_PARTS, dbPut, dbGet, dbHas, calKey, pickPlace, rainSlots } = await import("file://" + path.join(__dirname, "..", "functions", "f1data", "[ep].js").replace(/\\/g, "/"));
 
 let ok = true;
 const assert = (name, cond) => { if (cond) console.log("OK  ", name); else { console.log("FAIL", name); ok = false; } };
@@ -358,17 +358,64 @@ const ring = { pts: [[0, 0], [100, 0], [100, 100], [0, 100], [0, 0]], cum: [0, 1
 const pa = TR.pointAt(ring, 0.375);
 assert("Strecke: Punkt bei Anteil", pa[0] === 100 && pa[1] === 50);
 assert("Strecke: gleitet zur nächsten Grenze, bleibt davor stehen", Math.abs(TR.fracOf(ring, 0, 5) - 0.375) < 1e-9 && TR.fracOf(ring, 0, 60) < 0.5 && TR.fracOf(ring, 0, 60) > 0.49);
-const tds = ["00:00:01.000{\"Lines\":{\"7\":{\"NumberOfLaps\":1}}}"];
-for (let g = 0; g < 4; g++) tds.push(`00:00:${String(10 + g * 20).padStart(2, "0")}.000{"Lines":{"7":{"Sectors":{"${g >> 1}":{"Segments":{"${g & 1}":{"Status":2048}}}}${g === 3 ? ',"NumberOfLaps":2' : ""}}}}`);
-const tl = TR.timingLaps(tds.join("\n"));
-assert("Strecke: saubere Runde aus der Zeitmessung", tl.length === 1 && tl[0].n === 7 && tl[0].seg.join() === "10,30,50,70" && tl[0].counts.join() === "2,2");
-const idxNow = { Meetings: [{ Sessions: [
-  { Name: "Practice 1", StartDate: "2026-10-09T16:30:00", Path: "2026/2026-10-11_Singapore_Grand_Prix/2026-10-09_Practice_1/" },
-  { Name: "Sprint Qualifying", StartDate: "2026-10-09T20:30:00", Path: "2026/2026-10-11_Singapore_Grand_Prix/2026-10-09_Sprint_Qualifying/" }] },
-  { Sessions: [{ Name: "Race", Path: "2026/2026-10-04_Bahrain_Grand_Prix/2026-10-04_Race/" }] }] };
-const idxPrev = { Meetings: [{ Circuit: { Key: 61 }, Sessions: [{ Name: "Race", StartDate: "2025-10-05T20:00:00", Path: "2025/2025-10-05_Singapore_Grand_Prix/2025-10-05_Race/" }] }] };
-const srcs = trackSources(idxNow, idxPrev, "2026/2026-10-11_Singapore_Grand_Prix/2026-10-09_Sprint_Qualifying/", 61);
-assert("Strecke: Quellen = gleiches Wochenende, dann Vorjahr", srcs.join() === "2026/2026-10-11_Singapore_Grand_Prix/2026-10-09_Practice_1/,2025/2025-10-05_Singapore_Grand_Prix/2025-10-05_Race/");
+// Eichung aus OpenF1: Quadrat 4 × 1 km, konstantes Tempo, Runde 100 s, Sektoren 30/30/40 s
+const sqPt = f => { const d = (f % 1) * 40000, e = Math.floor(d / 10000), r = d % 10000; return [[r, 0], [10000, r], [10000 - r, 10000], [0, 10000 - r]][e]; };
+const TQ0 = Date.parse("2026-11-08T17:00:00Z");
+const of1Lap = { date_start: new Date(TQ0).toISOString(), lap_duration: 100, duration_sector_1: 30, duration_sector_2: 30, segments_sector_1: [2049, 2049], segments_sector_2: [2049, 2049], segments_sector_3: [2049, 2049] };
+const of1Loc = []; for (let t = -1; t <= 101; t += 0.25) { const q = sqPt(Math.max(0, Math.min(t, 100)) / 100); of1Loc.push({ date: new Date(TQ0 + t * 1000).toISOString(), x: q[0], y: q[1] }); }
+const of1 = TR.openf1Lap(of1Lap, of1Loc);
+const oc = of1 && TR.buildCal(of1.track, of1.lap);
+assert("Eichung OpenF1: Mini-Sektoren je Sektor gleichmäßig in der Zeit", oc && oc.approx && oc.counts.join() === "2,2,2"
+  && oc.segF.map(f => f.toFixed(2)).join() === "0.15,0.30,0.45,0.60,0.80,1.00" && oc.sec.join() === "30,60,100" && oc.prof.length > 150);
+assert("Eichung OpenF1: unvollständige Runde → nichts", TR.openf1Lap({ ...of1Lap, duration_sector_2: null }, of1Loc) === null);
+// Live: Grenzen 0..5 (N = 6); erste Runde ohne bekannten Start zählt nicht
+let rec = null, got = [];
+const feed = (g, t, pit) => { const r = TR.lapRecStep(rec, g, t, 6, pit); rec = r.rec; if (r.lap) got.push(r.lap); };
+[[3, 1], [4, 2], [5, 3]].forEach(([g, t]) => feed(g, t));
+[[0, 20], [1, 30], [2, 40], [3, 60], [4, 70], [5, 103]].forEach(([g, t]) => feed(g, t));
+assert("Live-Runde: Start = Ziellinie der Vorrunde, alle Grenzen der Reihe nach", got.length === 1 && got[0].t0 === 3 && got[0].seg.join() === "20,30,40,60,70,103");
+[[0, 120], [2, 140], [3, 150], [4, 160], [5, 203]].forEach(([g, t]) => feed(g, t));
+assert("Live-Runde: verpasste Grenze → Runde verworfen", got.length === 1);
+[[0, 220], [1, 230], [2, 240], [3, 250], [4, 260]].forEach(([g, t]) => feed(g, t, g === 2)); feed(5, 303);
+assert("Live-Runde: Boxengasse → verworfen", got.length === 1);
+// Nachschärfen: Grenze 0 liegt in Wahrheit nach 25 % der Sektorzeit (nicht 50 %)
+const meas = [0, 1, 2, 3].map(i => ({ t0: i * 100, seg: [7.5, 30, 45, 60, 80, 100].map(x => x + i * 100) }));
+const fine = TR.refineCal(oc, meas);
+assert("Nachschärfen: Grenze dorthin, wo sie gemessen wurde", fine && fine.refined === 4 && Math.abs(fine.segF[0] - 0.075) < 0.005 && Math.abs(fine.segF[2] - 0.45) < 0.005 && fine.segDur[0] === 7.5
+  && TR.refineCal(oc, meas.slice(0, 2)) === null);
+const rseg = TR.refineCal(oc, [], [3, 2, 1]);
+assert("Andere Mini-Sektor-Aufteilung im Feed: neu verteilen", rseg && rseg.counts.join() === "3,2,1" && rseg.segF.length === 6 && Math.abs(rseg.segF[0] - 0.1) < 0.005 && rseg.segF[5] === 1
+  && TR.refineCal(oc, [], [2, 2, 2]) === null);
+const slowLap = { t0: 900, seg: [7.5, 30, 45, 60, 80, 100].map(x => 900 + x * 1.2) };
+assert("Nachschärfen: langsame Runden (SC, > 107 %) zählen nicht", TR.refineCal(oc, [...meas, slowLap]).refined === 4);
+
+// ---- Endstand ohne F1-Archiv: aus OpenF1 nachgebaut ----
+const ST = await import("file://" + path.join(__dirname, "..", "functions", "f1data", "_state.js").replace(/\\/g, "/"));
+const synth = ST.synthState({
+  session: { session_key: 11408, session_name: "Qualifying", session_type: "Qualifying", date_start: "2026-11-07T18:00:00+00:00", date_end: "2026-11-07T19:00:00+00:00", circuit_key: 14, location: "São Paulo", country_name: "Brazil" },
+  meeting: { meeting_name: "São Paulo Grand Prix" },
+  drivers: [{ driver_number: 1, name_acronym: "NOR", team_name: "McLaren", team_colour: "FF8000" }, { driver_number: 63, name_acronym: "RUS" }, { driver_number: 5, name_acronym: "BOR" }],
+  session_result: [{ driver_number: 1, position: 1, number_of_laps: 24, duration: [90.939, 89.207, 87.47] }, { driver_number: 63, position: 2, duration: [91.2, 86.745, 87.674] },
+    { driver_number: 5, position: 12, duration: [92.1, 88.9, null] }],
+  stints: [{ driver_number: 1, stint_number: 1, lap_start: 1, lap_end: 11, compound: "WET", tyre_age_at_start: 0 }, { driver_number: 1, stint_number: 2, lap_start: 12, lap_end: 24, compound: "INTERMEDIATE", tyre_age_at_start: 2 }],
+  race_control: [{ date: "2026-11-07T18:05:00+00:00", category: "Flag", flag: "RED", scope: "Track", message: "RED FLAG", lap_number: 3 }],
+  weather: [{ air_temperature: 20.6, track_temperature: 29.6, humidity: 90, rainfall: 1, wind_speed: 0.9, wind_direction: 24 }],
+  team_radio: [{ driver_number: 1, date: "2026-11-07T18:10:22.430000+00:00", recording_url: "https://livetiming.formula1.com/static/2026/2026-11-08_São_Paulo_Grand_Prix/2026-11-07_Qualifying/TeamRadio/NOR_1_20261107_151022.mp3" }],
+});
+const SL = M.fromLive(synth);
+const srow = n => SL.frame.rows.find(r => r.n === n);
+assert("Nachbau: Qualifying mit Q-Zeiten, Pole, Q2-Aus", SL.session.quali && SL.frame.final && srow(1).pos === 1 && srow(1).best === 87.47 && srow(63).gap === 0.204
+  && srow(5).knocked && srow(5).status === "Q2" && SL.drivers.find(d => d.n === 1).abbr === "NOR" && SL.session.circuit === 14);
+assert("Nachbau: Reifen, Wetter, Rennleitung", srow(1).stints.map(x => x.c + x.laps).join() === "WET11,INTERMEDIATE13" && SL.weather.rain && SL.weather.air === 20.6
+  && SL.frame.msgs.some(m => /Rote Flagge|RED/i.test(m.text)));
+assert("Nachbau: Funk mit Session-Pfad", synth.SessionInfo.Path === "2026/2026-11-08_São_Paulo_Grand_Prix/2026-11-07_Qualifying/"
+  && SL.radio.length === 1 && SL.radio[0].file === "NOR_1_20261107_151022.mp3" && SL.radio[0].utc === "2026-11-07T18:10:22.430");
+assert("Nachbau: Pfad nur aus F1-Funk-URLs", ST.pathFromRadio("https://x/static/2026/../TeamRadio/a.mp3") === null && ST.pathFromRadio("") === null);
+
+// ---- Startaufstellung live aus dem Feed ----
+const GL = M.fromLive({ SessionInfo: { Name: "Race", Type: "Race" }, TimingData: { Lines: { "1": { Position: "3" }, "4": { Position: "1" } } },
+  TimingAppData: { Lines: { "1": { GridPos: "1", Stints: [{ Compound: "MEDIUM", TotalLaps: 5 }] }, "4": { GridPos: "19" } } }, DriverList: {} });
+assert("Startplatz: GridPos aus dem Feed", GL.frame.rows.find(r => r.n === 1).grid === 1 && GL.frame.rows.find(r => r.n === 4).grid === 19);
 
 // ---- Live-Verlauf im DO ----
 const LF = (lap, rows) => ({ session: { path: "2026/x/race/", race: true }, frame: { lap, status: "green", rows } });

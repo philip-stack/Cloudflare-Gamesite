@@ -25,7 +25,7 @@ export async function calendarEntry(env, year, key) {
 // Abgetippte Funksprüche dieses Rennens (nur, was schon jemand angehört hat)
 async function radioQuotes(env, year, key, race) {
   try {
-    const tr = await archiveTopic(year, key, "TeamRadio");
+    const tr = await archiveTopic(year, key, "TeamRadio", env);
     const caps = tr && tr.Captures ? (Array.isArray(tr.Captures) ? tr.Captures : Object.values(tr.Captures)) : [];
     const byFile = new Map(caps.filter(c => c && c.Path).map(c => [String(c.Path).replace(/^TeamRadio\//, ""), c]));
     const files = [...byFile.keys()];
@@ -50,7 +50,7 @@ async function radioQuotes(env, year, key, race) {
 
 export async function generateReport(env, key, year, fav) {
   if (!env.AI) throw new Error("KI nicht verfügbar");
-  const raw = JSON.parse((await text(await dbGet(env, "bundle/" + key))) || (await buildBundle(String(key), String(year))));
+  const raw = JSON.parse((await text(await dbGet(env, "bundle/" + key))) || (await buildBundle(String(key), String(year), env)));
   const race = F1.buildRace(raw);
   const fin = race.frames[race.frames.length - 1];
   if (!fin || !fin.final) throw new Error("noch kein Ergebnis");
